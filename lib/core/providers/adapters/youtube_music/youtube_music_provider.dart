@@ -9,12 +9,12 @@
 
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import '../../../cache/cache_key.dart';
-import '../../../cache/cache_manager.dart';
-import '../../../cache/policies/cache_policy.dart';
-import '../../../logging/app_logger.dart';
-import '../../imusic_provider.dart';
-import '../../models/provider_models.dart';
+import 'package:v_shots/core/cache/cache_key.dart';
+import 'package:v_shots/core/cache/cache_manager.dart';
+import 'package:v_shots/core/cache/policies/cache_policy.dart';
+import 'package:v_shots/core/logging/app_logger.dart';
+import 'package:v_shots/core/providers/imusic_provider.dart';
+import 'package:v_shots/core/providers/models/provider_models.dart';
 import 'youtube_music_client.dart';
 import 'youtube_music_mapper.dart';
 

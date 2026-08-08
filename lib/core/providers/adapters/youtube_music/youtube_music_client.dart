@@ -1,19 +1,12 @@
 // ════════════════════════════════════════════════
 // V Shots — YouTube Music Client
 // ════════════════════════════════════════════════
-//
-// Handles all YouTube Music API communication.
-// Uses YouTube Explode for metadata and streams.
-// ════════════════════════════════════════════════
 
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import '../../../logging/app_logger.dart';
+import 'package:v_shots/core/logging/app_logger.dart';
 
 /// Client for YouTube Music API.
-///
-/// Uses youtube_explode_dart for accessing YouTube content.
-/// This provides search, metadata, and stream resolution.
 class YouTubeMusicClient {
   YouTubeMusicClient({AppLogger? logger})
       : _logger = logger ?? AppLogger.instance;
@@ -41,9 +34,9 @@ class YouTubeMusicClient {
     try {
       _logger.d('YouTubeMusicClient: Searching for "$query"');
       final searchList = await _yt.search.search(query);
-      final results = searchList.where((item) => item is Video).take(limit).toList();
+      final results = searchList.whereType<Video>().take(limit).toList();
       _logger.d('YouTubeMusicClient: Found ${results.length} results');
-      return results.cast<Video>();
+      return results;
     } catch (e, st) {
       _logger.e('YouTubeMusicClient: Search failed', error: e, stackTrace: st);
       rethrow;
@@ -80,7 +73,11 @@ class YouTubeMusicClient {
   /// Get multiple videos by IDs.
   Future<List<Video>> getVideos(List<String> videoIds) async {
     try {
-      final videos = await _yt.videos.get(videoIds);
+      final videos = <Video>[];
+      for (final id in videoIds) {
+        final video = await _yt.videos.get(id);
+        videos.add(video);
+      }
       return videos;
     } catch (e, st) {
       _logger.e('YouTubeMusicClient: getVideos failed', error: e, stackTrace: st);
@@ -96,7 +93,6 @@ class YouTubeMusicClient {
   Future<List<Video>> getPlaylistVideos(String playlistId, {int limit = 50}) async {
     try {
       _logger.d('YouTubeMusicClient: Getting playlist $playlistId');
-      final playlist = await _yt.playlists.get(playlistId);
       final videos = <Video>[];
 
       await for (final video in _yt.playlists.getVideos(playlistId).take(limit)) {
