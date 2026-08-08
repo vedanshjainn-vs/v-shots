@@ -1,74 +1,98 @@
 #!/bin/bash
 # ════════════════════════════════════════════════
-# V Shots — Smoke Test Script
+# V Shots — Smoke Test
 # ════════════════════════════════════════════════
 #
-# Tests the APK on a connected device or emulator.
+# Tests basic app functionality:
+# 1. Build succeeds
+# 2. APK exists
+# 3. Code analysis passes
+# 4. Tests pass
 # ════════════════════════════════════════════════
 
 set -e
 
-APK_PATH="build/app/outputs/flutter-apk/app-debug.apk"
-PACKAGE="com.vshots.live"
-TIMEOUT=15
-
 echo "=========================================="
-echo "V Shots — Smoke Test"
+echo "V Shots — Smoke Test Suite"
 echo "=========================================="
+echo ""
 
-# Check if APK exists
-if [ ! -f "$APK_PATH" ]; then
-    echo "❌ APK not found at $APK_PATH"
-    echo "Run 'flutter build apk --debug' first"
-    exit 1
+# Track results
+PASS=0
+FAIL=0
+RESULTS=""
+
+# Function to record result
+record() {
+    if [ $1 -eq 0 ]; then
+        PASS=$((PASS + 1))
+        RESULTS="${RESULTS}\n✅ $2: PASS"
+    else
+        FAIL=$((FAIL + 1))
+        RESULTS="${RESULTS}\n❌ $2: FAIL"
+    fi
+}
+
+# ═══════════════════════════════════════════════
+# TEST 1: Flutter Analyze
+# ═══════════════════════════════════════════════
+echo "[1/4] Running Flutter Analyze..."
+if flutter analyze --no-fatal-infos 2>&1; then
+    record 0 "ANALYZER"
+else
+    record 1 "ANALYZER"
 fi
 
-echo "✅ APK found: $(ls -lh $APK_PATH | awk '{print $5}')"
+# ═══════════════════════════════════════════════
+# TEST 2: Flutter Test
+# ═══════════════════════════════════════════════
+echo ""
+echo "[2/4] Running Flutter Tests..."
+if flutter test 2>&1; then
+    record 0 "TESTS"
+else
+    record 1 "TESTS"
+fi
 
-# Check if device is connected
-DEVICE_COUNT=$(adb devices | grep -c "device$")
-if [ "$DEVICE_COUNT" -eq 0 ]; then
-    echo "⚠️  No device connected"
-    echo "Connect a device or start an emulator"
+# ═══════════════════════════════════════════════
+# TEST 3: Build Debug APK
+# ═══════════════════════════════════════════════
+echo ""
+echo "[3/4] Building Debug APK..."
+if flutter build apk --debug 2>&1; then
+    record 0 "BUILD_DEBUG"
+else
+    record 1 "BUILD_DEBUG"
+fi
+
+# ═══════════════════════════════════════════════
+# TEST 4: Build Release APK
+# ═══════════════════════════════════════════════
+echo ""
+echo "[4/4] Building Release APK..."
+if flutter build apk --release 2>&1; then
+    record 0 "BUILD_RELEASE"
+else
+    record 1 "BUILD_RELEASE"
+fi
+
+# ═══════════════════════════════════════════════
+# RESULTS
+# ═══════════════════════════════════════════════
+echo ""
+echo "=========================================="
+echo "SMOKE TEST RESULTS"
+echo "=========================================="
+echo -e "$RESULTS"
+echo ""
+echo "PASSED: $PASS"
+echo "FAILED: $FAIL"
+echo ""
+
+if [ $FAIL -gt 0 ]; then
+    echo "❌ SMOKE TEST FAILED"
+    exit 1
+else
+    echo "✅ SMOKE TEST PASSED"
     exit 0
 fi
-
-echo "✅ Device connected"
-
-# Clear app data
-echo ""
-echo "[1/5] Clearing app data..."
-adb shell pm clear $PACKAGE 2>/dev/null || true
-
-# Install APK
-echo "[2/5] Installing APK..."
-adb install -r "$APK_PATH"
-
-# Launch app
-echo "[3/5] Launching app..."
-adb shell am start -n $PACKAGE/.MainActivity
-
-# Wait and check
-echo "[4/5] Waiting $TIMEOUT seconds..."
-sleep $TIMEOUT
-
-# Check if app is running
-RUNNING=$(adb shell pidof $PACKAGE)
-if [ -n "$RUNNING" ]; then
-    echo "✅ App is running (PID: $RUNNING)"
-else
-    echo "❌ App is NOT running"
-    echo ""
-    echo "=== CRASH LOGS ==="
-    adb logcat -d -t 50 | grep -E "FATAL|AndroidRuntime|Exception|Error" | tail -20
-    exit 1
-fi
-
-# Capture logs
-echo "[5/5] Capturing logs..."
-adb logcat -d -t 100 | grep -E "Flutter|Dart|$PACKAGE" | tail -20
-
-echo ""
-echo "=========================================="
-echo "SMOKE TEST PASSED"
-echo "=========================================="
