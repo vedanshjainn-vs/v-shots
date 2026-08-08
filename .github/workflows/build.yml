@@ -1,4 +1,4 @@
-name: Build APK
+name: Build & Validate APK
 
 on:
   push:
@@ -7,22 +7,78 @@ on:
 
 jobs:
   build:
+    name: Build & Validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
-      - run: flutter pub get
-      - run: flutter build apk --debug
-      - uses: actions/upload-artifact@v4
+
+      - name: Flutter Doctor
+        run: flutter doctor -v
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Analyze Code
+        run: flutter analyze --no-fatal-infos
+        continue-on-error: true
+
+      - name: Build Debug APK
+        run: flutter build apk --debug
+
+      - name: Validate APK Exists
+        run: |
+          if [ -f "build/app/outputs/flutter-apk/app-debug.apk" ]; then
+            echo "✅ Debug APK built successfully"
+            ls -lh build/app/outputs/flutter-apk/app-debug.apk
+          else
+            echo "❌ Debug APK not found"
+            exit 1
+          fi
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
         with:
-          name: apk
+          name: v-shots-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Create Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/app/outputs/flutter-apk/app-debug.apk
+          tag_name: v${{ github.run_number }}
+          name: V Shots v${{ github.run_number }}
+          body: |
+            ## V Shots APK v${{ github.run_number }}
+            
+            ### Installation
+            1. Download the APK
+            2. Open File Manager → Downloads
+            3. Tap the APK to install
+            4. Allow installation from unknown sources if asked
+            
+            ### Features
+            - Splash Screen
+            - Login with Email
+            - Google Sign-In
+            - Home Screen
+            - Music Player UI
+            - Profile Screen
+            - Dark Theme
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
