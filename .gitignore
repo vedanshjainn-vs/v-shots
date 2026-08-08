@@ -50,3 +50,4 @@ coverage/
 # Keystores (keep these secure!)
 # android/app/debug.keystore
 # android/app/release.keystore
+android/local.properties
