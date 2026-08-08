@@ -4,7 +4,7 @@
 
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import 'package:v_shots/core/logging/app_logger.dart';
+import '../../../logging/app_logger.dart';
 
 /// Client for YouTube Music API.
 class YouTubeMusicClient {

@@ -4,7 +4,7 @@
 
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import 'package:v_shots/core/providers/models/provider_models.dart';
+import '../../models/provider_models.dart';
 
 /// Maps YouTube data to Lyra provider models.
 class YouTubeMusicMapper {
