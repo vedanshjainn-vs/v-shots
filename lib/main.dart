@@ -216,7 +216,7 @@ class _SplashScreenState extends State<SplashScreen>
                   'Your music, your way',
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: Colors.white.withOpacity( 0.7),
                   ),
                 ),
                 const SizedBox(height: 48),
@@ -388,7 +388,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   'Sign in to continue',
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: Colors.white.withOpacity( 0.7),
                   ),
                 ),
                 const SizedBox(height: 48),
@@ -486,7 +486,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Expanded(
                       child: Divider(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity( 0.2),
                       ),
                     ),
                     Padding(
@@ -494,13 +494,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text(
                         'OR',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: Colors.white.withOpacity( 0.5),
                         ),
                       ),
                     ),
                     Expanded(
                       child: Divider(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity( 0.2),
                       ),
                     ),
                   ],
@@ -531,7 +531,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       "Don't have an account? ",
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: Colors.white.withOpacity( 0.7),
                       ),
                     ),
                     GestureDetector(
@@ -643,7 +643,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               Text(
                 'Create your account to get started',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
+                  color: Colors.white.withOpacity( 0.7),
                 ),
               ),
               const SizedBox(height: 32),
@@ -788,7 +788,7 @@ class HomeScreen extends StatelessWidget {
           Text(
             'What do you want to listen to?',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
+              color: Colors.white.withOpacity( 0.7),
               fontSize: 16,
             ),
           ),
@@ -833,7 +833,7 @@ class HomeScreen extends StatelessWidget {
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                Color(0xFFFF4D6A).withValues(alpha: 0.3),
+                                Color(0xFFFF4D6A).withOpacity( 0.3),
                                 Color(0xFF1A1A2E),
                               ],
                             ),
@@ -854,7 +854,7 @@ class HomeScreen extends StatelessWidget {
                         Text(
                           'Artist ${index + 1}',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withOpacity( 0.6),
                             fontSize: 12,
                           ),
                         ),
@@ -935,10 +935,10 @@ class _QuickAction extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity( 0.1),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: color.withValues(alpha: 0.3),
+          color: color.withOpacity( 0.3),
         ),
       ),
       child: Row(
@@ -1013,7 +1013,7 @@ class PlayerScreen extends StatelessWidget {
               artist,
               style: TextStyle(
                 fontSize: 16,
-                color: Colors.white.withValues(alpha: 0.7),
+                color: Colors.white.withOpacity( 0.7),
               ),
             ),
             const SizedBox(height: 48),
@@ -1036,13 +1036,13 @@ class PlayerScreen extends StatelessWidget {
                         Text(
                           '1:23',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withOpacity( 0.6),
                           ),
                         ),
                         Text(
                           '3:45',
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                            color: Colors.white.withOpacity( 0.6),
                           ),
                         ),
                       ],
@@ -1146,7 +1146,7 @@ class ProfileScreen extends StatelessWidget {
             child: Text(
               user?.email ?? '',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
+                color: Colors.white.withOpacity( 0.7),
               ),
             ),
           ),
