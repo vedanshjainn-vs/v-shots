@@ -27,31 +27,25 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Flutter Info
-        run: flutter doctor -v
-
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build Debug APK
-        run: flutter build apk --debug
+      - name: Build ARM64 APK
+        run: flutter build apk --debug --target-platform android-arm64
 
-      - name: Upload Debug APK
+      - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: v-shots-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: v-shots-arm64
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
           if-no-files-found: warn
 
       - name: Create Release
         if: success()
         uses: softprops/action-gh-release@v1
         with:
-          files: build/app/outputs/flutter-apk/app-debug.apk
+          files: build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
           tag_name: v${{ github.run_number }}
           name: V Shots Build ${{ github.run_number }}
-          body: |
-            V Shots APK Build
-            Download and install on your Android device.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
