@@ -11,9 +11,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Backend - pinned version
-  supabase_flutter: ^2.3.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
