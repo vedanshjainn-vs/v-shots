@@ -30,14 +30,6 @@ jobs:
       - name: Flutter Info
         run: flutter doctor -v
 
-      - name: Create local.properties
-        run: |
-          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
-          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-          echo "flutter.buildMode=debug" >> android/local.properties
-          echo "flutter.versionName=0.1.0" >> android/local.properties
-          echo "flutter.versionCode=1" >> android/local.properties
-
       - name: Get Dependencies
         run: flutter pub get
 
