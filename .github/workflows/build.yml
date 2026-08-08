@@ -1,0 +1,59 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Flutter Info
+        run: flutter doctor -v
+
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Generate Code
+        run: dart run build_runner build --delete-conflicting-outputs
+        continue-on-error: true
+
+      - name: Build Debug APK
+        run: flutter build apk --debug
+
+      - name: Build Release APK
+        run: flutter build apk --release
+        continue-on-error: true
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: warn
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: warn
