@@ -33,27 +33,26 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Generate Code
-        run: dart run build_runner build --delete-conflicting-outputs
-        continue-on-error: true
-
       - name: Build Debug APK
         run: flutter build apk --debug
-
-      - name: Build Release APK
-        run: flutter build apk --release
-        continue-on-error: true
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: v-shots-debug-apk
+          name: v-shots-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: warn
 
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
+      - name: Create Release
+        if: success()
+        uses: softprops/action-gh-release@v1
         with:
-          name: v-shots-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: warn
+          files: build/app/outputs/flutter-apk/app-debug.apk
+          tag_name: v${{ github.run_number }}
+          name: V Shots Build ${{ github.run_number }}
+          body: |
+            V Shots APK Build
+            
+            Download and install on your Android device.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
