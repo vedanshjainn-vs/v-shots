@@ -1,0 +1,52 @@
+# Flutter
+.dart_tool/
+.packages
+build/
+*.iml
+.idea/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+android/.gradle/
+android/app/build/
+android/local.properties
+android/key.properties
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+
+# Generated
+**/*.g.dart
+**/*.freezed.dart
+lib/generated/
+lib/l10n/*.dart
+!lib/l10n/*.arb
+
+# Environment
+.env
+.env.local
+.env.*.local
+firebase_options.dart
+
+# IDE
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+*.lcov
+
+# Logs
+*.log
+
+# Keystores (keep these secure!)
+# android/app/debug.keystore
+# android/app/release.keystore

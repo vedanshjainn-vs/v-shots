@@ -1,0 +1,166 @@
+name: project_lyra
+description: >
+  Project Lyra — A premium music streaming experience.
+  Built with Clean Architecture, Riverpod, and Material 3.
+version: 0.1.0+1
+publish_to: "none"
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # ──────────────────────────────────────────────
+  # State Management & DI
+  # ──────────────────────────────────────────────
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # ──────────────────────────────────────────────
+  # Navigation
+  # ──────────────────────────────────────────────
+  go_router: ^14.2.7
+
+  # ──────────────────────────────────────────────
+  # Backend — Supabase
+  # ──────────────────────────────────────────────
+  supabase_flutter: ^2.6.0
+
+  # ──────────────────────────────────────────────
+  # Firebase Suite
+  # ──────────────────────────────────────────────
+  firebase_core: ^3.3.0
+  firebase_analytics: ^11.2.1
+  firebase_crashlytics: ^4.1.0
+  firebase_messaging: ^15.0.4
+
+  # ──────────────────────────────────────────────
+  # Authentication
+  # ──────────────────────────────────────────────
+  google_sign_in: ^6.2.1
+
+  # ──────────────────────────────────────────────
+  # Monetization
+  # ──────────────────────────────────────────────
+  google_mobile_ads: ^5.1.0
+
+  # ──────────────────────────────────────────────
+  # Local Storage
+  # ──────────────────────────────────────────────
+  hive_flutter: ^1.1.0
+  shared_preferences: ^2.3.1
+
+  # ──────────────────────────────────────────────
+  # Networking
+  # ──────────────────────────────────────────────
+  dio: ^5.5.0
+  connectivity_plus: ^6.0.3
+
+  # ──────────────────────────────────────────────
+  # Serialization
+  # ──────────────────────────────────────────────
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+
+  # ──────────────────────────────────────────────
+  # Utilities
+  # ──────────────────────────────────────────────
+  logger: ^2.3.0
+  package_info_plus: ^8.0.1
+  permission_handler: ^11.3.1
+  uuid: ^4.4.0
+  intl: ^0.19.0
+  path_provider: ^2.1.4
+  collection: ^1.18.0
+  equatable: ^2.0.5
+  dartz: ^0.10.1
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  flutter_animate: ^4.5.0
+  lottie: ^3.1.2
+
+  # ──────────────────────────────────────────────
+  # Audio — Media3-ready architecture
+  # ──────────────────────────────────────────────
+  audio_session: ^0.1.19
+  just_audio: ^0.9.39
+
+  # ──────────────────────────────────────────────
+  # Security
+  # ──────────────────────────────────────────────
+  flutter_secure_storage: ^9.2.2
+  local_auth: ^2.3.0
+  crypto: ^3.0.5
+
+  # ──────────────────────────────────────────────
+  # Image Pipeline
+  # ──────────────────────────────────────────────
+  flutter_blurhash: ^0.8.2
+  flutter_image_compress: ^2.3.0
+
+  # ──────────────────────────────────────────────
+  # Background Tasks
+  # ──────────────────────────────────────────────
+  workmanager: ^0.5.2
+
+  # ──────────────────────────────────────────────
+  # Platform
+  # ──────────────────────────────────────────────
+  device_info_plus: ^11.0.0
+  battery_plus: ^6.1.0
+
+  # ──────────────────────────────────────────────
+  # UI Components
+  # ──────────────────────────────────────────────
+  flutter_blur: ^1.0.0
+  glassmorphism: ^3.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # ──────────────────────────────────────────────
+  # Code Generation
+  # ──────────────────────────────────────────────
+  build_runner: ^2.4.12
+  freezed: ^2.5.7
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.4.3
+
+  # ──────────────────────────────────────────────
+  # Linting & Analysis
+  # ──────────────────────────────────────────────
+  flutter_lints: ^4.0.0
+  custom_lint: ^0.6.4
+  riverpod_lint: ^2.3.10
+
+  # ──────────────────────────────────────────────
+  # Testing
+  # ──────────────────────────────────────────────
+  mocktail: ^1.0.4
+  mockito: ^5.4.4
+  bloc_test: ^9.1.7
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/animations/
+    - assets/lottie/
+
+  # fonts:
+  #   - family: ProjectLyra
+  #     fonts:
+  #       - asset: assets/fonts/ProjectLyra-Regular.ttf
+  #       - asset: assets/fonts/ProjectLyra-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/ProjectLyra-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/ProjectLyra-Bold.ttf
+  #         weight: 700

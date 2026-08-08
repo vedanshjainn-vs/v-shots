@@ -1,0 +1,95 @@
+# ════════════════════════════════════════════════
+# V Shots — GitHub Actions APK Build
+# ════════════════════════════════════════════════
+#
+# This workflow builds the APK automatically
+# when you push code to GitHub.
+# ════════════════════════════════════════════════
+
+name: Build V Shots APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Setup Java
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Step 3: Setup Flutter
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      # Step 4: Get dependencies
+      - name: Get dependencies
+        run: flutter pub get
+
+      # Step 5: Generate code (Freezed, etc.)
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      # Step 6: Build Debug APK
+      - name: Build Debug APK
+        run: flutter build apk --debug
+
+      # Step 7: Build Release APK
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      # Step 8: Upload Debug APK
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
+
+      # Step 9: Upload Release APK
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-release
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+
+      # Step 10: Create Release (optional)
+      - name: Create Release
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/flutter-apk/app-release.apk
+          tag_name: v${{ github.run_number }}
+          name: V Shots Build ${{ github.run_number }}
+          body: |
+            ## V Shots APK Build
+            
+            ### Downloads
+            - **app-debug.apk** - For testing
+            - **app-release.apk** - For production
+            
+            ### Build Info
+            - Run: ${{ github.run_number }}
+            - Commit: ${{ github.sha }}
+            - Date: ${{ github.event.head_commit.timestamp }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
