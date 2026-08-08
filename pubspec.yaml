@@ -11,6 +11,24 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # HTTP Client
+  dio: ^5.5.0
+  
+  # YouTube
+  youtube_explode_dart: ^2.2.2
+  
+  # Audio Player
+  just_audio: ^0.9.39
+  
+  # Audio Session
+  audio_session: ^0.1.19
+  
+  # Caching
+  cached_network_image: ^3.3.1
+  
+  # State Management
+  flutter_riverpod: ^2.5.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
