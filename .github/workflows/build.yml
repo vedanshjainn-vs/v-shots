@@ -20,45 +20,15 @@ jobs:
           flutter-version: '3.24.0'
       - run: flutter pub get
       - run: flutter build apk --split-per-abi
-      - name: Check APKs
-        run: |
-          echo "=== Built APKs ==="
-          ls -lh build/app/outputs/flutter-apk/
-          echo ""
-          echo "=== Sizes ==="
-          for f in build/app/outputs/flutter-apk/*.apk; do
-            size=$(ls -lh "$f" | awk '{print $5}')
-            echo "$(basename $f): $size"
-          done
-      - name: Upload ARM64
+      - name: List APKs
+        run: ls -lh build/app/outputs/flutter-apk/
+      - name: Upload ARM64 APK
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-arm64
-          path: build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
-      - name: Upload ARM
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+      - name: Upload ARM APK
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-arm
-          path: build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk
-      - name: Create Release
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
-            build/app/outputs/flutter-apk/app-armeabi-v7a-debug.apk
-          tag_name: v${{ github.run_number }}
-          name: V Shots v${{ github.run_number }}
-          body: |
-            ## V Shots APK
-            
-            ### Which APK?
-            - **arm64** — Most modern phones (2016+)
-            - **arm** — Older phones
-            
-            ### Install
-            1. Download correct APK
-            2. Open File Manager
-            3. Tap APK to install
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          path: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
