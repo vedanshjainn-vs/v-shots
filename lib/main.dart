@@ -26,6 +26,9 @@ void main() async {
   // file header for why a Supabase outage/misconfiguration must never
   // prevent the app from starting and playing music.
   await SupabaseService.initialize();
+  // google_sign_in v7 requires this exactly-once initialize() call
+  // before any sign-in UI is shown — see auth_service.dart.
+  await AuthService.instance.initializeGoogleSignIn();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
@@ -285,7 +288,7 @@ class _MiniPlayer extends StatelessWidget {
             const SizedBox(width: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(track['artwork'] ?? '',
+              child: Image.network((track['artwork'] as String?) ?? '',
                   width: 48, height: 48, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                       width: 48, height: 48,
@@ -299,10 +302,10 @@ class _MiniPlayer extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(track['title'] ?? '',
+                  Text((track['title'] as String?) ?? '',
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text(track['artist'] ?? '',
+                  Text((track['artist'] as String?) ?? '',
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                           color: Colors.white.withOpacity(0.6), fontSize: 12)),
@@ -638,7 +641,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(14),
                                 child: Stack(fit: StackFit.expand, children: [
-                                  Image.network(track['artwork'] ?? '',
+                                  Image.network((track['artwork'] as String?) ?? '',
                                       fit: BoxFit.cover,
                                       errorBuilder: (_, __, ___) => Container(
                                           color: const Color(0xFF1A1A2E),
@@ -660,10 +663,10 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text(track['title'] ?? '',
+                            Text((track['title'] as String?) ?? '',
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            Text(track['artist'] ?? '',
+                            Text((track['artist'] as String?) ?? '',
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                     color: Colors.white.withOpacity(0.5), fontSize: 12)),
@@ -785,16 +788,16 @@ class _SearchScreenState extends State<SearchScreen> {
                         return ListTile(
                           leading: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network(track['artwork'] ?? '',
+                            child: Image.network((track['artwork'] as String?) ?? '',
                                 width: 48, height: 48, fit: BoxFit.cover,
                                 errorBuilder: (_, __, ___) => Container(
                                     width: 48, height: 48,
                                     color: const Color(0xFF1A1A2E),
                                     child: const Icon(Icons.music_note, color: Color(0xFFFF4D6A)))),
                           ),
-                          title: Text(track['title'] ?? '',
+                          title: Text((track['title'] as String?) ?? '',
                               maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(track['artist'] ?? '',
+                          subtitle: Text((track['artist'] as String?) ?? '',
                               maxLines: 1, overflow: TextOverflow.ellipsis,
                               style: TextStyle(color: Colors.white.withOpacity(0.6))),
                           onTap: () => playTrack(context, track, _results, i),
@@ -809,10 +812,10 @@ class _SearchScreenState extends State<SearchScreen> {
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                       ...recentSearches.take(5).map((s) => ListTile(
                             leading: Icon(Icons.history, color: Colors.white.withOpacity(0.5)),
-                            title: Text(s['query']),
+                            title: Text((s['query'] as String?) ?? ''),
                             onTap: () {
-                              _controller.text = s['query'];
-                              _search(s['query']);
+                              _controller.text = (s['query'] as String?) ?? '';
+                              _search((s['query'] as String?) ?? '');
                             },
                           )),
                       const SizedBox(height: 24),
@@ -958,7 +961,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               backgroundColor: const Color(0xFF1A1A2E),
               backgroundImage:
                   (user?.userMetadata?['avatar_url'] as String?) != null
-                      ? NetworkImage(user!.userMetadata!['avatar_url'])
+                      ? NetworkImage(user!.userMetadata!['avatar_url'] as String)
                       : null,
               child: (user?.userMetadata?['avatar_url'] as String?) == null
                   ? Text(displayName.isNotEmpty ? displayName[0] : 'V',
@@ -1123,7 +1126,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: Image.network(_currentTrack['artwork'] ?? '',
+                  child: Image.network((_currentTrack['artwork'] as String?) ?? '',
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
                           color: const Color(0xFF1A1A2E),
@@ -1141,11 +1144,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_currentTrack['title'] ?? '',
+                      Text((_currentTrack['title'] as String?) ?? '',
                           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 4),
-                      Text(_currentTrack['artist'] ?? '',
+                      Text((_currentTrack['artist'] as String?) ?? '',
                           style: TextStyle(fontSize: 16,
                               color: Colors.white.withOpacity(0.7)),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1160,7 +1163,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     setState(() {
                       _isLiked = !_isLiked;
                       if (_isLiked) {
-                        likedSongIds.add(_currentTrack['id']);
+                        likedSongIds.add(_currentTrack['id'] as String);
                       } else {
                         likedSongIds.remove(_currentTrack['id']);
                       }
