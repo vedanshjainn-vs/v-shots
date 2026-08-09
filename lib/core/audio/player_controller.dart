@@ -341,7 +341,7 @@ class PlayerController {
 
     // Try clients in priority order.
     // androidVr and ios are most reliable for audio-only streams.
-    const clientAttempts = [
+    final clientAttempts = [
       [YoutubeApiClient.androidVr],
       [YoutubeApiClient.ios],
       [YoutubeApiClient.android],
