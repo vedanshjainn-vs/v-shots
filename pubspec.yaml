@@ -4,8 +4,10 @@ version: 0.1.0+1
 publish_to: "none"
 
 environment:
-  sdk: ">=3.0.0 <4.0.0"
-  flutter: ">=3.10.0"
+  # Bumped for google_sign_in ^7.2.0, which requires Dart >=3.7 (Flutter
+  # >=3.29). CI now uses Flutter 3.44.0 (see .github/workflows/build.yml).
+  sdk: ">=3.7.0 <4.0.0"
+  flutter: ">=3.29.0"
 
 dependencies:
   flutter:

@@ -17,7 +17,7 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.44.0'
       # .env is intentionally committed to the repo (see .env's own
       # header comment) — it contains only the Supabase anon key
       # (public-by-design, RLS-governed) and the Google Web Client ID
