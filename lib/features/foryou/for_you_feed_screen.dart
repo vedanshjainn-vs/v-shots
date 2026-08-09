@@ -40,6 +40,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/motion/motion.dart';
+import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../shared/widgets/app_image.dart';
 // Phase 3 fix: no longer imports `likedSongIds` (a stale reference —
@@ -57,6 +59,8 @@ import '../../main.dart' show
     currentQueueIndex,
     forYouFeedService,
     musicRepository,
+    playbackSignalTracker,
+    recommendationEngine,
     showMoreOptionsSheet,
     showAddToPlaylistSheet;
 
@@ -102,7 +106,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 
   Future<void> _loadInitialBatch() async {
-    final batch = await forYouFeedService.fetchNextBatch(excludeIds: _seenIds);
+    final batch = await _fetchDiscoverBatch();
     if (!mounted) return;
     setState(() {
       _items.addAll(batch);
@@ -115,11 +119,40 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     }
   }
 
+  /// Phase 7 (Part W): Discover is now the app's dedicated exploration
+  /// surface — tries the new RecommendationEngine's
+  /// `discoverSomethingNew` intent (high-novelty, genre/artist
+  /// discovery candidates, biased AWAY from the user's already-
+  /// established top genres — see candidate_generator.dart's
+  /// exploration source) FIRST, falling back to the existing
+  /// ForYouFeedService batch (recency-weighted personalization) if the
+  /// engine returns nothing (e.g. genuinely no candidates matched, or
+  /// a transient failure) — this preserves the working fallback rather
+  /// than replacing it outright, while making Discover feel distinct
+  /// from Home's "Made For You" (which stays personalization-first,
+  /// per Part V: "Do NOT replace every Home section with
+  /// recommendations... Avoid repeating the exact Home feed").
+  Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
+    try {
+      final scored = await recommendationEngine.generateFeed(
+        intent: FeedIntent.discoverSomethingNew,
+        excludeIds: _seenIds,
+        count: 8,
+      );
+      if (scored.isNotEmpty) {
+        return scored.map((s) => s.track.toTrackMap()).toList();
+      }
+    } catch (e) {
+      debugPrint('[ForYouFeed] Engine discover batch failed, falling back: $e');
+    }
+    return forYouFeedService.fetchNextBatch(excludeIds: _seenIds);
+  }
+
   Future<void> _maybeLoadMore() async {
     if (_isLoadingMore) return;
     if (_items.length - _currentIndex > 3) return; // still enough buffer
     _isLoadingMore = true;
-    final batch = await forYouFeedService.fetchNextBatch(excludeIds: _seenIds);
+    final batch = await _fetchDiscoverBatch();
     if (mounted) {
       setState(() {
         _items.addAll(batch);
@@ -184,6 +217,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       // counter that reset on every app restart and wasn't shared with
       // Home/Search plays at all.
       unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+      // Phase 7 (Part I): a vertical swipe to the next card is a real,
+      // explicit skip of whatever was playing — onTrackStarted's
+      // auto-finalize records that correctly.
+      playbackSignalTracker.onTrackStarted(track);
     } catch (e) {
       debugPrint('[ForYouFeed] Failed to play index $index: $e');
     }
@@ -245,10 +282,16 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           HapticFeedback.selectionClick();
           _playIndex(index);
         },
-        itemBuilder: (context, index) => _ForYouCard(
-          track: _items[index],
-          isActive: index == _currentIndex,
-          onNotInterested: () => _handleNotInterested(index),
+        itemBuilder: (context, index) => RepaintBoundary(
+          // Phase 7 fix (UI_PERFORMANCE_AUDIT.md issue #6): isolates
+          // each card's expensive BackdropFilter blur + artwork paint
+          // into its own repaint layer so a scroll/swipe gesture
+          // doesn't force sibling cards to repaint too.
+          child: _ForYouCard(
+            track: _items[index],
+            isActive: index == _currentIndex,
+            onNotInterested: () => _handleNotInterested(index),
+          ),
         ),
       ),
     );
@@ -262,6 +305,12 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   void _handleNotInterested(int index) {
     final artist = _items[index]['artist'] as String? ?? '';
     forYouFeedService.markNotInterested(artist);
+    // Phase 7 (Part I): "Not interested" is a real, explicit strong
+    // negative signal — reported as an immediate skip (elapsed time
+    // 0s, the strongest skip-penalty bucket) so the new
+    // RecommendationEngine's diversity/scoring reacts to it right
+    // away too, not just ForYouFeedService's own exclusion list.
+    playbackSignalTracker.onTrackEnded(completed: false);
     if (index < _items.length - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
@@ -348,14 +397,30 @@ class _ForYouCard extends StatelessWidget {
                 // Play/pause indicator (also reacts to the tap gesture
                 // above) — small, unobtrusive, matches the "immersive,
                 // minimal UI" intent from the Resso reference pattern.
+                // Phase 7 (Part F): now cross-fades between the two
+                // icons via AnimatedSwitcher instead of an instant
+                // swap, matching the same subtle-transition treatment
+                // as the mini-player/full-player's PlayPauseMorph
+                // (different icon set here — volume/pause, not
+                // play/pause — since this is an ambient "is audio
+                // flowing" indicator, not the primary tap target, so
+                // PlayPauseMorph itself isn't reused verbatim).
                 StreamBuilder<PlayerState>(
                   stream: audioPlayer.playerStateStream,
                   builder: (context, snapshot) {
                     final playing = snapshot.data?.playing ?? false;
-                    return Icon(
-                      playing ? Icons.volume_up_rounded : Icons.pause_circle_outline,
-                      color: Colors.white.withOpacity(0.85),
-                      size: 22,
+                    return AnimatedSwitcher(
+                      duration: AppMotion.micro,
+                      transitionBuilder: (child, animation) => ScaleTransition(
+                        scale: animation,
+                        child: FadeTransition(opacity: animation, child: child),
+                      ),
+                      child: Icon(
+                        playing ? Icons.volume_up_rounded : Icons.pause_circle_outline,
+                        key: ValueKey(playing),
+                        color: Colors.white.withOpacity(0.85),
+                        size: 22,
+                      ),
                     );
                   },
                 ),
@@ -403,14 +468,28 @@ class _ForYouCard extends StatelessWidget {
                 final isLiked =
                     LocalLibrary.instance.isLiked(track['id'] as String? ?? '');
                 return IconButton(
-                  icon: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: isLiked ? const Color(0xFFFF4D6A) : Colors.white,
-                    size: 32,
+                  // Phase 7 (Part F): same LikePop treatment as
+                  // PlayerScreen's like button — pops only on the
+                  // false->true transition, keeping the two like
+                  // buttons in the app feeling identical.
+                  icon: LikePop(
+                    liked: isLiked,
+                    child: Icon(
+                      isLiked ? Icons.favorite : Icons.favorite_border,
+                      color: isLiked ? const Color(0xFFFF4D6A) : Colors.white,
+                      size: 32,
+                    ),
                   ),
                   onPressed: () {
                     HapticFeedback.lightImpact();
+                    final wasLiked = isLiked;
                     LocalLibrary.instance.toggleLiked(track).then((_) {
+                      // Phase 7 (Part I): real like/unlike signal.
+                      if (wasLiked) {
+                        playbackSignalTracker.onUnliked(track);
+                      } else {
+                        playbackSignalTracker.onLiked(track);
+                      }
                       setLikeState(() {});
                     });
                   },

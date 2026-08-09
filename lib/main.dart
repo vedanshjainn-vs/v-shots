@@ -23,10 +23,16 @@ import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
+import 'core/motion/motion.dart';
 import 'core/player/queue_controller.dart';
 import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
 import 'core/providers/provider_bootstrap.dart';
+import 'core/recommendation/feed_intent.dart';
+import 'core/recommendation/recommendation_engine.dart';
+import 'core/recommendation/recommendation_scorer.dart';
+import 'core/recommendation/signal_recorder.dart';
+import 'core/recommendation/signal_store.dart';
 import 'core/theme/app_colors.dart';
 import 'shared/widgets/app_image.dart';
 import 'core/storage/local_library.dart';
@@ -69,6 +75,12 @@ void main() async {
     // taste-profile) — see core/storage/local_library.dart. Previously
     // all of this was plain in-memory globals, wiped on every restart.
     LocalLibrary.instance.initialize(),
+    // Recommendation engine's persisted signal history (Phase 7,
+    // Part I) — same shared_preferences-backed, non-blocking-on-
+    // failure pattern as the other two (see SignalStore.initialize()'s
+    // own doc: a corrupt/missing signal history must not block
+    // startup, recommendations just fall back to cold-start behavior).
+    SignalStore.instance.initialize(),
   ]);
 
   // google_sign_in v7 requires this exactly-once initialize() call
@@ -204,6 +216,26 @@ final musicRepository = buildMusicRepository(sharedYt);
 // YoutubeExplode itself either.
 final forYouFeedService = ForYouFeedService(musicRepository);
 
+// Phase 7 (Part H) — the new hybrid recommendation pipeline. Built
+// from the SAME `musicRepository` above (no second YouTube
+// integration — the engine only fetches tracks via the existing
+// Provider Architecture, per this task's explicit "DO NOT change the
+// current YouTube integration" constraint). See
+// core/recommendation/recommendation_engine.dart for the full
+// pipeline (candidate generation -> scoring -> diversity -> final
+// feed) this replaces/augments ForYouFeedService's simpler v1/v2
+// logic with, for the surfaces wired to it (Home's "Made For You",
+// Discover's exploration feed — see HomeScreen/ForYouFeedScreen).
+final recommendationEngine = RecommendationEngine(musicRepository);
+
+// Real playback-signal instrumentation (Part I) — the one place
+// main.dart's existing playback call sites report real skip/
+// completion/duration/replay/like/playlist/search events into the
+// recommendation engine. See core/recommendation/signal_recorder.dart
+// for why this is a thin, additive observer, not a second player or a
+// duplicated repeat-mode implementation.
+final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
+
 // ═══════════════════════════════════════════════
 // DIAGNOSTIC LOGGER
 // ═══════════════════════════════════════════════
@@ -249,6 +281,12 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
       // recordPlay() call needed (see for_you_feed_service.dart's
       // revision-2 header for why the old duplicate signal was removed).
       unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+      // Phase 7 (Part I): reports the real skip signal for whatever
+      // was previously playing (PlaybackSignalTracker.onTrackStarted
+      // auto-finalizes a still-open previous track as a skip when a
+      // DIFFERENT track starts — see that method's own doc) and
+      // starts tracking this new track's real listen time.
+      playbackSignalTracker.onTrackStarted(track);
     } catch (e) {
       _log('[SKIP] Background skip failed: $e');
     }
@@ -263,6 +301,17 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
 /// mode did not exist and playback simply always advanced by one,
 /// wrapping forever regardless of any button state).
 Future<void> _handleTrackCompleted(BuildContext? context) async {
+  // Phase 7 (Part I): the track that just finished reached this point
+  // via REAL natural completion (ProcessingState.completed, routed
+  // through VShotsAudioHandler -> onTrackCompleted -> here) — record
+  // that explicitly as SignalType.completed (+ a playDuration signal
+  // for however long it was actually listened to) BEFORE starting
+  // whatever plays next, in both possible paths below (with/without a
+  // BuildContext), rather than letting onTrackStarted's generic
+  // "different track started" fallback classify it as an ambiguous
+  // skip.
+  playbackSignalTracker.onTrackEnded(completed: true);
+
   final nextIndex = QueueController.nextIndexOnCompletion();
   if (nextIndex == null) {
     // Repeat is off and the queue/shuffle order has genuinely ended —
@@ -283,6 +332,7 @@ Future<void> _handleTrackCompleted(BuildContext? context) async {
       currentQueueIndex = nextIndex;
       audioHandler?.updateNowPlaying(_trackToMediaItem(track));
       unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+      playbackSignalTracker.onTrackStarted(track);
     } catch (e) {
       _log('[AUTO_ADVANCE] Background auto-advance failed: $e');
     }
@@ -400,13 +450,20 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    // Listen to real player state for mini player
+    // Phase 7 fix (UI_PERFORMANCE_AUDIT.md issue #1): this used to also
+    // do `setState(() => isCurrentlyPlaying = state.playing)` on every
+    // single playback state tick (play/pause/buffer/every track
+    // start) — forcing the ENTIRE IndexedStack (5 full screens:
+    // Home/Discover/Search/Library/Profile) + NavigationBar to
+    // rebuild for a value `MainShell.build()` never actually reads
+    // (confirmed via grep — `isCurrentlyPlaying` had zero read sites
+    // anywhere). The mini-player's own play/pause icon already
+    // reacts correctly via its own `StreamBuilder<PlayerState>` (see
+    // _MiniPlayer below), so this listener is now a no-op observer
+    // only kept for any future non-widget code that might want the
+    // global flag, WITHOUT triggering a shell-wide rebuild to set it.
     audioPlayer.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          isCurrentlyPlaying = state.playing;
-        });
-      }
+      isCurrentlyPlaying = state.playing;
     });
 
     // Route OS media-session commands (lock screen / notification /
@@ -454,14 +511,24 @@ class _MainShellState extends State<MainShell> {
           // duplicated playback controls and ate into the swipeable
           // card's visible area for no benefit. Every other tab keeps
           // the mini-player exactly as before.
-          if (currentTrack != null && _index != 1)
-            Positioned(
-              left: 8, right: 8, bottom: 72,
-              child: _MiniPlayer(
-                track: currentTrack!,
-                onTap: () => _openPlayer(context),
-              ),
+          // Phase 7 (Part D): the mini-player now eases in/out via
+          // MiniPlayerTransition (AnimatedSlide+AnimatedOpacity)
+          // instead of instantly appearing/disappearing through a bare
+          // conditional `if` — kept mounted (not removed from the
+          // tree) whenever the tab shows it in principle, so the
+          // transition can actually animate rather than popping.
+          Positioned(
+            left: 8, right: 8, bottom: 72,
+            child: MiniPlayerTransition(
+              visible: currentTrack != null && _index != 1,
+              child: currentTrack != null
+                  ? _MiniPlayer(
+                      track: currentTrack!,
+                      onTap: () => _openPlayer(context),
+                    )
+                  : const SizedBox(height: 64),
             ),
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -496,6 +563,12 @@ class _MainShellState extends State<MainShell> {
 
   void _openPlayer(BuildContext context) {
     if (currentTrack == null) return;
+    // Kept as a hand-written PageRouteBuilder (not AppPageRoute) since
+    // the full-screen player specifically wants a slide-up-from-bottom
+    // "sheet" feel (matching a real music app's now-playing screen
+    // convention), distinct from AppPageRoute's fade+slight-slide used
+    // for ordinary secondary screens (Settings/Library/etc.) — see
+    // core/motion/motion.dart's AppPageRoute doc for that distinction.
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => PlayerScreen(
@@ -508,11 +581,11 @@ class _MainShellState extends State<MainShell> {
             position: Tween<Offset>(
               begin: const Offset(0, 1), end: Offset.zero,
             ).animate(CurvedAnimation(
-                parent: animation, curve: Curves.easeOutCubic)),
+                parent: animation, curve: AppMotion.enter)),
             child: child,
           );
         },
-        transitionDuration: const Duration(milliseconds: 400),
+        transitionDuration: AppMotion.medium + const Duration(milliseconds: 80),
       ),
     );
   }
@@ -549,11 +622,23 @@ class _MiniPlayer extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 12),
-            AppImage(
-              (track['artwork'] as String?) ?? '',
-              width: 48,
-              height: 48,
-              borderRadius: BorderRadius.circular(8),
+            // Phase 7 (Part F): Hero-tagged so tapping the mini-player
+            // shares this artwork element with PlayerScreen's own
+            // Hero of the same tag, producing a real shared-element
+            // "fly" transition into the full player instead of the
+            // artwork abruptly appearing in its new size/position.
+            // Tag includes the track id so it's unique per track (not
+            // just one static tag reused across track changes, which
+            // would either not animate or animate incorrectly across
+            // unrelated tracks).
+            Hero(
+              tag: 'artwork-${track['id']}',
+              child: AppImage(
+                (track['artwork'] as String?) ?? '',
+                width: 48,
+                height: 48,
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -577,8 +662,14 @@ class _MiniPlayer extends StatelessWidget {
               builder: (context, snapshot) {
                 final isPlaying = snapshot.data?.playing ?? false;
                 return IconButton(
-                  icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, size: 32),
+                  // Phase 7 (Part F): shared PlayPauseMorph instead of
+                  // a bare, unanimated Icon swap — now cross-fades+
+                  // scales between play/pause, matching the same
+                  // motion PlayerScreen's big play button and
+                  // Discover's indicator use.
+                  icon: PlayPauseMorph(isPlaying: isPlaying, size: 32),
                   onPressed: () {
+                    HapticFeedback.selectionClick();
                     if (isPlaying) {
                       audioPlayer.pause();
                     } else {
@@ -683,6 +774,12 @@ Future<void> playTrack(
     // playing from the Discover/For You feed itself, meaning normal
     // Home/Search plays never improved recommendations at all.
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+    // Phase 7 (Part I): real playback signal for the new
+    // recommendation engine — this is THE primary entry point for
+    // Home/Search/Library taps, so this is where most PLAY signals
+    // originate. If a different track was previously playing,
+    // onTrackStarted auto-finalizes it as a real (explicit) skip.
+    playbackSignalTracker.onTrackStarted(track);
 
     _log('═══ PLAYBACK SUCCESS ═══');
 
@@ -720,9 +817,16 @@ Future<void> playTrack(
 enum _SectionStatus { loading, loaded, error }
 
 class _HomeSectionState {
-  _HomeSectionState({required this.query, required this.title});
+  _HomeSectionState({required this.query, required this.title, this.intent});
   final String query;
   final String title;
+  // Phase 7 (Part V): when set, this section is powered by the new
+  // RecommendationEngine (candidate generation -> scoring -> diversity)
+  // instead of a single raw search query — used for "Made For You" and
+  // "Because You Listened To". `query` is still kept (used as this
+  // section's SearchCache key) even for engine-backed sections, so
+  // caching/pull-to-refresh work identically either way.
+  final FeedIntent? intent;
   _SectionStatus status = _SectionStatus.loading;
   List<Map<String, dynamic>> tracks = [];
 }
@@ -770,11 +874,25 @@ class _HomeScreenState extends State<HomeScreen> {
   late final List<_HomeSectionState> _sections = [
     _HomeSectionState(query: 'trending music today official audio', title: 'Trending Now'),
     _HomeSectionState(query: 'new music releases official audio', title: 'New Releases'),
-    if (forYouFeedService.hasTasteProfile)
+    // Phase 7 (Part V): "Made For You" and "Because You Listened To"
+    // now run through RecommendationEngine.generateFeed() (candidate
+    // generation -> hybrid scoring -> diversity), replacing the
+    // simpler single-query approach the pre-Phase-7 version used —
+    // still gated on real play history existing at all (an
+    // empty/generic section for a brand-new user is worse than not
+    // showing it, same rule as before).
+    if (forYouFeedService.hasTasteProfile) ...[
       _HomeSectionState(
-        query: forYouFeedService.personalizedQueryForHome(),
+        query: '__engine_made_for_you__',
         title: 'Made For You',
+        intent: FeedIntent.madeForYou,
       ),
+      _HomeSectionState(
+        query: '__engine_because_you_listened__',
+        title: 'Because You Listened To',
+        intent: FeedIntent.becauseYouListenedTo,
+      ),
+    ],
     _HomeSectionState(query: 'bollywood hit songs official audio', title: 'Bollywood'),
     _HomeSectionState(query: 'punjabi hit songs official audio', title: 'Punjabi'),
     _HomeSectionState(query: 'hindi songs official audio', title: 'Hindi'),
@@ -828,7 +946,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     try {
-      final results = await _search(section.query);
+      final results = section.intent != null
+          ? await _generateEngineFeed(section.intent!)
+          : await _search(section.query);
       if (!mounted) return;
       if (results.isEmpty && cached == null) {
         setState(() => section.status = _SectionStatus.error);
@@ -847,6 +967,23 @@ class _HomeScreenState extends State<HomeScreen> {
       // If we had cached data, silently keep showing it rather than
       // surfacing a background-refresh failure as a hard error.
     }
+  }
+
+  /// Runs the new RecommendationEngine pipeline (Part H/V) for
+  /// engine-backed Home sections ("Made For You"/"Because You
+  /// Listened To") and converts its `ScoredTrack` results back to the
+  /// app's existing `Map<String, dynamic>` track shape — same
+  /// conversion the Provider Architecture already established
+  /// (`ProviderTrack.toTrackMap()`), so nothing downstream (playTrack,
+  /// LocalLibrary, the tracks-row UI) needs to know a different
+  /// pipeline produced these tracks.
+  Future<List<Map<String, dynamic>>> _generateEngineFeed(FeedIntent intent) async {
+    final scored = await recommendationEngine.generateFeed(
+      intent: intent,
+      excludeIds: const {},
+      count: 15,
+    );
+    return scored.map((s) => s.track.toTrackMap()).toList();
   }
 
   // Phase 3 fix: HomeScreen no longer calls `sharedYt.search.search()`
@@ -913,23 +1050,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSectionSliver(_HomeSectionState section) {
-    switch (section.status) {
-      case _SectionStatus.loading:
-        return _shimmerSliver();
-      case _SectionStatus.error:
-        return _errorSliver(section);
-      case _SectionStatus.loaded:
-        // A section that resolved with too few results to look
-        // intentional (e.g. an odd query returning 1-2 hits) is
-        // simply omitted, same behavior as before.
-        if (section.tracks.length < 3) return const SliverToBoxAdapter(child: SizedBox.shrink());
-        return _tracksSliver(section);
-    }
+    // Phase 7 (Part D): skeleton -> content (and error) transitions
+    // now cross-fade via AnimatedSwitcher instead of an abrupt widget
+    // swap — each status's content is wrapped in one SliverToBoxAdapter
+    // with a KeyedSubtree per status so the switcher can detect the
+    // change. A section that resolved with too few results to look
+    // intentional (e.g. an odd query returning 1-2 hits) is still
+    // simply omitted, same behavior as before.
+    final Widget content = switch (section.status) {
+      _SectionStatus.loading =>
+        KeyedSubtree(key: const ValueKey('loading'), child: _shimmerContent()),
+      _SectionStatus.error =>
+        KeyedSubtree(key: const ValueKey('error'), child: _errorContent(section)),
+      _SectionStatus.loaded when section.tracks.length < 3 =>
+        const KeyedSubtree(key: ValueKey('empty'), child: SizedBox.shrink()),
+      _SectionStatus.loaded =>
+        KeyedSubtree(key: const ValueKey('loaded'), child: _tracksContent(section)),
+    };
+
+    return SliverToBoxAdapter(
+      child: AnimatedSwitcher(
+        duration: AppMotion.fast,
+        switchInCurve: AppMotion.enter,
+        switchOutCurve: AppMotion.exit,
+        child: content,
+      ),
+    );
   }
 
-  Widget _shimmerSliver() {
-    return SliverToBoxAdapter(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget _shimmerContent() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
           child: Shimmer.fromColors(
@@ -964,16 +1114,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-      ]),
-    );
+      ]);
+
   }
 
   /// Real error/retry UI — previously a failed section silently
   /// rendered NOTHING (an empty gap in the scroll view), giving no
   /// indication anything had gone wrong or how to recover.
-  Widget _errorSliver(_HomeSectionState section) {
-    return SliverToBoxAdapter(
-      child: Padding(
+  Widget _errorContent(_HomeSectionState section) {
+    return Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -994,14 +1143,12 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ]),
         ),
-      ),
-    );
+      );
   }
 
-  Widget _tracksSliver(_HomeSectionState section) {
+  Widget _tracksContent(_HomeSectionState section) {
     final isPersonalized = section.title == 'Made For You';
-    return SliverToBoxAdapter(
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
           child: Row(children: [
@@ -1021,9 +1168,16 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: section.tracks.length,
             itemBuilder: (context, i) {
               final track = section.tracks[i];
-              return GestureDetector(
-                onTap: () => playTrack(context, track, section.tracks, i),
-                child: Container(
+              // Phase 7 (Part D): each card gets a capped staggered
+              // fade+rise entrance on first appearance, and
+              // PressableScale for real tap feedback (previously a
+              // bare GestureDetector with zero visual press response).
+              return StaggeredEntrance(
+                index: i,
+                child: PressableScale(
+                  onTap: () => playTrack(context, track, section.tracks, i),
+                  child: RepaintBoundary(
+                  child: Container(
                   width: 150,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1035,6 +1189,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           AppImage(
                             (track['artwork'] as String?) ?? '',
                             fit: BoxFit.cover,
+                            // Phase 7 fix (UI_PERFORMANCE_AUDIT.md
+                            // issue #3): explicit width/height so
+                            // AppImage's own memCacheWidth/Height
+                            // sizing actually activates — this card is
+                            // laid out at a fixed 150-wide slot, but
+                            // the raw YouTube thumbnail URL
+                            // (`highResUrl`, 480x360) was previously
+                            // decoded at full native resolution with
+                            // no cache-size hint at all.
+                            width: 150,
+                            height: 150,
                             errorIconColor: AppColors.accent,
                           ),
                           Positioned(
@@ -1061,13 +1226,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                             color: Colors.white.withOpacity(0.5), fontSize: 12)),
                   ]),
+                  ),
+                  ),
                 ),
               );
             },
           ),
         ),
-      ]),
-    );
+      ]);
   }
 }
 
@@ -1094,6 +1260,12 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _results = [];
   _SearchStatus _status = _SearchStatus.idle;
   String? _lastQuery;
+
+  // Phase 7 (Part E): drives the search field's subtle focus
+  // animation (see build()'s AnimatedContainer) — a real focus signal,
+  // not a fake/simulated one.
+  final _searchFocusNode = FocusNode();
+  bool _searchFocused = false;
 
   // Phase 7 fix: live-as-you-type debounce, instead of only firing on
   // Enter/search-icon press. 400ms is chosen to comfortably outlast
@@ -1161,6 +1333,9 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     unawaited(LocalLibrary.instance.recordRecentSearch(query));
+    // Phase 7 (Part I): real search-behavior signal for the
+    // recommendation engine's candidate generation.
+    playbackSignalTracker.onSearched(query);
 
     // Phase 7 fix: prevent duplicate simultaneous requests / stale
     // results — see _requestSeq's doc above.
@@ -1203,9 +1378,18 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _searchFocusNode.addListener(() {
+      if (mounted) setState(() => _searchFocused = _searchFocusNode.hasFocus);
+    });
+  }
+
+  @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -1213,14 +1397,27 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Container(
+        // Phase 7 (Part E): subtle focus animation on the search
+        // field's container — a slightly brighter fill + accent
+        // border while focused, so typing "feels instant" from the
+        // very first tap rather than the field looking identical
+        // focused vs. unfocused.
+        title: AnimatedContainer(
+          duration: AppMotion.fast,
+          curve: AppMotion.enter,
           height: 44,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withOpacity(_searchFocused ? 0.12 : 0.08),
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: _searchFocused
+                  ? AppColors.accent.withOpacity(0.6)
+                  : Colors.transparent,
+            ),
           ),
           child: TextField(
             controller: _controller,
+            focusNode: _searchFocusNode,
             // Phase 7 fix: live-as-you-type (debounced) search, not
             // submit-only — onSubmitted kept too so pressing
             // Enter/search still works instantly without waiting out
@@ -1238,10 +1435,24 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-      body: switch (_status) {
-        _SearchStatus.loading =>
-          const Center(child: CircularProgressIndicator(color: AppColors.accent)),
-        _SearchStatus.error => Center(
+      // Phase 7 (Part E): every state (loading/error/empty/loaded/idle)
+      // now cross-fades via AnimatedSwitcher instead of an instant
+      // widget swap — "search feels instant" refers to the DEBOUNCED
+      // REQUEST timing (unchanged, still 400ms in _onQueryChanged),
+      // not to skipping visual feedback; the transition itself is
+      // fast (AppMotion.fast = 220ms) so it never feels laggy.
+      body: AnimatedSwitcher(
+        duration: AppMotion.fast,
+        switchInCurve: AppMotion.enter,
+        switchOutCurve: AppMotion.exit,
+        child: switch (_status) {
+        _SearchStatus.loading => KeyedSubtree(
+            key: const ValueKey('loading'),
+            child: _searchSkeleton(),
+          ),
+        _SearchStatus.error => KeyedSubtree(
+            key: const ValueKey('error'),
+            child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1257,7 +1468,10 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
             ),
           ),
-        _SearchStatus.loaded when _results.isEmpty => Center(
+          ),
+        _SearchStatus.loaded when _results.isEmpty => KeyedSubtree(
+            key: const ValueKey('empty'),
+            child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1271,12 +1485,19 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
             ),
           ),
+          ),
         _SearchStatus.loaded => ListView.builder(
+            key: const ValueKey('loaded'),
             padding: const EdgeInsets.all(16),
             itemCount: _results.length,
             itemBuilder: (ctx, i) {
               final track = _results[i];
-              return ListTile(
+              // Phase 7 (Part E): capped staggered entrance for result
+              // rows, matching Home's card entrance treatment so the
+              // two surfaces feel consistent.
+              return StaggeredEntrance(
+                index: i,
+                child: ListTile(
                 leading: AppImage(
                   (track['artwork'] as String?) ?? '',
                   width: 48,
@@ -1289,10 +1510,12 @@ class _SearchScreenState extends State<SearchScreen> {
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: Colors.white.withOpacity(0.6))),
                 onTap: () => playTrack(context, track, _results, i),
+                ),
               );
             },
           ),
         _SearchStatus.idle => ListView(
+                  key: const ValueKey('idle'),
                   padding: const EdgeInsets.all(16),
                   children: [
                     if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
@@ -1314,7 +1537,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     Wrap(
                       spacing: 10, runSpacing: 10,
                       children: _categories
-                          .map((c) => GestureDetector(
+                          .map((c) => PressableScale(
                                 onTap: () {
                                   _controller.text = c.$1;
                                   _search(c.$1);
@@ -1337,6 +1560,40 @@ class _SearchScreenState extends State<SearchScreen> {
                   ],
                 ),
       },
+      ),
+    );
+  }
+
+  /// Skeleton shown while a search request is in flight — matches
+  /// Home's shimmer treatment (same colors/shapes) so loading states
+  /// feel consistent across the app instead of Search using a bare
+  /// spinner while Home uses a rich skeleton.
+  Widget _searchSkeleton() {
+    return ListView.builder(
+      key: const ValueKey('loading-list'),
+      padding: const EdgeInsets.all(16),
+      itemCount: 8,
+      itemBuilder: (context, i) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Shimmer.fromColors(
+          baseColor: AppColors.surface,
+          highlightColor: AppColors.surfaceLight,
+          child: Row(children: [
+            Container(width: 48, height: 48,
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8))),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(width: double.infinity, height: 14,
+                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
+                const SizedBox(height: 6),
+                Container(width: 120, height: 12,
+                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
+              ]),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -1434,7 +1691,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.likedSongs.value.length,
             () => Navigator.push(
               context,
-              MaterialPageRoute(
+              AppPageRoute(
                 builder: (_) => TrackListScreen(
                   title: 'Liked Songs',
                   tracks: lib.likedSongs.value,
@@ -1452,7 +1709,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.downloadedTracks.value.length,
             () => Navigator.push(
               context,
-              MaterialPageRoute(
+              AppPageRoute(
                 builder: (_) => TrackListScreen(
                   title: 'Downloads',
                   tracks: lib.downloadedTracks.value,
@@ -1472,7 +1729,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.recentlyPlayed.value.length,
             () => Navigator.push(
               context,
-              MaterialPageRoute(
+              AppPageRoute(
                 builder: (_) => TrackListScreen(
                   title: 'Recently Played',
                   tracks: lib.recentlyPlayed.value,
@@ -1490,7 +1747,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.playlists.value.length,
             () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
+              AppPageRoute(builder: (_) => const PlaylistsScreen()),
             ),
           ),
           const SizedBox(height: 24),
@@ -1725,7 +1982,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   ),
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    AppPageRoute(
                       builder: (_) => TrackListScreen(
                         title: playlist['name'] as String? ?? 'Playlist',
                         tracks: tracks,
@@ -1846,7 +2103,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Settings',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+              AppPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
           ),
           _item(
@@ -1855,7 +2112,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Help & Support',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(builder: (_) => const HelpScreen()),
+              AppPageRoute<void>(builder: (_) => const HelpScreen()),
             ),
           ),
           _item(
@@ -1864,7 +2121,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Privacy Policy',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(
+              AppPageRoute<void>(
                 builder: (_) => const LegalDocScreen(
                   title: 'Privacy Policy',
                   assetPath: 'docs/legal/privacy_policy.md',
@@ -1878,7 +2135,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Terms of Service',
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(
+              AppPageRoute<void>(
                 builder: (_) => const LegalDocScreen(
                   title: 'Terms of Service',
                   assetPath: 'docs/legal/terms_of_service.md',
@@ -1942,6 +2199,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
   late int _currentIndex;
   bool _isLiked = false;
 
+  // Phase 7 fix (UI_PERFORMANCE_AUDIT.md issue #2): this screen
+  // previously never stored or cancelled these 3 subscriptions to the
+  // app-wide, whole-lifetime `audioPlayer` — every open+close of the
+  // full player screen leaked 3 more listeners forever, each still
+  // calling setState() on an already-unmounted State object (harmless
+  // only because of the `if (mounted)` guards, but still pure wasted
+  // work + a real, growing memory leak the longer a session runs).
+  // Same disposal pattern LyricsScreen's `_positionSub` already uses
+  // correctly elsewhere in this file.
+  StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration?>? _durationSub;
+
   @override
   void initState() {
     super.initState();
@@ -1950,15 +2220,23 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _isLiked = LocalLibrary.instance.isLiked(_currentTrack['id'] as String? ?? '');
 
     // Listen to REAL player state
-    audioPlayer.playerStateStream.listen((s) {
+    _playerStateSub = audioPlayer.playerStateStream.listen((s) {
       if (mounted) setState(() => _isPlaying = s.playing);
     });
-    audioPlayer.positionStream.listen((p) {
+    _positionSub = audioPlayer.positionStream.listen((p) {
       if (mounted) setState(() => _position = p);
     });
-    audioPlayer.durationStream.listen((d) {
+    _durationSub = audioPlayer.durationStream.listen((d) {
       if (mounted) setState(() => _duration = d ?? Duration.zero);
     });
+  }
+
+  @override
+  void dispose() {
+    _playerStateSub?.cancel();
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -2018,11 +2296,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         blurRadius: 40, offset: const Offset(0, 20)),
                   ],
                 ),
-                child: AppImage(
-                  (_currentTrack['artwork'] as String?) ?? '',
-                  fit: BoxFit.cover,
-                  borderRadius: BorderRadius.circular(24),
-                  errorIconColor: AppColors.accent,
+                // Phase 7 (Part F): matches the mini-player's Hero tag
+                // for the SAME track id, producing a real shared-
+                // element "fly" transition from the mini-player into
+                // this full artwork when opened via _openPlayer(). If
+                // this screen was opened some other way (e.g. directly
+                // from a Home/Search tap with no mini-player visible
+                // yet), Hero degrades gracefully to a plain fade (no
+                // matching source Hero to fly from).
+                //
+                // ArtworkFadeIn wraps it too so navigating between
+                // tracks WITHIN this same screen (next/prev, which
+                // don't re-push the route) still gets a gentle scale
+                // +fade on every track change instead of an abrupt
+                // artwork swap.
+                child: Hero(
+                  tag: 'artwork-${_currentTrack['id']}',
+                  child: ArtworkFadeIn(
+                    key: ValueKey(_currentTrack['id']),
+                    child: AppImage(
+                      (_currentTrack['artwork'] as String?) ?? '',
+                      fit: BoxFit.cover,
+                      borderRadius: BorderRadius.circular(24),
+                      errorIconColor: AppColors.accent,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -2045,13 +2343,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                     ])),
                 IconButton(
-                  icon: Icon(
-                    _isLiked ? Icons.favorite : Icons.favorite_border,
-                    size: 28,
-                    color: _isLiked ? AppColors.accent : Colors.white.withOpacity(0.7),
+                  // Phase 7 (Part F): LikePop plays a real one-shot
+                  // "pop" (scale up then settle) whenever the track
+                  // transitions to liked, matching the celebratory
+                  // feel of every real music app's like button —
+                  // previously this was a bare, unanimated Icon swap.
+                  icon: LikePop(
+                    liked: _isLiked,
+                    child: Icon(
+                      _isLiked ? Icons.favorite : Icons.favorite_border,
+                      size: 28,
+                      color: _isLiked ? AppColors.accent : Colors.white.withOpacity(0.7),
+                    ),
                   ),
                   onPressed: () async {
+                    HapticFeedback.lightImpact();
+                    final wasLiked = _isLiked;
                     await LocalLibrary.instance.toggleLiked(_currentTrack);
+                    // Phase 7 (Part I): real like/unlike signal for the
+                    // recommendation engine.
+                    if (wasLiked) {
+                      playbackSignalTracker.onUnliked(_currentTrack);
+                    } else {
+                      playbackSignalTracker.onLiked(_currentTrack);
+                    }
                     if (mounted) {
                       setState(() {
                         _isLiked = LocalLibrary.instance.isLiked(_currentTrack['id'] as String);
@@ -2069,7 +2384,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   tooltip: 'Lyrics',
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(
+                    AppPageRoute(
                       builder: (_) => LyricsScreen(track: _currentTrack),
                     ),
                   ),
@@ -2143,8 +2458,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 IconButton(
                     icon: const Icon(Icons.skip_previous, size: 40),
                     onPressed: _prev),
-                GestureDetector(
+                // Phase 7 (Part F): PressableScale gives real tactile
+                // press feedback on the primary play/pause control
+                // (previously a bare GestureDetector with zero visual
+                // response to a press-down beyond the eventual state
+                // change), and PlayPauseMorph replaces the unanimated
+                // Icon swap with the same cross-fade+scale used
+                // everywhere else this control appears.
+                PressableScale(
                   onTap: () {
+                    HapticFeedback.mediumImpact();
                     if (_isPlaying) {
                       audioPlayer.pause();
                     } else {
@@ -2163,9 +2486,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             blurRadius: 20, offset: const Offset(0, 8)),
                       ],
                     ),
-                    child: Icon(
-                      _isPlaying ? Icons.pause : Icons.play_arrow,
-                      size: 36, color: Colors.white,
+                    child: Center(
+                      child: PlayPauseMorph(
+                        isPlaying: _isPlaying,
+                        size: 36,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
@@ -2258,6 +2584,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // core/audio/vshots_audio_handler.dart.
         audioHandler?.updateNowPlaying(_trackToMediaItem(_currentTrack));
         unawaited(LocalLibrary.instance.recordRecentlyPlayed(_currentTrack));
+        // Phase 7 (Part I): PlayerScreen's own next/prev buttons are a
+        // real, explicit user skip of whatever was playing before —
+        // onTrackStarted's "different track started" auto-finalize
+        // correctly records that as SignalType.skip.
+        playbackSignalTracker.onTrackStarted(_currentTrack);
         if (mounted) {
           setState(() {
             _isLiked = LocalLibrary.instance
@@ -2312,6 +2643,9 @@ void showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
                         onTap: () async {
                           await LocalLibrary.instance
                               .addTrackToPlaylist(p['id'] as String, track);
+                          // Phase 7 (Part I): a deliberate curation
+                          // action — real, strong positive signal.
+                          playbackSignalTracker.onAddedToPlaylist(track);
                           if (ctx.mounted) Navigator.pop(ctx);
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(

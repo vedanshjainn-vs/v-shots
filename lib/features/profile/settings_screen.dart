@@ -40,6 +40,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/cache/search_cache.dart';
+import '../../core/motion/motion.dart';
 import '../../core/player/sleep_timer.dart';
 import '../../core/theme/app_colors.dart';
 
@@ -112,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(
+              AppPageRoute<void>(
                 builder: (_) => const LegalDocScreen(
                   title: 'Privacy Policy',
                   assetPath: 'docs/legal/privacy_policy.md',
@@ -126,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(
+              AppPageRoute<void>(
                 builder: (_) => const LegalDocScreen(
                   title: 'Terms of Service',
                   assetPath: 'docs/legal/terms_of_service.md',
