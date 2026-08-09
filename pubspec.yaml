@@ -15,6 +15,7 @@ dependencies:
   audio_service: ^0.18.15
   audio_session: ^0.1.21
   rxdart: ^0.28.0
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:
