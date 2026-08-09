@@ -118,7 +118,6 @@ class PlayerController {
   StreamSubscription? _durationSub;
   StreamSubscription? _bufferedSub;
   StreamSubscription? _playerStateSub;
-  StreamSubscription? _errorSub;
 
   /// Stream of player state changes.
   Stream<PlayerState> get stateStream => _stateController.stream;
@@ -158,10 +157,6 @@ class PlayerController {
       _updateState(status: status, isPlaying: ps.playing);
     });
 
-    _errorSub = _player.errorStream.listen((error) {
-      _logger('Player error: $error');
-      _updateState(status: PlayerStatus.error, error: error.toString());
-    });
 
     _logger('PlayerController initialized');
   }
@@ -328,7 +323,6 @@ class PlayerController {
     _durationSub?.cancel();
     _bufferedSub?.cancel();
     _playerStateSub?.cancel();
-    _errorSub?.cancel();
     await _player.dispose();
     await _stateController.close();
     _yt.close();
