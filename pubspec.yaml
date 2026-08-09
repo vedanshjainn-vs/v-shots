@@ -33,6 +33,11 @@ dependencies:
   # zero-licensing-risk offline playback (see
   # features/library/local_import_service.dart).
   file_picker: ^11.0.2
+  # Disk+memory image caching — replaces plain Image.network() calls
+  # across the app (Home cards, Search results, For You feed, Player,
+  # mini-player), which previously re-downloaded the same artwork from
+  # scratch on every rebuild/rescroll. See core/theme/app_image.dart.
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

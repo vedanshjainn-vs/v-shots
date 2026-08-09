@@ -32,6 +32,7 @@
 //     when the user is within 3 items of the end.
 // ════════════════════════════════════════════════
 
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:audio_service/audio_service.dart';
@@ -42,6 +43,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 import '../../core/audio/stream_resolver.dart';
 import '../../core/storage/local_library.dart';
+import '../../shared/widgets/app_image.dart';
 import '../../main.dart' show
     audioPlayer,
     audioHandler,
@@ -49,7 +51,8 @@ import '../../main.dart' show
     currentQueue,
     currentQueueIndex,
     likedSongIds,
-    forYouFeedService;
+    forYouFeedService,
+    sharedYt;
 import 'for_you_feed_service.dart';
 
 class ForYouFeedScreen extends StatefulWidget {
@@ -61,7 +64,13 @@ class ForYouFeedScreen extends StatefulWidget {
 
 class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   final _pageController = PageController();
-  final YoutubeExplode _yt = YoutubeExplode();
+  // Reuses the single app-wide shared instance from main.dart (see
+  // refinement list Section B #2) — this screen previously constructed
+  // its OWN separate YoutubeExplode() and, worse, called .close() on
+  // it in dispose(), which is harmless for a private instance but
+  // would have been a real bug (closing the shared HTTP client out
+  // from under the rest of the app) had this just been swapped to the
+  // shared instance without also removing that close() call below.
 
   final List<Map<String, dynamic>> _items = [];
   final Set<String> _seenIds = {};
@@ -80,7 +89,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _yt.close();
+    // Deliberately NOT closing sharedYt here — it's the single
+    // app-wide instance used by Home/Search/Player too, not owned by
+    // this screen. Closing it would break YouTube search/playback
+    // everywhere else the moment a user navigates away from Discover.
     super.dispose();
   }
 
@@ -122,7 +134,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     final track = _items[index];
     try {
       final streamUrl = await resolveAudioStreamUrlLogged(
-        _yt,
+        sharedYt,
         track['id'] as String,
         tag: 'ForYouPreload',
       );
@@ -144,7 +156,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     try {
       String? streamUrl = _resolvedStreamUrls[index];
       streamUrl ??= await resolveAudioStreamUrlLogged(
-        _yt,
+        sharedYt,
         track['id'] as String,
         tag: 'ForYouPlay',
       );
@@ -164,9 +176,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       currentQueueIndex = index;
       audioHandler?.updateNowPlaying(_trackToMediaItem(track));
 
-      // Feed the recommendation signal (see ForYouFeedService) — this
-      // is what makes the feed feel personalized over time.
-      forYouFeedService.recordPlay(track['artist'] as String? ?? '');
+      // Persist to Recently Played — this is also what feeds the "For
+      // You" recency-weighted taste signal (see
+      // ForYouFeedService._recencyWeightedArtistScores, revision 2):
+      // previously this screen only updated a separate, non-persisted
+      // counter that reset on every app restart and wasn't shared with
+      // Home/Search plays at all.
+      unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
     } catch (e) {
       debugPrint('[ForYouFeed] Failed to play index $index: $e');
     }
@@ -265,11 +281,7 @@ class _ForYouCard extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           // Full-bleed blurred artwork background.
-          if (artwork != null)
-            Image.network(artwork, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(color: const Color(0xFF1A1A2E)))
-          else
-            Container(color: const Color(0xFF1A1A2E)),
+          AppImage(artwork, fit: BoxFit.cover),
           BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
             child: Container(color: Colors.black.withOpacity(0.35)),
@@ -291,18 +303,11 @@ class _ForYouCard extends StatelessWidget {
                         BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 30),
                       ],
                     ),
-                    child: ClipRRect(
+                    child: AppImage(
+                      artwork,
+                      fit: BoxFit.cover,
                       borderRadius: BorderRadius.circular(20),
-                      child: artwork != null
-                          ? Image.network(artwork, fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                  color: const Color(0xFF1A1A2E),
-                                  child: const Icon(Icons.music_note,
-                                      size: 60, color: Color(0xFFFF4D6A))))
-                          : Container(
-                              color: const Color(0xFF1A1A2E),
-                              child: const Icon(Icons.music_note,
-                                  size: 60, color: Color(0xFFFF4D6A))),
+                      errorIconColor: const Color(0xFFFF4D6A),
                     ),
                   ),
                 ),

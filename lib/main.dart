@@ -22,7 +22,10 @@ import 'core/audio/stream_resolver.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_service.dart';
+import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
+import 'core/theme/app_colors.dart';
+import 'shared/widgets/app_image.dart';
 import 'core/storage/local_library.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
@@ -78,8 +81,8 @@ class VShotsApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        colorSchemeSeed: const Color(0xFFFF4D6A),
-        scaffoldBackgroundColor: const Color(0xFF0A0A0F),
+        colorSchemeSeed: AppColors.accent,
+        scaffoldBackgroundColor: AppColors.background,
       ),
       home: const SplashScreen(),
     );
@@ -116,13 +119,20 @@ bool isCurrentlyPlaying = false;
 // in-memory-only `likedSongIds`/`recentSearches` lists were removed
 // since everything reads/writes through LocalLibrary.instance now.
 
-// Single YoutubeExplode instance for reuse
-final YoutubeExplode _yt = YoutubeExplode();
+// Single, app-wide shared YoutubeExplode instance. Previously THREE
+// separate instances existed (this one, a second one for
+// ForYouFeedService, and a third inside for_you_feed_screen.dart) —
+// each opened its own HTTP client with no shared connection pooling,
+// which is unnecessary overhead on every search/stream-resolve call.
+// Made non-private (no leading underscore) specifically so other files
+// (for_you_feed_screen.dart) can reuse this exact instance instead of
+// constructing their own — see the refinement list's Section B #2.
+final YoutubeExplode sharedYt = YoutubeExplode();
 
 // "For You" swipe feed's recommendation service (see
-// features/foryou/for_you_feed_service.dart) — a separate
-// YoutubeExplode instance since _yt above is private to this file.
-final forYouFeedService = ForYouFeedService(YoutubeExplode());
+// features/foryou/for_you_feed_service.dart) — now reuses the single
+// shared instance above instead of constructing its own.
+final forYouFeedService = ForYouFeedService(sharedYt);
 
 // ═══════════════════════════════════════════════
 // DIAGNOSTIC LOGGER
@@ -152,7 +162,7 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
     // resolve and play directly without the loading-snackbar UX.
     try {
       final streamUrl = await resolveAudioStreamUrlLogged(
-        _yt,
+        sharedYt,
         track['id'] as String,
         tag: 'SKIP',
       );
@@ -162,8 +172,12 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
       currentTrack = track;
       currentQueueIndex = nextIndex;
       audioHandler?.updateNowPlaying(_trackToMediaItem(track));
+      // Note: recordRecentlyPlayed() alone feeds the "For You" taste
+      // signal now — ForYouFeedService computes recency-weighted
+      // scores directly from this persisted history, no separate
+      // recordPlay() call needed (see for_you_feed_service.dart's
+      // revision-2 header for why the old duplicate signal was removed).
       unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
-      forYouFeedService.recordPlay(track['artist'] as String? ?? '');
     } catch (e) {
       _log('[SKIP] Background skip failed: $e');
     }
@@ -227,7 +241,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: AppColors.background,
       body: Center(
         child: FadeTransition(
           opacity: _c,
@@ -238,11 +252,11 @@ class _SplashScreenState extends State<SplashScreen>
                 width: 110, height: 110,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                      colors: [Color(0xFFFF4D6A), Color(0xFFFF6B8A)]),
+                      colors: [AppColors.accent, AppColors.accentLight]),
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                        color: const Color(0xFFFF4D6A).withOpacity(0.4),
+                        color: AppColors.accent.withOpacity(0.4),
                         blurRadius: 30,
                         offset: const Offset(0, 10)),
                   ],
@@ -339,7 +353,7 @@ class _MainShellState extends State<MainShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
-        backgroundColor: const Color(0xFF0A0A0F).withOpacity(0.95),
+        backgroundColor: AppColors.background.withOpacity(0.95),
         destinations: const [
           NavigationDestination(
               icon: Icon(Icons.home_outlined),
@@ -410,7 +424,7 @@ class _MiniPlayer extends StatelessWidget {
       child: Container(
         height: 64,
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A2E).withOpacity(0.95),
+          color: AppColors.surface.withOpacity(0.95),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white.withOpacity(0.08)),
           boxShadow: [
@@ -421,15 +435,11 @@ class _MiniPlayer extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 12),
-            ClipRRect(
+            AppImage(
+              (track['artwork'] as String?) ?? '',
+              width: 48,
+              height: 48,
               borderRadius: BorderRadius.circular(8),
-              child: Image.network((track['artwork'] as String?) ?? '',
-                  width: 48, height: 48, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                      width: 48, height: 48,
-                      color: const Color(0xFF1A1A2E),
-                      child: const Icon(Icons.music_note,
-                          color: Color(0xFFFF4D6A)))),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -502,6 +512,10 @@ Future<void> playTrack(
 ) async {
   _log('═══ PLAYBACK START ═══');
   _log('Track: ${track['title']} (${track['id']})');
+  // Immediate tactile feedback on tap — previously the only feedback
+  // was the loading snackbar a moment later, which reads as "did my
+  // tap register?" on a slower connection.
+  HapticFeedback.selectionClick();
 
   try {
     // Step 1: Show loading
@@ -512,7 +526,7 @@ Future<void> playTrack(
         const SizedBox(width: 12),
         Text('Loading ${track['title']}...'),
       ]),
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: AppColors.surface,
       duration: const Duration(seconds: 10),
     ));
 
@@ -521,7 +535,7 @@ Future<void> playTrack(
     // plain, unfixed getManifest() call).
     _log('[YT] Resolving stream for: ${track['id']}');
     final streamUrl = await resolveAudioStreamUrlLogged(
-      _yt,
+      sharedYt,
       track['id'] as String,
       tag: 'PLAYBACK',
     );
@@ -566,7 +580,6 @@ Future<void> playTrack(
     // playing from the Discover/For You feed itself, meaning normal
     // Home/Search plays never improved recommendations at all.
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
-    forYouFeedService.recordPlay(track['artist'] as String? ?? '');
 
     _log('═══ PLAYBACK SUCCESS ═══');
 
@@ -598,6 +611,19 @@ Future<void> playTrack(
 // HOME SCREEN
 // ═══════════════════════════════════════════════
 
+// A single Home section's load state — tracked independently per
+// section (see refinement list Section B #3) so one slow/failed query
+// doesn't block the others from showing the instant they're ready.
+enum _SectionStatus { loading, loaded, error }
+
+class _HomeSectionState {
+  _HomeSectionState({required this.query, required this.title});
+  final String query;
+  final String title;
+  _SectionStatus status = _SectionStatus.loading;
+  List<Map<String, dynamic>> tracks = [];
+}
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -606,60 +632,89 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final Map<String, List<Map<String, dynamic>>> _sections = {};
-  bool _loading = true;
+  // Each section loads and renders independently — previously both
+  // sections were fetched via a single Future.wait and the ENTIRE
+  // screen stayed on a full shimmer until both returned, so a single
+  // slow query held back a section that was actually already ready.
+  final List<_HomeSectionState> _sections = [
+    _HomeSectionState(query: 'trending music today official audio', title: 'Trending Now'),
+    _HomeSectionState(query: 'new music releases 2024', title: 'New Releases'),
+  ];
 
   @override
   void initState() {
     super.initState();
-    _load();
+    for (final section in _sections) {
+      _loadSection(section);
+    }
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    try {
-      final results = await Future.wait([
-        _search('trending music today official audio'),
-        _search('new music releases 2024'),
-      ]);
-
+  Future<void> _loadSection(_HomeSectionState section) async {
+    // Stale-while-revalidate: show a cached result instantly if we
+    // have one (even if it's a little stale), then quietly refresh in
+    // the background — this is what makes reopening the app or
+    // switching back to Home feel instant instead of re-shimmering a
+    // query that was already answered moments ago.
+    final cached = SearchCache.instance.get(section.query);
+    if (cached != null) {
       if (mounted) {
         setState(() {
-          _sections['Trending Now'] = results[0];
-          _sections['New Releases'] = results[1];
-          _loading = false;
+          section.tracks = cached;
+          section.status = _SectionStatus.loaded;
         });
       }
+      if (SearchCache.instance.isFresh(section.query)) {
+        return; // cache is fresh enough, no need to hit the network
+      }
+      // else: fall through and refresh quietly (status stays "loaded"
+      // so the UI doesn't flash back to a loading/shimmer state for
+      // data the user can already see).
+    } else if (mounted) {
+      setState(() => section.status = _SectionStatus.loading);
+    }
+
+    try {
+      final results = await _search(section.query);
+      if (!mounted) return;
+      if (results.isEmpty && cached == null) {
+        setState(() => section.status = _SectionStatus.error);
+        return;
+      }
+      SearchCache.instance.set(section.query, results);
+      setState(() {
+        section.tracks = results;
+        section.status = _SectionStatus.loaded;
+      });
     } catch (e) {
-      _log('Home load failed: $e');
-      if (mounted) setState(() => _loading = false);
+      _log('Home section "${section.title}" load failed: $e');
+      if (mounted && cached == null) {
+        setState(() => section.status = _SectionStatus.error);
+      }
+      // If we had cached data, silently keep showing it rather than
+      // surfacing a background-refresh failure as a hard error.
     }
   }
 
   Future<List<Map<String, dynamic>>> _search(String q) async {
-    try {
-      final results = await _yt.search.search(q);
-      return results
-          .whereType<Video>()
-          .where((v) {
-            final t = v.title.toLowerCase();
-            final dur = v.duration?.inMinutes ?? 0;
-            if (dur > 15) return false;
-            if (t.contains('podcast') || t.contains('compilation')) return false;
-            return true;
-          })
-          .take(15)
-          .map((v) => {
-                'id': v.id.value,
-                'title': cleanTitle(v.title, v.author),
-                'artist': v.author,
-                'artwork': v.thumbnails.highResUrl.toString(),
-                'duration': v.duration?.inSeconds ?? 0,
-              })
-          .toList();
-    } catch (e) {
-      return [];
-    }
+    final results = await sharedYt.search.search(q);
+    return results
+        .whereType<Video>()
+        .where((v) {
+          final t = v.title.toLowerCase();
+          final dur = v.duration?.inMinutes ?? 0;
+          if (dur > 15) return false;
+          if (t.contains('podcast') || t.contains('compilation')) return false;
+          return true;
+        })
+        .take(15)
+        .map((v) => {
+              'id': v.id.value,
+              'title': cleanTitle(v.title, v.author),
+              'artist': v.author,
+              'artwork': v.thumbnails.highResUrl.toString(),
+              'duration': v.duration?.inSeconds ?? 0,
+            })
+        .toList();
   }
 
   @override
@@ -675,7 +730,7 @@ class _HomeScreenState extends State<HomeScreen> {
             title: Row(children: [
               Container(width: 36, height: 36,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [Color(0xFFFF4D6A), Color(0xFFFF6B8A)]),
+                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.music_note, size: 20, color: Colors.white),
@@ -695,26 +750,38 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
             ),
           ),
-          if (_loading)
-            ..._buildShimmer()
-          else
-            ..._buildSections(),
+          for (final section in _sections) _buildSectionSliver(section),
           const SliverToBoxAdapter(child: SizedBox(height: 160)),
         ],
       ),
     );
   }
 
-  List<Widget> _buildShimmer() {
-    return List.generate(2, (_) => SliverToBoxAdapter(
+  Widget _buildSectionSliver(_HomeSectionState section) {
+    switch (section.status) {
+      case _SectionStatus.loading:
+        return _shimmerSliver();
+      case _SectionStatus.error:
+        return _errorSliver(section);
+      case _SectionStatus.loaded:
+        // A section that resolved with too few results to look
+        // intentional (e.g. an odd query returning 1-2 hits) is
+        // simply omitted, same behavior as before.
+        if (section.tracks.length < 3) return const SliverToBoxAdapter(child: SizedBox.shrink());
+        return _tracksSliver(section);
+    }
+  }
+
+  Widget _shimmerSliver() {
+    return SliverToBoxAdapter(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
           child: Shimmer.fromColors(
-            baseColor: const Color(0xFF1A1A2E),
-            highlightColor: const Color(0xFF252540),
+            baseColor: AppColors.surface,
+            highlightColor: AppColors.surfaceLight,
             child: Container(width: 150, height: 22,
-                decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(4))),
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
           ),
         ),
         SizedBox(
@@ -726,93 +793,119 @@ class _HomeScreenState extends State<HomeScreen> {
             itemBuilder: (_, __) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: Shimmer.fromColors(
-                baseColor: const Color(0xFF1A1A2E),
-                highlightColor: const Color(0xFF252540),
+                baseColor: AppColors.surface,
+                highlightColor: AppColors.surfaceLight,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Container(width: 150, height: 150,
-                      decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(14))),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14))),
                   const SizedBox(height: 8),
                   Container(width: 120, height: 14,
-                      decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(4))),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
                   const SizedBox(height: 4),
                   Container(width: 80, height: 12,
-                      decoration: BoxDecoration(color: const Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(4))),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
                 ]),
               ),
             ),
           ),
         ),
       ]),
-    ));
+    );
   }
 
-  List<Widget> _buildSections() {
-    return _sections.entries
-        .where((e) => e.value.length >= 3)
-        .map((entry) => SliverToBoxAdapter(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-                  child: Text(entry.key,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-                ),
-                SizedBox(
-                  height: 210,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: entry.value.length,
-                    itemBuilder: (context, i) {
-                      final track = entry.value[i];
-                      return GestureDetector(
-                        onTap: () => playTrack(context, track, entry.value, i),
-                        child: Container(
-                          width: 150,
-                          margin: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            AspectRatio(
-                              aspectRatio: 1,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(14),
-                                child: Stack(fit: StackFit.expand, children: [
-                                  Image.network((track['artwork'] as String?) ?? '',
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Container(
-                                          color: const Color(0xFF1A1A2E),
-                                          child: const Icon(Icons.music_note,
-                                              size: 40, color: Color(0xFFFF4D6A)))),
-                                  Positioned(
-                                    right: 8, bottom: 8,
-                                    child: Container(
-                                      width: 36, height: 36,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFF4D6A),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(Icons.play_arrow,
-                                          size: 20, color: Colors.white),
-                                    ),
-                                  ),
-                                ]),
+  /// Real error/retry UI — previously a failed section silently
+  /// rendered NOTHING (an empty gap in the scroll view), giving no
+  /// indication anything had gone wrong or how to recover.
+  Widget _errorSliver(_HomeSectionState section) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(children: [
+            Icon(Icons.wifi_off, color: Colors.white.withOpacity(0.5)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Couldn\'t load "${section.title}"',
+                  style: TextStyle(color: Colors.white.withOpacity(0.7))),
+            ),
+            TextButton(
+              onPressed: () => _loadSection(section),
+              child: const Text('Retry'),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _tracksSliver(_HomeSectionState section) {
+    return SliverToBoxAdapter(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+          child: Text(section.title,
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+        ),
+        SizedBox(
+          height: 210,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: section.tracks.length,
+            itemBuilder: (context, i) {
+              final track = section.tracks[i];
+              return GestureDetector(
+                onTap: () => playTrack(context, track, section.tracks, i),
+                child: Container(
+                  width: 150,
+                  margin: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Stack(fit: StackFit.expand, children: [
+                          AppImage(
+                            (track['artwork'] as String?) ?? '',
+                            fit: BoxFit.cover,
+                            errorIconColor: AppColors.accent,
+                          ),
+                          Positioned(
+                            right: 8, bottom: 8,
+                            child: Container(
+                              width: 36, height: 36,
+                              decoration: BoxDecoration(
+                                color: AppColors.accent,
+                                shape: BoxShape.circle,
                               ),
+                              child: const Icon(Icons.play_arrow,
+                                  size: 20, color: Colors.white),
                             ),
-                            const SizedBox(height: 8),
-                            Text((track['title'] as String?) ?? '',
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                            Text((track['artist'] as String?) ?? '',
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: Colors.white.withOpacity(0.5), fontSize: 12)),
-                          ]),
-                        ),
-                      );
-                    },
-                  ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text((track['title'] as String?) ?? '',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                    Text((track['artist'] as String?) ?? '',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                  ]),
                 ),
-              ]),
-            ))
-        .toList();
+              );
+            },
+          ),
+        ),
+      ]),
+    );
   }
 }
 
@@ -851,7 +944,7 @@ class _SearchScreenState extends State<SearchScreen> {
     unawaited(LocalLibrary.instance.recordRecentSearch(q));
 
     try {
-      final results = await _yt.search.search(q);
+      final results = await sharedYt.search.search(q);
       if (mounted) {
         setState(() {
           _results = results
@@ -908,24 +1001,31 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF4D6A)))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
           : _searched
               ? _results.isEmpty
-                  ? Center(child: Text('No results', style: TextStyle(color: Colors.white.withOpacity(0.5))))
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.search_off, size: 40, color: Colors.white.withOpacity(0.3)),
+                          const SizedBox(height: 12),
+                          Text('No results for "${_controller.text}"',
+                              style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                        ],
+                      ),
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
                       itemCount: _results.length,
                       itemBuilder: (ctx, i) {
                         final track = _results[i];
                         return ListTile(
-                          leading: ClipRRect(
+                          leading: AppImage(
+                            (track['artwork'] as String?) ?? '',
+                            width: 48,
+                            height: 48,
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network((track['artwork'] as String?) ?? '',
-                                width: 48, height: 48, fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                    width: 48, height: 48,
-                                    color: const Color(0xFF1A1A2E),
-                                    child: const Icon(Icons.music_note, color: Color(0xFFFF4D6A)))),
                           ),
                           title: Text((track['title'] as String?) ?? '',
                               maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1039,7 +1139,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
+        backgroundColor: AppColors.surface,
         title: const Text('New Playlist'),
         content: TextField(
           controller: controller,
@@ -1243,21 +1343,19 @@ class TrackListScreen extends StatelessWidget {
                 final track = tracks[i];
                 final isLocal = track['isLocal'] == true;
                 return ListTile(
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: isLocal
-                        ? Container(
-                            width: 48, height: 48,
-                            color: const Color(0xFF1A1A2E),
-                            child: const Icon(Icons.music_note, color: Color(0xFF4CAF50)))
-                        : Image.network(
-                            (track['artwork'] as String?) ?? '',
-                            width: 48, height: 48, fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                                width: 48, height: 48,
-                                color: const Color(0xFF1A1A2E),
-                                child: const Icon(Icons.music_note, color: Color(0xFFFF4D6A)))),
-                  ),
+                  leading: isLocal
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                              width: 48, height: 48,
+                              color: AppColors.surface,
+                              child: const Icon(Icons.music_note, color: Color(0xFF4CAF50))))
+                      : AppImage(
+                          (track['artwork'] as String?) ?? '',
+                          width: 48,
+                          height: 48,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                   title: Text((track['title'] as String?) ?? '',
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text((track['artist'] as String?) ?? '',
@@ -1439,7 +1537,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Center(child: Column(children: [
             CircleAvatar(
               radius: 44,
-              backgroundColor: const Color(0xFF1A1A2E),
+              backgroundColor: AppColors.surface,
               backgroundImage:
                   (user?.userMetadata?['avatar_url'] as String?) != null
                       ? NetworkImage(user!.userMetadata!['avatar_url'] as String)
@@ -1469,7 +1567,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     : const Icon(Icons.login),
                 label: Text(_busy ? 'Signing in...' : 'Sign in with Google'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF4D6A),
+                  backgroundColor: AppColors.accent,
                   foregroundColor: Colors.white,
                   minimumSize: const Size.fromHeight(48),
                   shape: RoundedRectangleBorder(
@@ -1478,7 +1576,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           const SizedBox(height: 8),
-          _item(Icons.workspace_premium, 'Upgrade to Premium', const Color(0xFFFF4D6A)),
+          _item(Icons.workspace_premium, 'Upgrade to Premium', AppColors.accent),
           _item(Icons.settings, 'Settings'),
           _item(Icons.help_outline, 'Help & Support'),
           _item(Icons.privacy_tip_outlined, 'Privacy Policy'),
@@ -1554,14 +1652,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: AppColors.background,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [
-              const Color(0xFFFF4D6A).withOpacity(0.12),
-              const Color(0xFF0A0A0F),
+              AppColors.accent.withOpacity(0.12),
+              AppColors.background,
             ],
           ),
         ),
@@ -1601,18 +1699,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                        color: const Color(0xFFFF4D6A).withOpacity(0.25),
+                        color: AppColors.accent.withOpacity(0.25),
                         blurRadius: 40, offset: const Offset(0, 20)),
                   ],
                 ),
-                child: ClipRRect(
+                child: AppImage(
+                  (_currentTrack['artwork'] as String?) ?? '',
+                  fit: BoxFit.cover,
                   borderRadius: BorderRadius.circular(24),
-                  child: Image.network((_currentTrack['artwork'] as String?) ?? '',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                          color: const Color(0xFF1A1A2E),
-                          child: const Icon(Icons.music_note,
-                              size: 80, color: Color(0xFFFF4D6A)))),
+                  errorIconColor: AppColors.accent,
                 ),
               ),
             ),
@@ -1638,7 +1733,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   icon: Icon(
                     _isLiked ? Icons.favorite : Icons.favorite_border,
                     size: 28,
-                    color: _isLiked ? const Color(0xFFFF4D6A) : Colors.white.withOpacity(0.7),
+                    color: _isLiked ? AppColors.accent : Colors.white.withOpacity(0.7),
                   ),
                   onPressed: () async {
                     await LocalLibrary.instance.toggleLiked(_currentTrack);
@@ -1674,9 +1769,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Column(children: [
                 SliderTheme(
                   data: SliderThemeData(
-                    activeTrackColor: const Color(0xFFFF4D6A),
+                    activeTrackColor: AppColors.accent,
                     inactiveTrackColor: Colors.white.withOpacity(0.1),
-                    thumbColor: const Color(0xFFFF4D6A),
+                    thumbColor: AppColors.accent,
                     trackHeight: 3,
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                     overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
@@ -1728,11 +1823,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     width: 72, height: 72,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                          colors: [Color(0xFFFF4D6A), Color(0xFFFF6B8A)]),
+                          colors: [AppColors.accent, AppColors.accentLight]),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                            color: const Color(0xFFFF4D6A).withOpacity(0.4),
+                            color: AppColors.accent.withOpacity(0.4),
                             blurRadius: 20, offset: const Offset(0, 8)),
                       ],
                     ),
@@ -1779,7 +1874,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       _log('[PLAYER] Resolving track: ${_currentTrack['id']}');
       final streamUrl = await resolveAudioStreamUrlLogged(
-        _yt,
+        sharedYt,
         _currentTrack['id'] as String,
         tag: 'PLAYER',
       );
@@ -1797,7 +1892,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // core/audio/vshots_audio_handler.dart.
         audioHandler?.updateNowPlaying(_trackToMediaItem(_currentTrack));
         unawaited(LocalLibrary.instance.recordRecentlyPlayed(_currentTrack));
-        forYouFeedService.recordPlay(_currentTrack['artist'] as String? ?? '');
         if (mounted) {
           setState(() {
             _isLiked = LocalLibrary.instance
@@ -1815,7 +1909,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: AppColors.surface,
       builder: (ctx) {
         return ValueListenableBuilder<List<Map<String, dynamic>>>(
           valueListenable: LocalLibrary.instance.playlists,
@@ -1924,7 +2018,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Lyrics')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF4D6A)))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
           : _buildContent(),
     );
   }
@@ -1972,7 +2066,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
               style: TextStyle(
                 fontSize: isActive ? 20 : 16,
                 fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-                color: isActive ? const Color(0xFFFF4D6A) : Colors.white.withOpacity(0.5),
+                color: isActive ? AppColors.accent : Colors.white.withOpacity(0.5),
               ),
             ),
           );

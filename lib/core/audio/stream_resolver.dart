@@ -28,6 +28,25 @@
 import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+// ── Short-TTL resolved-stream-URL cache (refinement list Section B #4) ──
+// WHY A SHORT TTL, NOT A LONG ONE: YouTube's stream URLs are
+// token-signed and expire after a few hours on their end regardless of
+// what this app does — caching them indefinitely would eventually hand
+// back a dead URL. 15 minutes is chosen to cover the very common case
+// of "replaying a song you just played moments ago" (previously this
+// re-ran the FULL androidVr->ios->android client-fallback resolution
+// from scratch every single time, a real 1-3 network-round-trip cost)
+// without risking a stale/expired URL for anything beyond a short
+// replay window.
+class _CachedStream {
+  _CachedStream(this.url, this.expiresAt);
+  final String url;
+  final DateTime expiresAt;
+}
+
+final Map<String, _CachedStream> _streamUrlCache = {};
+const Duration _streamCacheTtl = Duration(minutes: 15);
+
 /// Resolves a playable audio-only stream URL for [videoId], trying
 /// multiple YouTube Innertube clients in priority order. A single
 /// client being rate-limited/blocked/requiring a PO-Token (the root
@@ -42,6 +61,12 @@ Future<String?> resolveAudioStreamUrl(
   void Function(String message)? log,
 }) async {
   void logMsg(String m) => log?.call(m);
+
+  final cached = _streamUrlCache[videoId];
+  if (cached != null && DateTime.now().isBefore(cached.expiresAt)) {
+    logMsg('Using cached stream URL for $videoId (no network round-trip)');
+    return cached.url;
+  }
 
   // androidVr and ios are the most reliable clients for audio-only
   // streams without requiring a PO-Token/JS signature solver (see
@@ -78,7 +103,10 @@ Future<String?> resolveAudioStreamUrl(
         'Selected stream via $clients: ${selected.bitrate}, '
         '${selected.codec}, ${selected.container}',
       );
-      return selected.url.toString();
+      final url = selected.url.toString();
+      _streamUrlCache[videoId] =
+          _CachedStream(url, DateTime.now().add(_streamCacheTtl));
+      return url;
     } catch (e) {
       logMsg('Client $clients failed: $e — trying next client');
       continue;
