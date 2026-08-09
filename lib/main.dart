@@ -17,8 +17,15 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-void main() {
+import 'core/backend/auth_service.dart';
+import 'core/backend/supabase_service.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Non-blocking-on-failure by design — see supabase_service.dart's
+  // file header for why a Supabase outage/misconfiguration must never
+  // prevent the app from starting and playing music.
+  await SupabaseService.initialize();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
@@ -900,11 +907,46 @@ class LibraryScreen extends StatelessWidget {
 // PROFILE SCREEN
 // ═══════════════════════════════════════════════
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _busy = false;
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _busy = true);
+    final result = await AuthService.instance.signInWithGoogle();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (result.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error!)),
+      );
+    }
+    // No need to manually setState on success — SupabaseService's auth
+    // state is read fresh in build() below, and the sign-in flow
+    // itself already awaited completion.
+    setState(() {});
+  }
+
+  Future<void> _handleSignOut() async {
+    await AuthService.instance.signOut();
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = SupabaseService.currentUser;
+    final isSignedIn = user != null;
+    final displayName = (user?.userMetadata?['full_name'] as String?) ??
+        (user?.userMetadata?['name'] as String?) ??
+        'V Shots User';
+    final email = user?.email ?? 'Not signed in';
+
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: ListView(
@@ -914,27 +956,56 @@ class ProfileScreen extends StatelessWidget {
             CircleAvatar(
               radius: 44,
               backgroundColor: const Color(0xFF1A1A2E),
-              child: Text('V', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700,
-                  color: Colors.white.withOpacity(0.8))),
+              backgroundImage:
+                  (user?.userMetadata?['avatar_url'] as String?) != null
+                      ? NetworkImage(user!.userMetadata!['avatar_url'])
+                      : null,
+              child: (user?.userMetadata?['avatar_url'] as String?) == null
+                  ? Text(displayName.isNotEmpty ? displayName[0] : 'V',
+                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700,
+                          color: Colors.white.withOpacity(0.8)))
+                  : null,
             ),
             const SizedBox(height: 12),
-            const Text('V Shots User',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-            Text('user@vshots.app',
+            Text(displayName,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+            Text(email,
                 style: TextStyle(color: Colors.white.withOpacity(0.5))),
           ])),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
+          if (!isSignedIn)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ElevatedButton.icon(
+                onPressed: _busy ? null : _handleGoogleSignIn,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.login),
+                label: Text(_busy ? 'Signing in...' : 'Sign in with Google'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF4D6A),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
           _item(Icons.workspace_premium, 'Upgrade to Premium', const Color(0xFFFF4D6A)),
           _item(Icons.settings, 'Settings'),
           _item(Icons.help_outline, 'Help & Support'),
           _item(Icons.privacy_tip_outlined, 'Privacy Policy'),
           _item(Icons.description_outlined, 'Terms of Service'),
           const SizedBox(height: 16),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-            onTap: () {},
-          ),
+          if (isSignedIn)
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
+              onTap: _handleSignOut,
+            ),
         ],
       ),
     );

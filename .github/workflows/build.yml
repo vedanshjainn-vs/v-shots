@@ -18,12 +18,49 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
+      # .env is intentionally committed to the repo (see .env's own
+      # header comment) — it contains only the Supabase anon key
+      # (public-by-design, RLS-governed) and the Google Web Client ID
+      # (also not a secret). Nothing sensitive is written here.
       - run: flutter pub get
       - run: flutter build apk --debug
       - name: Check APK
         run: ls -lh build/app/outputs/flutter-apk/
-      - name: Upload APK
+      - name: Upload APK (GitHub artifact)
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-universal
           path: build/app/outputs/flutter-apk/app-debug.apk
+
+      # ── BrowserStack App Automate: real-device smoke test ──────────
+      # Uses BrowserStack's documented upload API directly via curl —
+      # see https://www.browserstack.com/docs/app-automate/api-reference/appium/apps#upload-app
+      # Requires BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY to be
+      # set in this repo's GitHub Actions secrets (Settings -> Secrets
+      # and variables -> Actions) — see BROWSERSTACK_SETUP.md.
+      - name: Upload APK to BrowserStack App Automate
+        if: ${{ env.BROWSERSTACK_USERNAME != '' }}
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: |
+          set -e
+          RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" \
+            -X POST "https://api-cloud.browserstack.com/app-automate/upload" \
+            -F "file=@build/app/outputs/flutter-apk/app-debug.apk" \
+            -F "custom_id=v-shots-ci-${{ github.run_number }}")
+          echo "BrowserStack upload response: $RESPONSE"
+          APP_URL=$(echo "$RESPONSE" | grep -o '"app_url":"[^"]*"' | cut -d'"' -f4)
+          if [ -z "$APP_URL" ]; then
+            echo "::warning::BrowserStack upload did not return an app_url — check the response above."
+            exit 0
+          fi
+          echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+          echo "✅ Uploaded to BrowserStack: $APP_URL"
+
+      - name: Run BrowserStack real-device smoke test
+        if: ${{ env.APP_URL != '' }}
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: bash scripts/browserstack_smoke_test.sh "$APP_URL"
