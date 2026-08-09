@@ -18,11 +18,15 @@ import 'package:just_audio/just_audio.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'core/audio/stream_resolver.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'core/backend/supabase_service.dart';
+import 'core/lyrics/lyrics_service.dart';
+import 'core/storage/local_library.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
-import 'core/backend/supabase_service.dart';
+import 'features/library/local_import_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +34,10 @@ void main() async {
   // file header for why a Supabase outage/misconfiguration must never
   // prevent the app from starting and playing music.
   await SupabaseService.initialize();
+  // Local persistence (Liked Songs / Recently Played / Playlists /
+  // taste-profile) — see core/storage/local_library.dart. Previously
+  // all of this was plain in-memory globals, wiped on every restart.
+  await LocalLibrary.instance.initialize();
   // google_sign_in v7 requires this exactly-once initialize() call
   // before any sign-in UI is shown — see auth_service.dart.
   await AuthService.instance.initializeGoogleSignIn();
@@ -86,15 +94,27 @@ final AudioPlayer audioPlayer = AudioPlayer();
 // Background-playback bridge (see core/audio/vshots_audio_handler.dart) —
 // assigned in main() before runApp(). Every place that starts playback
 // (playTrack() below, PlayerScreen._play()) should also call
-// audioHandler.updateNowPlaying(...) so the lock-screen/notification
+// audioHandler?.updateNowPlaying(...) so the lock-screen/notification
 // stay in sync with what's actually playing.
-late final VShotsAudioHandler audioHandler;
+//
+// Nullable (not `late final`) deliberately: widget tests construct
+// `VShotsApp` directly without going through main()/AudioService.init()
+// (a real gap found and fixed during this session — the app previously
+// crashed with a LateInitializationError in any test that built
+// MainShell, because `late final` throws if read before main() has run).
+// Every call site uses `audioHandler?.` so normal app usage (where
+// main() always initializes this before runApp()) is unaffected, while
+// tests/any other entry point that skips AudioService.init() degrade
+// gracefully instead of crashing.
+VShotsAudioHandler? audioHandler;
 List<Map<String, dynamic>> currentQueue = [];
 int currentQueueIndex = 0;
 Map<String, dynamic>? currentTrack;
 bool isCurrentlyPlaying = false;
-final List<String> likedSongIds = [];
-final List<Map<String, dynamic>> recentSearches = [];
+// Liked songs / recently played / recent searches are now persisted
+// via LocalLibrary (see core/storage/local_library.dart) — the old
+// in-memory-only `likedSongIds`/`recentSearches` lists were removed
+// since everything reads/writes through LocalLibrary.instance now.
 
 // Single YoutubeExplode instance for reuse
 final YoutubeExplode _yt = YoutubeExplode();
@@ -131,15 +151,19 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
     // while the app has no visible Scaffold to attach a SnackBar to) —
     // resolve and play directly without the loading-snackbar UX.
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(track['id']);
-      final audio = manifest.audioOnly.sortByBitrate();
-      if (audio.isEmpty) return;
-      final stream = audio.toList()[(audio.length / 2).floor()];
-      await audioPlayer.setUrl(stream.url.toString());
+      final streamUrl = await resolveAudioStreamUrlLogged(
+        _yt,
+        track['id'] as String,
+        tag: 'SKIP',
+      );
+      if (streamUrl == null) return;
+      await audioPlayer.setUrl(streamUrl);
       await audioPlayer.play();
       currentTrack = track;
       currentQueueIndex = nextIndex;
-      audioHandler.updateNowPlaying(_trackToMediaItem(track));
+      audioHandler?.updateNowPlaying(_trackToMediaItem(track));
+      unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+      forYouFeedService.recordPlay(track['artist'] as String? ?? '');
     } catch (e) {
       _log('[SKIP] Background skip failed: $e');
     }
@@ -270,8 +294,21 @@ class _MainShellState extends State<MainShell> {
     // headset / Android Auto skip buttons) back to the app's real
     // queue-navigation logic — see core/audio/vshots_audio_handler.dart
     // and _playAdjacentInQueue's doc comment for the full design.
-    audioHandler.onSkipNext = () => _playAdjacentInQueue(context, 1);
-    audioHandler.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
+    audioHandler?.onSkipNext = () => _playAdjacentInQueue(context, 1);
+    audioHandler?.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
+
+    // Auto-advance to the next track when the current one finishes.
+    // ⚠️ Real gap found and fixed: this callback existed in
+    // VShotsAudioHandler (wired to just_audio's processingStateStream)
+    // but was never actually assigned anywhere in the app — meaning a
+    // song finishing playback did nothing at all; playback would just
+    // silently stop rather than advancing to the next queued track.
+    // Wired here (not inside PlayerScreen) specifically so auto-advance
+    // keeps working even when the user has navigated away from the
+    // full-screen player back to Home/Search/Library — matching how
+    // every real music app behaves (music keeps playing/advancing in
+    // the background regardless of which screen is currently open).
+    audioHandler?.onTrackCompleted = () => _playAdjacentInQueue(context, 1);
   }
 
   @override
@@ -479,37 +516,23 @@ Future<void> playTrack(
       duration: const Duration(seconds: 10),
     ));
 
-    // Step 2: Resolve stream
+    // Step 2: Resolve stream (multi-client fallback — see
+    // core/audio/stream_resolver.dart for why this must never be a
+    // plain, unfixed getManifest() call).
     _log('[YT] Resolving stream for: ${track['id']}');
-    final manifest = await _yt.videos.streamsClient.getManifest(track['id']);
-    _log('[YT] Manifest obtained');
+    final streamUrl = await resolveAudioStreamUrlLogged(
+      _yt,
+      track['id'] as String,
+      tag: 'PLAYBACK',
+    );
 
-    // Step 3: Get audio streams
-    final audioStreams = manifest.audioOnly;
-    _log('[YT] Found ${audioStreams.length} audio streams');
-
-    if (audioStreams.isEmpty) {
-      throw Exception('No audio streams available');
+    if (streamUrl == null || streamUrl.isEmpty) {
+      throw Exception('Could not resolve a playable stream for this track');
     }
-
-    // Step 4: Sort by bitrate and pick middle (not highest, not lowest)
-    final sorted = audioStreams.toList()
-      ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
-    
-    // Pick middle quality for compatibility
-    final selectedIndex = (sorted.length / 2).floor();
-    final selectedStream = sorted[selectedIndex];
-    _log('[YT] Selected stream: ${selectedStream.bitrate}bps, ${selectedStream.codec}');
-
-    // Step 5: Get stream URL
-    final streamUrl = selectedStream.url.toString();
     _log('[YT] Stream URL obtained (length: ${streamUrl.length})');
 
-    if (streamUrl.isEmpty) {
-      throw Exception('Empty stream URL');
-    }
-
     // Step 6: Set URL on player
+
     _log('[PLAYER] Setting URL...');
     await audioPlayer.setUrl(streamUrl);
     _log('[PLAYER] URL set successfully');
@@ -536,7 +559,14 @@ Future<void> playTrack(
     // it reflects this track — without this, background playback would
     // work but the notification would show stale/no metadata. See
     // core/audio/vshots_audio_handler.dart.
-    audioHandler.updateNowPlaying(_trackToMediaItem(track));
+    audioHandler?.updateNowPlaying(_trackToMediaItem(track));
+
+    // Step 11: Persist to Recently Played + feed the "For You"
+    // taste-profile signal — previously this ONLY happened when
+    // playing from the Discover/For You feed itself, meaning normal
+    // Home/Search plays never improved recommendations at all.
+    unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+    forYouFeedService.recordPlay(track['artist'] as String? ?? '');
 
     _log('═══ PLAYBACK SUCCESS ═══');
 
@@ -818,9 +848,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (q.trim().isEmpty) return;
     setState(() { _loading = true; _searched = true; });
 
-    recentSearches.removeWhere((s) => s['query'] == q);
-    recentSearches.insert(0, {'query': q});
-    if (recentSearches.length > 10) recentSearches.removeLast();
+    unawaited(LocalLibrary.instance.recordRecentSearch(q));
 
     try {
       final results = await _yt.search.search(q);
@@ -911,10 +939,10 @@ class _SearchScreenState extends State<SearchScreen> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    if (recentSearches.isNotEmpty) ...[
+                    if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
                       const Text('Recent Searches',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                      ...recentSearches.take(5).map((s) => ListTile(
+                      ...LocalLibrary.instance.recentSearches.value.take(5).map((s) => ListTile(
                             leading: Icon(Icons.history, color: Colors.white.withOpacity(0.5)),
                             title: Text((s['query'] as String?) ?? ''),
                             onTap: () {
@@ -960,38 +988,188 @@ class _SearchScreenState extends State<SearchScreen> {
 // LIBRARY SCREEN
 // ═══════════════════════════════════════════════
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
   @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Rebuild whenever any persisted library list changes, so counts
+    // on this screen stay live (e.g. liking a song elsewhere in the
+    // app immediately updates "Liked Songs 3" here without needing to
+    // leave and re-enter the tab).
+    LocalLibrary.instance.likedSongs.addListener(_refresh);
+    LocalLibrary.instance.recentlyPlayed.addListener(_refresh);
+    LocalLibrary.instance.playlists.addListener(_refresh);
+    LocalLibrary.instance.downloadedTracks.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    LocalLibrary.instance.likedSongs.removeListener(_refresh);
+    LocalLibrary.instance.recentlyPlayed.removeListener(_refresh);
+    LocalLibrary.instance.playlists.removeListener(_refresh);
+    LocalLibrary.instance.downloadedTracks.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _importLocalFiles() async {
+    final tracks = await LocalImportService.instance.pickAudioFiles();
+    for (final t in tracks) {
+      await LocalLibrary.instance.addDownloadedTrack(t);
+    }
+    if (mounted && tracks.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported ${tracks.length} file(s)')),
+      );
+    }
+  }
+
+  Future<void> _createPlaylistDialog() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('New Playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Playlist name'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (name != null && name.isNotEmpty) {
+      await LocalLibrary.instance.createPlaylist(name);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final lib = LocalLibrary.instance;
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _item(Icons.favorite, 'Liked Songs', const Color(0xFFE91E63), likedSongIds.length),
-          _item(Icons.download, 'Downloads', const Color(0xFF4CAF50), 0),
-          _item(Icons.history, 'Recently Played', const Color(0xFFFF9800), 0),
-          _item(Icons.playlist_play, 'Playlists', const Color(0xFF2196F3), 0),
-          _item(Icons.album, 'Albums', const Color(0xFF9C27B0), 0),
-          _item(Icons.person, 'Artists', const Color(0xFF00BCD4), 0),
-          const SizedBox(height: 32),
-          Center(
-            child: Column(children: [
-              Icon(Icons.library_music, size: 48, color: Colors.white.withOpacity(0.2)),
-              const SizedBox(height: 12),
-              Text('Your library is empty',
-                  style: TextStyle(color: Colors.white.withOpacity(0.4))),
-            ]),
+          _item(
+            context,
+            Icons.favorite,
+            'Liked Songs',
+            const Color(0xFFE91E63),
+            lib.likedSongs.value.length,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TrackListScreen(
+                  title: 'Liked Songs',
+                  tracks: lib.likedSongs.value,
+                  emptyMessage:
+                      'No liked songs yet — tap ♡ on any track to save it here.',
+                ),
+              ),
+            ),
           ),
+          _item(
+            context,
+            Icons.download_done,
+            'Downloads (Imported)',
+            const Color(0xFF4CAF50),
+            lib.downloadedTracks.value.length,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TrackListScreen(
+                  title: 'Downloads',
+                  tracks: lib.downloadedTracks.value,
+                  emptyMessage:
+                      'No imported files yet — tap "Import" below to add audio files already on your device.',
+                  onRemove: (t) =>
+                      LocalLibrary.instance.removeDownloadedTrack(t['id'] as String),
+                ),
+              ),
+            ),
+          ),
+          _item(
+            context,
+            Icons.history,
+            'Recently Played',
+            const Color(0xFFFF9800),
+            lib.recentlyPlayed.value.length,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TrackListScreen(
+                  title: 'Recently Played',
+                  tracks: lib.recentlyPlayed.value,
+                  emptyMessage: 'Nothing played yet — go play something!',
+                  onClearAll: () => LocalLibrary.instance.clearRecentlyPlayed(),
+                ),
+              ),
+            ),
+          ),
+          _item(
+            context,
+            Icons.playlist_play,
+            'Playlists',
+            const Color(0xFF2196F3),
+            lib.playlists.value.length,
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PlaylistsScreen()),
+            ),
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: _importLocalFiles,
+            icon: const Icon(Icons.add),
+            label: const Text('Import audio files from device'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _createPlaylistDialog,
+            icon: const Icon(Icons.playlist_add),
+            label: const Text('Create new playlist'),
+          ),
+          const SizedBox(height: 32),
+          if (lib.likedSongs.value.isEmpty &&
+              lib.recentlyPlayed.value.isEmpty &&
+              lib.playlists.value.isEmpty &&
+              lib.downloadedTracks.value.isEmpty)
+            Center(
+              child: Column(children: [
+                Icon(Icons.library_music, size: 48, color: Colors.white.withOpacity(0.2)),
+                const SizedBox(height: 12),
+                Text('Your library is empty',
+                    style: TextStyle(color: Colors.white.withOpacity(0.4))),
+              ]),
+            ),
         ],
       ),
     );
   }
 
-  Widget _item(IconData icon, String label, Color color, int count) {
+  Widget _item(BuildContext context, IconData icon, String label, Color color,
+      int count, VoidCallback onTap) {
     return ListTile(
+      onTap: onTap,
       leading: Container(
         width: 44, height: 44,
         decoration: BoxDecoration(
@@ -1006,6 +1184,205 @@ class LibraryScreen extends StatelessWidget {
         const SizedBox(width: 8),
         Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3)),
       ]),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════
+// GENERIC TRACK LIST SCREEN (Liked Songs / Recently Played / Downloads)
+// ═══════════════════════════════════════════════
+
+class TrackListScreen extends StatelessWidget {
+  const TrackListScreen({
+    required this.title,
+    required this.tracks,
+    required this.emptyMessage,
+    this.onRemove,
+    this.onClearAll,
+    super.key,
+  });
+
+  final String title;
+  final List<Map<String, dynamic>> tracks;
+  final String emptyMessage;
+  final void Function(Map<String, dynamic> track)? onRemove;
+  final VoidCallback? onClearAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          if (onClearAll != null && tracks.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_outlined),
+              tooltip: 'Clear all',
+              onPressed: () {
+                onClearAll!();
+                Navigator.pop(context);
+              },
+            ),
+        ],
+      ),
+      body: tracks.isEmpty
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  emptyMessage,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                ),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: tracks.length,
+              itemBuilder: (ctx, i) {
+                final track = tracks[i];
+                final isLocal = track['isLocal'] == true;
+                return ListTile(
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: isLocal
+                        ? Container(
+                            width: 48, height: 48,
+                            color: const Color(0xFF1A1A2E),
+                            child: const Icon(Icons.music_note, color: Color(0xFF4CAF50)))
+                        : Image.network(
+                            (track['artwork'] as String?) ?? '',
+                            width: 48, height: 48, fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                                width: 48, height: 48,
+                                color: const Color(0xFF1A1A2E),
+                                child: const Icon(Icons.music_note, color: Color(0xFFFF4D6A)))),
+                  ),
+                  title: Text((track['title'] as String?) ?? '',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text((track['artist'] as String?) ?? '',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                  trailing: onRemove != null
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => onRemove!(track),
+                        )
+                      : null,
+                  onTap: () {
+                    if (isLocal) {
+                      _playLocalTrack(context, track);
+                    } else {
+                      playTrack(context, track, tracks, i);
+                    }
+                  },
+                );
+              },
+            ),
+    );
+  }
+
+  Future<void> _playLocalTrack(
+      BuildContext context, Map<String, dynamic> track) async {
+    final path = track['localPath'] as String?;
+    if (path == null || !LocalImportService.instance.fileStillExists(path)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This file is no longer available on your device.')),
+      );
+      return;
+    }
+    try {
+      await audioPlayer.setFilePath(path);
+      await audioPlayer.play();
+      currentTrack = track;
+      audioHandler?.updateNowPlaying(_trackToMediaItem(track));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not play file: $e')),
+      );
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// PLAYLISTS
+// ═══════════════════════════════════════════════
+
+class PlaylistsScreen extends StatefulWidget {
+  const PlaylistsScreen({super.key});
+
+  @override
+  State<PlaylistsScreen> createState() => _PlaylistsScreenState();
+}
+
+class _PlaylistsScreenState extends State<PlaylistsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    LocalLibrary.instance.playlists.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    LocalLibrary.instance.playlists.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playlists = LocalLibrary.instance.playlists.value;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Playlists')),
+      body: playlists.isEmpty
+          ? Center(
+              child: Text(
+                'No playlists yet — create one from the Library tab.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: playlists.length,
+              itemBuilder: (ctx, i) {
+                final playlist = playlists[i];
+                final tracks =
+                    List<Map<String, dynamic>>.from(playlist['tracks'] as List? ?? []);
+                return ListTile(
+                  leading: Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2196F3).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.playlist_play, color: Color(0xFF2196F3)),
+                  ),
+                  title: Text(playlist['name'] as String? ?? ''),
+                  subtitle: Text('${tracks.length} tracks'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    onPressed: () =>
+                        LocalLibrary.instance.deletePlaylist(playlist['id'] as String),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TrackListScreen(
+                        title: playlist['name'] as String? ?? 'Playlist',
+                        tracks: tracks,
+                        emptyMessage: 'This playlist is empty.',
+                        onRemove: (t) => LocalLibrary.instance
+                            .removeTrackFromPlaylist(playlist['id'] as String, t['id'] as String),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
@@ -1160,7 +1537,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     _currentTrack = widget.track;
     _currentIndex = widget.currentIndex;
-    _isLiked = likedSongIds.contains(_currentTrack['id']);
+    _isLiked = LocalLibrary.instance.isLiked(_currentTrack['id'] as String? ?? '');
 
     // Listen to REAL player state
     audioPlayer.playerStateStream.listen((s) {
@@ -1263,16 +1640,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     size: 28,
                     color: _isLiked ? const Color(0xFFFF4D6A) : Colors.white.withOpacity(0.7),
                   ),
-                  onPressed: () {
-                    setState(() {
-                      _isLiked = !_isLiked;
-                      if (_isLiked) {
-                        likedSongIds.add(_currentTrack['id'] as String);
-                      } else {
-                        likedSongIds.remove(_currentTrack['id']);
-                      }
-                    });
+                  onPressed: () async {
+                    await LocalLibrary.instance.toggleLiked(_currentTrack);
+                    if (mounted) {
+                      setState(() {
+                        _isLiked = LocalLibrary.instance.isLiked(_currentTrack['id'] as String);
+                      });
+                    }
                   },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.playlist_add, size: 26),
+                  tooltip: 'Add to playlist',
+                  onPressed: () => _showAddToPlaylistSheet(context, _currentTrack),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.lyrics_outlined, size: 24),
+                  tooltip: 'Lyrics',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LyricsScreen(track: _currentTrack),
+                    ),
+                  ),
                 ),
               ]),
             ),
@@ -1388,13 +1778,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _play() async {
     try {
       _log('[PLAYER] Resolving track: ${_currentTrack['id']}');
-      final manifest = await _yt.videos.streamsClient.getManifest(_currentTrack['id']);
-      final audio = manifest.audioOnly.sortByBitrate();
-      
-      if (audio.isNotEmpty) {
-        final stream = audio.toList()[(audio.length / 2).floor()];
+      final streamUrl = await resolveAudioStreamUrlLogged(
+        _yt,
+        _currentTrack['id'] as String,
+        tag: 'PLAYER',
+      );
+
+      if (streamUrl != null) {
         _log('[PLAYER] Setting URL...');
-        await audioPlayer.setUrl(stream.url.toString());
+        await audioPlayer.setUrl(streamUrl);
         _log('[PLAYER] Playing...');
         await audioPlayer.play();
 
@@ -1403,11 +1795,197 @@ class _PlayerScreenState extends State<PlayerScreen> {
         // Keep the OS media session (notification/lock screen) in sync
         // with in-app next/previous taps too — see
         // core/audio/vshots_audio_handler.dart.
-        audioHandler.updateNowPlaying(_trackToMediaItem(_currentTrack));
-        if (mounted) setState(() {});
+        audioHandler?.updateNowPlaying(_trackToMediaItem(_currentTrack));
+        unawaited(LocalLibrary.instance.recordRecentlyPlayed(_currentTrack));
+        forYouFeedService.recordPlay(_currentTrack['artist'] as String? ?? '');
+        if (mounted) {
+          setState(() {
+            _isLiked = LocalLibrary.instance
+                .isLiked(_currentTrack['id'] as String? ?? '');
+          });
+        }
+      } else {
+        _log('[PLAYER] No stream could be resolved for this track.');
       }
     } catch (e) {
       _log('[PLAYER] Error: $e');
     }
+  }
+
+  void _showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      builder: (ctx) {
+        return ValueListenableBuilder<List<Map<String, dynamic>>>(
+          valueListenable: LocalLibrary.instance.playlists,
+          builder: (context, playlists, _) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Add to playlist',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  ),
+                  if (playlists.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'No playlists yet. Create one from the Library tab first.',
+                        style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                      ),
+                    )
+                  else
+                    ...playlists.map((p) => ListTile(
+                          leading: const Icon(Icons.playlist_play),
+                          title: Text(p['name'] as String? ?? ''),
+                          onTap: () async {
+                            await LocalLibrary.instance
+                                .addTrackToPlaylist(p['id'] as String, track);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Added to ${p['name']}')),
+                              );
+                            }
+                          },
+                        )),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════
+// LYRICS SCREEN (LRCLIB — see core/lyrics/lyrics_service.dart)
+// ═══════════════════════════════════════════════
+
+class LyricsScreen extends StatefulWidget {
+  const LyricsScreen({required this.track, super.key});
+  final Map<String, dynamic> track;
+
+  @override
+  State<LyricsScreen> createState() => _LyricsScreenState();
+}
+
+class _LyricsScreenState extends State<LyricsScreen> {
+  LyricsResult? _result;
+  bool _loading = true;
+  int _activeLine = -1;
+  StreamSubscription<Duration>? _positionSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    _positionSub = audioPlayer.positionStream.listen(_onPosition);
+  }
+
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final result = await LyricsService.instance.fetch(
+      trackName: (widget.track['title'] as String?) ?? '',
+      artistName: (widget.track['artist'] as String?) ?? '',
+      durationSeconds: widget.track['duration'] as int?,
+    );
+    if (mounted) setState(() { _result = result; _loading = false; });
+  }
+
+  void _onPosition(Duration position) {
+    final synced = _result?.syncedLines;
+    if (synced == null || synced.isEmpty) return;
+    int newIndex = -1;
+    for (var i = 0; i < synced.length; i++) {
+      if (synced[i].timestamp <= position) {
+        newIndex = i;
+      } else {
+        break;
+      }
+    }
+    if (newIndex != _activeLine && mounted) {
+      setState(() => _activeLine = newIndex);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Lyrics')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFFFF4D6A)))
+          : _buildContent(),
+    );
+  }
+
+  Widget _buildContent() {
+    final result = _result;
+    if (result == null || !result.hasAny) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lyrics_outlined, size: 56, color: Colors.white.withOpacity(0.2)),
+              const SizedBox(height: 16),
+              Text(
+                'Lyrics not available for this track',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (result.instrumental) {
+      return Center(
+        child: Text('🎵 Instrumental — no lyrics',
+            style: TextStyle(color: Colors.white.withOpacity(0.5))),
+      );
+    }
+
+    if (result.hasSynced) {
+      final lines = result.syncedLines!;
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        itemCount: lines.length,
+        itemBuilder: (ctx, i) {
+          final isActive = i == _activeLine;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              lines[i].text.isEmpty ? '♪' : lines[i].text,
+              style: TextStyle(
+                fontSize: isActive ? 20 : 16,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
+                color: isActive ? const Color(0xFFFF4D6A) : Colors.white.withOpacity(0.5),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Text(
+        result.plainText ?? '',
+        style: const TextStyle(fontSize: 16, height: 1.6),
+      ),
+    );
   }
 }

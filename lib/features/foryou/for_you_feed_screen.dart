@@ -40,6 +40,8 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../../core/audio/stream_resolver.dart';
+import '../../core/storage/local_library.dart';
 import '../../main.dart' show
     audioPlayer,
     audioHandler,
@@ -119,11 +121,14 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_resolvedStreamUrls.containsKey(index)) return;
     final track = _items[index];
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(track['id'] as String);
-      final audio = manifest.audioOnly.sortByBitrate();
-      if (audio.isEmpty) return;
-      final stream = audio.toList()[(audio.length / 2).floor()];
-      _resolvedStreamUrls[index] = stream.url.toString();
+      final streamUrl = await resolveAudioStreamUrlLogged(
+        _yt,
+        track['id'] as String,
+        tag: 'ForYouPreload',
+      );
+      if (streamUrl != null) {
+        _resolvedStreamUrls[index] = streamUrl;
+      }
     } catch (_) {
       // Preload failures are non-fatal — _playIndex will just resolve
       // fresh (with a visible loading state) if the cache miss happens.
@@ -138,13 +143,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
     try {
       String? streamUrl = _resolvedStreamUrls[index];
-      streamUrl ??= await () async {
-        final manifest = await _yt.videos.streamsClient.getManifest(track['id'] as String);
-        final audio = manifest.audioOnly.sortByBitrate();
-        if (audio.isEmpty) return null;
-        final stream = audio.toList()[(audio.length / 2).floor()];
-        return stream.url.toString();
-      }();
+      streamUrl ??= await resolveAudioStreamUrlLogged(
+        _yt,
+        track['id'] as String,
+        tag: 'ForYouPlay',
+      );
 
       if (streamUrl == null) return;
 
@@ -159,7 +162,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       currentTrack = track;
       currentQueue = List<Map<String, dynamic>>.from(_items);
       currentQueueIndex = index;
-      audioHandler.updateNowPlaying(_trackToMediaItem(track));
+      audioHandler?.updateNowPlaying(_trackToMediaItem(track));
 
       // Feed the recommendation signal (see ForYouFeedService) — this
       // is what makes the feed feel personalized over time.
@@ -369,7 +372,8 @@ class _ForYouCard extends StatelessWidget {
             bottom: 140,
             child: StatefulBuilder(
               builder: (context, setLikeState) {
-                final isLiked = likedSongIds.contains(track['id']);
+                final isLiked =
+                    LocalLibrary.instance.isLiked(track['id'] as String? ?? '');
                 return IconButton(
                   icon: Icon(
                     isLiked ? Icons.favorite : Icons.favorite_border,
@@ -378,12 +382,8 @@ class _ForYouCard extends StatelessWidget {
                   ),
                   onPressed: () {
                     HapticFeedback.lightImpact();
-                    setLikeState(() {
-                      if (isLiked) {
-                        likedSongIds.remove(track['id']);
-                      } else {
-                        likedSongIds.add(track['id'] as String);
-                      }
+                    LocalLibrary.instance.toggleLiked(track).then((_) {
+                      setLikeState(() {});
                     });
                   },
                 );

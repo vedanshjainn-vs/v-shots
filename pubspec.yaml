@@ -22,6 +22,17 @@ dependencies:
   # Background playback / lock-screen controls (see
   # lib/core/audio/vshots_audio_handler.dart for wiring notes)
   audio_service: ^0.18.19
+  # Local persistence for Liked Songs / Recently Played / Playlists /
+  # taste-profile (see core/storage/local_library.dart) — previously
+  # all in-memory only, wiped on every app restart.
+  shared_preferences: ^2.5.5
+  # HTTP client for the LRCLIB lyrics API (see
+  # core/lyrics/lyrics_service.dart) and general small HTTP calls.
+  http: ^1.6.0
+  # For picking local audio files to import for guaranteed-legal,
+  # zero-licensing-risk offline playback (see
+  # features/library/local_import_service.dart).
+  file_picker: ^11.0.2
 
 dev_dependencies:
   flutter_test:

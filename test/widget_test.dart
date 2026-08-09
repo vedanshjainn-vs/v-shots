@@ -25,6 +25,17 @@ void main() {
       // Splash screen shows the app name and tagline (see SplashScreen
       // in lib/main.dart).
       expect(find.text('V Shots'), findsOneWidget);
+
+      // SplashScreen starts a Future.delayed(seconds: 2) timer in
+      // initState to navigate away. The Flutter test framework
+      // requires every pending timer to either fire or be explicitly
+      // cancelled before the test ends — leaving it pending (which the
+      // original version of this test did, by only asserting the
+      // splash text and returning immediately) throws a real
+      // "Pending timers" test-framework exception. Advancing past it
+      // here lets the timer complete cleanly within this test's scope.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('Splash navigates to the main tab shell after delay',
