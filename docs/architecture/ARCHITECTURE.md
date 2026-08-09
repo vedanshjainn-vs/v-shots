@@ -1,5 +1,16 @@
 # Project Lyra — Architecture Documentation
 
+> **⚠️ REALITY CHECK:** the Clean Architecture / Riverpod layering described below was
+> never actually built — the real app (`com.vshots.live`, "V Shots") is a single
+> primary `lib/main.dart` using `StatefulWidget`/`setState`, plus focused files under
+> `lib/core/` (audio, backend, cache, lyrics, player, providers, storage, theme) and
+> `lib/features/` (foryou, library, profile). No Riverpod/Bloc/Provider/GetX package is
+> in `pubspec.yaml`. The one part of this document that IS now real is a Provider
+> Architecture for content sources — see `docs/architecture/PROVIDER_ARCHITECTURE.md`'s
+> own reality-check note and `lib/core/providers/`. Everything else below remains
+> aspirational design notes for a much larger hypothetical system, not a description of
+> the current codebase — see `docs/CURRENT_BASELINE.md` for what's actually true today.
+
 ## Overview
 
 Project Lyra uses **Clean Architecture** with **Feature-First** organization, designed to scale to 100M+ users.

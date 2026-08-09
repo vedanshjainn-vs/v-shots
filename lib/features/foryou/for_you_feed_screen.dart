@@ -39,23 +39,26 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import '../../core/audio/stream_resolver.dart';
 import '../../core/storage/local_library.dart';
 import '../../shared/widgets/app_image.dart';
+// Phase 3 fix: no longer imports `likedSongIds` (a stale reference —
+// that global was removed from main.dart when LocalLibrary replaced
+// it; this `show` clause was never updated, a real
+// `undefined_shown_name` analyzer warning confirmed in
+// docs/CURRENT_BASELINE.md Section 7) or `sharedYt`/stream_resolver.dart
+// directly (Phase 3's "UI must never directly call YoutubeExplode" —
+// this screen now goes through `musicRepository` instead, see below).
 import '../../main.dart' show
     audioPlayer,
     audioHandler,
     currentTrack,
     currentQueue,
     currentQueueIndex,
-    likedSongIds,
     forYouFeedService,
-    sharedYt,
+    musicRepository,
     showMoreOptionsSheet,
     showAddToPlaylistSheet;
-import 'for_you_feed_service.dart';
 
 class ForYouFeedScreen extends StatefulWidget {
   const ForYouFeedScreen({super.key});
@@ -135,11 +138,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_resolvedStreamUrls.containsKey(index)) return;
     final track = _items[index];
     try {
-      final streamUrl = await resolveAudioStreamUrlLogged(
-        sharedYt,
-        track['id'] as String,
-        tag: 'ForYouPreload',
-      );
+      // Phase 3 fix: routed through MusicRepository -> ProviderManager
+      // -> YouTubeMusicProvider, which itself delegates to the
+      // existing resolveAudioStreamUrlLogged()/stream_resolver.dart —
+      // this screen no longer calls that (or `sharedYt`) directly.
+      final streamUrl = await musicRepository.getStream(track['id'] as String);
       if (streamUrl != null) {
         _resolvedStreamUrls[index] = streamUrl;
       }
@@ -157,11 +160,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
     try {
       String? streamUrl = _resolvedStreamUrls[index];
-      streamUrl ??= await resolveAudioStreamUrlLogged(
-        sharedYt,
-        track['id'] as String,
-        tag: 'ForYouPlay',
-      );
+      streamUrl ??= await musicRepository.getStream(track['id'] as String);
 
       if (streamUrl == null) return;
 

@@ -1,10 +1,39 @@
-# 🎵 Project Lyra
+# 🎵 V Shots
 
-> A premium music streaming experience — built for scale.
+> A personal, hobby-scale music streaming app (package `com.vshots.live`) — NOT the
+> hypothetical "Project Lyra" scale/branding described in the rest of this document.
 
-**Project Lyra** is an Android application architecture designed to support **100M+ users** with music streaming, AI-powered recommendations, podcasts, audiobooks, and more.
+**⚠️ STATUS CORRECTION (real, current state — see `docs/CURRENT_BASELINE.md` and
+`V_SHOTS_CURRENT_STATE_AUDIT.md` for the full, verified picture):** this document was
+originally written for an earlier, much larger hypothetical "Project Lyra" (100M+ users,
+Spotify/Apple Music/YouTube Music multi-provider) concept. The REAL, actually-built app is
+smaller and different in scope, but IS a real, working, substantially-featured app — the
+line that used to say "No features are implemented yet" was false and has been corrected:
 
-> ⚠️ **This is the architecture foundation. No features are implemented yet.**
+- ✅ Real YouTube-backed search, playback (`just_audio` + `audio_service` background
+  playback), a Provider Architecture (`lib/core/providers/` — `MusicRepository` ->
+  `ProviderManager` -> `YouTubeMusicProvider`, see below), Home (7–9 real, auto-refreshing
+  categories), a Resso-style Discover/For You swipe feed with a real recency-weighted
+  recommendation engine, Search (debounced, cached, deduplicated), Library (Liked Songs /
+  Playlists / Recently Played / local file import), Lyrics (LRCLIB), a Sleep Timer,
+  Shuffle/Repeat, Google Sign-In (via Supabase — see Known Gaps below), and CI/CD
+  (GitHub Actions -> BrowserStack).
+- ❌ NOT implemented (and not currently planned): multi-provider content (Spotify/Apple
+  Music), podcasts/audiobooks, a 100M-user backend, Clean-Architecture layering, or
+  Riverpod state management (the app uses `StatefulWidget`/`setState` in one primary
+  `lib/main.dart`, plus focused feature files under `lib/features/` and `lib/core/`).
+- ⚠️ Known real gap: Google Sign-In requires a Supabase Dashboard Client Secret that has
+  not yet been configured (see `lib/core/backend/auth_service.dart`'s file header for the
+  exact steps) — not a code bug.
+- ⚠️ This app streams audio via an unofficial YouTube client
+  (`youtube_explode_dart`) for personal/learning use. This is explicitly **not** a
+  legally safe foundation for a commercial/Play-Store launch — see this repo's commit
+  history and `docs/legal/terms_of_service.md` for the full disclosure.
+
+Everything below this point in the document describes the ORIGINAL, larger "Project
+Lyra" architecture concept/aspiration — treat it as historical/aspirational design
+notes, not a description of the current codebase, unless cross-referenced against
+`docs/CURRENT_BASELINE.md`.
 
 ---
 

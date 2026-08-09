@@ -10,48 +10,85 @@
 // ════════════════════════════════════════════════
 
 import 'dart:async';
-import 'dart:ui';
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-import 'core/audio/stream_resolver.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
+import 'core/player/queue_controller.dart';
+import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
+import 'core/providers/provider_bootstrap.dart';
 import 'core/theme/app_colors.dart';
 import 'shared/widgets/app_image.dart';
 import 'core/storage/local_library.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/library/local_import_service.dart';
+import 'features/profile/settings_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Non-blocking-on-failure by design — see supabase_service.dart's
-  // file header for why a Supabase outage/misconfiguration must never
-  // prevent the app from starting and playing music.
-  await SupabaseService.initialize();
-  // Local persistence (Liked Songs / Recently Played / Playlists /
-  // taste-profile) — see core/storage/local_library.dart. Previously
-  // all of this was plain in-memory globals, wiped on every restart.
-  await LocalLibrary.instance.initialize();
+
+  // Phase 9 fix (startup concurrency): the audit found these four
+  // startup steps ran fully SEQUENTIALLY, one `await` after another,
+  // even though most of them touch completely independent subsystems
+  // (a Postgres-backed auth SDK, on-device shared_preferences, and an
+  // OS media-session registration) with no real data dependency
+  // between them — every millisecond one took was pure added latency
+  // before the splash screen could even start its own timer.
+  //
+  // Real dependency that DOES exist and is preserved here:
+  //   AuthService.instance.initializeGoogleSignIn() reads
+  //   GOOGLE_WEB_CLIENT_ID via `dotenv.maybeGet(...)`, which requires
+  //   `dotenv.load(...)` to have already completed — and THAT load
+  //   happens inside SupabaseService.initialize() (see that file). So
+  //   AuthService genuinely cannot run concurrently with
+  //   SupabaseService — it must run after. Everything else below has
+  //   no such dependency and is safe to run at the same time:
+  //     - SupabaseService.initialize() (network + dotenv load)
+  //     - LocalLibrary.instance.initialize() (on-device
+  //       shared_preferences reads — zero network, zero shared state
+  //       with Supabase)
+  //     - AudioService.init(...) (OS media-session registration — zero
+  //       shared state with either of the above)
+  await Future.wait([
+    // Non-blocking-on-failure by design — see supabase_service.dart's
+    // file header for why a Supabase outage/misconfiguration must
+    // never prevent the app from starting and playing music.
+    SupabaseService.initialize(),
+    // Local persistence (Liked Songs / Recently Played / Playlists /
+    // taste-profile) — see core/storage/local_library.dart. Previously
+    // all of this was plain in-memory globals, wiped on every restart.
+    LocalLibrary.instance.initialize(),
+  ]);
+
   // google_sign_in v7 requires this exactly-once initialize() call
-  // before any sign-in UI is shown — see auth_service.dart.
+  // before any sign-in UI is shown — see auth_service.dart. Must run
+  // AFTER the Future.wait above (depends on SupabaseService having
+  // already loaded .env via dotenv.load()).
   await AuthService.instance.initializeGoogleSignIn();
 
   // Background playback / lock-screen controls — wraps the SAME
   // `audioPlayer` global this app already uses everywhere else (see
   // core/audio/vshots_audio_handler.dart for the full design rationale
   // on why this bridges rather than replaces the existing playback
-  // code). Must be initialized before runApp().
+  // code). Must be initialized before runApp(). Has no dependency on
+  // Supabase/LocalLibrary/AuthService, but audio_service's own plugin
+  // channel setup does need WidgetsFlutterBinding (already ensured
+  // above) — kept as its own awaited step rather than folded into the
+  // Future.wait above for exactly that reason (it's not provably
+  // independent of plugin-channel init order the way the other two
+  // are of EACH OTHER), matching this task's "don't sacrifice
+  // reliability for benchmark numbers" rule.
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),
     config: const AudioServiceConfig(
@@ -121,6 +158,26 @@ bool isCurrentlyPlaying = false;
 // in-memory-only `likedSongIds`/`recentSearches` lists were removed
 // since everything reads/writes through LocalLibrary.instance now.
 
+// Real shuffle/repeat state (Phase 8 fix — previously the Shuffle and
+// Repeat buttons in PlayerScreen were empty `onPressed: () {}` stubs
+// with no backing state anywhere in the codebase, confirmed during the
+// read-only audit). Kept as globals alongside currentQueue/
+// currentQueueIndex above (not per-PlayerScreen-instance state)
+// because playback continues via the OS media session / mini-player
+// after PlayerScreen is popped, and repeat/shuffle must keep applying
+// then too — see RepeatMode's own file header for the full design
+// rationale and core/player/queue_controller.dart for the shared
+// next/previous logic that actually reads these.
+RepeatMode repeatMode = RepeatMode.off;
+bool isShuffleOn = false;
+// When shuffle is on, this holds a shuffled permutation of indices
+// into `currentQueue` — `queue_controller.dart` walks THIS order
+// instead of `currentQueue`'s natural order, without ever mutating
+// `currentQueue` itself (so turning shuffle back off restores the
+// original order exactly, and Library/Home/Search screens that read
+// `currentQueue` directly are unaffected).
+List<int> shuffleOrder = [];
+
 // Single, app-wide shared YoutubeExplode instance. Previously THREE
 // separate instances existed (this one, a second one for
 // ForYouFeedService, and a third inside for_you_feed_screen.dart) —
@@ -131,10 +188,21 @@ bool isCurrentlyPlaying = false;
 // constructing their own — see the refinement list's Section B #2.
 final YoutubeExplode sharedYt = YoutubeExplode();
 
+// Provider Architecture entry point (see core/providers/). ALL content
+// access (search/trending/recommendations/stream resolution) from UI
+// code goes through this — see music_repository.dart's file header
+// for the full UI -> MusicRepository -> ProviderManager ->
+// YouTubeMusicProvider -> existing YouTube implementation -> Stream
+// Resolver -> just_audio chain this implements. Built once here, from
+// the SAME shared `sharedYt` instance above — this does not construct
+// a second YouTube client.
+final musicRepository = buildMusicRepository(sharedYt);
+
 // "For You" swipe feed's recommendation service (see
-// features/foryou/for_you_feed_service.dart) — now reuses the single
-// shared instance above instead of constructing its own.
-final forYouFeedService = ForYouFeedService(sharedYt);
+// features/foryou/for_you_feed_service.dart) — Phase 3 fix: now takes
+// `musicRepository` (not `sharedYt` directly), so it never calls
+// YoutubeExplode itself either.
+final forYouFeedService = ForYouFeedService(musicRepository);
 
 // ═══════════════════════════════════════════════
 // DIAGNOSTIC LOGGER
@@ -151,10 +219,15 @@ void _log(String message) {
 /// to this), so there's one real implementation of "what does skip do"
 /// rather than two different behaviors depending on where the tap came
 /// from.
+///
+/// Explicit skips always move (see QueueController.nextIndexForSkip's
+/// doc — repeat mode never blocks an explicit user/OS skip, only
+/// natural track completion does; see _handleTrackCompleted below for
+/// that path). Honors shuffle order when `isShuffleOn` is true.
 Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
   if (currentQueue.isEmpty) return;
-  final nextIndex =
-      (currentQueueIndex + delta + currentQueue.length) % currentQueue.length;
+  final nextIndex = QueueController.nextIndexForSkip(delta);
+  if (nextIndex == null) return;
   final track = currentQueue[nextIndex];
   if (context != null && context.mounted) {
     await playTrack(context, track, currentQueue, nextIndex);
@@ -163,11 +236,7 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
     // while the app has no visible Scaffold to attach a SnackBar to) —
     // resolve and play directly without the loading-snackbar UX.
     try {
-      final streamUrl = await resolveAudioStreamUrlLogged(
-        sharedYt,
-        track['id'] as String,
-        tag: 'SKIP',
-      );
+      final streamUrl = await musicRepository.getStream(track['id'] as String);
       if (streamUrl == null) return;
       await audioPlayer.setUrl(streamUrl);
       await audioPlayer.play();
@@ -182,6 +251,40 @@ Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
       unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
     } catch (e) {
       _log('[SKIP] Background skip failed: $e');
+    }
+  }
+}
+
+/// Handles a track finishing playback ON ITS OWN (not a user/OS skip)
+/// — wired to `audioHandler?.onTrackCompleted` in MainShell.initState.
+/// This is the one place repeat mode (off/one/all) actually takes
+/// effect (Phase 8 fix — previously this always just called
+/// `_playAdjacentInQueue(context, 1)` unconditionally, meaning repeat
+/// mode did not exist and playback simply always advanced by one,
+/// wrapping forever regardless of any button state).
+Future<void> _handleTrackCompleted(BuildContext? context) async {
+  final nextIndex = QueueController.nextIndexOnCompletion();
+  if (nextIndex == null) {
+    // Repeat is off and the queue/shuffle order has genuinely ended —
+    // stop rather than looping forever, matching RepeatMode.off's
+    // documented contract.
+    return;
+  }
+  final track = currentQueue[nextIndex];
+  if (context != null && context.mounted) {
+    await playTrack(context, track, currentQueue, nextIndex);
+  } else {
+    try {
+      final streamUrl = await musicRepository.getStream(track['id'] as String);
+      if (streamUrl == null) return;
+      await audioPlayer.setUrl(streamUrl);
+      await audioPlayer.play();
+      currentTrack = track;
+      currentQueueIndex = nextIndex;
+      audioHandler?.updateNowPlaying(_trackToMediaItem(track));
+      unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+    } catch (e) {
+      _log('[AUTO_ADVANCE] Background auto-advance failed: $e');
     }
   }
 }
@@ -313,18 +416,19 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onSkipNext = () => _playAdjacentInQueue(context, 1);
     audioHandler?.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
 
-    // Auto-advance to the next track when the current one finishes.
-    // ⚠️ Real gap found and fixed: this callback existed in
-    // VShotsAudioHandler (wired to just_audio's processingStateStream)
-    // but was never actually assigned anywhere in the app — meaning a
-    // song finishing playback did nothing at all; playback would just
-    // silently stop rather than advancing to the next queued track.
-    // Wired here (not inside PlayerScreen) specifically so auto-advance
-    // keeps working even when the user has navigated away from the
-    // full-screen player back to Home/Search/Library — matching how
-    // every real music app behaves (music keeps playing/advancing in
-    // the background regardless of which screen is currently open).
-    audioHandler?.onTrackCompleted = () => _playAdjacentInQueue(context, 1);
+    // Auto-advance to the next track when the current one finishes —
+    // now respects real Repeat state (off/one/all), see
+    // _handleTrackCompleted's doc comment and
+    // core/player/queue_controller.dart's nextIndexOnCompletion() for
+    // the actual off/one/all branching logic (Phase 8 fix — this
+    // previously always unconditionally advanced by one with no
+    // repeat-mode concept at all). Wired here (not inside
+    // PlayerScreen) specifically so auto-advance keeps working even
+    // when the user has navigated away from the full-screen player
+    // back to Home/Search/Library — matching how every real music app
+    // behaves (music keeps playing/advancing in the background
+    // regardless of which screen is currently open).
+    audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
   }
 
   @override
@@ -493,23 +597,13 @@ class _MiniPlayer extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════
-// HELPER: Clean title
-// ═══════════════════════════════════════════════
-
-String cleanTitle(String title, String artist) {
-  var c = title;
-  if (c.startsWith('$artist - ')) c = c.substring(artist.length + 3);
-  c = c
-      .replaceAll(RegExp(r'\s*\(Official.*?\)', caseSensitive: false), '')
-      .replaceAll(RegExp(r'\s*\[Official.*?\]', caseSensitive: false), '')
-      .replaceAll(RegExp(r'\s*\(Lyric.*?\)', caseSensitive: false), '')
-      .replaceAll(RegExp(r'\s*\[Lyric.*?\]', caseSensitive: false), '')
-      .replaceAll(RegExp(r'\s*\(Audio.*?\)', caseSensitive: false), '')
-      .replaceAll(RegExp(r'\s*\[Audio.*?\]', caseSensitive: false), '')
-      .trim();
-  return c.isEmpty ? title : c;
-}
-
+// NOTE: title cleaning ("Artist - Song (Official Video)" -> "Song")
+// now lives in shared/utils/text_utils.dart's cleanTitle() — this used
+// to be a local copy here, but nothing in main.dart calls it directly
+// any more (Home/Search/Player all resolve tracks via
+// `musicRepository`, which returns already-cleaned titles from
+// YoutubeMusicMapper — see that file and text_utils.dart's headers for
+// why the two previously-separate copies were consolidated).
 // ═══════════════════════════════════════════════
 // FIX: Play track with proper diagnostics
 // ═══════════════════════════════════════════════
@@ -540,15 +634,14 @@ Future<void> playTrack(
       duration: const Duration(seconds: 10),
     ));
 
-    // Step 2: Resolve stream (multi-client fallback — see
-    // core/audio/stream_resolver.dart for why this must never be a
-    // plain, unfixed getManifest() call).
+    // Step 2: Resolve stream — routed through MusicRepository ->
+    // ProviderManager -> YouTubeMusicProvider, which itself calls the
+    // EXISTING resolveAudioStreamUrlLogged()/stream_resolver.dart
+    // multi-client fallback (see that file's header for why this must
+    // never be a plain, unfixed getManifest() call, and
+    // youtube_music_provider.dart's getStream() for the delegation).
     _log('[YT] Resolving stream for: ${track['id']}');
-    final streamUrl = await resolveAudioStreamUrlLogged(
-      sharedYt,
-      track['id'] as String,
-      tag: 'PLAYBACK',
-    );
+    final streamUrl = await musicRepository.getStream(track['id'] as String);
 
     if (streamUrl == null || streamUrl.isEmpty) {
       throw Exception('Could not resolve a playable stream for this track');
@@ -756,26 +849,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _search(String q) async {
-    final results = await sharedYt.search.search(q);
-    return results
-        .whereType<Video>()
-        .where((v) {
-          final t = v.title.toLowerCase();
-          final dur = v.duration?.inMinutes ?? 0;
-          if (dur > 15) return false;
-          if (t.contains('podcast') || t.contains('compilation')) return false;
-          return true;
-        })
-        .take(15)
-        .map((v) => {
-              'id': v.id.value,
-              'title': cleanTitle(v.title, v.author),
-              'artist': v.author,
-              'artwork': v.thumbnails.highResUrl.toString(),
-              'duration': v.duration?.inSeconds ?? 0,
-            })
-        .toList();
+  // Phase 3 fix: HomeScreen no longer calls `sharedYt.search.search()`
+  // directly — routed through MusicRepository -> ProviderManager ->
+  // YouTubeMusicProvider, which applies the exact same
+  // filter/clean/map logic this method used to do inline (see
+  // YoutubeMusicMapper — same 15-min cap, same podcast/compilation
+  // exclusion, same title cleaning), just consolidated into one shared
+  // place instead of 3 near-duplicate copies (Home/Search/For You each
+  // had their own).
+  Future<List<Map<String, dynamic>>> _search(String q) {
+    return musicRepository.search(q, limit: 15);
   }
 
   @override
@@ -999,11 +1082,32 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
+// A search screen's real load state — mirrors HomeScreen's own
+// loading/loaded/error split (Phase 7 fix) so Search can finally show
+// a genuine "search failed, try again" state distinct from "zero
+// results for this query," which the audit flagged as identical UI
+// before this fix.
+enum _SearchStatus { idle, loading, loaded, error }
+
 class _SearchScreenState extends State<SearchScreen> {
   final _controller = TextEditingController();
   List<Map<String, dynamic>> _results = [];
-  bool _loading = false;
-  bool _searched = false;
+  _SearchStatus _status = _SearchStatus.idle;
+  String? _lastQuery;
+
+  // Phase 7 fix: live-as-you-type debounce, instead of only firing on
+  // Enter/search-icon press. 400ms is chosen to comfortably outlast
+  // normal typing cadence (so a fast typist doesn't fire a request per
+  // keystroke) while still feeling responsive.
+  Timer? _debounce;
+
+  // Phase 7 fix: guards against a slow, stale request's result landing
+  // AFTER a newer request already returned (e.g. user types "a", then
+  // quickly "ab" — if "a"'s request is slower, it must not overwrite
+  // "ab"'s already-displayed results). Each request captures its own
+  // query at call time and only applies its result if it's still the
+  // most recent query when it completes.
+  int _requestSeq = 0;
 
   static const _categories = [
     ('Bollywood', '🎵', Color(0xFFE91E63)),
@@ -1016,44 +1120,94 @@ class _SearchScreenState extends State<SearchScreen> {
     ('Workout', '💪', Color(0xFFFF5722)),
   ];
 
-  Future<void> _search(String q) async {
-    if (q.trim().isEmpty) return;
-    setState(() { _loading = true; _searched = true; });
+  /// Called on every keystroke — debounces, then delegates to
+  /// [_search]. Kept separate from [_search] so category chips/recent
+  /// searches (which want to search IMMEDIATELY, not after a delay)
+  /// can still call [_search] directly.
+  void _onQueryChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().isEmpty) {
+      setState(() {
+        _status = _SearchStatus.idle;
+        _results = [];
+      });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () => _search(q));
+  }
 
-    unawaited(LocalLibrary.instance.recordRecentSearch(q));
+  Future<void> _search(String q) async {
+    final query = q.trim();
+    if (query.isEmpty) return;
+
+    // Phase 7 fix: reuse SearchCache (previously Home-only) so
+    // repeating the same search term within the TTL window doesn't
+    // re-hit the network — instant results + a silent background
+    // refresh, same stale-while-revalidate pattern Home already uses.
+    final cached = SearchCache.instance.get(query);
+    final isFresh = SearchCache.instance.isFresh(query);
+    if (cached != null) {
+      setState(() {
+        _results = cached;
+        _status = _SearchStatus.loaded;
+        _lastQuery = query;
+      });
+      if (isFresh) return; // fresh enough — skip the network round-trip
+    } else {
+      setState(() {
+        _status = _SearchStatus.loading;
+        _lastQuery = query;
+      });
+    }
+
+    unawaited(LocalLibrary.instance.recordRecentSearch(query));
+
+    // Phase 7 fix: prevent duplicate simultaneous requests / stale
+    // results — see _requestSeq's doc above.
+    final seq = ++_requestSeq;
 
     try {
-      final results = await sharedYt.search.search(q);
-      if (mounted) {
-        setState(() {
-          _results = results
-              .whereType<Video>()
-              .where((v) {
-                final t = v.title.toLowerCase();
-                final dur = v.duration?.inMinutes ?? 0;
-                if (dur > 15) return false;
-                if (t.contains('podcast') || t.contains('compilation')) return false;
-                return true;
-              })
-              .take(30)
-              .map((v) => {
-                    'id': v.id.value,
-                    'title': cleanTitle(v.title, v.author),
-                    'artist': v.author,
-                    'artwork': v.thumbnails.highResUrl.toString(),
-                    'duration': v.duration?.inSeconds ?? 0,
-                  })
-              .toList();
-          _loading = false;
-        });
+      final detailed = await musicRepository.searchDetailed(query, limit: 30);
+      if (!mounted || seq != _requestSeq) return; // superseded by a newer query
+
+      if (!detailed.success) {
+        if (cached == null) {
+          setState(() => _status = _SearchStatus.error);
+        }
+        // else: keep showing the cached results rather than surfacing
+        // a background-refresh failure as a hard error (matches
+        // HomeScreen's existing _loadSection() behavior).
+        return;
       }
+
+      // Phase 7 fix: de-duplicate by track id — YouTube search can
+      // return the same video id twice (e.g. across differently
+      // sorted result pages within one response); previously nothing
+      // de-duplicated this.
+      final seenIds = <String>{};
+      final deduped = <Map<String, dynamic>>[];
+      for (final track in detailed.tracks) {
+        final id = track['id'] as String? ?? '';
+        if (id.isEmpty || seenIds.add(id)) deduped.add(track);
+      }
+
+      SearchCache.instance.set(query, deduped);
+      setState(() {
+        _results = deduped;
+        _status = _SearchStatus.loaded;
+      });
     } catch (e) {
-      if (mounted) setState(() { _results = []; _loading = false; });
+      if (!mounted || seq != _requestSeq) return;
+      if (cached == null) setState(() => _status = _SearchStatus.error);
     }
   }
 
   @override
-  void dispose() { _controller.dispose(); super.dispose(); }
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1067,6 +1221,11 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           child: TextField(
             controller: _controller,
+            // Phase 7 fix: live-as-you-type (debounced) search, not
+            // submit-only — onSubmitted kept too so pressing
+            // Enter/search still works instantly without waiting out
+            // the debounce.
+            onChanged: _onQueryChanged,
             onSubmitted: _search,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
@@ -1079,43 +1238,61 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
-          : _searched
-              ? _results.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.search_off, size: 40, color: Colors.white.withOpacity(0.3)),
-                          const SizedBox(height: 12),
-                          Text('No results for "${_controller.text}"',
-                              style: TextStyle(color: Colors.white.withOpacity(0.5))),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _results.length,
-                      itemBuilder: (ctx, i) {
-                        final track = _results[i];
-                        return ListTile(
-                          leading: AppImage(
-                            (track['artwork'] as String?) ?? '',
-                            width: 48,
-                            height: 48,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          title: Text((track['title'] as String?) ?? '',
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text((track['artist'] as String?) ?? '',
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: Colors.white.withOpacity(0.6))),
-                          onTap: () => playTrack(context, track, _results, i),
-                        );
-                      },
-                    )
-              : ListView(
+      body: switch (_status) {
+        _SearchStatus.loading =>
+          const Center(child: CircularProgressIndicator(color: AppColors.accent)),
+        _SearchStatus.error => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.wifi_off, size: 40, color: Colors.white.withOpacity(0.4)),
+                const SizedBox(height: 12),
+                Text('Search failed — check your connection',
+                    style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => _search(_lastQuery ?? _controller.text),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        _SearchStatus.loaded when _results.isEmpty => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.search_off, size: 40, color: Colors.white.withOpacity(0.3)),
+                const SizedBox(height: 12),
+                // Phase 7 fix: this is now a GENUINE "zero results"
+                // state (distinct from _SearchStatus.error above) —
+                // the request succeeded, it just found nothing.
+                Text('No results for "${_lastQuery ?? _controller.text}"',
+                    style: TextStyle(color: Colors.white.withOpacity(0.5))),
+              ],
+            ),
+          ),
+        _SearchStatus.loaded => ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _results.length,
+            itemBuilder: (ctx, i) {
+              final track = _results[i];
+              return ListTile(
+                leading: AppImage(
+                  (track['artwork'] as String?) ?? '',
+                  width: 48,
+                  height: 48,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                title: Text((track['title'] as String?) ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text((track['artist'] as String?) ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                onTap: () => playTrack(context, track, _results, i),
+              );
+            },
+          ),
+        _SearchStatus.idle => ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
                     if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
@@ -1159,6 +1336,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   ],
                 ),
+      },
     );
   }
 }
@@ -1655,11 +1833,59 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           const SizedBox(height: 8),
-          _item(Icons.workspace_premium, 'Upgrade to Premium', AppColors.accent),
-          _item(Icons.settings, 'Settings'),
-          _item(Icons.help_outline, 'Help & Support'),
-          _item(Icons.privacy_tip_outlined, 'Privacy Policy'),
-          _item(Icons.description_outlined, 'Terms of Service'),
+          // "Upgrade to Premium" — REMOVED (Phase 8 fix). There is no
+          // real subscription/billing/premium-gating implementation
+          // anywhere in this codebase; per this task's Phase 10 rule
+          // ("if a feature is not implemented, remove the button
+          // rather than leaving a dummy button"), a fake "Coming
+          // Soon" dialog would still be a non-functional decoration,
+          // so the row is gone entirely rather than wired to nothing.
+          _item(
+            context,
+            Icons.settings,
+            'Settings',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+          _item(
+            context,
+            Icons.help_outline,
+            'Help & Support',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(builder: (_) => const HelpScreen()),
+            ),
+          ),
+          _item(
+            context,
+            Icons.privacy_tip_outlined,
+            'Privacy Policy',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const LegalDocScreen(
+                  title: 'Privacy Policy',
+                  assetPath: 'docs/legal/privacy_policy.md',
+                ),
+              ),
+            ),
+          ),
+          _item(
+            context,
+            Icons.description_outlined,
+            'Terms of Service',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const LegalDocScreen(
+                  title: 'Terms of Service',
+                  assetPath: 'docs/legal/terms_of_service.md',
+                ),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           if (isSignedIn)
             ListTile(
@@ -1672,11 +1898,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _item(IconData icon, String label, [Color? color]) {
+  /// Real, working row — Phase 8 fix. Previously this helper took no
+  /// `onTap` at all, meaning every row using it (including this
+  /// method's own former callers) was silently unclickable despite
+  /// showing a chevron. Every caller now passes a real destination
+  /// (see above) — this is no longer possible to call without one.
+  Widget _item(BuildContext context, IconData icon, String label,
+      {required VoidCallback onTap, Color? color}) {
     return ListTile(
       leading: Icon(icon, color: color ?? Colors.white.withOpacity(0.7)),
       title: Text(label),
       trailing: Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3)),
+      onTap: onTap,
     );
   }
 }
@@ -1886,10 +2119,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
+                // Shuffle — real toggle (Phase 8 fix; was an empty
+                // onPressed stub with no state). Rebuilds shuffleOrder
+                // (see core/player/queue_controller.dart) keeping the
+                // currently-playing track first, so turning shuffle on
+                // doesn't jump away from what's playing right now.
                 IconButton(
                     icon: Icon(Icons.shuffle, size: 24,
-                        color: Colors.white.withOpacity(0.6)),
-                    onPressed: () {}),
+                        color: isShuffleOn
+                            ? AppColors.accent
+                            : Colors.white.withOpacity(0.6)),
+                    tooltip: isShuffleOn ? 'Shuffle on' : 'Shuffle off',
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        isShuffleOn = !isShuffleOn;
+                        if (isShuffleOn) {
+                          QueueController.rebuildShuffleOrder(
+                              keepCurrentAt: currentQueueIndex);
+                        }
+                      });
+                    }),
                 IconButton(
                     icon: const Icon(Icons.skip_previous, size: 40),
                     onPressed: _prev),
@@ -1922,10 +2172,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 IconButton(
                     icon: const Icon(Icons.skip_next, size: 40),
                     onPressed: _next),
+                // Repeat — real 3-state toggle (off -> one -> all ->
+                // off), Phase 8 fix. See core/player/repeat_mode.dart
+                // and _handleTrackCompleted() in this file for where
+                // this state actually changes playback behavior (on
+                // natural track completion, not on skip).
                 IconButton(
-                    icon: Icon(Icons.repeat, size: 24,
-                        color: Colors.white.withOpacity(0.6)),
-                    onPressed: () {}),
+                    icon: Icon(
+                        repeatMode == RepeatMode.one
+                            ? Icons.repeat_one
+                            : Icons.repeat,
+                        size: 24,
+                        color: repeatMode == RepeatMode.off
+                            ? Colors.white.withOpacity(0.6)
+                            : AppColors.accent),
+                    tooltip: switch (repeatMode) {
+                      RepeatMode.off => 'Repeat off',
+                      RepeatMode.one => 'Repeat one',
+                      RepeatMode.all => 'Repeat all',
+                    },
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => repeatMode = repeatMode.next());
+                    }),
               ],
             ),
             const Spacer(),
@@ -1940,14 +2209,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _next() async {
     if (widget.queue.isEmpty) return;
-    _currentIndex = (_currentIndex + 1) % widget.queue.length;
+    if (isShuffleOn && shuffleOrder.length != widget.queue.length) {
+      QueueController.rebuildShuffleOrder(keepCurrentAt: _currentIndex);
+    }
+    _currentIndex = QueueController.computeSkip(
+      queueLength: widget.queue.length,
+      currentIndex: _currentIndex,
+      delta: 1,
+      shuffleOn: isShuffleOn,
+      order: shuffleOrder,
+    );
     _currentTrack = widget.queue[_currentIndex];
     await _play();
   }
 
   Future<void> _prev() async {
     if (widget.queue.isEmpty) return;
-    _currentIndex = (_currentIndex - 1 + widget.queue.length) % widget.queue.length;
+    if (isShuffleOn && shuffleOrder.length != widget.queue.length) {
+      QueueController.rebuildShuffleOrder(keepCurrentAt: _currentIndex);
+    }
+    _currentIndex = QueueController.computeSkip(
+      queueLength: widget.queue.length,
+      currentIndex: _currentIndex,
+      delta: -1,
+      shuffleOn: isShuffleOn,
+      order: shuffleOrder,
+    );
     _currentTrack = widget.queue[_currentIndex];
     await _play();
   }
@@ -1955,11 +2242,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _play() async {
     try {
       _log('[PLAYER] Resolving track: ${_currentTrack['id']}');
-      final streamUrl = await resolveAudioStreamUrlLogged(
-        sharedYt,
-        _currentTrack['id'] as String,
-        tag: 'PLAYER',
-      );
+      final streamUrl =
+          await musicRepository.getStream(_currentTrack['id'] as String);
 
       if (streamUrl != null) {
         _log('[PLAYER] Setting URL...');

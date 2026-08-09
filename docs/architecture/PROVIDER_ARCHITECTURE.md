@@ -1,5 +1,28 @@
 # Project Lyra — Provider Abstraction Layer
 
+> **⚠️ REALITY CHECK (added when the provider architecture below was actually
+> implemented):** this document was originally aspirational — a design for a much
+> larger, hypothetical multi-provider ("Spotify/Apple Music/YouTube Music") system that
+> did not exist in code. A REAL, smaller, working version now exists at
+> `lib/core/providers/` (`MusicProvider` interface, `ProviderRegistry`,
+> `ProviderManager`, `ProviderConfig`) and `lib/core/providers/adapters/youtube/`
+> (`YouTubeMusicProvider` — the app's actual, only real content source, wrapping the
+> existing YouTube client and stream resolver, NOT a rewrite of them). Differences from
+> this doc's original aspiration, stated honestly:
+>   - Only ONE real provider exists (YouTube) — `SearchAggregator`/multi-provider
+>     merge-and-dedupe, `StreamManager`, and `ProviderMetrics` described below are NOT
+>     implemented; they remain a documented future idea, not working code.
+>   - The interface omits `getAlbum()`/`getArtist()`/`getPlaylist()` — YouTube has no
+>     first-party equivalent, and the real interface (`lib/core/providers/
+>     music_provider.dart`) does not fake one (see that file's `ProviderCapability`
+>     enum and doc comment).
+>   - "Remote Config" below is NOT wired to any actual remote source yet —
+>     `lib/core/providers/provider_config.dart` only has a local, hardcoded
+>     `ProviderConfig.defaultConfig`. The data shape matches what's described below
+>     specifically so a real remote source could populate it later without changing
+>     `ProviderManager`/`ProviderRegistry`'s code — but no such source exists today.
+> See `docs/CURRENT_BASELINE.md` for the full, currently-accurate picture.
+
 ## Overview
 
 The Provider Abstraction Layer allows Project Lyra to use **any music catalog provider** (Spotify, Apple Music, YouTube Music, custom) without the Flutter app knowing which one is active.

@@ -42,19 +42,33 @@
 //     like <top artist>" instead of only ever repeating the same
 //     artist's own catalog — this is what actually lets the feed
 //     branch out over time instead of looping.
+//
+// REVISION 3 (Phase 3 provider-architecture fix — this task):
+//   - No longer holds/calls a `YoutubeExplode` instance directly.
+//     Takes a `MusicRepository` instead and calls
+//     `_repository.search(query)`, which routes through
+//     ProviderManager -> YouTubeMusicProvider -> the existing YouTube
+//     client. The picking-a-query personalization logic below
+//     (recency weighting, similar-artist discovery, time-of-day
+//     buckets) is real, app-specific domain logic and stays here —
+//     only the actual network call moved behind the provider layer.
+//   - Title-cleaning now uses the single shared `cleanTitle()` from
+//     shared/utils/text_utils.dart instead of keeping its own,
+//     slightly-different private copy (see that file's header for the
+//     small, real behavior fix this includes).
 // ════════════════════════════════════════════════
 
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import '../../core/providers/music_repository.dart';
 import '../../core/storage/local_library.dart';
 
 class ForYouFeedService {
-  ForYouFeedService(this._yt);
+  ForYouFeedService(this._repository);
 
-  final YoutubeExplode _yt;
+  final MusicRepository _repository;
   final _random = Random();
 
   /// Fallback queries, grouped by rough "vibe" bucket so we can bias
@@ -138,25 +152,25 @@ class ForYouFeedService {
   }) async {
     final query = _pickQuery();
     try {
-      final results = await _yt.search.search(query);
-      final videos = results.whereType<Video>().where((v) {
-        final title = v.title.toLowerCase();
-        final duration = v.duration?.inMinutes ?? 0;
-        if (duration > 12 || duration < 1) return false;
-        const nonMusic = ['podcast', 'interview', 'reaction', 'tutorial', 'compilation'];
-        if (nonMusic.any(title.contains)) return false;
-        return !excludeIds.contains(v.id.value);
-      }).take(count);
-
-      return videos
-          .map((v) => {
-                'id': v.id.value,
-                'title': _cleanTitle(v.title, v.author),
-                'artist': v.author,
-                'artwork': v.thumbnails.highResUrl.toString(),
-                'duration': v.duration?.inSeconds ?? 0,
-              })
-          .toList();
+      // Phase 3 fix: goes through MusicRepository (-> ProviderManager
+      // -> YouTubeMusicProvider -> existing YouTube client) instead of
+      // calling `_yt.search.search()` directly. The provider layer
+      // applies the EXACT same duration/non-music filtering this
+      // method used to do inline (12-min cap, 1-min floor — see
+      // YoutubeMusicMapper) and excludes already-seen ids server-side
+      // via `excludeIds`, matching this method's original behavior.
+      final detailed = await _repository.searchDetailed(
+        query,
+        limit: count,
+        maxDurationMinutes: 12,
+        minDurationMinutes: 1,
+        excludeIds: excludeIds,
+      );
+      if (!detailed.success) {
+        debugPrint('[ForYouFeedService] fetchNextBatch failed: ${detailed.error}');
+        return [];
+      }
+      return detailed.tracks;
     } catch (e) {
       debugPrint('[ForYouFeedService] fetchNextBatch failed: $e');
       return [];
@@ -235,17 +249,5 @@ class ForYouFeedService {
             ? _eveningQueries
             : _dayQueries;
     return pool[_random.nextInt(pool.length)];
-  }
-
-  String _cleanTitle(String title, String artist) {
-    var c = title;
-    if (c.startsWith('$artist - ')) c = c.substring(artist.length + 3);
-    c = c
-        .replaceAll(RegExp(r'\s*\(Official.*?\)', caseSensitive: false), '')
-        .replaceAll(RegExp(r'\s*\[Official.*?\]', caseSensitive: false), '')
-        .replaceAll(RegExp(r'\s*\(Lyric.*?\)', caseSensitive: false), '')
-        .replaceAll(RegExp(r'\s*\[Lyric.*?\]', caseSensitive: false), '')
-        .trim();
-    return c.isEmpty ? title : c;
   }
 }
