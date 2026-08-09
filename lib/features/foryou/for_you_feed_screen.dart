@@ -52,7 +52,9 @@ import '../../main.dart' show
     currentQueueIndex,
     likedSongIds,
     forYouFeedService,
-    sharedYt;
+    sharedYt,
+    showMoreOptionsSheet,
+    showAddToPlaylistSheet;
 import 'for_you_feed_service.dart';
 
 class ForYouFeedScreen extends StatefulWidget {
@@ -247,17 +249,39 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         itemBuilder: (context, index) => _ForYouCard(
           track: _items[index],
           isActive: index == _currentIndex,
+          onNotInterested: () => _handleNotInterested(index),
         ),
       ),
     );
   }
+
+  /// "Not interested in this artist" — records the signal in
+  /// ForYouFeedService (so future picks avoid this artist) AND
+  /// immediately advances past the current track, since the user has
+  /// just said they don't want to hear it — leaving it playing after
+  /// tapping "not interested" would be a confusing, contradictory UX.
+  void _handleNotInterested(int index) {
+    final artist = _items[index]['artist'] as String? ?? '';
+    forYouFeedService.markNotInterested(artist);
+    if (index < _items.length - 1) {
+      _pageController.nextPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
 }
 
 class _ForYouCard extends StatelessWidget {
-  const _ForYouCard({required this.track, required this.isActive});
+  const _ForYouCard({
+    required this.track,
+    required this.isActive,
+    required this.onNotInterested,
+  });
 
   final Map<String, dynamic> track;
   final bool isActive;
+  final VoidCallback onNotInterested;
 
   @override
   Widget build(BuildContext context) {
@@ -374,7 +398,7 @@ class _ForYouCard extends StatelessWidget {
           // stays separate from primary interactions" design note.
           Positioned(
             right: 16,
-            bottom: 140,
+            bottom: 190,
             child: StatefulBuilder(
               builder: (context, setLikeState) {
                 final isLiked =
@@ -392,6 +416,43 @@ class _ForYouCard extends StatelessWidget {
                     });
                   },
                 );
+              },
+            ),
+          ),
+          // "•••" more-options — previously entirely absent from this
+          // screen (the file header's own design notes planned a
+          // "three-dot menu" here but it was never actually built).
+          // Wires to the SAME shared bottom sheet PlayerScreen uses
+          // (main.dart's showMoreOptionsSheet) — Sleep Timer, Share,
+          // and (unique to this recommendation surface) "Not
+          // interested in this artist", which feeds back into
+          // ForYouFeedService as a real signal, not just a UI gesture.
+          Positioned(
+            right: 16,
+            bottom: 130,
+            child: IconButton(
+              icon: const Icon(Icons.more_horiz, color: Colors.white, size: 30),
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                showMoreOptionsSheet(
+                  context,
+                  track,
+                  onNotInterested: onNotInterested,
+                );
+              },
+            ),
+          ),
+          // "Add to playlist" — was previously only reachable from the
+          // full PlayerScreen, meaning this feed's like button was the
+          // only way to save a track from here at all.
+          Positioned(
+            right: 16,
+            bottom: 70,
+            child: IconButton(
+              icon: const Icon(Icons.playlist_add, color: Colors.white, size: 30),
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                showAddToPlaylistSheet(context, track);
               },
             ),
           ),

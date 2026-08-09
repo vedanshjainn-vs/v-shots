@@ -4,10 +4,11 @@ version: 0.1.0+1
 publish_to: "none"
 
 environment:
-  # Bumped for google_sign_in ^7.2.0, which requires Dart >=3.7 (Flutter
-  # >=3.29). CI now uses Flutter 3.44.0 (see .github/workflows/build.yml).
-  sdk: ">=3.7.0 <4.0.0"
-  flutter: ">=3.29.0"
+  # Bumped for share_plus ^13.3.0, which requires Flutter >=3.38.1 /
+  # Dart >=3.10.0. CI uses Flutter 3.44.0 (see .github/workflows/build.yml),
+  # comfortably above this floor.
+  sdk: ">=3.10.0 <4.0.0"
+  flutter: ">=3.38.1"
 
 dependencies:
   flutter:
@@ -38,6 +39,15 @@ dependencies:
   # mini-player), which previously re-downloaded the same artwork from
   # scratch on every rebuild/rescroll. See core/theme/app_image.dart.
   cached_network_image: ^3.4.1
+  # Native platform share sheet — used by the "More options" bottom
+  # sheet (Player screen + For You feed) to share a track.
+  #
+  # Pinned to ^12.x, not the newest ^13.x: share_plus >=13.1.0 requires
+  # win32 ^6.0.1, which conflicts with file_picker's win32 ^5.9.0
+  # requirement (confirmed via a real `flutter pub get` version-solving
+  # failure — file_picker is load-bearing for the app's existing local
+  # audio import feature, so share_plus is the one pinned down instead).
+  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:

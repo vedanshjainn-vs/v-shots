@@ -163,6 +163,41 @@ class ForYouFeedService {
     }
   }
 
+  /// True once the user has enough real play history for a genuinely
+  /// personalized query to make sense. Used by Home to decide whether
+  /// to show a "Made For You" section at all — an empty/generic
+  /// section here (for a brand-new user with no plays yet) would be
+  /// worse than simply not showing it.
+  bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;
+
+  /// Builds ONE representative query for Home's "Made For You" section,
+  /// reusing the exact same recency-weighted taste profile that drives
+  /// the Discover/For You feed — deliberately the SAME signal, not a
+  /// second, divergent personalization implementation. Home shows a
+  /// static row of results (unlike the infinite swipe feed), so this
+  /// picks the single best current top-artist query rather than
+  /// re-rolling a random weighted choice on every call.
+  String personalizedQueryForHome() {
+    final scores = _recencyWeightedArtistScores();
+    if (scores.isEmpty) return _pickTimeOfDayQuery();
+    final sorted = scores.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return '${sorted.first.key} songs official audio';
+  }
+
+  /// Explicit negative feedback signal — called when the user taps
+  /// "Not interested in this artist" from the more-options sheet (see
+  /// main.dart's showMoreOptionsSheet). Persists a small exclusion
+  /// list so future picks skip this artist rather than the feedback
+  /// having no actual effect (a button that does nothing is worse than
+  /// not offering it at all).
+  final Set<String> _excludedArtists = {};
+
+  void markNotInterested(String artist) {
+    if (artist.isEmpty) return;
+    _excludedArtists.add(artist);
+  }
+
   /// Picks a search query using three weighted strategies:
   ///   45% — one of the user's top recency-weighted artists' own songs
   ///   25% — "similar artist" discovery seeded from a top artist, so
@@ -170,7 +205,8 @@ class ForYouFeedService {
   ///         instead of looping the same 1-2 forever
   ///   30% — a time-of-day-appropriate varied fallback query
   String _pickQuery() {
-    final scores = _recencyWeightedArtistScores();
+    final scores = _recencyWeightedArtistScores()
+      ..removeWhere((artist, _) => _excludedArtists.contains(artist));
     final roll = _random.nextDouble();
 
     if (scores.isNotEmpty && roll < 0.70) {

@@ -15,6 +15,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
@@ -24,6 +25,7 @@ import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
+import 'core/player/sleep_timer.dart';
 import 'core/theme/app_colors.dart';
 import 'shared/widgets/app_image.dart';
 import 'core/storage/local_library.dart';
@@ -340,7 +342,15 @@ class _MainShellState extends State<MainShell> {
               ProfileScreen(),
             ],
           ),
-          if (currentTrack != null)
+          // Mini-player is hidden on the Discover tab (index 1):
+          // ForYouFeedScreen is already a full-screen immersive
+          // now-playing surface (its own artwork/title/progress/
+          // play-pause are the primary content, not a secondary
+          // overlay) — stacking the global mini-player on top of it
+          // duplicated playback controls and ate into the swipeable
+          // card's visible area for no benefit. Every other tab keeps
+          // the mini-player exactly as before.
+          if (currentTrack != null && _index != 1)
             Positioned(
               left: 8, right: 8, bottom: 72,
               child: _MiniPlayer(
@@ -636,9 +646,49 @@ class _HomeScreenState extends State<HomeScreen> {
   // sections were fetched via a single Future.wait and the ENTIRE
   // screen stayed on a full shimmer until both returned, so a single
   // slow query held back a section that was actually already ready.
-  final List<_HomeSectionState> _sections = [
+  //
+  // REVISION (per user request: "need to add more categories and all
+  // categories should have true recommendations ... it should update
+  // automatically"):
+  //   - Expanded from 2 hardcoded sections to a real category set
+  //     (Trending, New Releases, then genuine genre/language buckets —
+  //     Bollywood, Punjabi, Hindi, English, Hip-Hop, EDM/Party, Chill —
+  //     matching the same category vocabulary Search already uses, so
+  //     "Bollywood" on Home and "Bollywood" in Search mean the same
+  //     thing, not two different ad-hoc query strings).
+  //   - Query strings are deliberately more specific than the old
+  //     generic "new music releases 2024" (which was already stale by
+  //     the time this shipped) — using year-agnostic, genre-qualified
+  //     queries like "official audio" / "hit songs" that YouTube's own
+  //     ranking naturally keeps current, rather than baking in a
+  //     hardcoded year that goes stale.
+  //   - "Made For You": a genuinely personalized section built from
+  //     the SAME recency-weighted taste profile that drives the
+  //     Discover/For You feed (LocalLibrary.instance.artistPlayCounts)
+  //     — reuses ForYouFeedService's query-building logic instead of a
+  //     second, divergent implementation. Only shown once the user has
+  //     real play history (an empty/generic section here would be
+  //     worse than not showing it at all).
+  //   - "Auto-update": each section already used SearchCache's
+  //     stale-while-revalidate (5 min TTL) — kept — PLUS pull-to-
+  //     refresh (RefreshIndicator) now force-bypasses the cache so the
+  //     user can explicitly ask for fresh results at any time, not
+  //     just wait for the TTL to lapse.
+  late final List<_HomeSectionState> _sections = [
     _HomeSectionState(query: 'trending music today official audio', title: 'Trending Now'),
-    _HomeSectionState(query: 'new music releases 2024', title: 'New Releases'),
+    _HomeSectionState(query: 'new music releases official audio', title: 'New Releases'),
+    if (forYouFeedService.hasTasteProfile)
+      _HomeSectionState(
+        query: forYouFeedService.personalizedQueryForHome(),
+        title: 'Made For You',
+      ),
+    _HomeSectionState(query: 'bollywood hit songs official audio', title: 'Bollywood'),
+    _HomeSectionState(query: 'punjabi hit songs official audio', title: 'Punjabi'),
+    _HomeSectionState(query: 'hindi songs official audio', title: 'Hindi'),
+    _HomeSectionState(query: 'english pop songs official audio', title: 'English'),
+    _HomeSectionState(query: 'hip hop rap songs official audio', title: 'Hip-Hop'),
+    _HomeSectionState(query: 'edm dance party songs official audio', title: 'EDM & Party'),
+    _HomeSectionState(query: 'chill lofi songs official audio', title: 'Chill & Lofi'),
   ];
 
   @override
@@ -649,13 +699,24 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadSection(_HomeSectionState section) async {
+  /// Pull-to-refresh: force-bypasses SearchCache for every section so
+  /// the user can explicitly request fresh results on demand, on top
+  /// of the existing automatic 5-minute stale-while-revalidate cache.
+  Future<void> _refreshAll() async {
+    await Future.wait(_sections.map((s) => _loadSection(s, forceRefresh: true)));
+  }
+
+  Future<void> _loadSection(_HomeSectionState section, {bool forceRefresh = false}) async {
     // Stale-while-revalidate: show a cached result instantly if we
     // have one (even if it's a little stale), then quietly refresh in
     // the background — this is what makes reopening the app or
     // switching back to Home feel instant instead of re-shimmering a
     // query that was already answered moments ago.
-    final cached = SearchCache.instance.get(section.query);
+    //
+    // forceRefresh (pull-to-refresh) skips the cache entirely so the
+    // user gets genuinely fresh results on demand, not just whatever
+    // was cached up to 5 minutes ago.
+    final cached = forceRefresh ? null : SearchCache.instance.get(section.query);
     if (cached != null) {
       if (mounted) {
         setState(() {
@@ -723,7 +784,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
     return Scaffold(
-      body: CustomScrollView(
+      body: RefreshIndicator(
+        color: AppColors.accent,
+        backgroundColor: AppColors.surface,
+        onRefresh: _refreshAll,
+        child: CustomScrollView(
+        // A RefreshIndicator needs a scrollable that can always be
+        // dragged (even when content is short), hence
+        // AlwaysScrollableScrollPhysics — without this, pull-to-refresh
+        // silently does nothing on a Home screen short enough to not
+        // naturally overflow.
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverAppBar(
             floating: true,
@@ -753,6 +824,7 @@ class _HomeScreenState extends State<HomeScreen> {
           for (final section in _sections) _buildSectionSliver(section),
           const SliverToBoxAdapter(child: SizedBox(height: 160)),
         ],
+        ),
       ),
     );
   }
@@ -844,12 +916,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _tracksSliver(_HomeSectionState section) {
+    final isPersonalized = section.title == 'Made For You';
     return SliverToBoxAdapter(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-          child: Text(section.title,
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+          child: Row(children: [
+            if (isPersonalized) ...[
+              Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
+              const SizedBox(width: 6),
+            ],
+            Text(section.title,
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+          ]),
         ),
         SizedBox(
           height: 210,
@@ -1683,7 +1762,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
                             color: Colors.white.withOpacity(0.7))),
                   ]),
-                  IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert),
+                    onPressed: () => showMoreOptionsSheet(context, _currentTrack),
+                  ),
                 ],
               ),
             ),
@@ -1747,7 +1829,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 IconButton(
                   icon: const Icon(Icons.playlist_add, size: 26),
                   tooltip: 'Add to playlist',
-                  onPressed: () => _showAddToPlaylistSheet(context, _currentTrack),
+                  onPressed: () => showAddToPlaylistSheet(context, _currentTrack),
                 ),
                 IconButton(
                   icon: const Icon(Icons.lyrics_outlined, size: 24),
@@ -1906,55 +1988,189 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      builder: (ctx) {
-        return ValueListenableBuilder<List<Map<String, dynamic>>>(
-          valueListenable: LocalLibrary.instance.playlists,
-          builder: (context, playlists, _) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('Add to playlist',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                  ),
-                  if (playlists.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'No playlists yet. Create one from the Library tab first.',
-                        style: TextStyle(color: Colors.white.withOpacity(0.5)),
-                      ),
-                    )
-                  else
-                    ...playlists.map((p) => ListTile(
-                          leading: const Icon(Icons.playlist_play),
-                          title: Text(p['name'] as String? ?? ''),
-                          onTap: () async {
-                            await LocalLibrary.instance
-                                .addTrackToPlaylist(p['id'] as String, track);
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Added to ${p['name']}')),
-                              );
-                            }
-                          },
-                        )),
-                  const SizedBox(height: 12),
-                ],
+}
+
+// ═══════════════════════════════════════════════
+// SHARED BOTTOM SHEETS — reused by PlayerScreen and ForYouFeedScreen so
+// "Add to playlist" / "Sleep timer" / "Share" / "Not interested" behave
+// identically everywhere instead of having a second, drifting copy.
+// ═══════════════════════════════════════════════
+
+void showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    builder: (ctx) {
+      return ValueListenableBuilder<List<Map<String, dynamic>>>(
+        valueListenable: LocalLibrary.instance.playlists,
+        builder: (context, playlists, _) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Add to playlist',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+                if (playlists.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No playlists yet. Create one from the Library tab first.',
+                      style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                    ),
+                  )
+                else
+                  ...playlists.map((p) => ListTile(
+                        leading: const Icon(Icons.playlist_play),
+                        title: Text(p['name'] as String? ?? ''),
+                        onTap: () async {
+                          await LocalLibrary.instance
+                              .addTrackToPlaylist(p['id'] as String, track);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Added to ${p['name']}')),
+                            );
+                          }
+                        },
+                      )),
+                const SizedBox(height: 12),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+/// The "•••" / "more_vert" sheet — Sleep Timer, Share, and (only when
+/// [onNotInterested] is provided, i.e. from a recommendation surface
+/// like the For You feed, not from a user-initiated Search/Home play)
+/// "Not interested in this artist" — a real feedback signal into
+/// ForYouFeedService, not just a UI gesture with no effect.
+void showMoreOptionsSheet(
+  BuildContext context,
+  Map<String, dynamic> track, {
+  VoidCallback? onNotInterested,
+}) {
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    builder: (ctx) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
               ),
-            );
-          },
-        );
-      },
-    );
-  }
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.bedtime_outlined),
+              title: const Text('Sleep timer'),
+              onTap: () {
+                Navigator.pop(ctx);
+                showSleepTimerSheet(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('Share'),
+              onTap: () {
+                Navigator.pop(ctx);
+                final title = (track['title'] as String?) ?? 'this track';
+                final artist = (track['artist'] as String?) ?? '';
+                SharePlus.instance.share(
+                  ShareParams(text: 'Listening to "$title" by $artist on V Shots 🎵'),
+                );
+              },
+            ),
+            if (onNotInterested != null)
+              ListTile(
+                leading: const Icon(Icons.thumb_down_outlined),
+                title: const Text('Not interested in this artist'),
+                subtitle: const Text('We\'ll show fewer songs like this'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onNotInterested();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Got it — adjusting your recommendations')),
+                  );
+                },
+              ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+/// The sleep-timer picker itself — a live countdown/"Off" state via
+/// [SleepTimer.instance], shared by every entry point (PlayerScreen's
+/// more-options sheet, For You's more-options sheet).
+void showSleepTimerSheet(BuildContext context) {
+  const presets = [5, 10, 15, 30, 45, 60];
+  showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    builder: (ctx) {
+      return ValueListenableBuilder<Duration?>(
+        valueListenable: SleepTimer.instance.remaining,
+        builder: (context, remaining, _) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Sleep timer',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ),
+                if (remaining != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(children: [
+                      Text(
+                        '${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')} remaining',
+                        style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          SleepTimer.instance.cancel();
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('Turn off timer'),
+                      ),
+                    ]),
+                  ),
+                ...presets.map((minutes) => ListTile(
+                      leading: const Icon(Icons.timer_outlined),
+                      title: Text('$minutes minutes'),
+                      onTap: () {
+                        SleepTimer.instance.start(Duration(minutes: minutes));
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Playback will pause in $minutes minutes')),
+                        );
+                      },
+                    )),
+                const SizedBox(height: 12),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
 }
 
 // ═══════════════════════════════════════════════
