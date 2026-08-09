@@ -333,57 +333,52 @@ class PlayerController {
   // ═══════════════════════════════════════════════
 
   /// Resolve a playable stream URL from YouTube.
+  ///
+  /// Uses multi-client fallback: androidVr → ios → android
+  /// to avoid 403 errors from any single client being blocked.
   Future<String?> _resolveStream(String videoId) async {
     _logger('Resolving stream for: $videoId');
-    
-    try {
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      _logger('✓ Got manifest for $videoId');
 
-      // Get audio-only streams.
-      final audioStreams = manifest.audioOnly;
-      if (audioStreams.isEmpty) {
-        _logger('✗ No audio streams found');
-        return null;
-      }
+    // Try clients in priority order.
+    // androidVr and ios are most reliable for audio-only streams.
+    const clientAttempts = [
+      [YoutubeApiClient.androidVr],
+      [YoutubeApiClient.ios],
+      [YoutubeApiClient.android],
+    ];
 
-      _logger('Found ${audioStreams.length} audio streams');
-
-      // Sort by bitrate (highest first) and pick best.
-      final sorted = audioStreams.toList()
-        ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
-
-      final selected = sorted.first;
-      _logger('Selected stream: ${selected.bitrate}bps, ${selected.codec}, ${selected.container}');
-
-      final url = selected.url.toString();
-      _logger('Stream URL: ${url.substring(0, url.length > 100 ? 100 : url.length)}...');
-
-      return url;
-    } catch (e, st) {
-      _logger('✗ Stream resolution failed: $e');
-      _logger('Stack: $st');
-      
-      // Retry with different approach.
+    for (final clients in clientAttempts) {
       try {
-        _logger('Retrying stream resolution...');
-        final video = await _yt.videos.get(videoId);
-        _logger('Video title: ${video.title}');
-        
-        final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+        _logger('Attempting manifest with client: $clients');
+        final manifest = await _yt.videos.streamsClient
+            .getManifest(videoId, ytClients: clients)
+            .timeout(const Duration(seconds: 12));
+
         final audioStreams = manifest.audioOnly;
-        
-        if (audioStreams.isNotEmpty) {
-          final url = audioStreams.first.url.toString();
-          _logger('✓ Retry succeeded');
-          return url;
+        if (audioStreams.isEmpty) {
+          _logger('✗ No audio streams from $clients, trying next');
+          continue;
         }
-      } catch (retryError) {
-        _logger('✗ Retry also failed: $retryError');
+
+        // Sort by bitrate (highest first) and pick best.
+        final sorted = audioStreams.toList()
+          ..sort((a, b) => b.bitrate.compareTo(a.bitrate));
+        final selected = sorted.first;
+
+        _logger(
+          '✓ Selected stream via $clients: ${selected.bitrate}, '
+          '${selected.codec}, ${selected.container}',
+        );
+
+        return selected.url.toString();
+      } catch (e) {
+        _logger('✗ Client $clients failed: $e — trying next');
+        continue;
       }
-      
-      return null;
     }
+
+    _logger('✗ All client attempts failed for $videoId');
+    return null;
   }
 
   // ═══════════════════════════════════════════════
