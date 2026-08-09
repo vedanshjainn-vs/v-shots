@@ -19,6 +19,9 @@ dependencies:
   supabase_flutter: ^2.12.4
   google_sign_in: ^7.2.0
   flutter_dotenv: ^6.0.1
+  # Background playback / lock-screen controls (see
+  # lib/core/audio/vshots_audio_handler.dart for wiring notes)
+  audio_service: ^0.18.19
 
 dev_dependencies:
   flutter_test:

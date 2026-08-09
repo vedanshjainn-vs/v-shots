@@ -11,13 +11,17 @@
 
 import 'dart:async';
 import 'dart:ui';
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
+import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'features/foryou/for_you_feed_screen.dart';
+import 'features/foryou/for_you_feed_service.dart';
 import 'core/backend/supabase_service.dart';
 
 void main() async {
@@ -29,6 +33,22 @@ void main() async {
   // google_sign_in v7 requires this exactly-once initialize() call
   // before any sign-in UI is shown — see auth_service.dart.
   await AuthService.instance.initializeGoogleSignIn();
+
+  // Background playback / lock-screen controls — wraps the SAME
+  // `audioPlayer` global this app already uses everywhere else (see
+  // core/audio/vshots_audio_handler.dart for the full design rationale
+  // on why this bridges rather than replaces the existing playback
+  // code). Must be initialized before runApp().
+  audioHandler = await AudioService.init(
+    builder: () => VShotsAudioHandler(audioPlayer),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.vshots.live.channel.audio',
+      androidNotificationChannelName: 'V Shots playback',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
+  );
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
@@ -63,6 +83,12 @@ class VShotsApp extends StatelessWidget {
 // ═══════════════════════════════════════════════
 
 final AudioPlayer audioPlayer = AudioPlayer();
+// Background-playback bridge (see core/audio/vshots_audio_handler.dart) —
+// assigned in main() before runApp(). Every place that starts playback
+// (playTrack() below, PlayerScreen._play()) should also call
+// audioHandler.updateNowPlaying(...) so the lock-screen/notification
+// stay in sync with what's actually playing.
+late final VShotsAudioHandler audioHandler;
 List<Map<String, dynamic>> currentQueue = [];
 int currentQueueIndex = 0;
 Map<String, dynamic>? currentTrack;
@@ -73,12 +99,72 @@ final List<Map<String, dynamic>> recentSearches = [];
 // Single YoutubeExplode instance for reuse
 final YoutubeExplode _yt = YoutubeExplode();
 
+// "For You" swipe feed's recommendation service (see
+// features/foryou/for_you_feed_service.dart) — a separate
+// YoutubeExplode instance since _yt above is private to this file.
+final forYouFeedService = ForYouFeedService(YoutubeExplode());
+
 // ═══════════════════════════════════════════════
 // DIAGNOSTIC LOGGER
 // ═══════════════════════════════════════════════
 
 void _log(String message) {
   debugPrint('[VShots] $message');
+}
+
+/// Plays the next/previous track in the current global queue. This is
+/// the single function both the in-app mini-player's skip button AND
+/// the OS notification/lock-screen/headset skip buttons route through
+/// (see MainShell.initState wiring audioHandler.onSkipNext/onSkipPrevious
+/// to this), so there's one real implementation of "what does skip do"
+/// rather than two different behaviors depending on where the tap came
+/// from.
+Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
+  if (currentQueue.isEmpty) return;
+  final nextIndex =
+      (currentQueueIndex + delta + currentQueue.length) % currentQueue.length;
+  final track = currentQueue[nextIndex];
+  if (context != null && context.mounted) {
+    await playTrack(context, track, currentQueue, nextIndex);
+  } else {
+    // No BuildContext available (e.g. triggered from a lock-screen tap
+    // while the app has no visible Scaffold to attach a SnackBar to) —
+    // resolve and play directly without the loading-snackbar UX.
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(track['id']);
+      final audio = manifest.audioOnly.sortByBitrate();
+      if (audio.isEmpty) return;
+      final stream = audio.toList()[(audio.length / 2).floor()];
+      await audioPlayer.setUrl(stream.url.toString());
+      await audioPlayer.play();
+      currentTrack = track;
+      currentQueueIndex = nextIndex;
+      audioHandler.updateNowPlaying(_trackToMediaItem(track));
+    } catch (e) {
+      _log('[SKIP] Background skip failed: $e');
+    }
+  }
+}
+
+/// Converts one of the app's existing `Map<String, dynamic>` track
+/// records into a `MediaItem` — the standard model audio_service (and
+/// therefore the OS notification/lock screen) expects. Kept as a single
+/// small helper rather than migrating the whole app's track model, to
+/// avoid a large invasive rewrite of main.dart's existing, working data
+/// flow (see vshots_audio_handler.dart's file header for the same
+/// "bridge, don't rewrite" design principle).
+MediaItem _trackToMediaItem(Map<String, dynamic> track) {
+  return MediaItem(
+    id: (track['id'] as String?) ?? '',
+    title: (track['title'] as String?) ?? 'Unknown title',
+    artist: (track['artist'] as String?) ?? 'Unknown artist',
+    artUri: (track['artwork'] as String?) != null
+        ? Uri.tryParse(track['artwork'] as String)
+        : null,
+    duration: track['duration'] is int
+        ? Duration(seconds: track['duration'] as int)
+        : null,
+  );
 }
 
 // ═══════════════════════════════════════════════
@@ -179,6 +265,13 @@ class _MainShellState extends State<MainShell> {
         });
       }
     });
+
+    // Route OS media-session commands (lock screen / notification /
+    // headset / Android Auto skip buttons) back to the app's real
+    // queue-navigation logic — see core/audio/vshots_audio_handler.dart
+    // and _playAdjacentInQueue's doc comment for the full design.
+    audioHandler.onSkipNext = () => _playAdjacentInQueue(context, 1);
+    audioHandler.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
   }
 
   @override
@@ -190,6 +283,7 @@ class _MainShellState extends State<MainShell> {
             index: _index,
             children: const [
               HomeScreen(),
+              ForYouFeedScreen(),
               SearchScreen(),
               LibraryScreen(),
               ProfileScreen(),
@@ -214,6 +308,10 @@ class _MainShellState extends State<MainShell> {
               icon: Icon(Icons.home_outlined),
               selectedIcon: Icon(Icons.home_rounded),
               label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.auto_awesome_outlined),
+              selectedIcon: Icon(Icons.auto_awesome_rounded),
+              label: 'Discover'),
           NavigationDestination(
               icon: Icon(Icons.search_outlined),
               selectedIcon: Icon(Icons.search_rounded),
@@ -433,6 +531,12 @@ Future<void> playTrack(
     currentQueue = queue;
     currentQueueIndex = index;
     // isCurrentlyPlaying is set by the listener in MainShell
+
+    // Step 10: Sync the OS media session (notification/lock screen) so
+    // it reflects this track — without this, background playback would
+    // work but the notification would show stale/no metadata. See
+    // core/audio/vshots_audio_handler.dart.
+    audioHandler.updateNowPlaying(_trackToMediaItem(track));
 
     _log('═══ PLAYBACK SUCCESS ═══');
 
@@ -1293,9 +1397,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
         await audioPlayer.setUrl(stream.url.toString());
         _log('[PLAYER] Playing...');
         await audioPlayer.play();
-        
+
         currentTrack = _currentTrack;
         currentQueueIndex = _currentIndex;
+        // Keep the OS media session (notification/lock screen) in sync
+        // with in-app next/previous taps too — see
+        // core/audio/vshots_audio_handler.dart.
+        audioHandler.updateNowPlaying(_trackToMediaItem(_currentTrack));
         if (mounted) setState(() {});
       }
     } catch (e) {
