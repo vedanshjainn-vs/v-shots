@@ -10,11 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  youtube_explode_dart: ^3.0.0
+  youtube_explode_dart: ^2.2.2
   just_audio: ^0.9.39
-  audio_service: ^0.18.15
-  audio_session: ^0.1.21
-  rxdart: ^0.28.0
   shimmer: ^3.0.0
 
 dev_dependencies:
