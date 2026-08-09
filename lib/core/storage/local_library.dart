@@ -98,8 +98,8 @@ class LocalLibrary {
     }
   }
 
-  Future<void> _writeList(String key, List<Map<String, dynamic>> value) {
-    return _prefs?.setString(key, jsonEncode(value)) ?? Future.value(false);
+  Future<void> _writeList(String key, List<Map<String, dynamic>> value) async {
+    await _prefs?.setString(key, jsonEncode(value));
   }
 
   // ── Liked Songs ──────────────────────────────────────────────────
