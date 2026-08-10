@@ -15,11 +15,7 @@ version: 5.4.0+13
 publish_to: "none"
 
 environment:
-  # Bumped for share_plus ^13.3.0, which requires Flutter >=3.38.1 /
-  # Dart >=3.10.0. CI uses Flutter 3.44.0 (see .github/workflows/build.yml),
-  # comfortably above this floor.
-  sdk: ">=3.10.0 <4.0.0"
-  flutter: ">=3.38.1"
+  sdk: ">=3.5.0 <4.0.0"
 
 dependencies:
   flutter:

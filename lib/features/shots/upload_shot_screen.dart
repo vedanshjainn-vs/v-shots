@@ -116,7 +116,7 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
           ),
         );
         widget.onUploadComplete?.call();
-        Navigator.of(context).maybePop();
+        await Navigator.of(context).maybePop();
       }
     } catch (e) {
       if (mounted) {
