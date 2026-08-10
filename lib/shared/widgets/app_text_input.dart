@@ -83,10 +83,7 @@ class _AppTextInputState extends State<AppTextInput> {
           minLines: widget.minLines,
           autofocus: widget.autofocus,
           enabled: widget.enabled,
-          style: const TextStyle(
-            color: AppColors.textMain,
-            fontSize: 15,
-          ),
+          style: const TextStyle(color: AppColors.textMain, fontSize: 15),
           cursorColor: AppColors.primaryLight,
           decoration: InputDecoration(
             hintText: widget.hintText,
@@ -96,8 +93,10 @@ class _AppTextInputState extends State<AppTextInput> {
             ),
             filled: true,
             fillColor: AppColors.surface2,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
             prefixIcon: widget.prefixIcon != null
                 ? Icon(widget.prefixIcon, color: AppColors.textMuted, size: 20)
                 : null,
@@ -123,8 +122,10 @@ class _AppTextInputState extends State<AppTextInput> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide:
-                  const BorderSide(color: AppColors.primary, width: 1.5),
+              borderSide: const BorderSide(
+                color: AppColors.primary,
+                width: 1.5,
+              ),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),

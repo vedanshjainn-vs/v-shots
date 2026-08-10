@@ -70,18 +70,23 @@ class LyricsService {
     if (cached != null) return cached;
 
     try {
-      final uri = Uri.parse(_baseUrl).replace(queryParameters: {
-        'track_name': trackName,
-        'artist_name': artistName,
-        if (durationSeconds != null) 'duration': '$durationSeconds',
-      });
+      final uri = Uri.parse(_baseUrl).replace(
+        queryParameters: {
+          'track_name': trackName,
+          'artist_name': artistName,
+          if (durationSeconds != null) 'duration': '$durationSeconds',
+        },
+      );
 
-      final response = await http.get(uri, headers: {
-        // LRCLIB asks integrators to identify themselves via
-        // User-Agent — good API citizenship, not required for
-        // basic functionality but costs nothing to include.
-        'User-Agent': 'VShots/1.0 (github.com/vedanshjainn-vs/v-shots)',
-      }).timeout(const Duration(seconds: 8));
+      final response = await http.get(
+        uri,
+        headers: {
+          // LRCLIB asks integrators to identify themselves via
+          // User-Agent — good API citizenship, not required for
+          // basic functionality but costs nothing to include.
+          'User-Agent': 'VShots/1.0 (github.com/vedanshjainn-vs/v-shots)',
+        },
+      ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 404) {
         _cache[cacheKey] = LyricsResult.notFound;
@@ -124,10 +129,12 @@ class LyricsService {
       final millis =
           fraction.length == 2 ? int.parse(fraction) * 10 : int.parse(fraction);
       final text = match.group(4)!.trim();
-      lines.add(LyricLine(
-        Duration(minutes: minutes, seconds: seconds, milliseconds: millis),
-        text,
-      ));
+      lines.add(
+        LyricLine(
+          Duration(minutes: minutes, seconds: seconds, milliseconds: millis),
+          text,
+        ),
+      );
     }
     return lines;
   }

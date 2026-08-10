@@ -153,10 +153,9 @@ class ShotsService {
         }
 
         shots.add(
-          ShotModel.fromJson(json).copyWith(
-            isLiked: isLiked,
-            isBookmarked: isBookmarked,
-          ),
+          ShotModel.fromJson(
+            json,
+          ).copyWith(isLiked: isLiked, isBookmarked: isBookmarked),
         );
       }
 
@@ -251,8 +250,10 @@ class ShotsService {
   }
 
   /// Toggle Like on a shot
-  Future<bool> toggleLike(String shotId,
-      {required bool currentLikedState}) async {
+  Future<bool> toggleLike(
+    String shotId, {
+    required bool currentLikedState,
+  }) async {
     final currentUser = SupabaseService.currentUser;
     final targetState = !currentLikedState;
 
@@ -291,8 +292,10 @@ class ShotsService {
   }
 
   /// Toggle Bookmark / Save on a shot
-  Future<bool> toggleBookmark(String shotId,
-      {required bool currentBookmarkState}) async {
+  Future<bool> toggleBookmark(
+    String shotId, {
+    required bool currentBookmarkState,
+  }) async {
     final currentUser = SupabaseService.currentUser;
     final targetState = !currentBookmarkState;
 
@@ -404,11 +407,7 @@ class ShotsService {
     try {
       final response = await SupabaseService.client
           .from('comments')
-          .insert({
-            'shot_id': shotId,
-            'user_id': currentUser.id,
-            'body': body,
-          })
+          .insert({'shot_id': shotId, 'user_id': currentUser.id, 'body': body})
           .select('*, profiles:user_id(*)')
           .single();
 
@@ -435,10 +434,9 @@ class ShotsService {
         '$userId/${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
     try {
-      await SupabaseService.client.storage.from(bucket).uploadBinary(
-            fileName,
-            bytes,
-          );
+      await SupabaseService.client.storage
+          .from(bucket)
+          .uploadBinary(fileName, bytes);
 
       final publicUrl =
           SupabaseService.client.storage.from(bucket).getPublicUrl(fileName);

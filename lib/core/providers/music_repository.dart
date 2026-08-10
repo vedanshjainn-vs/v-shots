@@ -106,8 +106,10 @@ class MusicRepository {
     required Set<String> excludeIds,
     int limit = 10,
   }) async {
-    final result =
-        await _manager.getRecommendations(excludeIds: excludeIds, limit: limit);
+    final result = await _manager.getRecommendations(
+      excludeIds: excludeIds,
+      limit: limit,
+    );
     return result.orElse(const []).map((t) => t.toTrackMap()).toList();
   }
 

@@ -38,11 +38,7 @@ class YoutubeMusicMapper {
   /// 15 min max with no floor; the For You feed used 12 min max with a
   /// 1 min floor) rather than silently changing behavior that was
   /// already tuned per-surface.
-  bool isPlayableMusic(
-    Video video, {
-    int maxMinutes = 15,
-    int minMinutes = 0,
-  }) {
+  bool isPlayableMusic(Video video, {int maxMinutes = 15, int minMinutes = 0}) {
     final title = video.title.toLowerCase();
     final durationMinutes = video.duration?.inMinutes ?? 0;
     if (durationMinutes > maxMinutes) return false;
@@ -75,11 +71,13 @@ class YoutubeMusicMapper {
     return rawResults
         .whereType<Video>()
         .where((v) => !excludeIds.contains(v.id.value))
-        .where((v) => isPlayableMusic(
-              v,
-              maxMinutes: maxMinutes,
-              minMinutes: minMinutes,
-            ))
+        .where(
+          (v) => isPlayableMusic(
+            v,
+            maxMinutes: maxMinutes,
+            minMinutes: minMinutes,
+          ),
+        )
         .take(limit)
         .map(toProviderTrack)
         .toList();

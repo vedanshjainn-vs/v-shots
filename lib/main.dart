@@ -46,7 +46,6 @@ import 'features/foryou/for_you_feed_service.dart';
 import 'features/library/local_import_service.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
-import 'features/shots/upload_shot_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -386,7 +385,9 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _c = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1200));
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
     _c.forward();
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -421,28 +422,38 @@ class _SplashScreenState extends State<SplashScreen>
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.45),
-                        blurRadius: 32,
-                        offset: const Offset(0, 10)),
+                      color: AppColors.primary.withValues(alpha: 0.45),
+                      blurRadius: 32,
+                      offset: const Offset(0, 10),
+                    ),
                   ],
                 ),
-                child: const Icon(Icons.bolt_rounded,
-                    size: 56, color: Colors.white),
+                child: const Icon(
+                  Icons.bolt_rounded,
+                  size: 56,
+                  color: Colors.white,
+                ),
               ),
               const SizedBox(height: 28),
-              const Text('V Shots',
-                  style: TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.5,
-                      color: Colors.white)),
+              const Text(
+                'V Shots',
+                style: TextStyle(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  color: Colors.white,
+                ),
+              ),
               const SizedBox(height: 6),
-              const Text('Nova Edition',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 3.0,
-                      color: AppColors.accent)),
+              const Text(
+                'Nova Edition',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 3.0,
+                  color: AppColors.accent,
+                ),
+              ),
             ],
           ),
         ),
@@ -450,11 +461,6 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
-
-// ════════════════════════════════════════════════
-// CREATOR PERMISSION FLAG (Configurable)
-// ════════════════════════════════════════════════
-const bool kCreatorUploadEnabled = false;
 
 // ════════════════════════════════════════════════
 // MAIN SHELL
@@ -482,95 +488,6 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
   }
 
-  Future<void> _handleCreateTap(BuildContext context) async {
-    final profile = await ProfileService.instance.getCurrentProfile();
-    if (!context.mounted) return;
-
-    if (profile.isCreator) {
-      await Navigator.of(context).push(
-        AppPageRoute<void>(
-          builder: (_) => const UploadShotScreen(),
-        ),
-      );
-    } else {
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: AppColors.border),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.lock_outline_rounded,
-                  color: AppColors.accent, size: 22),
-              SizedBox(width: 8),
-              Text(
-                'Creator Upload',
-                style: TextStyle(
-                  color: AppColors.textMain,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Limited Access',
-                style: TextStyle(
-                  color: AppColors.accent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Uploading is currently available to selected/approved creators.',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Maybe Later',
-                  style: TextStyle(color: AppColors.textMuted)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Access requested! Our team will review your account.'),
-                    backgroundColor: AppColors.surface2,
-                  ),
-                );
-              },
-              child: const Text('Request Access',
-                  style: TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -581,7 +498,6 @@ class _MainShellState extends State<MainShell> {
             children: const [
               HomeScreen(),
               ForYouFeedScreen(),
-              UploadShotScreen(),
               SearchScreen(),
               ProfileScreen(),
             ],
@@ -605,11 +521,7 @@ class _MainShellState extends State<MainShell> {
       bottomNavigationBar: BottomTabBar(
         currentIndex: _index,
         onTap: (i) {
-          if (i == 2) {
-            unawaited(_handleCreateTap(context));
-          } else {
-            setState(() => _index = i);
-          }
+          setState(() => _index = i);
         },
       ),
     );
@@ -626,11 +538,10 @@ class _MainShellState extends State<MainShell> {
         ),
         transitionsBuilder: (_, animation, __, child) {
           return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(0, 1),
-              end: Offset.zero,
-            ).animate(
-                CurvedAnimation(parent: animation, curve: AppMotion.enter)),
+            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                .animate(
+              CurvedAnimation(parent: animation, curve: AppMotion.enter),
+            ),
             child: child,
           );
         },
@@ -645,10 +556,7 @@ class _MainShellState extends State<MainShell> {
 // ═══════════════════════════════════════════════
 
 class _MiniPlayer extends StatelessWidget {
-  const _MiniPlayer({
-    required this.track,
-    required this.onTap,
-  });
+  const _MiniPlayer({required this.track, required this.onTap});
 
   final Map<String, dynamic> track;
   final VoidCallback onTap;
@@ -665,7 +573,9 @@ class _MiniPlayer extends StatelessWidget {
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4), blurRadius: 12),
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 12,
+            ),
           ],
         ),
         child: Row(
@@ -686,17 +596,24 @@ class _MiniPlayer extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text((track['title'] as String?) ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14)),
-                  Text((track['artist'] as String?) ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
-                          fontSize: 12)),
+                  Text(
+                    (track['title'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    (track['artist'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -718,8 +635,11 @@ class _MiniPlayer extends StatelessWidget {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.skip_next_rounded,
-                  color: Colors.white, size: 28),
+              icon: const Icon(
+                Icons.skip_next_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
               onPressed: () => _playAdjacentInQueue(context, 1),
             ),
             const SizedBox(width: 4),
@@ -757,19 +677,26 @@ Future<void> playTrack(
 
   try {
     // Step 1: Show loading
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        const SizedBox(
-            width: 16,
-            height: 16,
-            child:
-                CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
-        const SizedBox(width: 12),
-        Text('Loading ${track['title']}...'),
-      ]),
-      backgroundColor: AppColors.surface,
-      duration: const Duration(seconds: 10),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text('Loading ${track['title']}...'),
+          ],
+        ),
+        backgroundColor: AppColors.surface,
+        duration: const Duration(seconds: 10),
+      ),
+    );
 
     // Step 2: Resolve stream — routed through MusicRepository ->
     // ProviderManager -> YouTubeMusicProvider, which itself calls the
@@ -885,45 +812,76 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Each section loads and renders independently — previously both
-  // sections were fetched via a single Future.wait and the ENTIRE
-  // screen stayed on a full shimmer until both returned, so a single
-  // slow query held back a section that was actually already ready.
-  //
-  // REVISION (per user request: "need to add more categories and all
-  // categories should have true recommendations ... it should update
-  // automatically"):
-  //   - Expanded from 2 hardcoded sections to a real category set
-  //     (Trending, New Releases, then genuine genre/language buckets —
-  //     Bollywood, Punjabi, Hindi, English, Hip-Hop, EDM/Party, Chill —
-  //     matching the same category vocabulary Search already uses, so
-  //     "Bollywood" on Home and "Bollywood" in Search mean the same
-  //     thing, not two different ad-hoc query strings).
-  //   - Query strings are deliberately more specific than the old
-  //     generic "new music releases 2024" (which was already stale by
-  //     the time this shipped) — using year-agnostic, genre-qualified
-  //     queries like "official audio" / "hit songs" that YouTube's own
-  //     ranking naturally keeps current, rather than baking in a
-  //     hardcoded year that goes stale.
-  //   - "Made For You": a genuinely personalized section built from
-  //     the SAME recency-weighted taste profile that drives the
-  //     Discover/For You feed (LocalLibrary.instance.artistPlayCounts)
-  //     — reuses ForYouFeedService's query-building logic instead of a
-  //     second, divergent implementation. Only shown once the user has
-  //     real play history (an empty/generic section here would be
-  //     worse than not showing it at all).
-  //   - "Auto-update": each section already used SearchCache's
-  //     stale-while-revalidate (5 min TTL) — kept — PLUS pull-to-
-  //     refresh (RefreshIndicator) now force-bypasses the cache so the
-  //     user can explicitly ask for fresh results at any time, not
-  //     just wait for the TTL to lapse.
   final Set<String> _activeFetches = <String>{};
+
+  static const List<Map<String, String>> _officialArtists = [
+    {
+      'name': 'Arijit Singh',
+      'role': 'Singer & Composer',
+      'image':
+          'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
+      'query': 'Arijit Singh top hit songs official audio',
+    },
+    {
+      'name': 'Diljit Dosanjh',
+      'role': 'Punjabi Pop',
+      'image':
+          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80',
+      'query': 'Diljit Dosanjh hit songs official audio',
+    },
+    {
+      'name': 'Karan Aujla',
+      'role': 'Desi Hip-Hop',
+      'image':
+          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&q=80',
+      'query': 'Karan Aujla new songs official audio',
+    },
+    {
+      'name': 'Shreya Ghoshal',
+      'role': 'Melody Queen',
+      'image':
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80',
+      'query': 'Shreya Ghoshal romantic hit songs official audio',
+    },
+    {
+      'name': 'Anuv Jain',
+      'role': 'Acoustic / Indie',
+      'image':
+          'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&q=80',
+      'query': 'Anuv Jain songs official audio',
+    },
+    {
+      'name': 'AP Dhillon',
+      'role': 'Punjabi Wave',
+      'image':
+          'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&q=80',
+      'query': 'AP Dhillon hit songs official audio',
+    },
+    {
+      'name': 'Taylor Swift',
+      'role': 'Global Pop Icon',
+      'image':
+          'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&q=80',
+      'query': 'Taylor Swift top songs official audio',
+    },
+    {
+      'name': 'The Weeknd',
+      'role': 'R&B / Synthwave',
+      'image':
+          'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&q=80',
+      'query': 'The Weeknd top hits official audio',
+    },
+  ];
 
   late final List<_HomeSectionState> _sections = [
     _HomeSectionState(
-        query: 'trending music today official audio', title: 'Trending Now'),
+      query: 'trending music today official audio',
+      title: 'Trending Now',
+    ),
     _HomeSectionState(
-        query: 'new music releases official audio', title: 'New Releases'),
+      query: 'new official music releases 2026',
+      title: 'New Releases',
+    ),
     if (forYouFeedService.hasTasteProfile) ...[
       _HomeSectionState(
         query: '__engine_made_for_you__',
@@ -937,20 +895,37 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ],
     _HomeSectionState(
-        query: 'top indian songs official audio', title: 'India Hits'),
+      query: 'top bollywood hindi songs official music video',
+      title: 'India Hits (T-Series & Sony)',
+    ),
     _HomeSectionState(
-        query: 'punjabi hit songs official audio', title: 'Punjabi Hits'),
+      query: 'latest punjabi pop songs official audio',
+      title: 'Punjabi Bangers',
+    ),
     _HomeSectionState(
-        query: 'hindi hit songs official audio', title: 'Hindi Hits'),
+      query: 'hindi hit romantic songs official audio',
+      title: 'Hindi Hits',
+    ),
     _HomeSectionState(
-        query: 'international pop hits official audio',
-        title: 'International Pop'),
+      query: 'hindi indie acoustic songs official audio',
+      title: 'Hindi Indie & Acoustic',
+    ),
     _HomeSectionState(
-        query: 'hip hop rap songs official audio', title: 'Hip-Hop & Rap'),
+      query: 'billboard top global pop hits official audio',
+      title: 'International Pop 100',
+    ),
     _HomeSectionState(
-        query: 'edm dance party songs official audio', title: 'EDM & Party'),
+      query: 'desi hip hop rap songs official audio',
+      title: 'Hip-Hop & Desi Rap',
+    ),
     _HomeSectionState(
-        query: 'chill lofi acoustic music', title: 'Chill & Lofi'),
+      query: 'party dance club edm songs official audio',
+      title: 'EDM & Party Club',
+    ),
+    _HomeSectionState(
+      query: 'chill lofi acoustic late night songs',
+      title: 'Chill & Lofi',
+    ),
   ];
 
   @override
@@ -961,16 +936,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Pull-to-refresh: force-bypasses SearchCache for every section so
-  /// the user can explicitly request fresh results on demand, on top
-  /// of the existing automatic 5-minute stale-while-revalidate cache.
+  /// Pull-to-refresh: force-bypasses SearchCache for every section
   Future<void> _refreshAll() async {
     await Future.wait(
-        _sections.map((s) => _loadSection(s, forceRefresh: true)));
+      _sections.map((s) => _loadSection(s, forceRefresh: true)),
+    );
   }
 
-  Future<void> _loadSection(_HomeSectionState section,
-      {bool forceRefresh = false}) async {
+  Future<void> _loadSection(
+    _HomeSectionState section, {
+    bool forceRefresh = false,
+  }) async {
     if (_activeFetches.contains(section.query)) return;
     _activeFetches.add(section.query);
 
@@ -1015,16 +991,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Runs the new RecommendationEngine pipeline (Part H/V) for
-  /// engine-backed Home sections ("Made For You"/"Because You
-  /// Listened To") and converts its `ScoredTrack` results back to the
-  /// app's existing `Map<String, dynamic>` track shape — same
-  /// conversion the Provider Architecture already established
-  /// (`ProviderTrack.toTrackMap()`), so nothing downstream (playTrack,
-  /// LocalLibrary, the tracks-row UI) needs to know a different
-  /// pipeline produced these tracks.
   Future<List<Map<String, dynamic>>> _generateEngineFeed(
-      FeedIntent intent) async {
+    FeedIntent intent,
+  ) async {
     final scored = await recommendationEngine.generateFeed(
       intent: intent,
       excludeIds: const {},
@@ -1033,16 +1002,16 @@ class _HomeScreenState extends State<HomeScreen> {
     return scored.map((s) => s.track.toTrackMap()).toList();
   }
 
-  // Phase 3 fix: HomeScreen no longer calls `sharedYt.search.search()`
-  // directly — routed through MusicRepository -> ProviderManager ->
-  // YouTubeMusicProvider, which applies the exact same
-  // filter/clean/map logic this method used to do inline (see
-  // YoutubeMusicMapper — same 15-min cap, same podcast/compilation
-  // exclusion, same title cleaning), just consolidated into one shared
-  // place instead of 3 near-duplicate copies (Home/Search/For You each
-  // had their own).
   Future<List<Map<String, dynamic>>> _search(String q) {
     return musicRepository.search(q, limit: 15);
+  }
+
+  void _playArtistSpotlight(Map<String, String> artist) async {
+    unawaited(HapticFeedback.selectionClick());
+    final results = await _search(artist['query']!);
+    if (results.isNotEmpty && mounted) {
+      await playTrack(context, results.first, results, 0);
+    }
   }
 
   @override
@@ -1060,52 +1029,176 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.surface,
         onRefresh: _refreshAll,
         child: CustomScrollView(
-          // A RefreshIndicator needs a scrollable that can always be
-          // dragged (even when content is short), hence
-          // AlwaysScrollableScrollPhysics — without this, pull-to-refresh
-          // silently does nothing on a Home screen short enough to not
-          // naturally overflow.
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
             SliverAppBar(
               floating: true,
-              title: Row(children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(10),
+              title: Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.bolt_rounded,
+                      size: 20,
+                      color: Colors.white,
+                    ),
                   ),
-                  child: const Icon(Icons.bolt_rounded,
-                      size: 20, color: Colors.white),
-                ),
-                const SizedBox(width: 10),
-                const Text('V Shots',
+                  const SizedBox(width: 10),
+                  const Text(
+                    'V Shots',
                     style: TextStyle(
-                        fontWeight: FontWeight.w800, letterSpacing: -0.3)),
-              ]),
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(greeting,
-                          style: const TextStyle(
-                              fontSize: 26, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 4),
-                      Text('What do you want to listen to?',
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6))),
-                    ]),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      greeting,
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Discover official releases & trending tracks',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+            _buildArtistsSpotlightSliver(),
             for (final section in _sections) _buildSectionSliver(section),
             const SliverToBoxAdapter(child: SizedBox(height: 160)),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildArtistsSpotlightSliver() {
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Row(
+              children: [
+                Icon(Icons.verified_rounded, color: AppColors.accent, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Official Artists Spotlight',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 130,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              itemCount: _officialArtists.length,
+              itemBuilder: (context, index) {
+                final artist = _officialArtists[index];
+                return PressableScale(
+                  onTap: () => _playArtistSpotlight(artist),
+                  child: Container(
+                    width: 96,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 68,
+                              height: 68,
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: AppColors.primaryGradient,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(34),
+                                child: AppImage(
+                                  artist['image'],
+                                  width: 64,
+                                  height: 64,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.surface,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.verified_rounded,
+                                  color: AppColors.accent,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          artist['name'] ?? '',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          artist['role'] ?? 'Official',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1119,14 +1212,20 @@ class _HomeScreenState extends State<HomeScreen> {
     // intentional (e.g. an odd query returning 1-2 hits) is still
     // simply omitted, same behavior as before.
     final Widget content = switch (section.status) {
-      _SectionStatus.loading =>
-        KeyedSubtree(key: const ValueKey('loading'), child: _shimmerContent()),
+      _SectionStatus.loading => KeyedSubtree(
+          key: const ValueKey('loading'),
+          child: _shimmerContent(),
+        ),
       _SectionStatus.error => KeyedSubtree(
-          key: const ValueKey('error'), child: _errorContent(section)),
+          key: const ValueKey('error'),
+          child: _errorContent(section),
+        ),
       _SectionStatus.loaded when section.tracks.length < 3 =>
         const KeyedSubtree(key: ValueKey('empty'), child: SizedBox.shrink()),
       _SectionStatus.loaded => KeyedSubtree(
-          key: const ValueKey('loaded'), child: _tracksContent(section)),
+          key: const ValueKey('loaded'),
+          child: _tracksContent(section),
+        ),
     };
 
     return SliverToBoxAdapter(
@@ -1140,60 +1239,72 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _shimmerContent() {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-        child: Shimmer.fromColors(
-          baseColor: AppColors.surface,
-          highlightColor: AppColors.surfaceLight,
-          child: Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+          child: Shimmer.fromColors(
+            baseColor: AppColors.surface,
+            highlightColor: AppColors.surfaceLight,
+            child: Container(
               width: 150,
               height: 22,
               decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(4))),
-        ),
-      ),
-      SizedBox(
-        height: 200,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: 5,
-          itemBuilder: (_, __) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Shimmer.fromColors(
-              baseColor: AppColors.surface,
-              highlightColor: AppColors.surfaceLight,
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                        width: 150,
-                        height: 150,
-                        decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(14))),
-                    const SizedBox(height: 8),
-                    Container(
-                        width: 120,
-                        height: 14,
-                        decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(4))),
-                    const SizedBox(height: 4),
-                    Container(
-                        width: 80,
-                        height: 12,
-                        decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(4))),
-                  ]),
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
           ),
         ),
-      ),
-    ]);
+        SizedBox(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: 5,
+            itemBuilder: (_, __) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Shimmer.fromColors(
+                baseColor: AppColors.surface,
+                highlightColor: AppColors.surfaceLight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 150,
+                      height: 150,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 120,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: 80,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Real error/retry UI — previously a failed section silently
@@ -1208,119 +1319,150 @@ class _HomeScreenState extends State<HomeScreen> {
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Row(children: [
-          Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.5)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text('Couldn\'t load "${section.title}"',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
-          ),
-          TextButton(
-            onPressed: () => _loadSection(section),
-            child: const Text('Retry'),
-          ),
-        ]),
+        child: Row(
+          children: [
+            Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.5)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Couldn\'t load "${section.title}"',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+              ),
+            ),
+            TextButton(
+              onPressed: () => _loadSection(section),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _tracksContent(_HomeSectionState section) {
     final isPersonalized = section.title == 'Made For You';
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-        child: Row(children: [
-          if (isPersonalized) ...[
-            const Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
-            const SizedBox(width: 6),
-          ],
-          Text(section.title,
-              style:
-                  const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-        ]),
-      ),
-      SizedBox(
-        height: 210,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: section.tracks.length,
-          itemBuilder: (context, i) {
-            final track = section.tracks[i];
-            // Phase 7 (Part D): each card gets a capped staggered
-            // fade+rise entrance on first appearance, and
-            // PressableScale for real tap feedback (previously a
-            // bare GestureDetector with zero visual press response).
-            return StaggeredEntrance(
-              index: i,
-              child: PressableScale(
-                onTap: () => playTrack(context, track, section.tracks, i),
-                child: RepaintBoundary(
-                  child: Container(
-                    width: 150,
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Column(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+          child: Row(
+            children: [
+              if (isPersonalized) ...[
+                const Icon(
+                  Icons.auto_awesome,
+                  size: 18,
+                  color: AppColors.accent,
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                section.title,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 210,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: section.tracks.length,
+            itemBuilder: (context, i) {
+              final track = section.tracks[i];
+              // Phase 7 (Part D): each card gets a capped staggered
+              // fade+rise entrance on first appearance, and
+              // PressableScale for real tap feedback (previously a
+              // bare GestureDetector with zero visual press response).
+              return StaggeredEntrance(
+                index: i,
+                child: PressableScale(
+                  onTap: () => playTrack(context, track, section.tracks, i),
+                  child: RepaintBoundary(
+                    child: Container(
+                      width: 150,
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           AspectRatio(
                             aspectRatio: 1,
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(14),
-                              child: Stack(fit: StackFit.expand, children: [
-                                AppImage(
-                                  (track['artwork'] as String?) ?? '',
-                                  fit: BoxFit.cover,
-                                  // Phase 7 fix (UI_PERFORMANCE_AUDIT.md
-                                  // issue #3): explicit width/height so
-                                  // AppImage's own memCacheWidth/Height
-                                  // sizing actually activates — this card is
-                                  // laid out at a fixed 150-wide slot, but
-                                  // the raw YouTube thumbnail URL
-                                  // (`highResUrl`, 480x360) was previously
-                                  // decoded at full native resolution with
-                                  // no cache-size hint at all.
-                                  width: 150,
-                                  height: 150,
-                                  errorIconColor: AppColors.accent,
-                                ),
-                                Positioned(
-                                  right: 8,
-                                  bottom: 8,
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.accent,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.play_arrow,
-                                        size: 20, color: Colors.white),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  AppImage(
+                                    (track['artwork'] as String?) ?? '',
+                                    fit: BoxFit.cover,
+                                    // Phase 7 fix (UI_PERFORMANCE_AUDIT.md
+                                    // issue #3): explicit width/height so
+                                    // AppImage's own memCacheWidth/Height
+                                    // sizing actually activates — this card is
+                                    // laid out at a fixed 150-wide slot, but
+                                    // the raw YouTube thumbnail URL
+                                    // (`highResUrl`, 480x360) was previously
+                                    // decoded at full native resolution with
+                                    // no cache-size hint at all.
+                                    width: 150,
+                                    height: 150,
+                                    errorIconColor: AppColors.accent,
                                   ),
-                                ),
-                              ]),
+                                  Positioned(
+                                    right: 8,
+                                    bottom: 8,
+                                    child: Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: const BoxDecoration(
+                                        color: AppColors.accent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.play_arrow,
+                                        size: 20,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text((track['title'] as String?) ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600, fontSize: 13)),
-                          Text((track['artist'] as String?) ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.5),
-                                  fontSize: 12)),
-                        ]),
+                          Text(
+                            (track['title'] as String?) ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            (track['artist'] as String?) ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
@@ -1518,12 +1660,17 @@ class _SearchScreenState extends State<SearchScreen> {
             decoration: InputDecoration(
               hintText: 'Search songs, artists...',
               hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-              prefixIcon: Icon(Icons.search,
-                  color: Colors.white.withValues(alpha: 0.4)),
+              prefixIcon: Icon(
+                Icons.search,
+                color: Colors.white.withValues(alpha: 0.4),
+              ),
               suffixIcon: _controller.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear_rounded,
-                          color: AppColors.textMuted, size: 18),
+                      icon: const Icon(
+                        Icons.clear_rounded,
+                        color: AppColors.textMuted,
+                        size: 18,
+                      ),
                       onPressed: () {
                         _controller.clear();
                         _onQueryChanged('');
@@ -1558,12 +1705,18 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.wifi_off,
-                        size: 40, color: Colors.white.withValues(alpha: 0.4)),
+                    Icon(
+                      Icons.wifi_off,
+                      size: 40,
+                      color: Colors.white.withValues(alpha: 0.4),
+                    ),
                     const SizedBox(height: 12),
-                    Text('Search failed — check your connection',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6))),
+                    Text(
+                      'Search failed — check your connection',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     TextButton(
                       onPressed: () => _search(_lastQuery ?? _controller.text),
@@ -1579,15 +1732,21 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.search_off,
-                        size: 40, color: Colors.white.withValues(alpha: 0.3)),
+                    Icon(
+                      Icons.search_off,
+                      size: 40,
+                      color: Colors.white.withValues(alpha: 0.3),
+                    ),
                     const SizedBox(height: 12),
                     // Phase 7 fix: this is now a GENUINE "zero results"
                     // state (distinct from _SearchStatus.error above) —
                     // the request succeeded, it just found nothing.
-                    Text('No results for "${_lastQuery ?? _controller.text}"',
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5))),
+                    Text(
+                      'No results for "${_lastQuery ?? _controller.text}"',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1610,13 +1769,19 @@ class _SearchScreenState extends State<SearchScreen> {
                       height: 48,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    title: Text((track['title'] as String?) ?? '',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text((track['artist'] as String?) ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6))),
+                    title: Text(
+                      (track['title'] as String?) ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      (track['artist'] as String?) ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                      ),
+                    ),
                     onTap: () => playTrack(context, track, _results, i),
                   ),
                 );
@@ -1627,50 +1792,62 @@ class _SearchScreenState extends State<SearchScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
-                  const Text('Recent Searches',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                  ...LocalLibrary.instance.recentSearches.value
-                      .take(5)
-                      .map((s) => ListTile(
-                            leading: Icon(Icons.history,
-                                color: Colors.white.withValues(alpha: 0.5)),
-                            title: Text((s['query'] as String?) ?? ''),
-                            onTap: () {
-                              _controller.text = (s['query'] as String?) ?? '';
-                              _search((s['query'] as String?) ?? '');
-                            },
-                          )),
+                  const Text(
+                    'Recent Searches',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                  ...LocalLibrary.instance.recentSearches.value.take(5).map(
+                        (s) => ListTile(
+                          leading: Icon(
+                            Icons.history,
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                          title: Text((s['query'] as String?) ?? ''),
+                          onTap: () {
+                            _controller.text = (s['query'] as String?) ?? '';
+                            _search((s['query'] as String?) ?? '');
+                          },
+                        ),
+                      ),
                   const SizedBox(height: 24),
                 ],
-                const Text('Browse Categories',
-                    style:
-                        TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                const Text(
+                  'Browse Categories',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
                   children: _categories
-                      .map((c) => PressableScale(
-                            onTap: () {
-                              _controller.text = c.$1;
-                              _search(c.$1);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: c.$3.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                    color: c.$3.withValues(alpha: 0.3)),
-                              ),
-                              child: Text('${c.$2} ${c.$1}',
-                                  style: TextStyle(
-                                      color: c.$3,
-                                      fontWeight: FontWeight.w500)),
+                      .map(
+                        (c) => PressableScale(
+                          onTap: () {
+                            _controller.text = c.$1;
+                            _search(c.$1);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
                             ),
-                          ))
+                            decoration: BoxDecoration(
+                              color: c.$3.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: c.$3.withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              '${c.$2} ${c.$1}',
+                              style: TextStyle(
+                                color: c.$3,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
                       .toList(),
                 ),
               ],
@@ -1694,34 +1871,43 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Shimmer.fromColors(
           baseColor: AppColors.surface,
           highlightColor: AppColors.surfaceLight,
-          child: Row(children: [
-            Container(
+          child: Row(
+            children: [
+              Container(
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(8))),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                        width: double.infinity,
-                        height: 14,
-                        decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(4))),
+                      width: double.infinity,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Container(
-                        width: 120,
-                        height: 12,
-                        decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(4))),
-                  ]),
-            ),
-          ]),
+                      width: 120,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1792,7 +1978,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('Create'),
@@ -1845,8 +2033,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   tracks: lib.downloadedTracks.value,
                   emptyMessage:
                       'No imported files yet — tap "Import" below to add audio files already on your device.',
-                  onRemove: (t) => LocalLibrary.instance
-                      .removeDownloadedTrack(t['id'] as String),
+                  onRemove: (t) => LocalLibrary.instance.removeDownloadedTrack(
+                    t['id'] as String,
+                  ),
                 ),
               ),
             ),
@@ -1898,22 +2087,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
               lib.playlists.value.isEmpty &&
               lib.downloadedTracks.value.isEmpty)
             Center(
-              child: Column(children: [
-                Icon(Icons.library_music,
-                    size: 48, color: Colors.white.withValues(alpha: 0.2)),
-                const SizedBox(height: 12),
-                Text('Your library is empty',
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.4))),
-              ]),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.library_music,
+                    size: 48,
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Your library is empty',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _item(BuildContext context, IconData icon, String label, Color color,
-      int count, VoidCallback onTap) {
+  Widget _item(
+    BuildContext context,
+    IconData icon,
+    String label,
+    Color color,
+    int count,
+    VoidCallback onTap,
+  ) {
     return ListTile(
       onTap: onTap,
       leading: Container(
@@ -1926,12 +2129,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
         child: Icon(icon, color: color, size: 22),
       ),
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$count',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
-        const SizedBox(width: 8),
-        Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3)),
-      ]),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$count',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3)),
+        ],
+      ),
     );
   }
 }
@@ -1995,24 +2203,34 @@ class TrackListScreen extends StatelessWidget {
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
-                              width: 48,
-                              height: 48,
-                              color: AppColors.surface,
-                              child: const Icon(Icons.music_note,
-                                  color: Color(0xFF4CAF50))))
+                            width: 48,
+                            height: 48,
+                            color: AppColors.surface,
+                            child: const Icon(
+                              Icons.music_note,
+                              color: Color(0xFF4CAF50),
+                            ),
+                          ),
+                        )
                       : AppImage(
                           (track['artwork'] as String?) ?? '',
                           width: 48,
                           height: 48,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                  title: Text((track['title'] as String?) ?? '',
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text((track['artist'] as String?) ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6))),
+                  title: Text(
+                    (track['title'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    (track['artist'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
                   trailing: onRemove != null
                       ? IconButton(
                           icon: const Icon(Icons.close, size: 20),
@@ -2033,12 +2251,15 @@ class TrackListScreen extends StatelessWidget {
   }
 
   Future<void> _playLocalTrack(
-      BuildContext context, Map<String, dynamic> track) async {
+    BuildContext context,
+    Map<String, dynamic> track,
+  ) async {
     final path = track['localPath'] as String?;
     if (path == null || !LocalImportService.instance.fileStillExists(path)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('This file is no longer available on your device.')),
+          content: Text('This file is no longer available on your device.'),
+        ),
       );
       return;
     }
@@ -2049,9 +2270,9 @@ class TrackListScreen extends StatelessWidget {
       audioHandler?.updateNowPlaying(_trackToMediaItem(track));
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not play file: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not play file: $e')));
       }
     }
   }
@@ -2104,7 +2325,8 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               itemBuilder: (ctx, i) {
                 final playlist = playlists[i];
                 final tracks = List<Map<String, dynamic>>.from(
-                    playlist['tracks'] as List? ?? []);
+                  playlist['tracks'] as List? ?? [],
+                );
                 return ListTile(
                   leading: Container(
                     width: 44,
@@ -2113,15 +2335,18 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                       color: const Color(0xFF2196F3).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.playlist_play,
-                        color: Color(0xFF2196F3)),
+                    child: const Icon(
+                      Icons.playlist_play,
+                      color: Color(0xFF2196F3),
+                    ),
                   ),
                   title: Text(playlist['name'] as String? ?? ''),
                   subtitle: Text('${tracks.length} tracks'),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline, size: 20),
-                    onPressed: () => LocalLibrary.instance
-                        .deletePlaylist(playlist['id'] as String),
+                    onPressed: () => LocalLibrary.instance.deletePlaylist(
+                      playlist['id'] as String,
+                    ),
                   ),
                   onTap: () => Navigator.push(
                     context,
@@ -2130,9 +2355,11 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                         title: playlist['name'] as String? ?? 'Playlist',
                         tracks: tracks,
                         emptyMessage: 'This playlist is empty.',
-                        onRemove: (t) => LocalLibrary.instance
-                            .removeTrackFromPlaylist(
-                                playlist['id'] as String, t['id'] as String),
+                        onRemove: (t) =>
+                            LocalLibrary.instance.removeTrackFromPlaylist(
+                          playlist['id'] as String,
+                          t['id'] as String,
+                        ),
                       ),
                     ),
                   ),
@@ -2206,8 +2433,10 @@ class _ProfileScreenState extends State<ProfileScreen>
         ),
         title: const Text(
           'New Playlist',
-          style:
-              TextStyle(color: AppColors.textMain, fontWeight: FontWeight.w700),
+          style: TextStyle(
+            color: AppColors.textMain,
+            fontWeight: FontWeight.w700,
+          ),
         ),
         content: TextField(
           controller: controller,
@@ -2221,14 +2450,17 @@ class _ProfileScreenState extends State<ProfileScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textMuted)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () {
               final name = controller.text.trim();
@@ -2237,9 +2469,13 @@ class _ProfileScreenState extends State<ProfileScreen>
               }
               Navigator.pop(ctx);
             },
-            child: const Text('Create',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Create',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -2279,8 +2515,10 @@ class _ProfileScreenState extends State<ProfileScreen>
         centerTitle: true,
         actions: [
           IconButton(
-            icon:
-                const Icon(Icons.settings_outlined, color: AppColors.textMain),
+            icon: const Icon(
+              Icons.settings_outlined,
+              color: AppColors.textMain,
+            ),
             onPressed: () => Navigator.push(
               context,
               AppPageRoute<void>(builder: (_) => const SettingsScreen()),
@@ -2301,7 +2539,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
                       child: Column(
                         children: [
                           Center(
@@ -2337,39 +2577,48 @@ class _ProfileScreenState extends State<ProfileScreen>
                           // Music Stats Row
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                vertical: 14, horizontal: 16),
+                              vertical: 14,
+                              horizontal: 16,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.surface,
                               borderRadius: BorderRadius.circular(16),
-                              border:
-                                  Border.all(color: AppColors.border, width: 1),
+                              border: Border.all(
+                                color: AppColors.border,
+                                width: 1,
+                              ),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
                                 _buildMusicStat(
-                                    'Liked Songs',
-                                    '${likedSongs.length}',
-                                    Icons.favorite,
-                                    AppColors.hotPink),
+                                  'Liked Songs',
+                                  '${likedSongs.length}',
+                                  Icons.favorite,
+                                  AppColors.hotPink,
+                                ),
                                 Container(
-                                    width: 1,
-                                    height: 24,
-                                    color: AppColors.border),
+                                  width: 1,
+                                  height: 24,
+                                  color: AppColors.border,
+                                ),
                                 _buildMusicStat(
-                                    'Playlists',
-                                    '${playlists.length}',
-                                    Icons.playlist_play,
-                                    AppColors.accent),
+                                  'Playlists',
+                                  '${playlists.length}',
+                                  Icons.playlist_play,
+                                  AppColors.accent,
+                                ),
                                 Container(
-                                    width: 1,
-                                    height: 24,
-                                    color: AppColors.border),
+                                  width: 1,
+                                  height: 24,
+                                  color: AppColors.border,
+                                ),
                                 _buildMusicStat(
-                                    'Played',
-                                    '${recentlyPlayed.length}',
-                                    Icons.history,
-                                    AppColors.warning),
+                                  'Played',
+                                  '${recentlyPlayed.length}',
+                                  Icons.history,
+                                  AppColors.warning,
+                                ),
                               ],
                             ),
                           ),
@@ -2412,12 +2661,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       Navigator.push(
                                         context,
                                         AppPageRoute<void>(
-                                            builder: (_) =>
-                                                const SettingsScreen()),
+                                          builder: (_) =>
+                                              const SettingsScreen(),
+                                        ),
                                       ).then((_) => _loadProfileData());
                                     } else {
-                                      AuthModal.show(context)
-                                          .then((_) => _loadProfileData());
+                                      AuthModal.show(
+                                        context,
+                                      ).then((_) => _loadProfileData());
                                     }
                                   },
                                 ),
@@ -2440,14 +2691,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                         unselectedLabelColor: AppColors.textMuted,
                         tabs: const [
                           Tab(
-                              icon: Icon(Icons.favorite_rounded),
-                              text: 'Liked Songs'),
+                            icon: Icon(Icons.favorite_rounded),
+                            text: 'Liked Songs',
+                          ),
                           Tab(
-                              icon: Icon(Icons.playlist_play_rounded),
-                              text: 'Playlists'),
+                            icon: Icon(Icons.playlist_play_rounded),
+                            text: 'Playlists',
+                          ),
                           Tab(
-                              icon: Icon(Icons.history_rounded),
-                              text: 'Recently Played'),
+                            icon: Icon(Icons.history_rounded),
+                            text: 'Recently Played',
+                          ),
                         ],
                       ),
                     ),
@@ -2467,7 +2721,11 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildMusicStat(
-      String label, String value, IconData icon, Color iconColor) {
+    String label,
+    String value,
+    IconData icon,
+    Color iconColor,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2502,8 +2760,10 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildLikedTracksTab(List<Map<String, dynamic>> liked) {
     if (liked.isEmpty) {
       return const Center(
-        child: Text('No liked songs yet — tap ♡ on any song to save it here.',
-            style: TextStyle(color: AppColors.textMuted)),
+        child: Text(
+          'No liked songs yet — tap ♡ on any song to save it here.',
+          style: TextStyle(color: AppColors.textMuted),
+        ),
       );
     }
     return ListView.builder(
@@ -2514,20 +2774,32 @@ class _ProfileScreenState extends State<ProfileScreen>
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(t['artwork'] as String?,
-                width: 48, height: 48, fit: BoxFit.cover),
+            child: AppImage(
+              t['artwork'] as String?,
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
+            ),
           ),
-          title: Text(t['title'] as String? ?? '',
-              style: const TextStyle(
-                  color: AppColors.textMain,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600),
-              maxLines: 1),
-          subtitle: Text(t['artist'] as String? ?? '',
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-              maxLines: 1),
-          trailing:
-              const Icon(Icons.favorite, color: AppColors.hotPink, size: 20),
+          title: Text(
+            t['title'] as String? ?? '',
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+          ),
+          subtitle: Text(
+            t['artist'] as String? ?? '',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            maxLines: 1,
+          ),
+          trailing: const Icon(
+            Icons.favorite,
+            color: AppColors.hotPink,
+            size: 20,
+          ),
           onTap: () => playTrack(context, t, liked, index),
         );
       },
@@ -2541,14 +2813,19 @@ class _ProfileScreenState extends State<ProfileScreen>
         OutlinedButton.icon(
           onPressed: _createPlaylistDialog,
           icon: const Icon(Icons.add, color: AppColors.accent),
-          label: const Text('Create New Playlist',
-              style: TextStyle(
-                  color: AppColors.accent, fontWeight: FontWeight.w600)),
+          label: const Text(
+            'Create New Playlist',
+            style: TextStyle(
+              color: AppColors.accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: AppColors.accent),
             padding: const EdgeInsets.symmetric(vertical: 12),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -2556,14 +2833,17 @@ class _ProfileScreenState extends State<ProfileScreen>
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 40),
             child: Center(
-              child: Text('No playlists yet.',
-                  style: TextStyle(color: AppColors.textMuted)),
+              child: Text(
+                'No playlists yet.',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
             ),
           )
         else
           ...playlists.map((playlist) {
             final tracks = List<Map<String, dynamic>>.from(
-                playlist['tracks'] as List? ?? []);
+              playlist['tracks'] as List? ?? [],
+            );
             return ListTile(
               leading: Container(
                 width: 48,
@@ -2574,19 +2854,30 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 child: const Icon(Icons.playlist_play, color: AppColors.accent),
               ),
-              title: Text(playlist['name'] as String? ?? 'Playlist',
-                  style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600)),
-              subtitle: Text('${tracks.length} songs',
-                  style: const TextStyle(
-                      color: AppColors.textMuted, fontSize: 12)),
+              title: Text(
+                playlist['name'] as String? ?? 'Playlist',
+                style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                '${tracks.length} songs',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                ),
+              ),
               trailing: IconButton(
-                icon: const Icon(Icons.delete_outline,
-                    size: 20, color: AppColors.textSubtle),
-                onPressed: () => LocalLibrary.instance
-                    .deletePlaylist(playlist['id'] as String),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  size: 20,
+                  color: AppColors.textSubtle,
+                ),
+                onPressed: () => LocalLibrary.instance.deletePlaylist(
+                  playlist['id'] as String,
+                ),
               ),
               onTap: () => Navigator.push(
                 context,
@@ -2595,9 +2886,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                     title: playlist['name'] as String? ?? 'Playlist',
                     tracks: tracks,
                     emptyMessage: 'This playlist is empty.',
-                    onRemove: (t) => LocalLibrary.instance
-                        .removeTrackFromPlaylist(
-                            playlist['id'] as String, t['id'] as String),
+                    onRemove: (t) =>
+                        LocalLibrary.instance.removeTrackFromPlaylist(
+                      playlist['id'] as String,
+                      t['id'] as String,
+                    ),
                   ),
                 ),
               ),
@@ -2610,8 +2903,10 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget _buildRecentlyPlayedTab(List<Map<String, dynamic>> recent) {
     if (recent.isEmpty) {
       return const Center(
-        child: Text('Nothing played yet — go explore and play music!',
-            style: TextStyle(color: AppColors.textMuted)),
+        child: Text(
+          'Nothing played yet — go explore and play music!',
+          style: TextStyle(color: AppColors.textMuted),
+        ),
       );
     }
     return ListView.builder(
@@ -2622,20 +2917,32 @@ class _ProfileScreenState extends State<ProfileScreen>
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(t['artwork'] as String?,
-                width: 48, height: 48, fit: BoxFit.cover),
+            child: AppImage(
+              t['artwork'] as String?,
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
+            ),
           ),
-          title: Text(t['title'] as String? ?? '',
-              style: const TextStyle(
-                  color: AppColors.textMain,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600),
-              maxLines: 1),
-          subtitle: Text(t['artist'] as String? ?? '',
-              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-              maxLines: 1),
-          trailing: const Icon(Icons.play_arrow_rounded,
-              color: AppColors.accent, size: 22),
+          title: Text(
+            t['title'] as String? ?? '',
+            style: const TextStyle(
+              color: AppColors.textMain,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+          ),
+          subtitle: Text(
+            t['artist'] as String? ?? '',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            maxLines: 1,
+          ),
+          trailing: const Icon(
+            Icons.play_arrow_rounded,
+            color: AppColors.accent,
+            size: 22,
+          ),
           onTap: () => playTrack(context, t, recent, index),
         );
       },
@@ -2654,11 +2961,11 @@ class _ProfileTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: AppColors.background,
-      child: _tabBar,
-    );
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(color: AppColors.background, child: _tabBar);
   }
 
   @override
@@ -2713,8 +3020,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     _currentTrack = widget.track;
     _currentIndex = widget.currentIndex;
-    _isLiked =
-        LocalLibrary.instance.isLiked(_currentTrack['id'] as String? ?? '');
+    _isLiked = LocalLibrary.instance.isLiked(
+      _currentTrack['id'] as String? ?? '',
+    );
 
     // Listen to REAL player state
     _playerStateSub = audioPlayer.playerStateStream.listen((s) {
@@ -2752,218 +3060,258 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(children: [
-            // Top bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.keyboard_arrow_down, size: 32),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Column(children: [
-                    Text('PLAYING FROM',
-                        style: TextStyle(
+          child: Column(
+            children: [
+              // Top bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down, size: 32),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Column(
+                      children: [
+                        Text(
+                          'PLAYING FROM',
+                          style: TextStyle(
                             fontSize: 10,
-                            color: Colors.white.withValues(alpha: 0.5))),
-                    Text('Search',
-                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        Text(
+                          'Search',
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.7))),
-                  ]),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert),
-                    onPressed: () =>
-                        showMoreOptionsSheet(context, _currentTrack),
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(),
-
-            // Artwork
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 36),
-              child: Container(
-                width: double.infinity, height: 320,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.25),
-                        blurRadius: 40,
-                        offset: const Offset(0, 20)),
+                            color: Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert),
+                      onPressed: () =>
+                          showMoreOptionsSheet(context, _currentTrack),
+                    ),
                   ],
                 ),
-                // Phase 7 (Part F): matches the mini-player's Hero tag
-                // for the SAME track id, producing a real shared-
-                // element "fly" transition from the mini-player into
-                // this full artwork when opened via _openPlayer(). If
-                // this screen was opened some other way (e.g. directly
-                // from a Home/Search tap with no mini-player visible
-                // yet), Hero degrades gracefully to a plain fade (no
-                // matching source Hero to fly from).
-                //
-                // ArtworkFadeIn wraps it too so navigating between
-                // tracks WITHIN this same screen (next/prev, which
-                // don't re-push the route) still gets a gentle scale
-                // +fade on every track change instead of an abrupt
-                // artwork swap.
-                child: Hero(
-                  tag: 'artwork-${_currentTrack['id']}',
-                  child: ArtworkFadeIn(
-                    key: ValueKey(_currentTrack['id']),
-                    child: AppImage(
-                      (_currentTrack['artwork'] as String?) ?? '',
-                      fit: BoxFit.cover,
-                      borderRadius: BorderRadius.circular(24),
-                      errorIconColor: AppColors.accent,
+              ),
+
+              const Spacer(),
+
+              // Artwork
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 36),
+                child: Container(
+                  width: double.infinity,
+                  height: 320,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.25),
+                        blurRadius: 40,
+                        offset: const Offset(0, 20),
+                      ),
+                    ],
+                  ),
+                  // Phase 7 (Part F): matches the mini-player's Hero tag
+                  // for the SAME track id, producing a real shared-
+                  // element "fly" transition from the mini-player into
+                  // this full artwork when opened via _openPlayer(). If
+                  // this screen was opened some other way (e.g. directly
+                  // from a Home/Search tap with no mini-player visible
+                  // yet), Hero degrades gracefully to a plain fade (no
+                  // matching source Hero to fly from).
+                  //
+                  // ArtworkFadeIn wraps it too so navigating between
+                  // tracks WITHIN this same screen (next/prev, which
+                  // don't re-push the route) still gets a gentle scale
+                  // +fade on every track change instead of an abrupt
+                  // artwork swap.
+                  child: Hero(
+                    tag: 'artwork-${_currentTrack['id']}',
+                    child: ArtworkFadeIn(
+                      key: ValueKey(_currentTrack['id']),
+                      child: AppImage(
+                        (_currentTrack['artwork'] as String?) ?? '',
+                        fit: BoxFit.cover,
+                        borderRadius: BorderRadius.circular(24),
+                        errorIconColor: AppColors.accent,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 28),
+              const SizedBox(height: 28),
 
-            // Track info
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Row(children: [
-                Expanded(
-                    child: Column(
+              // Track info
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text((_currentTrack['title'] as String?) ?? '',
-                          style: const TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w700),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 4),
-                      Text((_currentTrack['artist'] as String?) ?? '',
-                          style: TextStyle(
+                          Text(
+                            (_currentTrack['title'] as String?) ?? '',
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            (_currentTrack['artist'] as String?) ?? '',
+                            style: TextStyle(
                               fontSize: 16,
-                              color: Colors.white.withValues(alpha: 0.7)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                    ])),
-                IconButton(
-                  // Phase 7 (Part F): LikePop plays a real one-shot
-                  // "pop" (scale up then settle) whenever the track
-                  // transitions to liked, matching the celebratory
-                  // feel of every real music app's like button —
-                  // previously this was a bare, unanimated Icon swap.
-                  icon: LikePop(
-                    liked: _isLiked,
-                    child: Icon(
-                      _isLiked ? Icons.favorite : Icons.favorite_border,
-                      size: 28,
-                      color: _isLiked
+                              color: Colors.white.withValues(alpha: 0.7),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      // Phase 7 (Part F): LikePop plays a real one-shot
+                      // "pop" (scale up then settle) whenever the track
+                      // transitions to liked, matching the celebratory
+                      // feel of every real music app's like button —
+                      // previously this was a bare, unanimated Icon swap.
+                      icon: LikePop(
+                        liked: _isLiked,
+                        child: Icon(
+                          _isLiked ? Icons.favorite : Icons.favorite_border,
+                          size: 28,
+                          color: _isLiked
+                              ? AppColors.accent
+                              : Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      onPressed: () async {
+                        unawaited(HapticFeedback.lightImpact());
+                        final wasLiked = _isLiked;
+                        await LocalLibrary.instance.toggleLiked(_currentTrack);
+                        // Phase 7 (Part I): real like/unlike signal for the
+                        // recommendation engine.
+                        if (wasLiked) {
+                          playbackSignalTracker.onUnliked(_currentTrack);
+                        } else {
+                          playbackSignalTracker.onLiked(_currentTrack);
+                        }
+                        if (mounted) {
+                          setState(() {
+                            _isLiked = LocalLibrary.instance.isLiked(
+                              _currentTrack['id'] as String,
+                            );
+                          });
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.playlist_add, size: 26),
+                      tooltip: 'Add to playlist',
+                      onPressed: () =>
+                          showAddToPlaylistSheet(context, _currentTrack),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.lyrics_outlined, size: 24),
+                      tooltip: 'Lyrics',
+                      onPressed: () => Navigator.push(
+                        context,
+                        AppPageRoute<void>(
+                          builder: (_) => LyricsScreen(track: _currentTrack),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Progress — REAL player state
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: AppColors.accent,
+                        inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
+                        thumbColor: AppColors.accent,
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                      ),
+                      child: Slider(
+                        value: _duration.inMilliseconds > 0
+                            ? (_position.inMilliseconds /
+                                    _duration.inMilliseconds)
+                                .clamp(0.0, 1.0)
+                            : 0.0,
+                        onChanged: (v) => audioPlayer.seek(
+                          Duration(
+                            milliseconds:
+                                (v * _duration.inMilliseconds).round(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _fmt(_position),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            _fmt(_duration),
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Controls
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Shuffle — real toggle (Phase 8 fix; was an empty
+                  // onPressed stub with no state). Rebuilds shuffleOrder
+                  // (see core/player/queue_controller.dart) keeping the
+                  // currently-playing track first, so turning shuffle on
+                  // doesn't jump away from what's playing right now.
+                  IconButton(
+                    icon: Icon(
+                      Icons.shuffle,
+                      size: 24,
+                      color: isShuffleOn
                           ? AppColors.accent
-                          : Colors.white.withValues(alpha: 0.7),
+                          : Colors.white.withValues(alpha: 0.6),
                     ),
-                  ),
-                  onPressed: () async {
-                    unawaited(HapticFeedback.lightImpact());
-                    final wasLiked = _isLiked;
-                    await LocalLibrary.instance.toggleLiked(_currentTrack);
-                    // Phase 7 (Part I): real like/unlike signal for the
-                    // recommendation engine.
-                    if (wasLiked) {
-                      playbackSignalTracker.onUnliked(_currentTrack);
-                    } else {
-                      playbackSignalTracker.onLiked(_currentTrack);
-                    }
-                    if (mounted) {
-                      setState(() {
-                        _isLiked = LocalLibrary.instance
-                            .isLiked(_currentTrack['id'] as String);
-                      });
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.playlist_add, size: 26),
-                  tooltip: 'Add to playlist',
-                  onPressed: () =>
-                      showAddToPlaylistSheet(context, _currentTrack),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.lyrics_outlined, size: 24),
-                  tooltip: 'Lyrics',
-                  onPressed: () => Navigator.push(
-                    context,
-                    AppPageRoute<void>(
-                      builder: (_) => LyricsScreen(track: _currentTrack),
-                    ),
-                  ),
-                ),
-              ]),
-            ),
-            const SizedBox(height: 20),
-
-            // Progress — REAL player state
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(children: [
-                SliderTheme(
-                  data: SliderThemeData(
-                    activeTrackColor: AppColors.accent,
-                    inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
-                    thumbColor: AppColors.accent,
-                    trackHeight: 3,
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 14),
-                  ),
-                  child: Slider(
-                    value: _duration.inMilliseconds > 0
-                        ? (_position.inMilliseconds / _duration.inMilliseconds)
-                            .clamp(0.0, 1.0)
-                        : 0.0,
-                    onChanged: (v) => audioPlayer.seek(Duration(
-                        milliseconds: (v * _duration.inMilliseconds).round())),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_fmt(_position),
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12)),
-                      Text(_fmt(_duration),
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ]),
-            ),
-            const SizedBox(height: 12),
-
-            // Controls
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Shuffle — real toggle (Phase 8 fix; was an empty
-                // onPressed stub with no state). Rebuilds shuffleOrder
-                // (see core/player/queue_controller.dart) keeping the
-                // currently-playing track first, so turning shuffle on
-                // doesn't jump away from what's playing right now.
-                IconButton(
-                    icon: Icon(Icons.shuffle,
-                        size: 24,
-                        color: isShuffleOn
-                            ? AppColors.accent
-                            : Colors.white.withValues(alpha: 0.6)),
                     tooltip: isShuffleOn ? 'Shuffle on' : 'Shuffle off',
                     onPressed: () {
                       HapticFeedback.selectionClick();
@@ -2971,69 +3319,76 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         isShuffleOn = !isShuffleOn;
                         if (isShuffleOn) {
                           QueueController.rebuildShuffleOrder(
-                              keepCurrentAt: currentQueueIndex);
+                            keepCurrentAt: currentQueueIndex,
+                          );
                         }
                       });
-                    }),
-                IconButton(
+                    },
+                  ),
+                  IconButton(
                     icon: const Icon(Icons.skip_previous, size: 40),
-                    onPressed: _prev),
-                // Phase 7 (Part F): PressableScale gives real tactile
-                // press feedback on the primary play/pause control
-                // (previously a bare GestureDetector with zero visual
-                // response to a press-down beyond the eventual state
-                // change), and PlayPauseMorph replaces the unanimated
-                // Icon swap with the same cross-fade+scale used
-                // everywhere else this control appears.
-                PressableScale(
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    if (_isPlaying) {
-                      audioPlayer.pause();
-                    } else {
-                      audioPlayer.play();
-                    }
-                  },
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                          colors: [AppColors.accent, AppColors.accentLight]),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
+                    onPressed: _prev,
+                  ),
+                  // Phase 7 (Part F): PressableScale gives real tactile
+                  // press feedback on the primary play/pause control
+                  // (previously a bare GestureDetector with zero visual
+                  // response to a press-down beyond the eventual state
+                  // change), and PlayPauseMorph replaces the unanimated
+                  // Icon swap with the same cross-fade+scale used
+                  // everywhere else this control appears.
+                  PressableScale(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      if (_isPlaying) {
+                        audioPlayer.pause();
+                      } else {
+                        audioPlayer.play();
+                      }
+                    },
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [AppColors.accent, AppColors.accentLight],
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
                             color: AppColors.accent.withValues(alpha: 0.4),
                             blurRadius: 20,
-                            offset: const Offset(0, 8)),
-                      ],
-                    ),
-                    child: Center(
-                      child: PlayPauseMorph(
-                        isPlaying: _isPlaying,
-                        size: 36,
-                        color: Colors.white,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: PlayPauseMorph(
+                          isPlaying: _isPlaying,
+                          size: 36,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                IconButton(
+                  IconButton(
                     icon: const Icon(Icons.skip_next, size: 40),
-                    onPressed: _next),
-                // Repeat — real 3-state toggle (off -> one -> all ->
-                // off), Phase 8 fix. See core/player/repeat_mode.dart
-                // and _handleTrackCompleted() in this file for where
-                // this state actually changes playback behavior (on
-                // natural track completion, not on skip).
-                IconButton(
+                    onPressed: _next,
+                  ),
+                  // Repeat — real 3-state toggle (off -> one -> all ->
+                  // off), Phase 8 fix. See core/player/repeat_mode.dart
+                  // and _handleTrackCompleted() in this file for where
+                  // this state actually changes playback behavior (on
+                  // natural track completion, not on skip).
+                  IconButton(
                     icon: Icon(
-                        repeatMode == RepeatMode.one
-                            ? Icons.repeat_one
-                            : Icons.repeat,
-                        size: 24,
-                        color: repeatMode == RepeatMode.off
-                            ? Colors.white.withValues(alpha: 0.6)
-                            : AppColors.accent),
+                      repeatMode == RepeatMode.one
+                          ? Icons.repeat_one
+                          : Icons.repeat,
+                      size: 24,
+                      color: repeatMode == RepeatMode.off
+                          ? Colors.white.withValues(alpha: 0.6)
+                          : AppColors.accent,
+                    ),
                     tooltip: switch (repeatMode) {
                       RepeatMode.off => 'Repeat off',
                       RepeatMode.one => 'Repeat one',
@@ -3042,11 +3397,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     onPressed: () {
                       HapticFeedback.selectionClick();
                       setState(() => repeatMode = repeatMode.next());
-                    }),
-              ],
-            ),
-            const Spacer(),
-          ]),
+                    },
+                  ),
+                ],
+              ),
+              const Spacer(),
+            ],
+          ),
         ),
       ),
     );
@@ -3090,8 +3447,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _play() async {
     try {
       _log('[PLAYER] Resolving track: ${_currentTrack['id']}');
-      final streamUrl =
-          await musicRepository.getStream(_currentTrack['id'] as String);
+      final streamUrl = await musicRepository.getStream(
+        _currentTrack['id'] as String,
+      );
 
       if (streamUrl != null) {
         _log('[PLAYER] Setting URL...');
@@ -3113,8 +3471,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         playbackSignalTracker.onTrackStarted(_currentTrack);
         if (mounted) {
           setState(() {
-            _isLiked = LocalLibrary.instance
-                .isLiked(_currentTrack['id'] as String? ?? '');
+            _isLiked = LocalLibrary.instance.isLiked(
+              _currentTrack['id'] as String? ?? '',
+            );
           });
         }
       } else {
@@ -3146,37 +3505,43 @@ void showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
               children: [
                 const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('Add to playlist',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  child: Text(
+                    'Add to playlist',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
                 ),
                 if (playlists.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
                       'No playlists yet. Create one from the Library tab first.',
-                      style:
-                          TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
                     ),
                   )
                 else
-                  ...playlists.map((p) => ListTile(
-                        leading: const Icon(Icons.playlist_play),
-                        title: Text(p['name'] as String? ?? ''),
-                        onTap: () async {
-                          await LocalLibrary.instance
-                              .addTrackToPlaylist(p['id'] as String, track);
-                          // Phase 7 (Part I): a deliberate curation
-                          // action — real, strong positive signal.
-                          playbackSignalTracker.onAddedToPlaylist(track);
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Added to ${p['name']}')),
-                            );
-                          }
-                        },
-                      )),
+                  ...playlists.map(
+                    (p) => ListTile(
+                      leading: const Icon(Icons.playlist_play),
+                      title: Text(p['name'] as String? ?? ''),
+                      onTap: () async {
+                        await LocalLibrary.instance.addTrackToPlaylist(
+                          p['id'] as String,
+                          track,
+                        );
+                        // Phase 7 (Part I): a deliberate curation
+                        // action — real, strong positive signal.
+                        playbackSignalTracker.onAddedToPlaylist(track);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Added to ${p['name']}')),
+                          );
+                        }
+                      },
+                    ),
+                  ),
                 const SizedBox(height: 12),
               ],
             ),
@@ -3232,7 +3597,8 @@ void showMoreOptionsSheet(
                 final artist = (track['artist'] as String?) ?? '';
                 SharePlus.instance.share(
                   ShareParams(
-                      text: 'Listening to "$title" by $artist on V Shots 🎵'),
+                    text: 'Listening to "$title" by $artist on V Shots 🎵',
+                  ),
                 );
               },
             ),
@@ -3246,8 +3612,8 @@ void showMoreOptionsSheet(
                   onNotInterested();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                        content:
-                            Text('Got it — adjusting your recommendations')),
+                      content: Text('Got it — adjusting your recommendations'),
+                    ),
                   );
                 },
               ),
@@ -3277,42 +3643,50 @@ void showSleepTimerSheet(BuildContext context) {
               children: [
                 const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('Sleep timer',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  child: Text(
+                    'Sleep timer',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
                 ),
                 if (remaining != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
-                    child: Column(children: [
-                      Text(
-                        '${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')} remaining',
-                        style: const TextStyle(
+                    child: Column(
+                      children: [
+                        Text(
+                          '${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')} remaining',
+                          style: const TextStyle(
                             color: AppColors.accent,
-                            fontWeight: FontWeight.w600),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          SleepTimer.instance.cancel();
-                          Navigator.pop(ctx);
-                        },
-                        child: const Text('Turn off timer'),
-                      ),
-                    ]),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            SleepTimer.instance.cancel();
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Turn off timer'),
+                        ),
+                      ],
+                    ),
                   ),
-                ...presets.map((minutes) => ListTile(
-                      leading: const Icon(Icons.timer_outlined),
-                      title: Text('$minutes minutes'),
-                      onTap: () {
-                        SleepTimer.instance.start(Duration(minutes: minutes));
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content: Text(
-                                  'Playback will pause in $minutes minutes')),
-                        );
-                      },
-                    )),
+                ...presets.map(
+                  (minutes) => ListTile(
+                    leading: const Icon(Icons.timer_outlined),
+                    title: Text('$minutes minutes'),
+                    onTap: () {
+                      SleepTimer.instance.start(Duration(minutes: minutes));
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Playback will pause in $minutes minutes',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 const SizedBox(height: 12),
               ],
             ),
@@ -3390,7 +3764,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
       appBar: AppBar(title: const Text('Lyrics')),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
+              child: CircularProgressIndicator(color: AppColors.accent),
+            )
           : _buildContent(),
     );
   }
@@ -3404,8 +3779,11 @@ class _LyricsScreenState extends State<LyricsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lyrics_outlined,
-                  size: 56, color: Colors.white.withValues(alpha: 0.2)),
+              Icon(
+                Icons.lyrics_outlined,
+                size: 56,
+                color: Colors.white.withValues(alpha: 0.2),
+              ),
               const SizedBox(height: 16),
               Text(
                 'Lyrics not available for this track',
@@ -3420,8 +3798,10 @@ class _LyricsScreenState extends State<LyricsScreen> {
 
     if (result.instrumental) {
       return Center(
-        child: Text('🎵 Instrumental — no lyrics',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+        child: Text(
+          '🎵 Instrumental — no lyrics',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+        ),
       );
     }
 

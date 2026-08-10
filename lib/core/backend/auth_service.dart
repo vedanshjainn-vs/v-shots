@@ -169,7 +169,8 @@ class AuthService {
         return const AuthResult.failure(null);
       }
       debugPrint(
-          '[AuthService] GoogleSignInException: ${e.code} ${e.description}');
+        '[AuthService] GoogleSignInException: ${e.code} ${e.description}',
+      );
       return AuthResult.failure(
         'Google Sign-In failed: ${e.description ?? e.code}',
       );

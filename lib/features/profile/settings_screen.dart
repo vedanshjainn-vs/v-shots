@@ -56,14 +56,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textMuted)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.error,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () async {
               final nav = Navigator.of(context);
@@ -77,8 +80,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
-            child: const Text('Delete Permanently',
-                style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Delete Permanently',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -95,8 +100,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textMain, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.textMain,
+            size: 20,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
@@ -129,8 +137,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         gradient: AppColors.primaryGradient,
                       ),
                       child: const Center(
-                        child: Icon(Icons.person_rounded,
-                            color: Colors.white, size: 24),
+                        child: Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -194,11 +205,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.bedtime_outlined,
-                      color: AppColors.accent),
-                  title: const Text('Sleep Timer',
-                      style:
-                          TextStyle(color: AppColors.textMain, fontSize: 15)),
+                  leading: const Icon(
+                    Icons.bedtime_outlined,
+                    color: AppColors.accent,
+                  ),
+                  title: const Text(
+                    'Sleep Timer',
+                    style: TextStyle(color: AppColors.textMain, fontSize: 15),
+                  ),
                   subtitle: ValueListenableBuilder<Duration?>(
                     valueListenable: SleepTimer.instance.remaining,
                     builder: (context, remaining, _) => Text(
@@ -206,7 +220,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ? 'Active — ${remaining.inMinutes}m ${remaining.inSeconds % 60}s remaining'
                           : 'Turn off playback automatically',
                       style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 13),
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                   trailing: ValueListenableBuilder<Duration?>(
@@ -217,11 +233,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               SleepTimer.instance.cancel();
                               setState(() {});
                             },
-                            child: const Text('Cancel',
-                                style: TextStyle(color: AppColors.error)),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(color: AppColors.error),
+                            ),
                           )
-                        : const Icon(Icons.chevron_right,
-                            color: AppColors.textSubtle),
+                        : const Icon(
+                            Icons.chevron_right,
+                            color: AppColors.textSubtle,
+                          ),
                   ),
                 ),
               ],
@@ -234,13 +254,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           AppCard(
             padding: EdgeInsets.zero,
             child: ListTile(
-              leading: const Icon(Icons.cached_rounded,
-                  color: AppColors.primaryLight),
-              title: const Text('Clear Media & Search Cache',
-                  style: TextStyle(color: AppColors.textMain, fontSize: 15)),
+              leading: const Icon(
+                Icons.cached_rounded,
+                color: AppColors.primaryLight,
+              ),
+              title: const Text(
+                'Clear Media & Search Cache',
+                style: TextStyle(color: AppColors.textMain, fontSize: 15),
+              ),
               subtitle: const Text(
-                  'Frees memory without affecting your Liked Shots or Playlists.',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                'Frees memory without affecting your Liked Shots or Playlists.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
               onTap: () {
                 SearchCache.instance.clear();
                 HapticFeedback.selectionClick();
@@ -262,26 +287,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 const ListTile(
-                  leading:
-                      Icon(Icons.info_outline_rounded, color: AppColors.accent),
-                  title: Text('V Shots',
-                      style: TextStyle(
-                          color: AppColors.textMain,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600)),
-                  subtitle: Text('Version 5.4.0 (Nova Release)',
-                      style:
-                          TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                  leading: Icon(
+                    Icons.info_outline_rounded,
+                    color: AppColors.accent,
+                  ),
+                  title: Text(
+                    'V Shots',
+                    style: TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Version 5.4.0 (Nova Release)',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  ),
                 ),
                 const Divider(color: AppColors.borderSubtle, height: 1),
                 ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined,
-                      color: AppColors.textSecondary),
-                  title: const Text('Privacy Policy',
-                      style:
-                          TextStyle(color: AppColors.textMain, fontSize: 15)),
-                  trailing: const Icon(Icons.chevron_right,
-                      color: AppColors.textSubtle),
+                  leading: const Icon(
+                    Icons.privacy_tip_outlined,
+                    color: AppColors.textSecondary,
+                  ),
+                  title: const Text(
+                    'Privacy Policy',
+                    style: TextStyle(color: AppColors.textMain, fontSize: 15),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: AppColors.textSubtle,
+                  ),
                   onTap: () => Navigator.push(
                     context,
                     AppPageRoute<void>(
@@ -294,13 +330,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(color: AppColors.borderSubtle, height: 1),
                 ListTile(
-                  leading: const Icon(Icons.description_outlined,
-                      color: AppColors.textSecondary),
-                  title: const Text('Terms of Service',
-                      style:
-                          TextStyle(color: AppColors.textMain, fontSize: 15)),
-                  trailing: const Icon(Icons.chevron_right,
-                      color: AppColors.textSubtle),
+                  leading: const Icon(
+                    Icons.description_outlined,
+                    color: AppColors.textSecondary,
+                  ),
+                  title: const Text(
+                    'Terms of Service',
+                    style: TextStyle(color: AppColors.textMain, fontSize: 15),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: AppColors.textSubtle,
+                  ),
                   onTap: () => Navigator.push(
                     context,
                     AppPageRoute<void>(
@@ -313,13 +354,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const Divider(color: AppColors.borderSubtle, height: 1),
                 ListTile(
-                  leading: const Icon(Icons.help_outline_rounded,
-                      color: AppColors.textSecondary),
-                  title: const Text('Help & Support',
-                      style:
-                          TextStyle(color: AppColors.textMain, fontSize: 15)),
-                  trailing: const Icon(Icons.chevron_right,
-                      color: AppColors.textSubtle),
+                  leading: const Icon(
+                    Icons.help_outline_rounded,
+                    color: AppColors.textSecondary,
+                  ),
+                  title: const Text(
+                    'Help & Support',
+                    style: TextStyle(color: AppColors.textMain, fontSize: 15),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: AppColors.textSubtle,
+                  ),
                   onTap: () => Navigator.push(
                     context,
                     AppPageRoute<void>(builder: (_) => const HelpScreen()),
@@ -337,14 +383,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               padding: EdgeInsets.zero,
               color: AppColors.error.withValues(alpha: 0.08),
               child: ListTile(
-                leading: const Icon(Icons.delete_forever_rounded,
-                    color: AppColors.error),
+                leading: const Icon(
+                  Icons.delete_forever_rounded,
+                  color: AppColors.error,
+                ),
                 title: const Text(
                   'Delete Account',
                   style: TextStyle(
-                      color: AppColors.error,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600),
+                    color: AppColors.error,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 subtitle: const Text(
                   'Permanently remove your account and content.',
@@ -383,8 +432,11 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class LegalDocScreen extends StatelessWidget {
-  const LegalDocScreen(
-      {required this.title, required this.assetPath, super.key});
+  const LegalDocScreen({
+    required this.title,
+    required this.assetPath,
+    super.key,
+  });
 
   final String title;
   final String assetPath;
@@ -397,15 +449,21 @@ class LegalDocScreen extends StatelessWidget {
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textMain, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.textMain,
+            size: 20,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(title,
-            style: const TextStyle(
-                color: AppColors.textMain,
-                fontSize: 18,
-                fontWeight: FontWeight.w700)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         centerTitle: true,
       ),
       body: FutureBuilder<String>(
@@ -413,8 +471,8 @@ class LegalDocScreen extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(
-                child:
-                    CircularProgressIndicator(color: AppColors.primaryLight));
+              child: CircularProgressIndicator(color: AppColors.primaryLight),
+            );
           }
           if (snapshot.hasError || !snapshot.hasData) {
             return Center(
@@ -429,7 +487,10 @@ class LegalDocScreen extends StatelessWidget {
             child: SelectableText(
               snapshot.data!,
               style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 14, height: 1.6),
+                color: AppColors.textSecondary,
+                fontSize: 14,
+                height: 1.6,
+              ),
             ),
           );
         },
@@ -451,15 +512,21 @@ class HelpScreen extends StatelessWidget {
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textMain, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.textMain,
+            size: 20,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: const Text('Help & Support',
-            style: TextStyle(
-                color: AppColors.textMain,
-                fontSize: 18,
-                fontWeight: FontWeight.w700)),
+        title: const Text(
+          'Help & Support',
+          style: TextStyle(
+            color: AppColors.textMain,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         centerTitle: true,
       ),
       body: ListView(
@@ -469,7 +536,10 @@ class HelpScreen extends StatelessWidget {
             'V Shots is an open and social mobile experience built on Flutter and Supabase. '
             'If you encounter an issue or have a feature suggestion, you can reach out or contribute directly via GitHub.',
             style: TextStyle(
-                color: AppColors.textSecondary, fontSize: 15, height: 1.5),
+              color: AppColors.textSecondary,
+              fontSize: 15,
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: 28),
           AppButton(

@@ -88,19 +88,21 @@ void main() {
     expect(result.length, input.length);
   });
 
-  test('all-same-artist input is allowed through rather than infinite-looping',
-      () {
-    final filter = DiversityFilter();
-    final input = [
-      _track('1', 'OnlyArtist', 10),
-      _track('2', 'OnlyArtist', 9),
-      _track('3', 'OnlyArtist', 8),
-      _track('4', 'OnlyArtist', 7),
-      _track('5', 'OnlyArtist', 6),
-    ];
-    final result = filter.apply(input);
-    expect(result.length, 5);
-  });
+  test(
+    'all-same-artist input is allowed through rather than infinite-looping',
+    () {
+      final filter = DiversityFilter();
+      final input = [
+        _track('1', 'OnlyArtist', 10),
+        _track('2', 'OnlyArtist', 9),
+        _track('3', 'OnlyArtist', 8),
+        _track('4', 'OnlyArtist', 7),
+        _track('5', 'OnlyArtist', 6),
+      ];
+      final result = filter.apply(input);
+      expect(result.length, 5);
+    },
+  );
 
   test('short lists (<= max consecutive) pass through unchanged', () {
     final filter = DiversityFilter();

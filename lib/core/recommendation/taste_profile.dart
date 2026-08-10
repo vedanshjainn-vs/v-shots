@@ -94,10 +94,14 @@ class TasteProfileBuilder {
 
     for (final event in signals) {
       final hoursAgo = now.difference(event.timestamp).inMinutes / 60.0;
-      final affinityDecay =
-          pow(0.5, hoursAgo / config.affinityHalfLifeHours).toDouble();
-      final skipDecay =
-          pow(0.5, hoursAgo / config.skipPenaltyHalfLifeHours).toDouble();
+      final affinityDecay = pow(
+        0.5,
+        hoursAgo / config.affinityHalfLifeHours,
+      ).toDouble();
+      final skipDecay = pow(
+        0.5,
+        hoursAgo / config.skipPenaltyHalfLifeHours,
+      ).toDouble();
 
       final artist = event.artist;
       final weight = _weightFor(event);
@@ -118,10 +122,7 @@ class TasteProfileBuilder {
         }
 
         if (event.title != null) {
-          final tags = _genres.classify(
-            title: event.title!,
-            artist: artist,
-          );
+          final tags = _genres.classify(title: event.title!, artist: artist);
           for (final tag in tags) {
             final genreWeight = event.type == SignalType.skip
                 ? -weight.abs() *

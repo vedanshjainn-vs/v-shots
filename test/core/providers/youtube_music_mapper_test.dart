@@ -96,25 +96,29 @@ void main() {
     test('filters, excludes, and caps at limit', () {
       final videos = [
         _makeVideo(
-            id: id1,
-            title: 'Song One',
-            author: 'A',
-            duration: const Duration(minutes: 3)),
+          id: id1,
+          title: 'Song One',
+          author: 'A',
+          duration: const Duration(minutes: 3),
+        ),
         _makeVideo(
-            id: id2,
-            title: 'Song Two',
-            author: 'B',
-            duration: const Duration(minutes: 3)),
+          id: id2,
+          title: 'Song Two',
+          author: 'B',
+          duration: const Duration(minutes: 3),
+        ),
         _makeVideo(
-            id: id3,
-            title: 'Podcast Talk',
-            author: 'C',
-            duration: const Duration(minutes: 3)),
+          id: id3,
+          title: 'Podcast Talk',
+          author: 'C',
+          duration: const Duration(minutes: 3),
+        ),
         _makeVideo(
-            id: id4,
-            title: 'Song Four',
-            author: 'D',
-            duration: const Duration(minutes: 30)),
+          id: id4,
+          title: 'Song Four',
+          author: 'D',
+          duration: const Duration(minutes: 30),
+        ),
       ];
 
       final results = mapper.mapSearchResults(

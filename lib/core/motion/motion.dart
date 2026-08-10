@@ -231,8 +231,10 @@ class _LikePopState extends State<LikePop> with SingleTickerProviderStateMixin {
     // explicit for choreography) — this needs a one-shot
     // forward-then-back sequence (a TweenSequence), which
     // AnimatedScale alone cannot express as a single triggered "pop."
-    _controller =
-        AnimationController(vsync: this, duration: AppMotion.micro * 2);
+    _controller = AnimationController(
+      vsync: this,
+      duration: AppMotion.micro * 2,
+    );
     _scale = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.35), weight: 40),
       TweenSequenceItem(tween: Tween(begin: 1.35, end: 1.0), weight: 60),
@@ -345,8 +347,11 @@ class SkeletonToContent extends StatelessWidget {
 /// (currentTrack != null && _index != 1) Positioned(...)` with no
 /// transition at all).
 class MiniPlayerTransition extends StatelessWidget {
-  const MiniPlayerTransition(
-      {required this.visible, required this.child, super.key});
+  const MiniPlayerTransition({
+    required this.visible,
+    required this.child,
+    super.key,
+  });
 
   final bool visible;
   final Widget child;
@@ -388,8 +393,10 @@ class AppPageRoute<T> extends PageRouteBuilder<T> {
           transitionDuration: AppMotion.medium,
           reverseTransitionDuration: AppMotion.fast,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            final curved =
-                CurvedAnimation(parent: animation, curve: AppMotion.enter);
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: AppMotion.enter,
+            );
             return FadeTransition(
               opacity: curved,
               child: SlideTransition(

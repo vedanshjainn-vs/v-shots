@@ -110,7 +110,8 @@ class ProviderManager {
       }
     }
     return ProviderResult.failure(
-        lastError ?? 'All providers failed for ${capability.name}');
+      lastError ?? 'All providers failed for ${capability.name}',
+    );
   }
 
   Future<ProviderResult<List<ProviderTrack>>> search(

@@ -82,10 +82,6 @@ class ProfileStats extends StatelessWidget {
   }
 
   Widget _buildDivider() {
-    return Container(
-      width: 1,
-      height: 24,
-      color: AppColors.border,
-    );
+    return Container(width: 1, height: 24, color: AppColors.border);
   }
 }

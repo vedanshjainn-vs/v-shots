@@ -8,8 +8,9 @@ import 'package:v_shots/shared/widgets/bottom_tab_bar.dart';
 
 void main() {
   group('V Shots App Tests', () {
-    testWidgets('App launches and shows splash screen',
-        (WidgetTester tester) async {
+    testWidgets('App launches and shows splash screen', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(const VShotsApp());
 
       // Splash screen shows the app name
@@ -20,8 +21,9 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
     });
 
-    testWidgets('Splash navigates to the main tab shell after delay',
-        (WidgetTester tester) async {
+    testWidgets('Splash navigates to the main tab shell after delay', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(const VShotsApp());
 
       // Advance past splash timer and background retries

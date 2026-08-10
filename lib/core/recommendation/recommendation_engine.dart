@@ -177,8 +177,11 @@ class RecommendationEngine {
     // brand-new artist naturally scores lower on affinity/recency no
     // matter how good the candidate is — exploration must be an
     // explicit guarantee, not a hope).
-    final finalFeed =
-        _mixInExploration(diversified, candidateQueries, count: count);
+    final finalFeed = _mixInExploration(
+      diversified,
+      candidateQueries,
+      count: count,
+    );
 
     RecommendationCache.instance.setFeed(cacheKey, finalFeed);
 
@@ -197,8 +200,10 @@ class RecommendationEngine {
   /// promoting them into the result even if their raw score wouldn't
   /// have naturally ranked them in the top [count].
   List<ScoredTrack> _mixInExploration(
-      List<ScoredTrack> ranked, List<CandidateQuery> candidateQueries,
-      {required int count}) {
+    List<ScoredTrack> ranked,
+    List<CandidateQuery> candidateQueries, {
+    required int count,
+  }) {
     if (ranked.length <= count) return ranked;
 
     final explorationQueries = candidateQueries
@@ -206,8 +211,10 @@ class RecommendationEngine {
         .map((c) => c.query)
         .toSet();
 
-    final explorationSlots =
-        (count * config.explorationRate).round().clamp(0, count);
+    final explorationSlots = (count * config.explorationRate).round().clamp(
+          0,
+          count,
+        );
     final nonExploration = <ScoredTrack>[];
     final exploration = <ScoredTrack>[];
 
@@ -218,8 +225,10 @@ class RecommendationEngine {
       // through scoring), documented here as an honest simplification
       // rather than silently pretending perfect attribution.
       final isExploration = track.genreTags.isNotEmpty &&
-          explorationQueries.any((q) =>
-              q.toLowerCase().contains(track.genreTags.first.toLowerCase()));
+          explorationQueries.any(
+            (q) =>
+                q.toLowerCase().contains(track.genreTags.first.toLowerCase()),
+          );
       if (isExploration) {
         exploration.add(track);
       } else {
@@ -235,8 +244,10 @@ class RecommendationEngine {
     // small to fill its slot allocation (e.g. cold start with very few
     // genuinely-tagged exploration candidates).
     if (result.length < count) {
-      final remaining =
-          [...nonExploration, ...exploration].where((t) => !result.contains(t));
+      final remaining = [
+        ...nonExploration,
+        ...exploration,
+      ].where((t) => !result.contains(t));
       result.addAll(remaining.take(count - result.length));
     }
 
@@ -244,7 +255,9 @@ class RecommendationEngine {
   }
 
   List<CandidateQuery> _candidateQueriesForIntent(
-      FeedIntent intent, TasteProfile profile) {
+    FeedIntent intent,
+    TasteProfile profile,
+  ) {
     final all = _candidates.generate(profile, count: 12);
     // Part Q: different ranking logic per intent — implemented as a
     // real filter/bias over the shared candidate pool rather than a
@@ -255,9 +268,11 @@ class RecommendationEngine {
       case FeedIntent.becauseYouListenedTo:
       case FeedIntent.similarArtists:
         final filtered = all
-            .where((c) =>
-                c.source == CandidateSource.similarArtist ||
-                c.source == CandidateSource.recentlyPlayedPattern)
+            .where(
+              (c) =>
+                  c.source == CandidateSource.similarArtist ||
+                  c.source == CandidateSource.recentlyPlayedPattern,
+            )
             .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.moreLikeThis:
@@ -266,9 +281,11 @@ class RecommendationEngine {
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.madeForYou:
         final filtered = all
-            .where((c) =>
-                c.source == CandidateSource.recentlyPlayedPattern ||
-                c.source == CandidateSource.likedMusic)
+            .where(
+              (c) =>
+                  c.source == CandidateSource.recentlyPlayedPattern ||
+                  c.source == CandidateSource.likedMusic,
+            )
             .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.trendingForYou:

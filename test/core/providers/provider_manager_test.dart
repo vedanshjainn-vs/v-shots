@@ -71,13 +71,15 @@ class FakeProvider implements MusicProvider {
 
   @override
   Future<ProviderResult<ProviderTrack>> getTrack(String id) async {
-    return ProviderResult.success(ProviderTrack(
-      id: id,
-      title: 'Title',
-      artist: 'Artist',
-      artworkUrl: '',
-      durationSeconds: 100,
-    ));
+    return ProviderResult.success(
+      ProviderTrack(
+        id: id,
+        title: 'Title',
+        artist: 'Artist',
+        artworkUrl: '',
+        durationSeconds: 100,
+      ),
+    );
   }
 
   @override
@@ -128,23 +130,25 @@ void main() {
       expect(registry.isNotEmpty, isTrue);
     });
 
-    test('inPriorityOrder respects config order and skips unregistered ids',
-        () {
-      final registry = ProviderRegistry();
-      final youtube = FakeProvider('youtube');
-      registry.register(youtube);
+    test(
+      'inPriorityOrder respects config order and skips unregistered ids',
+      () {
+        final registry = ProviderRegistry();
+        final youtube = FakeProvider('youtube');
+        registry.register(youtube);
 
-      const config = ProviderConfig(
-        activeProvider: 'youtube',
-        enabledProviders: ['youtube'],
-        // 'spotify' is listed in priority but never registered — must
-        // be silently skipped, not throw.
-        providerPriority: ['spotify', 'youtube'],
-      );
+        const config = ProviderConfig(
+          activeProvider: 'youtube',
+          enabledProviders: ['youtube'],
+          // 'spotify' is listed in priority but never registered — must
+          // be silently skipped, not throw.
+          providerPriority: ['spotify', 'youtube'],
+        );
 
-      final ordered = registry.inPriorityOrder(config);
-      expect(ordered, [youtube]);
-    });
+        final ordered = registry.inPriorityOrder(config);
+        expect(ordered, [youtube]);
+      },
+    );
 
     test('inPriorityOrder excludes disabled providers', () {
       final registry = ProviderRegistry();
@@ -168,15 +172,17 @@ void main() {
       expect(manager.activeProvider?.id, 'youtube');
     });
 
-    test('search routes to the healthy provider and returns real data',
-        () async {
-      final registry = ProviderRegistry()..register(FakeProvider('youtube'));
-      final manager = ProviderManager(registry: registry);
+    test(
+      'search routes to the healthy provider and returns real data',
+      () async {
+        final registry = ProviderRegistry()..register(FakeProvider('youtube'));
+        final manager = ProviderManager(registry: registry);
 
-      final result = await manager.search('test query');
-      expect(result.isSuccess, isTrue);
-      expect(result.data!.single.title, 'Track from youtube');
-    });
+        final result = await manager.search('test query');
+        expect(result.isSuccess, isTrue);
+        expect(result.data!.single.title, 'Track from youtube');
+      },
+    );
 
     test('search fails gracefully when no provider is registered', () async {
       final manager = ProviderManager(registry: ProviderRegistry());
@@ -184,25 +190,27 @@ void main() {
       expect(result.isFailure, isTrue);
     });
 
-    test('failover: a failing provider falls through to the next one',
-        () async {
-      final failing = FakeProvider('broken', failSearch: true);
-      final working = FakeProvider('backup');
-      final registry = ProviderRegistry()
-        ..register(failing)
-        ..register(working);
+    test(
+      'failover: a failing provider falls through to the next one',
+      () async {
+        final failing = FakeProvider('broken', failSearch: true);
+        final working = FakeProvider('backup');
+        final registry = ProviderRegistry()
+          ..register(failing)
+          ..register(working);
 
-      const config = ProviderConfig(
-        activeProvider: 'broken',
-        enabledProviders: ['broken', 'backup'],
-        providerPriority: ['broken', 'backup'],
-      );
-      final manager = ProviderManager(registry: registry, config: config);
+        const config = ProviderConfig(
+          activeProvider: 'broken',
+          enabledProviders: ['broken', 'backup'],
+          providerPriority: ['broken', 'backup'],
+        );
+        final manager = ProviderManager(registry: registry, config: config);
 
-      final result = await manager.search('query');
-      expect(result.isSuccess, isTrue);
-      expect(result.data!.single.title, 'Track from backup');
-    });
+        final result = await manager.search('query');
+        expect(result.isSuccess, isTrue);
+        expect(result.data!.single.title, 'Track from backup');
+      },
+    );
 
     test('checkAllHealth reports each registered provider\'s health', () async {
       final healthy = FakeProvider('a', healthy: true);

@@ -142,7 +142,8 @@ class YouTubeMusicProvider extends MusicProvider {
     final url = await resolveAudioStreamUrlLogged(_yt, id, tag: 'Provider');
     if (url == null) {
       return ProviderResult.failure(
-          'Could not resolve a playable stream for $id');
+        'Could not resolve a playable stream for $id',
+      );
     }
     return ProviderResult.success(url);
   }
@@ -183,11 +184,13 @@ class YouTubeMusicProvider extends MusicProvider {
     if (!result.hasAny) {
       return ProviderResult.failure('No lyrics found');
     }
-    return ProviderResult.success(ProviderLyrics(
-      plainText: result.plainText,
-      hasSynced: result.hasSynced,
-      instrumental: result.instrumental,
-    ));
+    return ProviderResult.success(
+      ProviderLyrics(
+        plainText: result.plainText,
+        hasSynced: result.hasSynced,
+        instrumental: result.instrumental,
+      ),
+    );
   }
 
   @override

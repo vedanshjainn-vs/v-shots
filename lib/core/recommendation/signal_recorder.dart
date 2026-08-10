@@ -72,13 +72,15 @@ class PlaybackSignalTracker {
     final now = DateTime.now();
     final lastStart = _recentStarts[id];
     if (lastStart != null && now.difference(lastStart) < _replayWindow) {
-      _engine.recordSignal(SignalEvent(
-        type: SignalType.replay,
-        timestamp: now,
-        trackId: id,
-        artist: track['artist'] as String?,
-        title: track['title'] as String?,
-      ));
+      _engine.recordSignal(
+        SignalEvent(
+          type: SignalType.replay,
+          timestamp: now,
+          trackId: id,
+          artist: track['artist'] as String?,
+          title: track['title'] as String?,
+        ),
+      );
     }
     _recentStarts[id] = now;
 
@@ -87,13 +89,15 @@ class PlaybackSignalTracker {
     _currentTitle = track['title'] as String?;
     _startedAt = now;
 
-    _engine.recordSignal(SignalEvent(
-      type: SignalType.play,
-      timestamp: now,
-      trackId: id,
-      artist: _currentArtist,
-      title: _currentTitle,
-    ));
+    _engine.recordSignal(
+      SignalEvent(
+        type: SignalType.play,
+        timestamp: now,
+        trackId: id,
+        artist: _currentArtist,
+        title: _currentTitle,
+      ),
+    );
   }
 
   /// Call when the current track stops being current — either a user/
@@ -117,33 +121,39 @@ class PlaybackSignalTracker {
         DateTime.now().difference(startedAt).inMilliseconds / 1000.0;
 
     if (completed) {
-      _engine.recordSignal(SignalEvent(
-        type: SignalType.completed,
-        timestamp: DateTime.now(),
-        trackId: id,
-        artist: artist,
-        title: title,
-      ));
+      _engine.recordSignal(
+        SignalEvent(
+          type: SignalType.completed,
+          timestamp: DateTime.now(),
+          trackId: id,
+          artist: artist,
+          title: title,
+        ),
+      );
     } else {
-      _engine.recordSignal(SignalEvent(
-        type: SignalType.skip,
-        timestamp: DateTime.now(),
-        trackId: id,
-        artist: artist,
-        title: title,
-        value: elapsedSeconds,
-      ));
+      _engine.recordSignal(
+        SignalEvent(
+          type: SignalType.skip,
+          timestamp: DateTime.now(),
+          trackId: id,
+          artist: artist,
+          title: title,
+          value: elapsedSeconds,
+        ),
+      );
     }
 
     if (elapsedSeconds > 1) {
-      _engine.recordSignal(SignalEvent(
-        type: SignalType.playDuration,
-        timestamp: DateTime.now(),
-        trackId: id,
-        artist: artist,
-        title: title,
-        value: elapsedSeconds,
-      ));
+      _engine.recordSignal(
+        SignalEvent(
+          type: SignalType.playDuration,
+          timestamp: DateTime.now(),
+          trackId: id,
+          artist: artist,
+          title: title,
+          value: elapsedSeconds,
+        ),
+      );
     }
 
     _currentTrackId = null;
@@ -153,40 +163,48 @@ class PlaybackSignalTracker {
   }
 
   void onLiked(Map<String, dynamic> track) {
-    _engine.recordSignal(SignalEvent(
-      type: SignalType.like,
-      timestamp: DateTime.now(),
-      trackId: track['id'] as String?,
-      artist: track['artist'] as String?,
-      title: track['title'] as String?,
-    ));
+    _engine.recordSignal(
+      SignalEvent(
+        type: SignalType.like,
+        timestamp: DateTime.now(),
+        trackId: track['id'] as String?,
+        artist: track['artist'] as String?,
+        title: track['title'] as String?,
+      ),
+    );
   }
 
   void onUnliked(Map<String, dynamic> track) {
-    _engine.recordSignal(SignalEvent(
-      type: SignalType.unlike,
-      timestamp: DateTime.now(),
-      trackId: track['id'] as String?,
-      artist: track['artist'] as String?,
-      title: track['title'] as String?,
-    ));
+    _engine.recordSignal(
+      SignalEvent(
+        type: SignalType.unlike,
+        timestamp: DateTime.now(),
+        trackId: track['id'] as String?,
+        artist: track['artist'] as String?,
+        title: track['title'] as String?,
+      ),
+    );
   }
 
   void onAddedToPlaylist(Map<String, dynamic> track) {
-    _engine.recordSignal(SignalEvent(
-      type: SignalType.addToPlaylist,
-      timestamp: DateTime.now(),
-      trackId: track['id'] as String?,
-      artist: track['artist'] as String?,
-      title: track['title'] as String?,
-    ));
+    _engine.recordSignal(
+      SignalEvent(
+        type: SignalType.addToPlaylist,
+        timestamp: DateTime.now(),
+        trackId: track['id'] as String?,
+        artist: track['artist'] as String?,
+        title: track['title'] as String?,
+      ),
+    );
   }
 
   void onSearched(String query) {
-    _engine.recordSignal(SignalEvent(
-      type: SignalType.search,
-      timestamp: DateTime.now(),
-      query: query,
-    ));
+    _engine.recordSignal(
+      SignalEvent(
+        type: SignalType.search,
+        timestamp: DateTime.now(),
+        query: query,
+      ),
+    );
   }
 }

@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — "For You" Feed (Nova Vertical Swipe Discovery)
+// V Shots — "For You" Discover Feed (Mood Preference & Smooth Swiping)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -16,6 +16,7 @@ import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
+import 'for_you_feed_service.dart';
 import '../../main.dart'
     show
         audioPlayer,
@@ -48,10 +49,12 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   int _playSeq = 0;
   bool _isLoadingMore = false;
   bool _initialLoading = true;
+  String _currentVibeLabel = 'Trending Hits';
 
   @override
   void initState() {
     super.initState();
+    _currentVibeLabel = forYouFeedService.activeMood ?? 'Trending Hits';
     _loadInitialBatch();
   }
 
@@ -78,13 +81,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
     try {
-      final scored = await recommendationEngine.generateFeed(
-        intent: FeedIntent.discoverSomethingNew,
-        excludeIds: _seenIds,
-        count: 8,
-      );
-      if (scored.isNotEmpty) {
-        return scored.map((s) => s.track.toTrackMap()).toList();
+      if (forYouFeedService.activeMoodQuery == null) {
+        final scored = await recommendationEngine.generateFeed(
+          intent: FeedIntent.discoverSomethingNew,
+          excludeIds: _seenIds,
+          count: 8,
+        );
+        if (scored.isNotEmpty) {
+          return scored.map((s) => s.track.toTrackMap()).toList();
+        }
       }
     } catch (e) {
       debugPrint('[ForYouFeed] Engine discover batch failed, falling back: $e');
@@ -162,13 +167,37 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             : null,
       );
 
+  void _showMoodPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _MoodPickerSheet(
+        currentMood: _currentVibeLabel,
+        onMoodSelected: (label, query) {
+          Navigator.pop(ctx);
+          setState(() {
+            _currentVibeLabel = label;
+            _initialLoading = true;
+            _items.clear();
+            _seenIds.clear();
+            _resolvedStreamUrls.clear();
+          });
+          forYouFeedService.setMood(label, query);
+          _loadInitialBatch();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_initialLoading) {
       return const Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
-            child: CircularProgressIndicator(color: AppColors.primaryLight)),
+          child: CircularProgressIndicator(color: AppColors.primaryLight),
+        ),
       );
     }
 
@@ -181,8 +210,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             children: [
               const Icon(Icons.wifi_off, size: 48, color: AppColors.textSubtle),
               const SizedBox(height: 12),
-              const Text('Could not load recommendations',
-                  style: TextStyle(color: AppColors.textMuted)),
+              const Text(
+                'Could not load recommendations',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: () {
@@ -199,21 +230,84 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        itemCount: _items.length,
-        onPageChanged: (index) {
-          HapticFeedback.selectionClick();
-          _playIndex(index);
-        },
-        itemBuilder: (context, index) => RepaintBoundary(
-          child: _ForYouCard(
-            track: _items[index],
-            isActive: index == _currentIndex,
-            onNotInterested: () => _handleNotInterested(index),
+      body: Stack(
+        children: [
+          // Vertical swipe PageView
+          PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            physics: const BouncingScrollPhysics(),
+            itemCount: _items.length,
+            onPageChanged: (index) {
+              unawaited(HapticFeedback.selectionClick());
+              _playIndex(index);
+            },
+            itemBuilder: (context, index) => RepaintBoundary(
+              child: _ForYouCard(
+                track: _items[index],
+                isActive: index == _currentIndex,
+                onNotInterested: () => _handleNotInterested(index),
+              ),
+            ),
           ),
-        ),
+
+          // Top Floating Mood & Vibe Selector Pill
+          Positioned(
+            top: 50,
+            left: 20,
+            child: SafeArea(
+              child: GestureDetector(
+                onTap: _showMoodPicker,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.accent.withValues(alpha: 0.5),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accent.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.tune_rounded,
+                        color: AppColors.accent,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _currentVibeLabel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: AppColors.accent,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -228,6 +322,141 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+}
+
+class _MoodPickerSheet extends StatelessWidget {
+  const _MoodPickerSheet({
+    required this.currentMood,
+    required this.onMoodSelected,
+  });
+
+  final String currentMood;
+  final void Function(String label, String query) onMoodSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Choose Your Vibe',
+                      style: TextStyle(
+                        color: AppColors.textMain,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Discover tracks tailored to your current mood',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.close,
+                    color: AppColors.textMuted,
+                    size: 20,
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: ForYouFeedService.availableMoods.map((m) {
+                final isSelected = m['label'] == currentMood;
+                return GestureDetector(
+                  onTap: () => onMoodSelected(m['label']!, m['query']!),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: isSelected ? AppColors.primaryGradient : null,
+                      color: isSelected ? null : AppColors.surface2,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color:
+                            isSelected ? Colors.transparent : AppColors.border,
+                        width: 1,
+                      ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.3),
+                                blurRadius: 10,
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          m['icon'] ?? '🎵',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          m['label'] ?? '',
+                          style: TextStyle(
+                            color:
+                                isSelected ? Colors.white : AppColors.textMain,
+                            fontSize: 13,
+                            fontWeight:
+                                isSelected ? FontWeight.w700 : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -251,7 +480,7 @@ class _ForYouCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        HapticFeedback.lightImpact();
+        unawaited(HapticFeedback.lightImpact());
         if (audioPlayer.playing) {
           audioPlayer.pause();
         } else {
@@ -362,7 +591,8 @@ class _ForYouCard extends StatelessWidget {
                           minHeight: 4,
                           backgroundColor: Colors.white.withValues(alpha: 0.15),
                           valueColor: const AlwaysStoppedAnimation(
-                              AppColors.primaryLight),
+                            AppColors.primaryLight,
+                          ),
                         ),
                       );
                     },
@@ -390,7 +620,7 @@ class _ForYouCard extends StatelessWidget {
                     ),
                   ),
                   onPressed: () {
-                    HapticFeedback.lightImpact();
+                    unawaited(HapticFeedback.lightImpact());
                     final wasLiked = isLiked;
                     LocalLibrary.instance.toggleLiked(track).then((_) {
                       if (wasLiked) {
@@ -411,10 +641,13 @@ class _ForYouCard extends StatelessWidget {
             right: 16,
             bottom: 165,
             child: IconButton(
-              icon: const Icon(Icons.chat_bubble_outline_rounded,
-                  color: Colors.white, size: 28),
+              icon: const Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: Colors.white,
+                size: 28,
+              ),
               onPressed: () {
-                HapticFeedback.lightImpact();
+                unawaited(HapticFeedback.lightImpact());
                 CommentSheet.show(context, shotId: trackId, commentCount: 18);
               },
             ),
@@ -427,7 +660,7 @@ class _ForYouCard extends StatelessWidget {
             child: IconButton(
               icon: const Icon(Icons.more_horiz, color: Colors.white, size: 30),
               onPressed: () {
-                HapticFeedback.lightImpact();
+                unawaited(HapticFeedback.lightImpact());
                 showMoreOptionsSheet(
                   context,
                   track,
@@ -442,10 +675,13 @@ class _ForYouCard extends StatelessWidget {
             right: 16,
             bottom: 55,
             child: IconButton(
-              icon:
-                  const Icon(Icons.playlist_add, color: Colors.white, size: 30),
+              icon: const Icon(
+                Icons.playlist_add,
+                color: Colors.white,
+                size: 30,
+              ),
               onPressed: () {
-                HapticFeedback.lightImpact();
+                unawaited(HapticFeedback.lightImpact());
                 showAddToPlaylistSheet(context, track);
               },
             ),

@@ -44,8 +44,9 @@ class LocalLibrary {
   // In-memory mirrors, kept in sync with SharedPreferences so the UI
   // can read synchronously (ValueNotifier-style) without an `await` on
   // every list build.
-  final ValueNotifier<List<Map<String, dynamic>>> likedSongs =
-      ValueNotifier([]);
+  final ValueNotifier<List<Map<String, dynamic>>> likedSongs = ValueNotifier(
+    [],
+  );
   final ValueNotifier<List<Map<String, dynamic>>> recentlyPlayed =
       ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> playlists = ValueNotifier([]);
@@ -72,11 +73,13 @@ class LocalLibrary {
         artistPlayCounts = decoded.map((k, v) => MapEntry(k, v as int));
       }
       _ready = true;
-      debugPrint('[LocalLibrary] Loaded: '
-          '${likedSongs.value.length} liked, '
-          '${recentlyPlayed.value.length} recent, '
-          '${playlists.value.length} playlists, '
-          '${downloadedTracks.value.length} downloaded.');
+      debugPrint(
+        '[LocalLibrary] Loaded: '
+        '${likedSongs.value.length} liked, '
+        '${recentlyPlayed.value.length} recent, '
+        '${playlists.value.length} playlists, '
+        '${downloadedTracks.value.length} downloaded.',
+      );
     } catch (e) {
       // Never let a storage failure block app startup — the app is
       // still fully usable for playback without persisted library
@@ -167,13 +170,16 @@ class LocalLibrary {
   }
 
   Future<void> addTrackToPlaylist(
-      String playlistId, Map<String, dynamic> track) async {
+    String playlistId,
+    Map<String, dynamic> track,
+  ) async {
     final list = List<Map<String, dynamic>>.from(playlists.value);
     final index = list.indexWhere((p) => p['id'] == playlistId);
     if (index < 0) return;
     final playlist = Map<String, dynamic>.from(list[index]);
-    final tracks =
-        List<Map<String, dynamic>>.from(playlist['tracks'] as List? ?? []);
+    final tracks = List<Map<String, dynamic>>.from(
+      playlist['tracks'] as List? ?? [],
+    );
     if (!tracks.any((t) => t['id'] == track['id'])) {
       tracks.add(track);
     }
@@ -184,13 +190,16 @@ class LocalLibrary {
   }
 
   Future<void> removeTrackFromPlaylist(
-      String playlistId, String trackId) async {
+    String playlistId,
+    String trackId,
+  ) async {
     final list = List<Map<String, dynamic>>.from(playlists.value);
     final index = list.indexWhere((p) => p['id'] == playlistId);
     if (index < 0) return;
     final playlist = Map<String, dynamic>.from(list[index]);
-    final tracks =
-        List<Map<String, dynamic>>.from(playlist['tracks'] as List? ?? []);
+    final tracks = List<Map<String, dynamic>>.from(
+      playlist['tracks'] as List? ?? [],
+    );
     tracks.removeWhere((t) => t['id'] == trackId);
     playlist['tracks'] = tracks;
     list[index] = playlist;

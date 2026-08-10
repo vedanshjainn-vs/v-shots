@@ -47,11 +47,7 @@ class EmptyState extends StatelessWidget {
                 ],
               ),
               child: Center(
-                child: Icon(
-                  icon,
-                  size: 38,
-                  color: AppColors.accent,
-                ),
+                child: Icon(icon, size: 38, color: AppColors.accent),
               ),
             ),
             const SizedBox(height: 24),

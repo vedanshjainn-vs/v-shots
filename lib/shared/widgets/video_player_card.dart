@@ -103,8 +103,11 @@ class _VideoPlayerCardState extends State<VideoPlayerCard>
                 errorWidget: (context, url, error) => Container(
                   color: AppColors.surface2,
                   child: const Center(
-                    child: Icon(Icons.movie_outlined,
-                        color: AppColors.textSubtle, size: 48),
+                    child: Icon(
+                      Icons.movie_outlined,
+                      color: AppColors.textSubtle,
+                      size: 48,
+                    ),
                   ),
                 ),
               )
@@ -118,8 +121,11 @@ class _VideoPlayerCardState extends State<VideoPlayerCard>
                   ),
                 ),
                 child: const Center(
-                  child: Icon(Icons.videocam_outlined,
-                      color: AppColors.textSubtle, size: 48),
+                  child: Icon(
+                    Icons.videocam_outlined,
+                    color: AppColors.textSubtle,
+                    size: 48,
+                  ),
                 ),
               ),
 
@@ -140,13 +146,18 @@ class _VideoPlayerCardState extends State<VideoPlayerCard>
                   color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.15), width: 0.8),
+                    color: Colors.white.withValues(alpha: 0.15),
+                    width: 0.8,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.timer_outlined,
-                        color: AppColors.accent, size: 12),
+                    const Icon(
+                      Icons.timer_outlined,
+                      color: AppColors.accent,
+                      size: 12,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       _formatDuration(widget.durationSeconds),
@@ -173,7 +184,9 @@ class _VideoPlayerCardState extends State<VideoPlayerCard>
                   color:
                       _isPlaying ? Colors.black.withValues(alpha: 0.5) : null,
                   border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.3), width: 1.5),
+                    color: Colors.white.withValues(alpha: 0.3),
+                    width: 1.5,
+                  ),
                   boxShadow: !_isPlaying
                       ? [
                           BoxShadow(

@@ -168,9 +168,11 @@ class RecommendationScorer {
   /// artist yet — an honest "we don't know" rather than a fabricated
   /// prediction.
   double _completionProbabilityScore(String artist) {
-    final relevant = SignalStore.instance.events.where((e) =>
-        e.artist == artist &&
-        (e.type == SignalType.completed || e.type == SignalType.skip));
+    final relevant = SignalStore.instance.events.where(
+      (e) =>
+          e.artist == artist &&
+          (e.type == SignalType.completed || e.type == SignalType.skip),
+    );
     if (relevant.isEmpty) return 0.5;
     final completions =
         relevant.where((e) => e.type == SignalType.completed).length;

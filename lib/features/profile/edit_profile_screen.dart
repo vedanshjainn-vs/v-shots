@@ -37,10 +37,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _nameController =
-        TextEditingController(text: widget.initialProfile.fullName);
-    _usernameController =
-        TextEditingController(text: widget.initialProfile.username);
+    _nameController = TextEditingController(
+      text: widget.initialProfile.fullName,
+    );
+    _usernameController = TextEditingController(
+      text: widget.initialProfile.username,
+    );
     _bioController = TextEditingController(text: widget.initialProfile.bio);
     _avatarUrl = widget.initialProfile.avatarUrl;
   }
@@ -119,8 +121,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: AppColors.textMain, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: AppColors.textMain,
+            size: 20,
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
@@ -160,8 +165,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: AppColors.primaryGradient,
-                            border:
-                                Border.all(color: AppColors.surface, width: 2),
+                            border: Border.all(
+                              color: AppColors.surface,
+                              width: 2,
+                            ),
                           ),
                           child: const Icon(
                             Icons.camera_alt_rounded,
@@ -198,18 +205,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     color: AppColors.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: AppColors.error.withValues(alpha: 0.4)),
+                      color: AppColors.error.withValues(alpha: 0.4),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded,
-                          color: AppColors.error, size: 20),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: AppColors.error,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _errorMessage!,
                           style: const TextStyle(
-                              color: AppColors.error, fontSize: 13),
+                            color: AppColors.error,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],

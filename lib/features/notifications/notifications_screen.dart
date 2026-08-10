@@ -94,9 +94,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             child: const Text(
               'Mark all read',
               style: TextStyle(
-                  color: AppColors.accent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600),
+                color: AppColors.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -129,8 +130,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ? const Center(
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.primaryLight,
+                      ),
                     ),
                   )
                 : _filteredNotifications.isEmpty
@@ -266,7 +268,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 RichText(
                   text: TextSpan(
                     style: const TextStyle(
-                        color: AppColors.textMain, fontSize: 13, height: 1.3),
+                      color: AppColors.textMain,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
                     children: [
                       TextSpan(
                         text: n.actor?.fullName ?? 'Creator',
@@ -284,7 +289,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 Text(
                   _formatTimeAgo(n.createdAt),
                   style: const TextStyle(
-                      color: AppColors.textSubtle, fontSize: 11),
+                    color: AppColors.textSubtle,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),

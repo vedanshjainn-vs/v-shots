@@ -36,7 +36,7 @@ class BottomTabBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -52,15 +52,14 @@ class BottomTabBar extends StatelessWidget {
                 inactiveIcon: Icons.auto_awesome_outlined,
                 label: 'Discover',
               ),
-              _buildCreateButton(),
               _buildTabItem(
-                index: 3,
+                index: 2,
                 icon: Icons.search_rounded,
                 inactiveIcon: Icons.search_outlined,
                 label: 'Search',
               ),
               _buildTabItem(
-                index: 4,
+                index: 3,
                 icon: Icons.person_rounded,
                 inactiveIcon: Icons.person_outline_rounded,
                 label: 'Profile',
@@ -85,22 +84,32 @@ class BottomTabBar extends StatelessWidget {
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(
-                  isSelected ? icon : inactiveIcon,
-                  size: 24,
-                  color: isSelected ? AppColors.accent : AppColors.textMuted,
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppColors.primary.withValues(alpha: 0.15)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isSelected ? icon : inactiveIcon,
+                    size: 24,
+                    color: isSelected ? AppColors.accent : AppColors.textMuted,
+                  ),
                 ),
                 if (hasBadge)
                   Positioned(
-                    right: -2,
-                    top: -2,
+                    right: 0,
+                    top: 0,
                     child: Container(
                       width: 8,
                       height: 8,
@@ -112,44 +121,16 @@ class BottomTabBar extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 3),
             Text(
               label,
               style: TextStyle(
                 color: isSelected ? AppColors.textMain : AppColors.textSubtle,
                 fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCreateButton() {
-    return GestureDetector(
-      onTap: () => onTap(2),
-      child: Container(
-        width: 44,
-        height: 38,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: AppColors.primaryGradient,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.4),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Icon(
-            Icons.add_rounded,
-            color: Colors.white,
-            size: 26,
-          ),
         ),
       ),
     );

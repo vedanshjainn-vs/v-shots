@@ -36,7 +36,7 @@ void main() {
       artistAffinity: {
         'Arijit Singh': 10.0,
         'Diljit Dosanjh': 5.0,
-        'Third': 1.0
+        'Third': 1.0,
       },
       genreAffinity: {},
       artistSkipPenalty: {},
@@ -58,8 +58,9 @@ void main() {
       totalSignalCount: 5,
     );
     final candidates = generator.generate(profile, count: 12);
-    final explorationCandidates =
-        candidates.where((c) => c.source == CandidateSource.exploration);
+    final explorationCandidates = candidates.where(
+      (c) => c.source == CandidateSource.exploration,
+    );
     for (final c in explorationCandidates) {
       expect(c.seedGenre, isNot(anyOf('Bollywood', 'Hindi', 'Punjabi')));
     }

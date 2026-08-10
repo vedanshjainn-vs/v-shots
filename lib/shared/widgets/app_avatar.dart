@@ -52,8 +52,9 @@ class AppAvatar extends StatelessWidget {
               height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 1.5,
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  AppColors.primaryLight,
+                ),
               ),
             ),
           ),
@@ -94,10 +95,7 @@ class AppAvatar extends StatelessWidget {
     }
 
     if (onTap != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: content,
-      );
+      return GestureDetector(onTap: onTap, child: content);
     }
 
     return content;

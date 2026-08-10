@@ -8,10 +8,7 @@ import '../../shared/widgets/app_button.dart';
 import '../auth/auth_modal.dart';
 
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({
-    super.key,
-    required this.onComplete,
-  });
+  const OnboardingScreen({super.key, required this.onComplete});
 
   final VoidCallback onComplete;
 
@@ -92,8 +89,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               children: [
                 // Top skip button
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -107,8 +106,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               gradient: AppColors.primaryGradient,
                             ),
                             child: const Center(
-                              child: Icon(Icons.play_arrow_rounded,
-                                  color: Colors.white, size: 20),
+                              child: Icon(
+                                Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -207,8 +209,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                 // Bottom Pagination & Actions
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 24,
+                  ),
                   child: Column(
                     children: [
                       // Page indicator dots
@@ -262,7 +266,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           const Text(
                             'Already have an account? ',
                             style: TextStyle(
-                                color: AppColors.textMuted, fontSize: 13),
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                            ),
                           ),
                           GestureDetector(
                             onTap: () {

@@ -25,73 +25,104 @@ void main() {
   });
 
   group('Liked Songs', () {
-    test('toggleLiked adds then removes a track, persisting each time',
-        () async {
-      final track = {'id': 't1', 'title': 'Song', 'artist': 'Artist'};
+    test(
+      'toggleLiked adds then removes a track, persisting each time',
+      () async {
+        final track = {'id': 't1', 'title': 'Song', 'artist': 'Artist'};
 
-      expect(LocalLibrary.instance.isLiked('t1'), isFalse);
+        expect(LocalLibrary.instance.isLiked('t1'), isFalse);
 
-      await LocalLibrary.instance.toggleLiked(track);
-      expect(LocalLibrary.instance.isLiked('t1'), isTrue);
-      expect(LocalLibrary.instance.likedSongs.value, hasLength(1));
+        await LocalLibrary.instance.toggleLiked(track);
+        expect(LocalLibrary.instance.isLiked('t1'), isTrue);
+        expect(LocalLibrary.instance.likedSongs.value, hasLength(1));
 
-      await LocalLibrary.instance.toggleLiked(track);
-      expect(LocalLibrary.instance.isLiked('t1'), isFalse);
-      expect(LocalLibrary.instance.likedSongs.value, isEmpty);
-    });
+        await LocalLibrary.instance.toggleLiked(track);
+        expect(LocalLibrary.instance.isLiked('t1'), isFalse);
+        expect(LocalLibrary.instance.likedSongs.value, isEmpty);
+      },
+    );
 
-    test('liked songs survive a fresh initialize() (real persistence)',
-        () async {
-      final track = {'id': 't2', 'title': 'Persisted Song', 'artist': 'Artist'};
-      await LocalLibrary.instance.toggleLiked(track);
-      expect(LocalLibrary.instance.isLiked('t2'), isTrue);
+    test(
+      'liked songs survive a fresh initialize() (real persistence)',
+      () async {
+        final track = {
+          'id': 't2',
+          'title': 'Persisted Song',
+          'artist': 'Artist',
+        };
+        await LocalLibrary.instance.toggleLiked(track);
+        expect(LocalLibrary.instance.isLiked('t2'), isTrue);
 
-      // Simulate an app restart: a fresh initialize() call against the
-      // SAME mock backing store (not cleared) should reload state, not
-      // reset it to empty — this is the real bug LocalLibrary's own
-      // file header says it fixes vs. the old in-memory-only globals.
-      await LocalLibrary.instance.initialize(); // no-op (already _ready)
-      expect(LocalLibrary.instance.isLiked('t2'), isTrue);
-    });
+        // Simulate an app restart: a fresh initialize() call against the
+        // SAME mock backing store (not cleared) should reload state, not
+        // reset it to empty — this is the real bug LocalLibrary's own
+        // file header says it fixes vs. the old in-memory-only globals.
+        await LocalLibrary.instance.initialize(); // no-op (already _ready)
+        expect(LocalLibrary.instance.isLiked('t2'), isTrue);
+      },
+    );
   });
 
   group('Recently Played', () {
-    test('recordRecentlyPlayed inserts most-recent-first and dedupes by id',
-        () async {
-      await LocalLibrary.instance.recordRecentlyPlayed(
-          {'id': 'a', 'title': 'A', 'artist': 'Artist A'});
-      await LocalLibrary.instance.recordRecentlyPlayed(
-          {'id': 'b', 'title': 'B', 'artist': 'Artist B'});
-      // Re-playing 'a' should move it back to the front, not duplicate it.
-      await LocalLibrary.instance.recordRecentlyPlayed(
-          {'id': 'a', 'title': 'A', 'artist': 'Artist A'});
+    test(
+      'recordRecentlyPlayed inserts most-recent-first and dedupes by id',
+      () async {
+        await LocalLibrary.instance.recordRecentlyPlayed({
+          'id': 'a',
+          'title': 'A',
+          'artist': 'Artist A',
+        });
+        await LocalLibrary.instance.recordRecentlyPlayed({
+          'id': 'b',
+          'title': 'B',
+          'artist': 'Artist B',
+        });
+        // Re-playing 'a' should move it back to the front, not duplicate it.
+        await LocalLibrary.instance.recordRecentlyPlayed({
+          'id': 'a',
+          'title': 'A',
+          'artist': 'Artist A',
+        });
 
-      final recent = LocalLibrary.instance.recentlyPlayed.value;
-      expect(recent, hasLength(2));
-      expect(recent.first['id'], 'a');
-    });
+        final recent = LocalLibrary.instance.recentlyPlayed.value;
+        expect(recent, hasLength(2));
+        expect(recent.first['id'], 'a');
+      },
+    );
 
     test(
-        'recordRecentlyPlayed feeds artistPlayCounts (the taste-profile signal)',
-        () async {
-      await LocalLibrary.instance.recordRecentlyPlayed(
-          {'id': 'x', 'title': 'X', 'artist': 'Fav Artist'});
-      await LocalLibrary.instance.recordRecentlyPlayed(
-          {'id': 'y', 'title': 'Y', 'artist': 'Fav Artist'});
+      'recordRecentlyPlayed feeds artistPlayCounts (the taste-profile signal)',
+      () async {
+        await LocalLibrary.instance.recordRecentlyPlayed({
+          'id': 'x',
+          'title': 'X',
+          'artist': 'Fav Artist',
+        });
+        await LocalLibrary.instance.recordRecentlyPlayed({
+          'id': 'y',
+          'title': 'Y',
+          'artist': 'Fav Artist',
+        });
 
-      expect(LocalLibrary.instance.artistPlayCounts['Fav Artist'], 2);
-    });
+        expect(LocalLibrary.instance.artistPlayCounts['Fav Artist'], 2);
+      },
+    );
 
-    test('recordRecentlyPlayed stamps a parseable playedAt timestamp',
-        () async {
-      await LocalLibrary.instance
-          .recordRecentlyPlayed({'id': 'z', 'title': 'Z', 'artist': 'Artist'});
-      final entry = LocalLibrary.instance.recentlyPlayed.value.first;
-      final playedAt = DateTime.tryParse(entry['playedAt'] as String);
-      expect(playedAt, isNotNull);
-      // Should be very recent (this test just ran it).
-      expect(DateTime.now().difference(playedAt!).inMinutes, lessThan(1));
-    });
+    test(
+      'recordRecentlyPlayed stamps a parseable playedAt timestamp',
+      () async {
+        await LocalLibrary.instance.recordRecentlyPlayed({
+          'id': 'z',
+          'title': 'Z',
+          'artist': 'Artist',
+        });
+        final entry = LocalLibrary.instance.recentlyPlayed.value.first;
+        final playedAt = DateTime.tryParse(entry['playedAt'] as String);
+        expect(playedAt, isNotNull);
+        // Should be very recent (this test just ran it).
+        expect(DateTime.now().difference(playedAt!).inMinutes, lessThan(1));
+      },
+    );
   });
 
   group('Playlists', () {
@@ -111,8 +142,9 @@ void main() {
     test('recordRecentSearch persists queries', () async {
       await LocalLibrary.instance.recordRecentSearch('arijit singh');
       expect(
-        LocalLibrary.instance.recentSearches.value
-            .any((s) => s['query'] == 'arijit singh'),
+        LocalLibrary.instance.recentSearches.value.any(
+          (s) => s['query'] == 'arijit singh',
+        ),
         isTrue,
       );
     });

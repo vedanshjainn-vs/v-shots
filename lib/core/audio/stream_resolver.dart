@@ -104,8 +104,10 @@ Future<String?> resolveAudioStreamUrl(
         '${selected.codec}, ${selected.container}',
       );
       final url = selected.url.toString();
-      _streamUrlCache[videoId] =
-          _CachedStream(url, DateTime.now().add(_streamCacheTtl));
+      _streamUrlCache[videoId] = _CachedStream(
+        url,
+        DateTime.now().add(_streamCacheTtl),
+      );
       return url;
     } catch (e) {
       logMsg('Client $clients failed: $e — trying next client');

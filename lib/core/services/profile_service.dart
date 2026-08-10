@@ -154,8 +154,10 @@ class ProfileService {
   }
 
   /// Toggle Follow user
-  Future<bool> toggleFollow(String targetUserId,
-      {required bool currentFollowingState}) async {
+  Future<bool> toggleFollow(
+    String targetUserId, {
+    required bool currentFollowingState,
+  }) async {
     final currentUser = SupabaseService.currentUser;
     final targetState = !currentFollowingState;
 
@@ -193,10 +195,9 @@ class ProfileService {
         '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
     try {
-      await SupabaseService.client.storage.from('avatars').uploadBinary(
-            fileName,
-            bytes,
-          );
+      await SupabaseService.client.storage
+          .from('avatars')
+          .uploadBinary(fileName, bytes);
 
       final publicUrl =
           SupabaseService.client.storage.from('avatars').getPublicUrl(fileName);

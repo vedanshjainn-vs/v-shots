@@ -62,8 +62,10 @@ class ProviderTrack {
   /// has a track map and needs to hand it to a provider method that
   /// expects a [ProviderTrack] (currently unused in the live app, kept
   /// for provider-internal symmetry/tests).
-  factory ProviderTrack.fromTrackMap(Map<String, dynamic> map,
-      {ProviderId providerId = ProviderId.youtube}) {
+  factory ProviderTrack.fromTrackMap(
+    Map<String, dynamic> map, {
+    ProviderId providerId = ProviderId.youtube,
+  }) {
     return ProviderTrack(
       id: (map['id'] as String?) ?? '',
       title: (map['title'] as String?) ?? '',

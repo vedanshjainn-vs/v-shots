@@ -49,8 +49,10 @@ class _ShotCardState extends State<ShotCard> {
   }
 
   Future<void> _handleLikeToggle(bool isLiked) async {
-    final result = await ShotsService.instance
-        .toggleLike(_shot.id, currentLikedState: !isLiked);
+    final result = await ShotsService.instance.toggleLike(
+      _shot.id,
+      currentLikedState: !isLiked,
+    );
     if (mounted) {
       setState(() {
         _shot = _shot.copyWith(
@@ -64,8 +66,10 @@ class _ShotCardState extends State<ShotCard> {
   }
 
   Future<void> _handleBookmarkToggle() async {
-    final result = await ShotsService.instance
-        .toggleBookmark(_shot.id, currentBookmarkState: _shot.isBookmarked);
+    final result = await ShotsService.instance.toggleBookmark(
+      _shot.id,
+      currentBookmarkState: _shot.isBookmarked,
+    );
     if (mounted) {
       setState(() {
         _shot = _shot.copyWith(isBookmarked: result);
@@ -75,8 +79,10 @@ class _ShotCardState extends State<ShotCard> {
 
   Future<void> _handleFollowToggle(bool isFollowing) async {
     final creatorId = _shot.creator?.id ?? _shot.userId;
-    await ProfileService.instance
-        .toggleFollow(creatorId, currentFollowingState: !isFollowing);
+    await ProfileService.instance.toggleFollow(
+      creatorId,
+      currentFollowingState: !isFollowing,
+    );
   }
 
   void _handleShare() {
@@ -126,8 +132,11 @@ class _ShotCardState extends State<ShotCard> {
                     errorWidget: (context, url, error) => Container(
                       color: AppColors.surface2,
                       child: const Center(
-                        child: Icon(Icons.movie_filter_outlined,
-                            color: AppColors.textSubtle, size: 54),
+                        child: Icon(
+                          Icons.movie_filter_outlined,
+                          color: AppColors.textSubtle,
+                          size: 54,
+                        ),
                       ),
                     ),
                   )
@@ -169,8 +178,9 @@ class _ShotCardState extends State<ShotCard> {
                         shape: BoxShape.circle,
                         color: Colors.black.withValues(alpha: 0.65),
                         border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            width: 1.5),
+                          color: Colors.white.withValues(alpha: 0.3),
+                          width: 1.5,
+                        ),
                       ),
                       child: const Icon(
                         Icons.play_arrow_rounded,
@@ -215,8 +225,9 @@ class _ShotCardState extends State<ShotCard> {
                           shape: BoxShape.circle,
                           color: Colors.black.withValues(alpha: 0.4),
                           border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              width: 1),
+                            color: Colors.white.withValues(alpha: 0.15),
+                            width: 1,
+                          ),
                         ),
                         child: const Icon(
                           Icons.chat_bubble_rounded,
@@ -248,8 +259,9 @@ class _ShotCardState extends State<ShotCard> {
                       shape: BoxShape.circle,
                       color: Colors.black.withValues(alpha: 0.4),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          width: 1),
+                        color: Colors.white.withValues(alpha: 0.15),
+                        width: 1,
+                      ),
                     ),
                     child: Icon(
                       _shot.isBookmarked
@@ -273,8 +285,9 @@ class _ShotCardState extends State<ShotCard> {
                       shape: BoxShape.circle,
                       color: Colors.black.withValues(alpha: 0.4),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          width: 1),
+                        color: Colors.white.withValues(alpha: 0.15),
+                        width: 1,
+                      ),
                     ),
                     child: const Icon(
                       Icons.share_rounded,
@@ -365,20 +378,26 @@ class _ShotCardState extends State<ShotCard> {
                 // Audio Pill Tag
                 if (_shot.audioTitle != null || _shot.audioArtist != null)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12),
-                          width: 0.8),
+                        color: Colors.white.withValues(alpha: 0.12),
+                        width: 0.8,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.music_note_rounded,
-                            color: AppColors.accent, size: 14),
+                        const Icon(
+                          Icons.music_note_rounded,
+                          color: AppColors.accent,
+                          size: 14,
+                        ),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(

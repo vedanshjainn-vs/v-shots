@@ -9,20 +9,24 @@ void main() {
   final classifier = GenreClassifier.instance;
 
   test('classifies genre from title text', () {
-    final tags =
-        classifier.classify(title: 'Bollywood Romantic Hit', artist: 'Someone');
+    final tags = classifier.classify(
+      title: 'Bollywood Romantic Hit',
+      artist: 'Someone',
+    );
     expect(tags, contains('Bollywood'));
   });
 
-  test('classifies genre from the source query when title/artist give no hint',
-      () {
-    final tags = classifier.classify(
-      title: 'Some Random Video Title',
-      artist: 'Some Channel',
-      sourceQuery: 'punjabi hit songs official audio',
-    );
-    expect(tags, contains('Punjabi'));
-  });
+  test(
+    'classifies genre from the source query when title/artist give no hint',
+    () {
+      final tags = classifier.classify(
+        title: 'Some Random Video Title',
+        artist: 'Some Channel',
+        sourceQuery: 'punjabi hit songs official audio',
+      );
+      expect(tags, contains('Punjabi'));
+    },
+  );
 
   test('returns an empty set for genuinely unclassifiable text', () {
     final tags = classifier.classify(title: 'xyz123', artist: 'abc456');
@@ -48,8 +52,10 @@ void main() {
     });
 
     test('partial overlap is between 0 and 1', () {
-      final sim = classifier
-          .similarity({'Bollywood', 'Romantic'}, {'Bollywood', 'Sad'});
+      final sim = classifier.similarity(
+        {'Bollywood', 'Romantic'},
+        {'Bollywood', 'Sad'},
+      );
       expect(sim, greaterThan(0.0));
       expect(sim, lessThan(1.0));
     });

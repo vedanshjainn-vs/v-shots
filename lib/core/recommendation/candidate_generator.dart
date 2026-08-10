@@ -112,34 +112,41 @@ class CandidateGenerator {
     // artists, not just their own catalog).
     final topArtists = profile.topArtists.take(5).toList();
     for (final artist in topArtists) {
-      final template = _genreDiscoveryTemplates[
-          _random.nextInt(_genreDiscoveryTemplates.length)];
-      candidates.add(CandidateQuery(
-        query: template.replaceAll('{artist}', artist),
-        source: CandidateSource.similarArtist,
-        seedArtist: artist,
-      ));
+      final template = _genreDiscoveryTemplates[_random.nextInt(
+        _genreDiscoveryTemplates.length,
+      )];
+      candidates.add(
+        CandidateQuery(
+          query: template.replaceAll('{artist}', artist),
+          source: CandidateSource.similarArtist,
+          seedArtist: artist,
+        ),
+      );
     }
 
     // 2. Genre/tag-based candidates from the user's real top genres.
     for (final genre in profile.topGenres.take(3)) {
       final q = _allKnownGenreQueries[genre];
       if (q != null) {
-        candidates.add(CandidateQuery(
-          query: q,
-          source: CandidateSource.genreTag,
-          seedGenre: genre,
-        ));
+        candidates.add(
+          CandidateQuery(
+            query: q,
+            source: CandidateSource.genreTag,
+            seedGenre: genre,
+          ),
+        );
       }
     }
 
     // 3. Recently played patterns — top artists' own catalog.
     for (final artist in topArtists.take(3)) {
-      candidates.add(CandidateQuery(
-        query: '$artist songs official audio',
-        source: CandidateSource.recentlyPlayedPattern,
-        seedArtist: artist,
-      ));
+      candidates.add(
+        CandidateQuery(
+          query: '$artist songs official audio',
+          source: CandidateSource.recentlyPlayedPattern,
+          seedArtist: artist,
+        ),
+      );
     }
 
     // 4. Liked music — real LocalLibrary liked-songs artists (a signal
@@ -151,11 +158,13 @@ class CandidateGenerator {
         .toSet()
         .take(3);
     for (final artist in likedArtists) {
-      candidates.add(CandidateQuery(
-        query: '$artist best songs',
-        source: CandidateSource.likedMusic,
-        seedArtist: artist,
-      ));
+      candidates.add(
+        CandidateQuery(
+          query: '$artist best songs',
+          source: CandidateSource.likedMusic,
+          seedArtist: artist,
+        ),
+      );
     }
 
     // 5. Search behavior — the user's own real recent searches are a
@@ -166,21 +175,26 @@ class CandidateGenerator {
         .take(2);
     for (final q in recentSearches) {
       candidates.add(
-          CandidateQuery(query: q, source: CandidateSource.searchBehavior));
+        CandidateQuery(query: q, source: CandidateSource.searchBehavior),
+      );
     }
 
     // 6. Trending content — always included, a real, live signal
     // (matches Home's existing "Trending Now" query).
-    candidates.add(const CandidateQuery(
-      query: 'trending music today official audio',
-      source: CandidateSource.trending,
-    ));
+    candidates.add(
+      const CandidateQuery(
+        query: 'trending music today official audio',
+        source: CandidateSource.trending,
+      ),
+    );
 
     // 7. New content.
-    candidates.add(const CandidateQuery(
-      query: 'new music releases official audio',
-      source: CandidateSource.newContent,
-    ));
+    candidates.add(
+      const CandidateQuery(
+        query: 'new music releases official audio',
+        source: CandidateSource.newContent,
+      ),
+    );
 
     // 8. Exploration — genres OUTSIDE the user's current top genres,
     // for real discovery rather than an echo chamber (Part O).
@@ -189,11 +203,13 @@ class CandidateGenerator {
         .toList()
       ..shuffle(_random);
     for (final genre in unexploredGenres.take(2)) {
-      candidates.add(CandidateQuery(
-        query: _allKnownGenreQueries[genre]!,
-        source: CandidateSource.exploration,
-        seedGenre: genre,
-      ));
+      candidates.add(
+        CandidateQuery(
+          query: _allKnownGenreQueries[genre]!,
+          source: CandidateSource.exploration,
+          seedGenre: genre,
+        ),
+      );
     }
 
     candidates.shuffle(_random);
@@ -208,38 +224,47 @@ class CandidateGenerator {
   List<CandidateQuery> _coldStartCandidates({required int count}) {
     final pool = <CandidateQuery>[
       const CandidateQuery(
-          query: 'trending music today official audio',
-          source: CandidateSource.trending),
+        query: 'trending music today official audio',
+        source: CandidateSource.trending,
+      ),
       const CandidateQuery(
-          query: 'global top hits official music',
-          source: CandidateSource.trending),
+        query: 'global top hits official music',
+        source: CandidateSource.trending,
+      ),
       const CandidateQuery(
-          query: 'bollywood hit songs official audio',
-          source: CandidateSource.exploration,
-          seedGenre: 'Bollywood'),
+        query: 'bollywood hit songs official audio',
+        source: CandidateSource.exploration,
+        seedGenre: 'Bollywood',
+      ),
       const CandidateQuery(
-          query: 'hindi songs official audio',
-          source: CandidateSource.exploration,
-          seedGenre: 'Hindi'),
+        query: 'hindi songs official audio',
+        source: CandidateSource.exploration,
+        seedGenre: 'Hindi',
+      ),
       const CandidateQuery(
-          query: 'punjabi hit songs official audio',
-          source: CandidateSource.exploration,
-          seedGenre: 'Punjabi'),
+        query: 'punjabi hit songs official audio',
+        source: CandidateSource.exploration,
+        seedGenre: 'Punjabi',
+      ),
       const CandidateQuery(
-          query: 'english pop songs official audio',
-          source: CandidateSource.exploration,
-          seedGenre: 'English'),
+        query: 'english pop songs official audio',
+        source: CandidateSource.exploration,
+        seedGenre: 'English',
+      ),
       const CandidateQuery(
-          query: 'hip hop rap songs official audio',
-          source: CandidateSource.exploration,
-          seedGenre: 'Hip-Hop'),
+        query: 'hip hop rap songs official audio',
+        source: CandidateSource.exploration,
+        seedGenre: 'Hip-Hop',
+      ),
       const CandidateQuery(
-          query: 'edm dance party songs official audio',
-          source: CandidateSource.exploration,
-          seedGenre: 'EDM'),
+        query: 'edm dance party songs official audio',
+        source: CandidateSource.exploration,
+        seedGenre: 'EDM',
+      ),
       const CandidateQuery(
-          query: 'new music releases official audio',
-          source: CandidateSource.newContent),
+        query: 'new music releases official audio',
+        source: CandidateSource.newContent,
+      ),
     ];
     pool.shuffle(_random);
     return pool.take(count).toList();

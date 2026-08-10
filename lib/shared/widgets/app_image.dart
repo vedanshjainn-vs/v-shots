@@ -65,11 +65,8 @@ class AppImage extends StatelessWidget {
         // previously entirely absent (Image.network has no built-in
         // fade transition).
         fadeInDuration: const Duration(milliseconds: 200),
-        placeholder: (context, url) => Container(
-          width: width,
-          height: height,
-          color: placeholderColor,
-        ),
+        placeholder: (context, url) =>
+            Container(width: width, height: height, color: placeholderColor),
         errorWidget: (context, url, error) => _fallback(),
         // Memory-cache at roughly display resolution (not the full
         // decoded source size) — real, measurable memory savings for
@@ -90,7 +87,10 @@ class AppImage extends StatelessWidget {
         width: width,
         height: height,
         color: placeholderColor,
-        child: Icon(errorIcon,
-            color: errorIconColor, size: (width ?? height ?? 48) * 0.4),
+        child: Icon(
+          errorIcon,
+          color: errorIconColor,
+          size: (width ?? height ?? 48) * 0.4,
+        ),
       );
 }

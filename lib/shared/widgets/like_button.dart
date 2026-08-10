@@ -49,7 +49,8 @@ class _LikeButtonState extends State<LikeButton>
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.35), weight: 50),
       TweenSequenceItem(tween: Tween(begin: 1.35, end: 1.0), weight: 50),
     ]).animate(
-        CurvedAnimation(parent: _animController, curve: Curves.easeOutBack));
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
+    );
   }
 
   @override
@@ -126,11 +127,7 @@ class _LikeButtonState extends State<LikeButton>
         behavior: HitTestBehavior.opaque,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: [
-            heartIcon,
-            const SizedBox(height: 4),
-            countLabel,
-          ],
+          children: [heartIcon, const SizedBox(height: 4), countLabel],
         ),
       );
     }
@@ -140,11 +137,7 @@ class _LikeButtonState extends State<LikeButton>
       behavior: HitTestBehavior.opaque,
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          heartIcon,
-          const SizedBox(width: 6),
-          countLabel,
-        ],
+        children: [heartIcon, const SizedBox(width: 6), countLabel],
       ),
     );
   }

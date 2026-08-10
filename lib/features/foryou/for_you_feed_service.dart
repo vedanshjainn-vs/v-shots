@@ -1,67 +1,9 @@
 // ════════════════════════════════════════════════
-// V Shots — "For You" Feed Service (Resso-style recommendation source)
-// ════════════════════════════════════════════════
-//
-// REVISION 2 (recommendation-quality fixes, per user-approved
-// refinement list — see REFINEMENT_LIST_FOR_APPROVAL.md Section A):
-//
-// What was wrong in v1 (kept here as a record, not speculation):
-//   1. Taste signal was a SEPARATE in-memory map (`_artistPlayCounts`)
-//      that duplicated — and diverged from — LocalLibrary's own
-//      persisted `artistPlayCounts` (which every real play in the app
-//      already updates via `recordRecentlyPlayed`). Result: the feed's
-//      personalization silently reset to zero on every app restart,
-//      even though the "real" play-history data survived restarts
-//      fine elsewhere in the app.
-//   2. Zero recency weighting — a song played once, days ago, counted
-//      exactly the same as one played 5 times in the last hour. A
-//      stale early interest could dominate the feed forever.
-//   3. Only 10 hardcoded fallback queries, identical for every user
-//      forever — repeats fast, zero variety, zero personalization for
-//      new users until they've played several songs.
-//   4. No genre/mood/language signal at all — only raw artist name.
-//      This meant no "similar artist" discovery: the feed converges
-//      to a loop of whichever 1-2 artists you happened to click first,
-//      never branching out.
-//
-// Fixes applied below:
-//   - Reads directly from LocalLibrary.instance.artistPlayCounts (the
-//     ALREADY-persisted, ALREADY-updated-everywhere signal) instead of
-//     keeping a second, disposable copy.
-//   - Recency-weighted scoring: recordRecentlyPlayed's play history
-//     (with real timestamps) is used to compute a decayed score per
-//     artist — a play from the last hour counts far more than one
-//     from 3 days ago — rather than a flat lifetime count.
-//   - Fallback query pool expanded from 10 to 40 entries across
-//     distinct mood/genre/language buckets, plus time-of-day-aware
-//     selection (e.g. leans toward "chill"/"sleep" queries late at
-//     night, "workout"/"party" during typical daytime hours) — still
-//     zero backend/ML required, just more honest variety.
-//   - Added a real "similar artist" discovery path: occasionally
-//     searches "similar artists to <top artist>" / "<genre> artists
-//     like <top artist>" instead of only ever repeating the same
-//     artist's own catalog — this is what actually lets the feed
-//     branch out over time instead of looping.
-//
-// REVISION 3 (Phase 3 provider-architecture fix — this task):
-//   - No longer holds/calls a `YoutubeExplode` instance directly.
-//     Takes a `MusicRepository` instead and calls
-//     `_repository.search(query)`, which routes through
-//     ProviderManager -> YouTubeMusicProvider -> the existing YouTube
-//     client. The picking-a-query personalization logic below
-//     (recency weighting, similar-artist discovery, time-of-day
-//     buckets) is real, app-specific domain logic and stays here —
-//     only the actual network call moved behind the provider layer.
-//   - Title-cleaning now uses the single shared `cleanTitle()` from
-//     shared/utils/text_utils.dart instead of keeping its own,
-//     slightly-different private copy (see that file's header for the
-//     small, real behavior fix this includes).
+// V Shots — "For You" Feed Service (Music Recommendation Source)
 // ════════════════════════════════════════════════
 
 import 'dart:math';
-
 import 'package:flutter/foundation.dart';
-
 import '../../core/providers/music_repository.dart';
 import '../../core/storage/local_library.dart';
 
@@ -71,12 +13,84 @@ class ForYouFeedService {
   final MusicRepository _repository;
   final _random = Random();
 
-  /// Fallback queries, grouped by rough "vibe" bucket so we can bias
-  /// selection by time of day instead of pulling from one flat list.
-  /// Still a heuristic, not a real ML model — but meaningfully less
-  /// repetitive than the previous 10-item flat list, and gives new
-  /// users (no play history yet) actual variety from their first
-  /// session instead of the same handful of queries forever.
+  String? activeMood;
+  String? activeMoodQuery;
+
+  static const List<Map<String, String>> availableMoods = [
+    {
+      'id': 'trending',
+      'label': 'Trending Hits',
+      'icon': '🌟',
+      'query': 'viral trending songs today official audio',
+    },
+    {
+      'id': 'latenight',
+      'label': 'Late Night Chill',
+      'icon': '🌙',
+      'query': 'late night lofi chill songs official audio',
+    },
+    {
+      'id': 'romantic',
+      'label': 'Romantic & Love',
+      'icon': '💖',
+      'query': 'romantic love songs official audio hindi punjabi',
+    },
+    {
+      'id': 'party',
+      'label': 'Party & Dance',
+      'icon': '🔥',
+      'query': 'party dance edm club songs official audio',
+    },
+    {
+      'id': 'workout',
+      'label': 'Gym & Hype',
+      'icon': '⚡',
+      'query': 'workout gym motivation hype songs official',
+    },
+    {
+      'id': 'sad',
+      'label': 'Heartbroken & Sad',
+      'icon': '🌧️',
+      'query': 'sad heartbroken emotional songs official audio',
+    },
+    {
+      'id': 'focus',
+      'label': 'Focus & Study',
+      'icon': '🧘',
+      'query': 'lofi study focus chill beats instrumental',
+    },
+    {
+      'id': 'roadtrip',
+      'label': 'Road Trip Drive',
+      'icon': '🚗',
+      'query': 'road trip travel drive songs playlist',
+    },
+    {
+      'id': 'bollywood',
+      'label': 'Bollywood Hits',
+      'icon': '🎬',
+      'query': 'top bollywood songs official music video',
+    },
+    {
+      'id': 'punjabi',
+      'label': 'Punjabi Bangers',
+      'icon': '🎸',
+      'query': 'latest punjabi pop hits official audio',
+    },
+    {
+      'id': 'indie',
+      'label': 'Hindi Indie',
+      'icon': '🎧',
+      'query': 'hindi indie acoustic songs official audio',
+    },
+    {
+      'id': 'global',
+      'label': 'Global Pop 100',
+      'icon': '🌍',
+      'query': 'billboard top global pop hits official audio',
+    },
+  ];
+
   static const _dayQueries = [
     'trending songs today official audio',
     'top bollywood songs new',
@@ -120,11 +134,11 @@ class ForYouFeedService {
     'songs like {artist} playlist',
   ];
 
-  /// Recency-weighted taste profile, computed fresh from LocalLibrary's
-  /// persisted, timestamped play history — NOT a separate counter.
-  /// A play from the last hour scores ~1.0; a play from a week ago
-  /// scores close to 0 — this means the feed adapts to what you're
-  /// listening to *now*, not a stale lifetime tally.
+  void setMood(String? moodLabel, String? query) {
+    activeMood = moodLabel;
+    activeMoodQuery = query;
+  }
+
   Map<String, double> _recencyWeightedArtistScores() {
     final scores = <String, double>{};
     final now = DateTime.now();
@@ -135,30 +149,18 @@ class ForYouFeedService {
       final playedAt = DateTime.tryParse(playedAtRaw);
       if (playedAt == null) continue;
       final hoursAgo = now.difference(playedAt).inMinutes / 60.0;
-      // Half-life of ~3 days: recent plays dominate, old ones fade
-      // out gradually rather than being wiped or counted equally.
       final weight = pow(0.5, hoursAgo / 72.0).toDouble();
       scores[artist] = (scores[artist] ?? 0) + weight;
     }
     return scores;
   }
 
-  /// Returns the next batch of tracks for the feed. [excludeIds] is the
-  /// set of video IDs already shown in this session, so the same track
-  /// doesn't repeat as the user keeps swiping.
   Future<List<Map<String, dynamic>>> fetchNextBatch({
     required Set<String> excludeIds,
     int count = 10,
   }) async {
     final query = _pickQuery();
     try {
-      // Phase 3 fix: goes through MusicRepository (-> ProviderManager
-      // -> YouTubeMusicProvider -> existing YouTube client) instead of
-      // calling `_yt.search.search()` directly. The provider layer
-      // applies the EXACT same duration/non-music filtering this
-      // method used to do inline (12-min cap, 1-min floor — see
-      // YoutubeMusicMapper) and excludes already-seen ids server-side
-      // via `excludeIds`, matching this method's original behavior.
       final detailed = await _repository.searchDetailed(
         query,
         limit: count,
@@ -168,7 +170,8 @@ class ForYouFeedService {
       );
       if (!detailed.success) {
         debugPrint(
-            '[ForYouFeedService] fetchNextBatch failed: ${detailed.error}');
+          '[ForYouFeedService] fetchNextBatch failed: ${detailed.error}',
+        );
         return [];
       }
       return detailed.tracks;
@@ -178,20 +181,8 @@ class ForYouFeedService {
     }
   }
 
-  /// True once the user has enough real play history for a genuinely
-  /// personalized query to make sense. Used by Home to decide whether
-  /// to show a "Made For You" section at all — an empty/generic
-  /// section here (for a brand-new user with no plays yet) would be
-  /// worse than simply not showing it.
   bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;
 
-  /// Builds ONE representative query for Home's "Made For You" section,
-  /// reusing the exact same recency-weighted taste profile that drives
-  /// the Discover/For You feed — deliberately the SAME signal, not a
-  /// second, divergent personalization implementation. Home shows a
-  /// static row of results (unlike the infinite swipe feed), so this
-  /// picks the single best current top-artist query rather than
-  /// re-rolling a random weighted choice on every call.
   String personalizedQueryForHome() {
     final scores = _recencyWeightedArtistScores();
     if (scores.isEmpty) return _pickTimeOfDayQuery();
@@ -200,12 +191,6 @@ class ForYouFeedService {
     return '${sorted.first.key} songs official audio';
   }
 
-  /// Explicit negative feedback signal — called when the user taps
-  /// "Not interested in this artist" from the more-options sheet (see
-  /// main.dart's showMoreOptionsSheet). Persists a small exclusion
-  /// list so future picks skip this artist rather than the feedback
-  /// having no actual effect (a button that does nothing is worse than
-  /// not offering it at all).
   final Set<String> _excludedArtists = {};
 
   void markNotInterested(String artist) {
@@ -213,13 +198,19 @@ class ForYouFeedService {
     _excludedArtists.add(artist);
   }
 
-  /// Picks a search query using three weighted strategies:
-  ///   45% — one of the user's top recency-weighted artists' own songs
-  ///   25% — "similar artist" discovery seeded from a top artist, so
-  ///         the feed actually branches into new artists over time
-  ///         instead of looping the same 1-2 forever
-  ///   30% — a time-of-day-appropriate varied fallback query
   String _pickQuery() {
+    if (activeMoodQuery != null && activeMoodQuery!.isNotEmpty) {
+      final scores = _recencyWeightedArtistScores()
+        ..removeWhere((artist, _) => _excludedArtists.contains(artist));
+      if (scores.isNotEmpty && _random.nextDouble() < 0.40) {
+        final sorted = scores.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final topArtist = sorted.first.key;
+        return '$topArtist $activeMoodQuery';
+      }
+      return activeMoodQuery!;
+    }
+
     final scores = _recencyWeightedArtistScores()
       ..removeWhere((artist, _) => _excludedArtists.contains(artist));
     final roll = _random.nextDouble();
@@ -233,8 +224,9 @@ class ForYouFeedService {
       if (roll < 0.45) {
         return '$artist songs official audio';
       } else {
-        final template = _genreDiscoveryTemplates[
-            _random.nextInt(_genreDiscoveryTemplates.length)];
+        final template = _genreDiscoveryTemplates[_random.nextInt(
+          _genreDiscoveryTemplates.length,
+        )];
         return template.replaceAll('{artist}', artist);
       }
     }
