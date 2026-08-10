@@ -36,8 +36,8 @@ class YouTubeMusicProvider extends MusicProvider {
     this._yt, {
     YoutubeMusicMapper mapper = const YoutubeMusicMapper(),
     LyricsService? lyricsService,
-  }) : _mapper = mapper,
-       _lyrics = lyricsService ?? LyricsService.instance;
+  })  : _mapper = mapper,
+        _lyrics = lyricsService ?? LyricsService.instance;
 
   /// The app's single shared instance (main.dart's `sharedYt`) — this
   /// class never constructs its own `YoutubeExplode()`. Constructing a
@@ -56,19 +56,19 @@ class YouTubeMusicProvider extends MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-    ProviderCapability.search,
-    ProviderCapability.getTrack,
-    ProviderCapability.getStream,
-    ProviderCapability.getArtwork,
-    ProviderCapability.getLyrics,
-    ProviderCapability.getTrending,
-    ProviderCapability.getRecommendations,
-    // NOTE: no getAlbum/getArtist/getPlaylist here (unlike
-    // PROVIDER_ARCHITECTURE.md's aspirational interface) — YouTube
-    // has no first-party equivalent the way Spotify/Apple Music
-    // do, and this codebase does not fake one. See this class's
-    // file header + music_provider.dart's design note.
-  };
+        ProviderCapability.search,
+        ProviderCapability.getTrack,
+        ProviderCapability.getStream,
+        ProviderCapability.getArtwork,
+        ProviderCapability.getLyrics,
+        ProviderCapability.getTrending,
+        ProviderCapability.getRecommendations,
+        // NOTE: no getAlbum/getArtist/getPlaylist here (unlike
+        // PROVIDER_ARCHITECTURE.md's aspirational interface) — YouTube
+        // has no first-party equivalent the way Spotify/Apple Music
+        // do, and this codebase does not fake one. See this class's
+        // file header + music_provider.dart's design note.
+      };
 
   bool _initialized = false;
 

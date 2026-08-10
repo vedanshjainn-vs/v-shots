@@ -126,8 +126,8 @@ class TasteProfileBuilder {
           for (final tag in tags) {
             final genreWeight = event.type == SignalType.skip
                 ? -weight.abs() *
-                      skipDecay *
-                      0.5 // skips dampen genre affinity less aggressively than artist affinity
+                    skipDecay *
+                    0.5 // skips dampen genre affinity less aggressively than artist affinity
                 : weight * affinityDecay;
             genreAffinity[tag] = (genreAffinity[tag] ?? 0) + genreWeight;
           }
