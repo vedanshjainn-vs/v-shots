@@ -33,7 +33,11 @@ void main() {
   test('personalized profile produces similar-artist candidates', () {
     final generator = CandidateGenerator();
     const profile = TasteProfile(
-      artistAffinity: {'Arijit Singh': 10.0, 'Diljit Dosanjh': 5.0, 'Third': 1.0},
+      artistAffinity: {
+        'Arijit Singh': 10.0,
+        'Diljit Dosanjh': 5.0,
+        'Third': 1.0
+      },
       genreAffinity: {},
       artistSkipPenalty: {},
       totalSignalCount: 5,

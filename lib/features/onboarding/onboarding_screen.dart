@@ -26,13 +26,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, dynamic>> _pages = [
     {
       'title': 'Experience Next-Gen Shots',
-      'subtitle': 'Discover trending short videos, viral music, and vibrant visual creators from around the globe.',
+      'subtitle':
+          'Discover trending short videos, viral music, and vibrant visual creators from around the globe.',
       'icon': Icons.bolt_rounded,
       'gradient': AppColors.primaryGradient,
     },
     {
       'title': 'Create & Share in Seconds',
-      'subtitle': 'Upload your moments with high-fidelity streaming, custom audio tags, and seamless cloud sync.',
+      'subtitle':
+          'Upload your moments with high-fidelity streaming, custom audio tags, and seamless cloud sync.',
       'icon': Icons.auto_awesome_rounded,
       'gradient': const LinearGradient(
         colors: [AppColors.accent, AppColors.primaryLight],
@@ -42,7 +44,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     },
     {
       'title': 'Connect with Creators',
-      'subtitle': 'Like, comment, bookmark, and follow your favorite artists in a privacy-first social ecosystem.',
+      'subtitle':
+          'Like, comment, bookmark, and follow your favorite artists in a privacy-first social ecosystem.',
       'icon': Icons.people_alt_rounded,
       'gradient': const LinearGradient(
         colors: [AppColors.hotPink, AppColors.warning],
@@ -89,7 +92,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               children: [
                 // Top skip button
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -103,7 +107,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                               gradient: AppColors.primaryGradient,
                             ),
                             child: const Center(
-                              child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 20),
+                              child: Icon(Icons.play_arrow_rounded,
+                                  color: Colors.white, size: 20),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -137,7 +142,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Expanded(
                   child: PageView.builder(
                     controller: _pageController,
-                    onPageChanged: (index) => setState(() => _currentPage = index),
+                    onPageChanged: (index) =>
+                        setState(() => _currentPage = index),
                     itemCount: _pages.length,
                     itemBuilder: (context, index) {
                       final p = _pages[index];
@@ -154,7 +160,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                                 gradient: p['gradient'] as Gradient,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: (p['gradient'] as LinearGradient).colors.first.withValues(alpha: 0.35),
+                                    color: (p['gradient'] as LinearGradient)
+                                        .colors
+                                        .first
+                                        .withValues(alpha: 0.35),
                                     blurRadius: 36,
                                     spreadRadius: 6,
                                   ),
@@ -198,7 +207,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                 // Bottom Pagination & Actions
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
                   child: Column(
                     children: [
                       // Page indicator dots
@@ -213,8 +223,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             height: 8,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(4),
-                              gradient: _currentPage == index ? AppColors.primaryGradient : null,
-                              color: _currentPage == index ? null : AppColors.surface2,
+                              gradient: _currentPage == index
+                                  ? AppColors.primaryGradient
+                                  : null,
+                              color: _currentPage == index
+                                  ? null
+                                  : AppColors.surface2,
                             ),
                           ),
                         ),
@@ -223,7 +237,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                       // Get Started Button
                       AppButton(
-                        text: _currentPage == _pages.length - 1 ? 'Get Started' : 'Continue',
+                        text: _currentPage == _pages.length - 1
+                            ? 'Get Started'
+                            : 'Continue',
                         isFullWidth: true,
                         size: AppButtonSize.large,
                         onPressed: () {
@@ -245,7 +261,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         children: [
                           const Text(
                             'Already have an account? ',
-                            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 13),
                           ),
                           GestureDetector(
                             onTap: () {

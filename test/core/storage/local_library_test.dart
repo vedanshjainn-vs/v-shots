@@ -25,7 +25,8 @@ void main() {
   });
 
   group('Liked Songs', () {
-    test('toggleLiked adds then removes a track, persisting each time', () async {
+    test('toggleLiked adds then removes a track, persisting each time',
+        () async {
       final track = {'id': 't1', 'title': 'Song', 'artist': 'Artist'};
 
       expect(LocalLibrary.instance.isLiked('t1'), isFalse);
@@ -39,7 +40,8 @@ void main() {
       expect(LocalLibrary.instance.likedSongs.value, isEmpty);
     });
 
-    test('liked songs survive a fresh initialize() (real persistence)', () async {
+    test('liked songs survive a fresh initialize() (real persistence)',
+        () async {
       final track = {'id': 't2', 'title': 'Persisted Song', 'artist': 'Artist'};
       await LocalLibrary.instance.toggleLiked(track);
       expect(LocalLibrary.instance.isLiked('t2'), isTrue);
@@ -54,7 +56,8 @@ void main() {
   });
 
   group('Recently Played', () {
-    test('recordRecentlyPlayed inserts most-recent-first and dedupes by id', () async {
+    test('recordRecentlyPlayed inserts most-recent-first and dedupes by id',
+        () async {
       await LocalLibrary.instance.recordRecentlyPlayed(
           {'id': 'a', 'title': 'A', 'artist': 'Artist A'});
       await LocalLibrary.instance.recordRecentlyPlayed(
@@ -68,17 +71,19 @@ void main() {
       expect(recent.first['id'], 'a');
     });
 
-    test('recordRecentlyPlayed feeds artistPlayCounts (the taste-profile signal)',
+    test(
+        'recordRecentlyPlayed feeds artistPlayCounts (the taste-profile signal)',
         () async {
-      await LocalLibrary.instance
-          .recordRecentlyPlayed({'id': 'x', 'title': 'X', 'artist': 'Fav Artist'});
-      await LocalLibrary.instance
-          .recordRecentlyPlayed({'id': 'y', 'title': 'Y', 'artist': 'Fav Artist'});
+      await LocalLibrary.instance.recordRecentlyPlayed(
+          {'id': 'x', 'title': 'X', 'artist': 'Fav Artist'});
+      await LocalLibrary.instance.recordRecentlyPlayed(
+          {'id': 'y', 'title': 'Y', 'artist': 'Fav Artist'});
 
       expect(LocalLibrary.instance.artistPlayCounts['Fav Artist'], 2);
     });
 
-    test('recordRecentlyPlayed stamps a parseable playedAt timestamp', () async {
+    test('recordRecentlyPlayed stamps a parseable playedAt timestamp',
+        () async {
       await LocalLibrary.instance
           .recordRecentlyPlayed({'id': 'z', 'title': 'Z', 'artist': 'Artist'});
       final entry = LocalLibrary.instance.recentlyPlayed.value.first;

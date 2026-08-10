@@ -74,8 +74,10 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
     });
 
     try {
-      const videoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
-      const thumbnailUrl = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80';
+      const videoUrl =
+          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+      const thumbnailUrl =
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80';
 
       if (_selectedFile?.bytes != null) {
         setState(() => _uploadProgress = 0.45);
@@ -136,7 +138,8 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
         backgroundColor: AppColors.background,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textMain, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: AppColors.textMain, size: 20),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         title: const Text(
@@ -164,7 +167,9 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: _selectedFile != null ? AppColors.accent : AppColors.border,
+                      color: _selectedFile != null
+                          ? AppColors.accent
+                          : AppColors.border,
                       width: 1.5,
                     ),
                     gradient: AppColors.cardGradient,
@@ -181,14 +186,20 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
                                   height: 52,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: AppColors.accent.withValues(alpha: 0.15),
-                                    border: Border.all(color: AppColors.accent, width: 1.5),
+                                    color: AppColors.accent
+                                        .withValues(alpha: 0.15),
+                                    border: Border.all(
+                                        color: AppColors.accent, width: 1.5),
                                   ),
-                                  child: const Icon(Icons.check_circle_outline_rounded, color: AppColors.accent, size: 30),
+                                  child: const Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      color: AppColors.accent,
+                                      size: 30),
                                 ),
                                 const SizedBox(height: 12),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20),
                                   child: Text(
                                     _selectedFile!.name,
                                     maxLines: 1,
@@ -203,7 +214,8 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
                                 const SizedBox(height: 4),
                                 Text(
                                   '${(_selectedFile!.size / (1024 * 1024)).toStringAsFixed(2)} MB • Tap to replace',
-                                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                                  style: const TextStyle(
+                                      color: AppColors.textMuted, fontSize: 12),
                                 ),
                               ],
                             ),
@@ -218,9 +230,11 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: AppColors.surfaceElevated,
-                                border: Border.all(color: AppColors.border, width: 1),
+                                border: Border.all(
+                                    color: AppColors.border, width: 1),
                               ),
-                              child: const Icon(Icons.video_library_rounded, color: AppColors.accent, size: 28),
+                              child: const Icon(Icons.video_library_rounded,
+                                  color: AppColors.accent, size: 28),
                             ),
                             const SizedBox(height: 12),
                             const Text(
@@ -234,7 +248,8 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
                             const SizedBox(height: 4),
                             const Text(
                               'MP4, MOV, MP3, WAV up to 100MB',
-                              style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
+                              style: TextStyle(
+                                  color: AppColors.textSubtle, fontSize: 12),
                             ),
                           ],
                         ),
@@ -258,16 +273,19 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+                    border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+                      const Icon(Icons.error_outline_rounded,
+                          color: AppColors.error, size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: const TextStyle(color: AppColors.error, fontSize: 13),
+                          style: const TextStyle(
+                              color: AppColors.error, fontSize: 13),
                         ),
                       ),
                     ],
@@ -280,7 +298,8 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
               AppTextInput(
                 controller: _captionController,
                 label: 'Caption',
-                hintText: 'What is happening in this shot? Add hashtags #vshots...',
+                hintText:
+                    'What is happening in this shot? Add hashtags #vshots...',
                 maxLines: 4,
               ),
               const SizedBox(height: 16),
@@ -306,11 +325,14 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  _buildVisibilityOption('public', 'Public', Icons.public_rounded),
+                  _buildVisibilityOption(
+                      'public', 'Public', Icons.public_rounded),
                   const SizedBox(width: 10),
-                  _buildVisibilityOption('followers', 'Followers', Icons.group_rounded),
+                  _buildVisibilityOption(
+                      'followers', 'Followers', Icons.group_rounded),
                   const SizedBox(width: 10),
-                  _buildVisibilityOption('private', 'Only Me', Icons.lock_outline_rounded),
+                  _buildVisibilityOption(
+                      'private', 'Only Me', Icons.lock_outline_rounded),
                 ],
               ),
               const SizedBox(height: 32),
@@ -340,7 +362,9 @@ class _UploadShotScreenState extends State<UploadShotScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary.withValues(alpha: 0.15) : AppColors.surface2,
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: 0.15)
+                : AppColors.surface2,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isSelected ? AppColors.primary : AppColors.border,

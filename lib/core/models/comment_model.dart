@@ -27,7 +27,8 @@ class CommentModel {
     ProfileModel? author;
     if (json['profiles'] != null && json['profiles'] is Map<String, dynamic>) {
       author = ProfileModel.fromJson(json['profiles'] as Map<String, dynamic>);
-    } else if (json['author'] != null && json['author'] is Map<String, dynamic>) {
+    } else if (json['author'] != null &&
+        json['author'] is Map<String, dynamic>) {
       author = ProfileModel.fromJson(json['author'] as Map<String, dynamic>);
     }
 
@@ -37,8 +38,12 @@ class CommentModel {
       userId: json['user_id'] as String? ?? '',
       body: json['body'] as String? ?? '',
       author: author,
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
     );
   }
 

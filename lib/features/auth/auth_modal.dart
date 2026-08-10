@@ -89,7 +89,9 @@ class _AuthModalState extends State<AuthModal> {
           password: password,
           data: {
             'full_name': name.isNotEmpty ? name : 'V Shots Creator',
-            'username': username.isNotEmpty ? username : 'user_${DateTime.now().millisecondsSinceEpoch % 10000}',
+            'username': username.isNotEmpty
+                ? username
+                : 'user_${DateTime.now().millisecondsSinceEpoch % 10000}',
           },
         );
 
@@ -232,20 +234,24 @@ class _AuthModalState extends State<AuthModal> {
               // Error banner if any
               if (_errorMessage != null) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: AppColors.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
+                    border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.info_outline_rounded, color: AppColors.error, size: 18),
+                      const Icon(Icons.info_outline_rounded,
+                          color: AppColors.error, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: const TextStyle(color: AppColors.error, fontSize: 12),
+                          style: const TextStyle(
+                              color: AppColors.error, fontSize: 12),
                         ),
                       ),
                     ],
@@ -273,7 +279,8 @@ class _AuthModalState extends State<AuthModal> {
                     padding: EdgeInsets.symmetric(horizontal: 12),
                     child: Text(
                       'or with email',
-                      style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
+                      style:
+                          TextStyle(color: AppColors.textSubtle, fontSize: 12),
                     ),
                   ),
                   Expanded(child: Divider(color: AppColors.borderSubtle)),

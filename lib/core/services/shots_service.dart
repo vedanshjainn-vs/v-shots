@@ -17,9 +17,12 @@ class ShotsService {
     ShotModel(
       id: 'mock-1',
       userId: 'mock-creator-1',
-      caption: '🚀 Building the next-gen Nova UI for V Shots! Smooth 60fps animations & dark gradient aesthetics. #vshots #nova #flutter',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
+      caption:
+          '🚀 Building the next-gen Nova UI for V Shots! Smooth 60fps animations & dark gradient aesthetics. #vshots #nova #flutter',
+      videoUrl:
+          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+      thumbnailUrl:
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
       durationSeconds: 15,
       likeCount: 1420,
       commentCount: 88,
@@ -32,7 +35,8 @@ class ShotsService {
         id: 'mock-creator-1',
         username: 'novadesign',
         fullName: 'Nova Studio',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80',
+        avatarUrl:
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80',
         bio: 'Designing futuristic interfaces.',
         followersCount: 12400,
         followingCount: 320,
@@ -43,9 +47,12 @@ class ShotsService {
     ShotModel(
       id: 'mock-2',
       userId: 'mock-creator-2',
-      caption: '🎧 Late night studio session vibes. Fresh beat dropping this Friday! What do you think of this synth line? 🔥',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80',
+      caption:
+          '🎧 Late night studio session vibes. Fresh beat dropping this Friday! What do you think of this synth line? 🔥',
+      videoUrl:
+          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
+      thumbnailUrl:
+          'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80',
       durationSeconds: 28,
       likeCount: 3890,
       commentCount: 215,
@@ -58,7 +65,8 @@ class ShotsService {
         id: 'mock-creator-2',
         username: 'arialuna',
         fullName: 'Aria Luna',
-        avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&q=80',
+        avatarUrl:
+            'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&q=80',
         bio: 'Music producer & sound designer.',
         followersCount: 48900,
         followingCount: 512,
@@ -69,9 +77,12 @@ class ShotsService {
     ShotModel(
       id: 'mock-3',
       userId: 'mock-creator-3',
-      caption: 'Neon city lights timelapse from the 42nd floor 🌆 Tokyo rain reflections never get old.',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=800&q=80',
+      caption:
+          'Neon city lights timelapse from the 42nd floor 🌆 Tokyo rain reflections never get old.',
+      videoUrl:
+          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+      thumbnailUrl:
+          'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=800&q=80',
       durationSeconds: 20,
       likeCount: 924,
       commentCount: 42,
@@ -84,7 +95,8 @@ class ShotsService {
         id: 'mock-creator-3',
         username: 'neonpulse',
         fullName: 'Kenji Sato',
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80',
+        avatarUrl:
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80',
         bio: 'Visual storyteller in Tokyo.',
         followersCount: 8900,
         followingCount: 140,
@@ -158,7 +170,9 @@ class ShotsService {
   /// Fetch shots created by a specific user
   Future<List<ShotModel>> fetchUserShots(String userId) async {
     if (!SupabaseService.isAvailable) {
-      return _localShots.where((s) => s.userId == userId || userId == 'self').toList();
+      return _localShots
+          .where((s) => s.userId == userId || userId == 'self')
+          .toList();
     }
 
     try {
@@ -169,7 +183,9 @@ class ShotsService {
           .order('created_at', ascending: false);
 
       final data = response as List<dynamic>;
-      return data.map((e) => ShotModel.fromJson(e as Map<String, dynamic>)).toList();
+      return data
+          .map((e) => ShotModel.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (e) {
       debugPrint('[ShotsService] fetchUserShots error: $e');
       return <ShotModel>[];
@@ -193,7 +209,8 @@ class ShotsService {
       userId: userId,
       caption: caption,
       videoUrl: videoUrl,
-      thumbnailUrl: thumbnailUrl ?? 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
+      thumbnailUrl: thumbnailUrl ??
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
       durationSeconds: durationSeconds,
       visibility: visibility,
       tags: tags,
@@ -212,14 +229,18 @@ class ShotsService {
     }
 
     try {
-      final response = await SupabaseService.client.from('shots').insert({
-        'user_id': currentUser.id,
-        'caption': caption,
-        'video_url': videoUrl,
-        'thumbnail_url': thumbnailUrl,
-        'duration_seconds': durationSeconds,
-        'visibility': visibility,
-      }).select('*, profiles:user_id(*)').single();
+      final response = await SupabaseService.client
+          .from('shots')
+          .insert({
+            'user_id': currentUser.id,
+            'caption': caption,
+            'video_url': videoUrl,
+            'thumbnail_url': thumbnailUrl,
+            'duration_seconds': durationSeconds,
+            'visibility': visibility,
+          })
+          .select('*, profiles:user_id(*)')
+          .single();
 
       return ShotModel.fromJson(response);
     } catch (e) {
@@ -230,7 +251,8 @@ class ShotsService {
   }
 
   /// Toggle Like on a shot
-  Future<bool> toggleLike(String shotId, {required bool currentLikedState}) async {
+  Future<bool> toggleLike(String shotId,
+      {required bool currentLikedState}) async {
     final currentUser = SupabaseService.currentUser;
     final targetState = !currentLikedState;
 
@@ -240,7 +262,9 @@ class ShotsService {
         final s = _localShots[index];
         _localShots[index] = s.copyWith(
           isLiked: targetState,
-          likeCount: targetState ? s.likeCount + 1 : (s.likeCount > 0 ? s.likeCount - 1 : 0),
+          likeCount: targetState
+              ? s.likeCount + 1
+              : (s.likeCount > 0 ? s.likeCount - 1 : 0),
         );
       }
       return targetState;
@@ -267,7 +291,8 @@ class ShotsService {
   }
 
   /// Toggle Bookmark / Save on a shot
-  Future<bool> toggleBookmark(String shotId, {required bool currentBookmarkState}) async {
+  Future<bool> toggleBookmark(String shotId,
+      {required bool currentBookmarkState}) async {
     final currentUser = SupabaseService.currentUser;
     final targetState = !currentBookmarkState;
 
@@ -313,7 +338,8 @@ class ShotsService {
             id: 'user-1',
             username: 'alexdev',
             fullName: 'Alex River',
-            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80',
+            avatarUrl:
+                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80',
           ),
           createdAt: DateTime.now().subtract(const Duration(minutes: 45)),
         ),
@@ -321,12 +347,14 @@ class ShotsService {
           id: 'mock-c2',
           shotId: shotId,
           userId: 'user-2',
-          body: 'What synth preset are you using here? That filter sweep is pure magic ✨',
+          body:
+              'What synth preset are you using here? That filter sweep is pure magic ✨',
           author: const ProfileModel(
             id: 'user-2',
             username: 'synthwave_queen',
             fullName: 'Elena Rostova',
-            avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
+            avatarUrl:
+                'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
           ),
           createdAt: DateTime.now().subtract(const Duration(hours: 2)),
         ),
@@ -341,7 +369,9 @@ class ShotsService {
           .order('created_at', ascending: true);
 
       final data = response as List<dynamic>;
-      return data.map((e) => CommentModel.fromJson(e as Map<String, dynamic>)).toList();
+      return data
+          .map((e) => CommentModel.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (e) {
       debugPrint('[ShotsService] fetchComments error: $e');
       return <CommentModel>[];
@@ -372,11 +402,15 @@ class ShotsService {
     }
 
     try {
-      final response = await SupabaseService.client.from('comments').insert({
-        'shot_id': shotId,
-        'user_id': currentUser.id,
-        'body': body,
-      }).select('*, profiles:user_id(*)').single();
+      final response = await SupabaseService.client
+          .from('comments')
+          .insert({
+            'shot_id': shotId,
+            'user_id': currentUser.id,
+            'body': body,
+          })
+          .select('*, profiles:user_id(*)')
+          .single();
 
       return CommentModel.fromJson(response);
     } catch (e) {
@@ -397,15 +431,17 @@ class ShotsService {
 
     final currentUser = SupabaseService.currentUser;
     final userId = currentUser?.id ?? 'guest';
-    final fileName = '$userId/${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
+    final fileName =
+        '$userId/${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
     try {
       await SupabaseService.client.storage.from(bucket).uploadBinary(
-        fileName,
-        bytes,
-      );
+            fileName,
+            bytes,
+          );
 
-      final publicUrl = SupabaseService.client.storage.from(bucket).getPublicUrl(fileName);
+      final publicUrl =
+          SupabaseService.client.storage.from(bucket).getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
       debugPrint('[ShotsService] uploadShotMedia error: $e');

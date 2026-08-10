@@ -128,7 +128,8 @@ void main() {
       expect(registry.isNotEmpty, isTrue);
     });
 
-    test('inPriorityOrder respects config order and skips unregistered ids', () {
+    test('inPriorityOrder respects config order and skips unregistered ids',
+        () {
       final registry = ProviderRegistry();
       final youtube = FakeProvider('youtube');
       registry.register(youtube);
@@ -167,7 +168,8 @@ void main() {
       expect(manager.activeProvider?.id, 'youtube');
     });
 
-    test('search routes to the healthy provider and returns real data', () async {
+    test('search routes to the healthy provider and returns real data',
+        () async {
       final registry = ProviderRegistry()..register(FakeProvider('youtube'));
       final manager = ProviderManager(registry: registry);
 
@@ -182,7 +184,8 @@ void main() {
       expect(result.isFailure, isTrue);
     });
 
-    test('failover: a failing provider falls through to the next one', () async {
+    test('failover: a failing provider falls through to the next one',
+        () async {
       final failing = FakeProvider('broken', failSearch: true);
       final working = FakeProvider('backup');
       final registry = ProviderRegistry()

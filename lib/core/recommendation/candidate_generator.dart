@@ -112,8 +112,8 @@ class CandidateGenerator {
     // artists, not just their own catalog).
     final topArtists = profile.topArtists.take(5).toList();
     for (final artist in topArtists) {
-      final template =
-          _genreDiscoveryTemplates[_random.nextInt(_genreDiscoveryTemplates.length)];
+      final template = _genreDiscoveryTemplates[
+          _random.nextInt(_genreDiscoveryTemplates.length)];
       candidates.add(CandidateQuery(
         query: template.replaceAll('{artist}', artist),
         source: CandidateSource.similarArtist,
@@ -165,7 +165,8 @@ class CandidateGenerator {
         .where((q) => q.isNotEmpty)
         .take(2);
     for (final q in recentSearches) {
-      candidates.add(CandidateQuery(query: q, source: CandidateSource.searchBehavior));
+      candidates.add(
+          CandidateQuery(query: q, source: CandidateSource.searchBehavior));
     }
 
     // 6. Trending content — always included, a real, live signal
@@ -207,9 +208,11 @@ class CandidateGenerator {
   List<CandidateQuery> _coldStartCandidates({required int count}) {
     final pool = <CandidateQuery>[
       const CandidateQuery(
-          query: 'trending music today official audio', source: CandidateSource.trending),
+          query: 'trending music today official audio',
+          source: CandidateSource.trending),
       const CandidateQuery(
-          query: 'global top hits official music', source: CandidateSource.trending),
+          query: 'global top hits official music',
+          source: CandidateSource.trending),
       const CandidateQuery(
           query: 'bollywood hit songs official audio',
           source: CandidateSource.exploration,
@@ -235,7 +238,8 @@ class CandidateGenerator {
           source: CandidateSource.exploration,
           seedGenre: 'EDM'),
       const CandidateQuery(
-          query: 'new music releases official audio', source: CandidateSource.newContent),
+          query: 'new music releases official audio',
+          source: CandidateSource.newContent),
     ];
     pool.shuffle(_random);
     return pool.take(count).toList();

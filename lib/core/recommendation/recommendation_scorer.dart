@@ -95,7 +95,8 @@ class RecommendationScorer {
     );
 
     final userAffinity = profile.artistAffinity[track.artist] ?? 0.0;
-    final artistAffinity = userAffinity; // same signal, kept as a separate term per Part K's formula shape
+    final artistAffinity =
+        userAffinity; // same signal, kept as a separate term per Part K's formula shape
     final recency = _recencyScore(track.artist);
     final similarity = _similarityScore(tags, profile);
     final completionProbability = _completionProbabilityScore(track.artist);
@@ -103,7 +104,8 @@ class RecommendationScorer {
     final contextMatch = _contextMatchScore(tags);
     final novelty = _noveltyScore(track.artist, profile);
     final skipPenalty = profile.artistSkipPenalty[track.artist] ?? 0.0;
-    const repetitionPenalty = 0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
+    const repetitionPenalty =
+        0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
 
     final total = config.weightUserAffinity * userAffinity +
         config.weightArtistAffinity * artistAffinity +
@@ -147,7 +149,8 @@ class RecommendationScorer {
         .toList();
     if (events.isEmpty) return 0.0;
     events.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    final hoursAgo = DateTime.now().difference(events.first.timestamp).inMinutes / 60.0;
+    final hoursAgo =
+        DateTime.now().difference(events.first.timestamp).inMinutes / 60.0;
     // Decays to ~0 after a week — a simple, honest recency curve.
     return (1.0 - (hoursAgo / (24 * 7)).clamp(0.0, 1.0));
   }
@@ -169,7 +172,8 @@ class RecommendationScorer {
         e.artist == artist &&
         (e.type == SignalType.completed || e.type == SignalType.skip));
     if (relevant.isEmpty) return 0.5;
-    final completions = relevant.where((e) => e.type == SignalType.completed).length;
+    final completions =
+        relevant.where((e) => e.type == SignalType.completed).length;
     return completions / relevant.length;
   }
 
@@ -193,9 +197,15 @@ class RecommendationScorer {
     final isNight = hour >= 22 || hour < 5;
     final isEvening = hour >= 17 && hour < 22;
 
-    if (isNight && (tags.contains('Chill') || tags.contains('Sad'))) return 1.0;
-    if (isEvening && (tags.contains('Romantic') || tags.contains('RnB'))) return 1.0;
-    if (!isNight && !isEvening && tags.contains('Workout')) return 1.0;
+    if (isNight && (tags.contains('Chill') || tags.contains('Sad'))) {
+      return 1.0;
+    }
+    if (isEvening && (tags.contains('Romantic') || tags.contains('RnB'))) {
+      return 1.0;
+    }
+    if (!isNight && !isEvening && tags.contains('Workout')) {
+      return 1.0;
+    }
     return 0.0;
   }
 

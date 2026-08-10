@@ -47,7 +47,8 @@ class ShotModel {
     ProfileModel? creator;
     if (json['profiles'] != null && json['profiles'] is Map<String, dynamic>) {
       creator = ProfileModel.fromJson(json['profiles'] as Map<String, dynamic>);
-    } else if (json['creator'] != null && json['creator'] is Map<String, dynamic>) {
+    } else if (json['creator'] != null &&
+        json['creator'] is Map<String, dynamic>) {
       creator = ProfileModel.fromJson(json['creator'] as Map<String, dynamic>);
     }
 
@@ -75,8 +76,12 @@ class ShotModel {
       audioTitle: json['audio_title'] as String?,
       audioArtist: json['audio_artist'] as String?,
       tags: parsedTags,
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
     );
   }
 

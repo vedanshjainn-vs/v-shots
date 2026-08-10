@@ -88,7 +88,8 @@ class UploadProgressCard extends StatelessWidget {
               ),
               if (onCancel != null)
                 IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: AppColors.textMuted),
+                  icon: const Icon(Icons.close,
+                      size: 18, color: AppColors.textMuted),
                   onPressed: onCancel,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -101,7 +102,8 @@ class UploadProgressCard extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress > 0 ? progress : null,
               backgroundColor: AppColors.surface2,
-              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
               minHeight: 6,
             ),
           ),

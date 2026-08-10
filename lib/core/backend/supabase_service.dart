@@ -84,6 +84,5 @@ class SupabaseService {
 
   /// Convenience: the current authenticated user, or null if signed
   /// out / Supabase unavailable.
-  static User? get currentUser =>
-      _available ? client.auth.currentUser : null;
+  static User? get currentUser => _available ? client.auth.currentUser : null;
 }

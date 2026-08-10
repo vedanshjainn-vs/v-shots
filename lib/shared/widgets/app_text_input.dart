@@ -96,14 +96,17 @@ class _AppTextInputState extends State<AppTextInput> {
             ),
             filled: true,
             fillColor: AppColors.surface2,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             prefixIcon: widget.prefixIcon != null
                 ? Icon(widget.prefixIcon, color: AppColors.textMuted, size: 20)
                 : null,
             suffixIcon: widget.obscureText
                 ? IconButton(
                     icon: Icon(
-                      _isObscured ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      _isObscured
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
                       color: AppColors.textMuted,
                       size: 20,
                     ),
@@ -120,7 +123,8 @@ class _AppTextInputState extends State<AppTextInput> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+              borderSide:
+                  const BorderSide(color: AppColors.primary, width: 1.5),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),

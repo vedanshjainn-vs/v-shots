@@ -94,9 +94,7 @@ class YouTubeMusicProvider extends MusicProvider {
     // offer), capped so a slow/dead network fails fast rather than
     // hanging ProviderManager's failover loop.
     try {
-      await _yt.search
-          .search('a')
-          .timeout(const Duration(seconds: 6));
+      await _yt.search.search('a').timeout(const Duration(seconds: 6));
       return const ProviderHealth(healthy: true);
     } catch (e) {
       return ProviderHealth(healthy: false, message: '$e');
