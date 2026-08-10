@@ -16,18 +16,19 @@ import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
-import '../../main.dart' show
-    audioPlayer,
-    audioHandler,
-    currentTrack,
-    currentQueue,
-    currentQueueIndex,
-    forYouFeedService,
-    musicRepository,
-    playbackSignalTracker,
-    recommendationEngine,
-    showMoreOptionsSheet,
-    showAddToPlaylistSheet;
+import '../../main.dart'
+    show
+        audioPlayer,
+        audioHandler,
+        currentTrack,
+        currentQueue,
+        currentQueueIndex,
+        forYouFeedService,
+        musicRepository,
+        playbackSignalTracker,
+        recommendationEngine,
+        showMoreOptionsSheet,
+        showAddToPlaylistSheet;
 
 class ForYouFeedScreen extends StatefulWidget {
   const ForYouFeedScreen({super.key});
@@ -166,7 +167,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_initialLoading) {
       return const Scaffold(
         backgroundColor: AppColors.background,
-        body: Center(child: CircularProgressIndicator(color: AppColors.primaryLight)),
+        body: Center(
+            child: CircularProgressIndicator(color: AppColors.primaryLight)),
       );
     }
 
@@ -331,7 +333,9 @@ class _ForYouCard extends StatelessWidget {
                         child: FadeTransition(opacity: animation, child: child),
                       ),
                       child: Icon(
-                        playing ? Icons.volume_up_rounded : Icons.pause_circle_outline,
+                        playing
+                            ? Icons.volume_up_rounded
+                            : Icons.pause_circle_outline,
                         key: ValueKey(playing),
                         color: Colors.white.withValues(alpha: 0.85),
                         size: 24,
@@ -348,7 +352,8 @@ class _ForYouCard extends StatelessWidget {
                       final position = snapshot.data ?? Duration.zero;
                       final duration = audioPlayer.duration ?? Duration.zero;
                       final progress = duration.inMilliseconds > 0
-                          ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+                          ? (position.inMilliseconds / duration.inMilliseconds)
+                              .clamp(0.0, 1.0)
                           : 0.0;
                       return ClipRRect(
                         borderRadius: BorderRadius.circular(4),
@@ -356,7 +361,8 @@ class _ForYouCard extends StatelessWidget {
                           value: progress,
                           minHeight: 4,
                           backgroundColor: Colors.white.withValues(alpha: 0.15),
-                          valueColor: const AlwaysStoppedAnimation(AppColors.primaryLight),
+                          valueColor: const AlwaysStoppedAnimation(
+                              AppColors.primaryLight),
                         ),
                       );
                     },
@@ -405,7 +411,8 @@ class _ForYouCard extends StatelessWidget {
             right: 16,
             bottom: 165,
             child: IconButton(
-              icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 28),
+              icon: const Icon(Icons.chat_bubble_outline_rounded,
+                  color: Colors.white, size: 28),
               onPressed: () {
                 HapticFeedback.lightImpact();
                 CommentSheet.show(context, shotId: trackId, commentCount: 18);
@@ -435,7 +442,8 @@ class _ForYouCard extends StatelessWidget {
             right: 16,
             bottom: 55,
             child: IconButton(
-              icon: const Icon(Icons.playlist_add, color: Colors.white, size: 30),
+              icon:
+                  const Icon(Icons.playlist_add, color: Colors.white, size: 30),
               onPressed: () {
                 HapticFeedback.lightImpact();
                 showAddToPlaylistSheet(context, track);

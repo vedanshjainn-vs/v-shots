@@ -168,7 +168,8 @@ class AuthService {
       if (e.code == GoogleSignInExceptionCode.canceled) {
         return const AuthResult.failure(null);
       }
-      debugPrint('[AuthService] GoogleSignInException: ${e.code} ${e.description}');
+      debugPrint(
+          '[AuthService] GoogleSignInException: ${e.code} ${e.description}');
       return AuthResult.failure(
         'Google Sign-In failed: ${e.description ?? e.code}',
       );

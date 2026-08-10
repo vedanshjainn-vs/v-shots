@@ -88,7 +88,8 @@ void main() {
     expect(result.length, input.length);
   });
 
-  test('all-same-artist input is allowed through rather than infinite-looping', () {
+  test('all-same-artist input is allowed through rather than infinite-looping',
+      () {
     final filter = DiversityFilter();
     final input = [
       _track('1', 'OnlyArtist', 10),

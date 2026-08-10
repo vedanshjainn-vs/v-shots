@@ -48,8 +48,7 @@ class LocalLibrary {
       ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> recentlyPlayed =
       ValueNotifier([]);
-  final ValueNotifier<List<Map<String, dynamic>>> playlists =
-      ValueNotifier([]);
+  final ValueNotifier<List<Map<String, dynamic>>> playlists = ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> downloadedTracks =
       ValueNotifier([]);
   final ValueNotifier<List<Map<String, dynamic>>> recentSearches =

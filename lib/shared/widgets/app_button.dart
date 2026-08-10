@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 
 enum AppButtonVariant { primary, secondary, outline, ghost, hotPink, danger }
+
 enum AppButtonSize { small, medium, large }
 
 class AppButton extends StatelessWidget {

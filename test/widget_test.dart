@@ -8,7 +8,8 @@ import 'package:v_shots/shared/widgets/bottom_tab_bar.dart';
 
 void main() {
   group('V Shots App Tests', () {
-    testWidgets('App launches and shows splash screen', (WidgetTester tester) async {
+    testWidgets('App launches and shows splash screen',
+        (WidgetTester tester) async {
       await tester.pumpWidget(const VShotsApp());
 
       // Splash screen shows the app name

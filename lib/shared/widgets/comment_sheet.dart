@@ -18,7 +18,8 @@ class CommentSheet extends StatefulWidget {
   final String shotId;
   final int commentCount;
 
-  static Future<void> show(BuildContext context, {required String shotId, int commentCount = 0}) {
+  static Future<void> show(BuildContext context,
+      {required String shotId, int commentCount = 0}) {
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -69,7 +70,8 @@ class _CommentSheetState extends State<CommentSheet> {
     if (text.isEmpty || _isPosting) return;
 
     setState(() => _isPosting = true);
-    final newComment = await ShotsService.instance.postComment(widget.shotId, text);
+    final newComment =
+        await ShotsService.instance.postComment(widget.shotId, text);
     if (mounted) {
       if (newComment != null) {
         setState(() {
@@ -137,7 +139,8 @@ class _CommentSheetState extends State<CommentSheet> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textMuted, size: 20),
+                  icon: const Icon(Icons.close,
+                      color: AppColors.textMuted, size: 20),
                   onPressed: () => Navigator.of(context).pop(),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -153,7 +156,8 @@ class _CommentSheetState extends State<CommentSheet> {
                 ? const Center(
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
                     ),
                   )
                 : _comments.isEmpty
@@ -161,19 +165,23 @@ class _CommentSheetState extends State<CommentSheet> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.chat_bubble_outline_rounded, size: 36, color: AppColors.textSubtle),
+                            Icon(Icons.chat_bubble_outline_rounded,
+                                size: 36, color: AppColors.textSubtle),
                             SizedBox(height: 10),
                             Text(
                               'No comments yet. Be the first!',
-                              style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                              style: TextStyle(
+                                  color: AppColors.textMuted, fontSize: 14),
                             ),
                           ],
                         ),
                       )
                     : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
                         itemCount: _comments.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 16),
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 16),
                         itemBuilder: (context, index) {
                           final c = _comments[index];
                           return Row(
@@ -262,11 +270,14 @@ class _CommentSheetState extends State<CommentSheet> {
                       ),
                       child: TextField(
                         controller: _controller,
-                        style: const TextStyle(color: AppColors.textMain, fontSize: 14),
+                        style: const TextStyle(
+                            color: AppColors.textMain, fontSize: 14),
                         decoration: const InputDecoration(
                           hintText: 'Add a comment...',
-                          hintStyle: TextStyle(color: AppColors.textSubtle, fontSize: 14),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          hintStyle: TextStyle(
+                              color: AppColors.textSubtle, fontSize: 14),
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
                           border: InputBorder.none,
                         ),
                         onSubmitted: (_) => _submitComment(),
@@ -290,10 +301,12 @@ class _CommentSheetState extends State<CommentSheet> {
                                 height: 16,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
                                 ),
                               )
-                            : const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
+                            : const Icon(Icons.arrow_upward_rounded,
+                                color: Colors.white, size: 20),
                       ),
                     ),
                   ),

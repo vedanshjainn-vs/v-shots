@@ -33,7 +33,8 @@ class ErrorState extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.error.withValues(alpha: 0.12),
-                border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                border:
+                    Border.all(color: AppColors.error.withValues(alpha: 0.3)),
               ),
               child: const Center(
                 child: Icon(

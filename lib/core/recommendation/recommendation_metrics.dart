@@ -31,7 +31,8 @@ enum MetricEvent {
 }
 
 abstract class RecommendationMetricsSink {
-  void record(MetricEvent event, {required String trackId, Map<String, dynamic>? extra});
+  void record(MetricEvent event,
+      {required String trackId, Map<String, dynamic>? extra});
 
   /// Called once per generated feed batch — lets a future sink compute
   /// artist/recommendation diversity for that batch without this
@@ -53,9 +54,11 @@ class NoopMetricsSink implements RecommendationMetricsSink {
   const NoopMetricsSink();
 
   @override
-  void record(MetricEvent event, {required String trackId, Map<String, dynamic>? extra}) {
+  void record(MetricEvent event,
+      {required String trackId, Map<String, dynamic>? extra}) {
     if (kDebugMode) {
-      debugPrint('[RecommendationMetrics] ${event.name} trackId=$trackId extra=$extra');
+      debugPrint(
+          '[RecommendationMetrics] ${event.name} trackId=$trackId extra=$extra');
     }
   }
 

@@ -27,7 +27,8 @@ void main() {
     durationSeconds: 200,
   );
 
-  test('a track from a high-affinity artist scores higher than a neutral one', () {
+  test('a track from a high-affinity artist scores higher than a neutral one',
+      () {
     final scorer = RecommendationScorer();
     const highAffinityProfile = TasteProfile(
       artistAffinity: {'Known Artist': 5.0},
@@ -92,24 +93,38 @@ void main() {
     expect(result.debugBreakdown!['completionProbability'], 0.5);
   });
 
-  test('completion probability reflects real completed-vs-skip history for that artist',
+  test(
+      'completion probability reflects real completed-vs-skip history for that artist',
       () async {
     final now = DateTime.now();
     await SignalStore.instance.record(SignalEvent(
-        type: SignalType.completed, timestamp: now, artist: 'Known Artist', trackId: 'a'));
+        type: SignalType.completed,
+        timestamp: now,
+        artist: 'Known Artist',
+        trackId: 'a'));
     await SignalStore.instance.record(SignalEvent(
-        type: SignalType.completed, timestamp: now, artist: 'Known Artist', trackId: 'b'));
+        type: SignalType.completed,
+        timestamp: now,
+        artist: 'Known Artist',
+        trackId: 'b'));
     await SignalStore.instance.record(SignalEvent(
-        type: SignalType.skip, timestamp: now, artist: 'Known Artist', trackId: 'c', value: 2));
+        type: SignalType.skip,
+        timestamp: now,
+        artist: 'Known Artist',
+        trackId: 'c',
+        value: 2));
 
     final scorer = RecommendationScorer();
     final result = scorer.score(track, TasteProfile.empty,
         sourceQuery: null, isTrendingOrNewSource: false, debug: true);
     // 2 completions out of 3 relevant events = 0.666...
-    expect(result.debugBreakdown!['completionProbability'], closeTo(2 / 3, 0.01));
+    expect(
+        result.debugBreakdown!['completionProbability'], closeTo(2 / 3, 0.01));
   });
 
-  test('genre similarity contributes when candidate tags overlap user top genres', () {
+  test(
+      'genre similarity contributes when candidate tags overlap user top genres',
+      () {
     final scorer = RecommendationScorer();
     const profile = TasteProfile(
       artistAffinity: {},
@@ -125,7 +140,9 @@ void main() {
       durationSeconds: 180,
     );
     final result = scorer.score(punjabiTrack, profile,
-        sourceQuery: 'punjabi hit songs', isTrendingOrNewSource: false, debug: true);
+        sourceQuery: 'punjabi hit songs',
+        isTrendingOrNewSource: false,
+        debug: true);
     expect(result.debugBreakdown!['similarity'], greaterThan(0));
   });
 }

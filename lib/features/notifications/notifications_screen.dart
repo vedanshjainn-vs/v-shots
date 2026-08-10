@@ -46,13 +46,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   List<NotificationModel> get _filteredNotifications {
     if (_selectedFilter == 'likes') {
-      return _notifications.where((n) => n.type == NotificationType.like).toList();
+      return _notifications
+          .where((n) => n.type == NotificationType.like)
+          .toList();
     }
     if (_selectedFilter == 'comments') {
-      return _notifications.where((n) => n.type == NotificationType.comment).toList();
+      return _notifications
+          .where((n) => n.type == NotificationType.comment)
+          .toList();
     }
     if (_selectedFilter == 'follows') {
-      return _notifications.where((n) => n.type == NotificationType.follow).toList();
+      return _notifications
+          .where((n) => n.type == NotificationType.follow)
+          .toList();
     }
     return _notifications;
   }
@@ -87,7 +93,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             onPressed: _markAllAsRead,
             child: const Text(
               'Mark all read',
-              style: TextStyle(color: AppColors.accent, fontSize: 13, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: AppColors.accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -120,13 +129,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ? const Center(
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
                     ),
                   )
                 : _filteredNotifications.isEmpty
                     ? const EmptyState(
                         title: 'All caught up!',
-                        subtitle: 'When creators like, comment, or follow your shots, they will show up here.',
+                        subtitle:
+                            'When creators like, comment, or follow your shots, they will show up here.',
                         icon: Icons.notifications_none_rounded,
                       )
                     : RefreshIndicator(
@@ -136,7 +147,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         child: ListView.separated(
                           padding: const EdgeInsets.all(16),
                           itemCount: _filteredNotifications.length,
-                          separatorBuilder: (context, index) => const SizedBox(height: 12),
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final n = _filteredNotifications[index];
                             return _buildNotificationCard(n);
@@ -215,7 +227,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         color: n.read ? AppColors.surface : AppColors.surface2,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: n.read ? AppColors.borderSubtle : AppColors.primary.withValues(alpha: 0.3),
+          color: n.read
+              ? AppColors.borderSubtle
+              : AppColors.primary.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -251,7 +265,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               children: [
                 RichText(
                   text: TextSpan(
-                    style: const TextStyle(color: AppColors.textMain, fontSize: 13, height: 1.3),
+                    style: const TextStyle(
+                        color: AppColors.textMain, fontSize: 13, height: 1.3),
                     children: [
                       TextSpan(
                         text: n.actor?.fullName ?? 'Creator',
@@ -268,7 +283,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 const SizedBox(height: 4),
                 Text(
                   _formatTimeAgo(n.createdAt),
-                  style: const TextStyle(color: AppColors.textSubtle, fontSize: 11),
+                  style: const TextStyle(
+                      color: AppColors.textSubtle, fontSize: 11),
                 ),
               ],
             ),

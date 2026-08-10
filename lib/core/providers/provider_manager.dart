@@ -96,8 +96,7 @@ class ProviderManager {
         .toList();
 
     if (candidates.isEmpty) {
-      return ProviderResult.failure(
-          'No provider supports ${capability.name}');
+      return ProviderResult.failure('No provider supports ${capability.name}');
     }
 
     String? lastError;

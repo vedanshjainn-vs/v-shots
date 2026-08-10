@@ -32,7 +32,9 @@ class LoadingSkeleton extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface,
           shape: shape,
-          borderRadius: shape == BoxShape.rectangle ? BorderRadius.circular(borderRadius) : null,
+          borderRadius: shape == BoxShape.rectangle
+              ? BorderRadius.circular(borderRadius)
+              : null,
         ),
       ),
     );

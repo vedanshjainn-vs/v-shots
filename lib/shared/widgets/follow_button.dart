@@ -58,7 +58,9 @@ class _FollowButtonState extends State<FollowButton> {
             shape: BoxShape.circle,
             gradient: _isFollowing ? null : AppColors.primaryGradient,
             color: _isFollowing ? AppColors.surface2 : null,
-            border: _isFollowing ? Border.all(color: AppColors.border, width: 1) : null,
+            border: _isFollowing
+                ? Border.all(color: AppColors.border, width: 1)
+                : null,
           ),
           child: Center(
             child: Icon(
@@ -83,7 +85,9 @@ class _FollowButtonState extends State<FollowButton> {
             borderRadius: BorderRadius.circular(20),
             gradient: _isFollowing ? null : AppColors.primaryGradient,
             color: _isFollowing ? AppColors.surface2 : null,
-            border: _isFollowing ? Border.all(color: AppColors.border, width: 1) : null,
+            border: _isFollowing
+                ? Border.all(color: AppColors.border, width: 1)
+                : null,
             boxShadow: !_isFollowing
                 ? [
                     BoxShadow(

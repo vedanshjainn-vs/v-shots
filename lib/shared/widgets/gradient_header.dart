@@ -45,7 +45,8 @@ class GradientHeader extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ShaderMask(
-                    shaderCallback: (bounds) => AppColors.primaryGradient.createShader(bounds),
+                    shaderCallback: (bounds) =>
+                        AppColors.primaryGradient.createShader(bounds),
                     child: Text(
                       title,
                       style: const TextStyle(

@@ -167,7 +167,8 @@ class ForYouFeedService {
         excludeIds: excludeIds,
       );
       if (!detailed.success) {
-        debugPrint('[ForYouFeedService] fetchNextBatch failed: ${detailed.error}');
+        debugPrint(
+            '[ForYouFeedService] fetchNextBatch failed: ${detailed.error}');
         return [];
       }
       return detailed.tracks;
@@ -232,8 +233,8 @@ class ForYouFeedService {
       if (roll < 0.45) {
         return '$artist songs official audio';
       } else {
-        final template =
-            _genreDiscoveryTemplates[_random.nextInt(_genreDiscoveryTemplates.length)];
+        final template = _genreDiscoveryTemplates[
+            _random.nextInt(_genreDiscoveryTemplates.length)];
         return template.replaceAll('{artist}', artist);
       }
     }

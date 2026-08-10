@@ -34,12 +34,8 @@
 
 import 'dart:math';
 
-import '../../main.dart' show
-    currentQueue,
-    currentQueueIndex,
-    isShuffleOn,
-    repeatMode,
-    shuffleOrder;
+import '../../main.dart'
+    show currentQueue, currentQueueIndex, isShuffleOn, repeatMode, shuffleOrder;
 import 'repeat_mode.dart';
 
 class QueueController {

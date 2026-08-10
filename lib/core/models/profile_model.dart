@@ -13,6 +13,7 @@ class ProfileModel {
     this.followingCount = 0,
     this.shotsCount = 0,
     this.isFollowing = false,
+    this.isCreator = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -26,6 +27,7 @@ class ProfileModel {
   final int followingCount;
   final int shotsCount;
   final bool isFollowing;
+  final bool isCreator;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -40,8 +42,13 @@ class ProfileModel {
       followingCount: (json['following_count'] as num?)?.toInt() ?? 0,
       shotsCount: (json['shots_count'] as num?)?.toInt() ?? 0,
       isFollowing: json['is_following'] as bool? ?? false,
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'].toString()) : null,
+      isCreator: json['is_creator'] as bool? ?? false,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
     );
   }
 
@@ -52,6 +59,7 @@ class ProfileModel {
       'full_name': fullName,
       'avatar_url': avatarUrl,
       'bio': bio,
+      'is_creator': isCreator,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
     };
@@ -67,6 +75,7 @@ class ProfileModel {
     int? followingCount,
     int? shotsCount,
     bool? isFollowing,
+    bool? isCreator,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -80,6 +89,7 @@ class ProfileModel {
       followingCount: followingCount ?? this.followingCount,
       shotsCount: shotsCount ?? this.shotsCount,
       isFollowing: isFollowing ?? this.isFollowing,
+      isCreator: isCreator ?? this.isCreator,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

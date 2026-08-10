@@ -49,19 +49,23 @@ class _ShotCardState extends State<ShotCard> {
   }
 
   Future<void> _handleLikeToggle(bool isLiked) async {
-    final result = await ShotsService.instance.toggleLike(_shot.id, currentLikedState: !isLiked);
+    final result = await ShotsService.instance
+        .toggleLike(_shot.id, currentLikedState: !isLiked);
     if (mounted) {
       setState(() {
         _shot = _shot.copyWith(
           isLiked: result,
-          likeCount: result ? _shot.likeCount + 1 : (_shot.likeCount > 0 ? _shot.likeCount - 1 : 0),
+          likeCount: result
+              ? _shot.likeCount + 1
+              : (_shot.likeCount > 0 ? _shot.likeCount - 1 : 0),
         );
       });
     }
   }
 
   Future<void> _handleBookmarkToggle() async {
-    final result = await ShotsService.instance.toggleBookmark(_shot.id, currentBookmarkState: _shot.isBookmarked);
+    final result = await ShotsService.instance
+        .toggleBookmark(_shot.id, currentBookmarkState: _shot.isBookmarked);
     if (mounted) {
       setState(() {
         _shot = _shot.copyWith(isBookmarked: result);
@@ -71,13 +75,15 @@ class _ShotCardState extends State<ShotCard> {
 
   Future<void> _handleFollowToggle(bool isFollowing) async {
     final creatorId = _shot.creator?.id ?? _shot.userId;
-    await ProfileService.instance.toggleFollow(creatorId, currentFollowingState: !isFollowing);
+    await ProfileService.instance
+        .toggleFollow(creatorId, currentFollowingState: !isFollowing);
   }
 
   void _handleShare() {
     SharePlus.instance.share(
       ShareParams(
-        text: 'Check out this shot on V Shots: ${_shot.caption}\nhttps://vshots.live/shot/${_shot.id}',
+        text:
+            'Check out this shot on V Shots: ${_shot.caption}\nhttps://vshots.live/shot/${_shot.id}',
         subject: 'V Shots — ${_shot.caption}',
       ),
     );
@@ -115,11 +121,13 @@ class _ShotCardState extends State<ShotCard> {
                   CachedNetworkImage(
                     imageUrl: _shot.thumbnailUrl,
                     fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(color: AppColors.surface2),
+                    placeholder: (context, url) =>
+                        Container(color: AppColors.surface2),
                     errorWidget: (context, url, error) => Container(
                       color: AppColors.surface2,
                       child: const Center(
-                        child: Icon(Icons.movie_filter_outlined, color: AppColors.textSubtle, size: 54),
+                        child: Icon(Icons.movie_filter_outlined,
+                            color: AppColors.textSubtle, size: 54),
                       ),
                     ),
                   )
@@ -160,7 +168,9 @@ class _ShotCardState extends State<ShotCard> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.black.withValues(alpha: 0.65),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            width: 1.5),
                       ),
                       child: const Icon(
                         Icons.play_arrow_rounded,
@@ -204,7 +214,9 @@ class _ShotCardState extends State<ShotCard> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.black.withValues(alpha: 0.4),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.15),
+                              width: 1),
                         ),
                         child: const Icon(
                           Icons.chat_bubble_rounded,
@@ -235,11 +247,16 @@ class _ShotCardState extends State<ShotCard> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.black.withValues(alpha: 0.4),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          width: 1),
                     ),
                     child: Icon(
-                      _shot.isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                      color: _shot.isBookmarked ? AppColors.warning : Colors.white,
+                      _shot.isBookmarked
+                          ? Icons.bookmark_rounded
+                          : Icons.bookmark_border_rounded,
+                      color:
+                          _shot.isBookmarked ? AppColors.warning : Colors.white,
                       size: 22,
                     ),
                   ),
@@ -255,7 +272,9 @@ class _ShotCardState extends State<ShotCard> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.black.withValues(alpha: 0.4),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          width: 1),
                     ),
                     child: const Icon(
                       Icons.share_rounded,
@@ -346,16 +365,20 @@ class _ShotCardState extends State<ShotCard> {
                 // Audio Pill Tag
                 if (_shot.audioTitle != null || _shot.audioArtist != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          width: 0.8),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.music_note_rounded, color: AppColors.accent, size: 14),
+                        const Icon(Icons.music_note_rounded,
+                            color: AppColors.accent, size: 14),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(

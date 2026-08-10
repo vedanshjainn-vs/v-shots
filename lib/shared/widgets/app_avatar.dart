@@ -28,7 +28,13 @@ class AppAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasImage = avatarUrl != null && avatarUrl!.trim().isNotEmpty;
     final initials = name.trim().isNotEmpty
-        ? name.trim().split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join().toUpperCase()
+        ? name
+            .trim()
+            .split(' ')
+            .map((e) => e.isNotEmpty ? e[0] : '')
+            .take(2)
+            .join()
+            .toUpperCase()
         : 'V';
 
     Widget innerAvatar;
@@ -46,7 +52,8 @@ class AppAvatar extends StatelessWidget {
               height: 14,
               child: CircularProgressIndicator(
                 strokeWidth: 1.5,
-                valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
+                valueColor:
+                    AlwaysStoppedAnimation<Color>(AppColors.primaryLight),
               ),
             ),
           ),

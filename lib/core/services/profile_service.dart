@@ -14,7 +14,8 @@ class ProfileService {
     id: 'self',
     username: 'vshots_creator',
     fullName: 'V Shots Creator',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
+    avatarUrl:
+        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
     bio: 'Creating short visual vibes & synth wave music on V Shots 🎬✨',
     followersCount: 1420,
     followingCount: 280,
@@ -38,8 +39,11 @@ class ProfileService {
       if (response == null) {
         return _currentLocalProfile.copyWith(
           id: user.id,
-          username: user.userMetadata?['username'] as String? ?? 'user_${user.id.substring(0, 6)}',
-          fullName: user.userMetadata?['full_name'] as String? ?? user.email ?? 'V Shots User',
+          username: user.userMetadata?['username'] as String? ??
+              'user_${user.id.substring(0, 6)}',
+          fullName: user.userMetadata?['full_name'] as String? ??
+              user.email ??
+              'V Shots User',
           avatarUrl: user.userMetadata?['avatar_url'] as String? ?? '',
         );
       }
@@ -150,7 +154,8 @@ class ProfileService {
   }
 
   /// Toggle Follow user
-  Future<bool> toggleFollow(String targetUserId, {required bool currentFollowingState}) async {
+  Future<bool> toggleFollow(String targetUserId,
+      {required bool currentFollowingState}) async {
     final currentUser = SupabaseService.currentUser;
     final targetState = !currentFollowingState;
 
@@ -184,15 +189,17 @@ class ProfileService {
     final user = SupabaseService.currentUser;
     if (user == null) return null;
 
-    final fileName = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
+    final fileName =
+        '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
 
     try {
       await SupabaseService.client.storage.from('avatars').uploadBinary(
-        fileName,
-        bytes,
-      );
+            fileName,
+            bytes,
+          );
 
-      final publicUrl = SupabaseService.client.storage.from('avatars').getPublicUrl(fileName);
+      final publicUrl =
+          SupabaseService.client.storage.from('avatars').getPublicUrl(fileName);
       await updateProfile(avatarUrl: publicUrl);
       return publicUrl;
     } catch (e) {

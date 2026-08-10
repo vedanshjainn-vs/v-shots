@@ -398,7 +398,10 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   @override
-  void dispose() { _c.dispose(); super.dispose(); }
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -411,7 +414,8 @@ class _SplashScreenState extends State<SplashScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 110, height: 110,
+                width: 110,
+                height: 110,
                 decoration: BoxDecoration(
                   gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(28),
@@ -478,15 +482,18 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
   }
 
-  void _handleCreateTap(BuildContext context) {
-    if (kCreatorUploadEnabled) {
-      Navigator.of(context).push(
+  Future<void> _handleCreateTap(BuildContext context) async {
+    final profile = await ProfileService.instance.getCurrentProfile();
+    if (!context.mounted) return;
+
+    if (profile.isCreator) {
+      await Navigator.of(context).push(
         AppPageRoute<void>(
           builder: (_) => const UploadShotScreen(),
         ),
       );
     } else {
-      showDialog<void>(
+      await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.surface,
@@ -496,7 +503,8 @@ class _MainShellState extends State<MainShell> {
           ),
           title: const Row(
             children: [
-              Icon(Icons.lock_outline_rounded, color: AppColors.accent, size: 22),
+              Icon(Icons.lock_outline_rounded,
+                  color: AppColors.accent, size: 22),
               SizedBox(width: 8),
               Text(
                 'Creator Upload',
@@ -534,23 +542,28 @@ class _MainShellState extends State<MainShell> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Maybe Later', style: TextStyle(color: AppColors.textMuted)),
+              child: const Text('Maybe Later',
+                  style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () {
                 Navigator.of(ctx).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Access requested! Our team will review your account.'),
+                    content: Text(
+                        'Access requested! Our team will review your account.'),
                     backgroundColor: AppColors.surface2,
                   ),
                 );
               },
-              child: const Text('Request Access', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              child: const Text('Request Access',
+                  style: TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -574,7 +587,9 @@ class _MainShellState extends State<MainShell> {
             ],
           ),
           Positioned(
-            left: 8, right: 8, bottom: 68,
+            left: 8,
+            right: 8,
+            bottom: 68,
             child: MiniPlayerTransition(
               visible: currentTrack != null && _index != 1,
               child: currentTrack != null
@@ -591,7 +606,7 @@ class _MainShellState extends State<MainShell> {
         currentIndex: _index,
         onTap: (i) {
           if (i == 2) {
-            _handleCreateTap(context);
+            unawaited(_handleCreateTap(context));
           } else {
             setState(() => _index = i);
           }
@@ -612,9 +627,10 @@ class _MainShellState extends State<MainShell> {
         transitionsBuilder: (_, animation, __, child) {
           return SlideTransition(
             position: Tween<Offset>(
-              begin: const Offset(0, 1), end: Offset.zero,
-            ).animate(CurvedAnimation(
-                parent: animation, curve: AppMotion.enter)),
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(
+                CurvedAnimation(parent: animation, curve: AppMotion.enter)),
             child: child,
           );
         },
@@ -671,12 +687,16 @@ class _MiniPlayer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text((track['title'] as String?) ?? '',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 14)),
                   Text((track['artist'] as String?) ?? '',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 12)),
                 ],
               ),
             ),
@@ -698,7 +718,8 @@ class _MiniPlayer extends StatelessWidget {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 28),
+              icon: const Icon(Icons.skip_next_rounded,
+                  color: Colors.white, size: 28),
               onPressed: () => _playAdjacentInQueue(context, 1),
             ),
             const SizedBox(width: 4),
@@ -738,8 +759,11 @@ Future<void> playTrack(
     // Step 1: Show loading
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
-        const SizedBox(width: 16, height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+        const SizedBox(
+            width: 16,
+            height: 16,
+            child:
+                CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
         const SizedBox(width: 12),
         Text('Loading ${track['title']}...'),
       ]),
@@ -896,8 +920,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _activeFetches = <String>{};
 
   late final List<_HomeSectionState> _sections = [
-    _HomeSectionState(query: 'trending music today official audio', title: 'Trending Now'),
-    _HomeSectionState(query: 'new music releases official audio', title: 'New Releases'),
+    _HomeSectionState(
+        query: 'trending music today official audio', title: 'Trending Now'),
+    _HomeSectionState(
+        query: 'new music releases official audio', title: 'New Releases'),
     if (forYouFeedService.hasTasteProfile) ...[
       _HomeSectionState(
         query: '__engine_made_for_you__',
@@ -910,13 +936,21 @@ class _HomeScreenState extends State<HomeScreen> {
         intent: FeedIntent.becauseYouListenedTo,
       ),
     ],
-    _HomeSectionState(query: 'top indian songs official audio', title: 'India Hits'),
-    _HomeSectionState(query: 'punjabi hit songs official audio', title: 'Punjabi Hits'),
-    _HomeSectionState(query: 'hindi hit songs official audio', title: 'Hindi Hits'),
-    _HomeSectionState(query: 'international pop hits official audio', title: 'International Pop'),
-    _HomeSectionState(query: 'hip hop rap songs official audio', title: 'Hip-Hop & Rap'),
-    _HomeSectionState(query: 'edm dance party songs official audio', title: 'EDM & Party'),
-    _HomeSectionState(query: 'chill lofi acoustic music', title: 'Chill & Lofi'),
+    _HomeSectionState(
+        query: 'top indian songs official audio', title: 'India Hits'),
+    _HomeSectionState(
+        query: 'punjabi hit songs official audio', title: 'Punjabi Hits'),
+    _HomeSectionState(
+        query: 'hindi hit songs official audio', title: 'Hindi Hits'),
+    _HomeSectionState(
+        query: 'international pop hits official audio',
+        title: 'International Pop'),
+    _HomeSectionState(
+        query: 'hip hop rap songs official audio', title: 'Hip-Hop & Rap'),
+    _HomeSectionState(
+        query: 'edm dance party songs official audio', title: 'EDM & Party'),
+    _HomeSectionState(
+        query: 'chill lofi acoustic music', title: 'Chill & Lofi'),
   ];
 
   @override
@@ -931,14 +965,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// the user can explicitly request fresh results on demand, on top
   /// of the existing automatic 5-minute stale-while-revalidate cache.
   Future<void> _refreshAll() async {
-    await Future.wait(_sections.map((s) => _loadSection(s, forceRefresh: true)));
+    await Future.wait(
+        _sections.map((s) => _loadSection(s, forceRefresh: true)));
   }
 
-  Future<void> _loadSection(_HomeSectionState section, {bool forceRefresh = false}) async {
+  Future<void> _loadSection(_HomeSectionState section,
+      {bool forceRefresh = false}) async {
     if (_activeFetches.contains(section.query)) return;
     _activeFetches.add(section.query);
 
-    final cached = forceRefresh ? null : SearchCache.instance.get(section.query);
+    final cached =
+        forceRefresh ? null : SearchCache.instance.get(section.query);
     if (cached != null) {
       if (mounted) {
         setState(() {
@@ -986,7 +1023,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// (`ProviderTrack.toTrackMap()`), so nothing downstream (playTrack,
   /// LocalLibrary, the tracks-row UI) needs to know a different
   /// pipeline produced these tracks.
-  Future<List<Map<String, dynamic>>> _generateEngineFeed(FeedIntent intent) async {
+  Future<List<Map<String, dynamic>>> _generateEngineFeed(
+      FeedIntent intent) async {
     final scored = await recommendationEngine.generateFeed(
       intent: intent,
       excludeIds: const {},
@@ -1010,7 +1048,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final hour = DateTime.now().hour;
-    final greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    final greeting = hour < 12
+        ? 'Good morning'
+        : hour < 17
+            ? 'Good afternoon'
+            : 'Good evening';
 
     return Scaffold(
       body: RefreshIndicator(
@@ -1018,41 +1060,51 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.surface,
         onRefresh: _refreshAll,
         child: CustomScrollView(
-        // A RefreshIndicator needs a scrollable that can always be
-        // dragged (even when content is short), hence
-        // AlwaysScrollableScrollPhysics — without this, pull-to-refresh
-        // silently does nothing on a Home screen short enough to not
-        // naturally overflow.
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            title: Row(children: [
-              Container(width: 36, height: 36,
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(10),
+          // A RefreshIndicator needs a scrollable that can always be
+          // dragged (even when content is short), hence
+          // AlwaysScrollableScrollPhysics — without this, pull-to-refresh
+          // silently does nothing on a Home screen short enough to not
+          // naturally overflow.
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              floating: true,
+              title: Row(children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: AppColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.bolt_rounded,
+                      size: 20, color: Colors.white),
                 ),
-                child: const Icon(Icons.bolt_rounded, size: 20, color: Colors.white),
-              ),
-              const SizedBox(width: 10),
-              const Text('V Shots', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3)),
-            ]),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(greeting, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                Text('What do you want to listen to?',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+                const SizedBox(width: 10),
+                const Text('V Shots',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800, letterSpacing: -0.3)),
               ]),
             ),
-          ),
-          for (final section in _sections) _buildSectionSliver(section),
-          const SliverToBoxAdapter(child: SizedBox(height: 160)),
-        ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(greeting,
+                          style: const TextStyle(
+                              fontSize: 26, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text('What do you want to listen to?',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6))),
+                    ]),
+              ),
+            ),
+            for (final section in _sections) _buildSectionSliver(section),
+            const SliverToBoxAdapter(child: SizedBox(height: 160)),
+          ],
         ),
       ),
     );
@@ -1069,12 +1121,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final Widget content = switch (section.status) {
       _SectionStatus.loading =>
         KeyedSubtree(key: const ValueKey('loading'), child: _shimmerContent()),
-      _SectionStatus.error =>
-        KeyedSubtree(key: const ValueKey('error'), child: _errorContent(section)),
+      _SectionStatus.error => KeyedSubtree(
+          key: const ValueKey('error'), child: _errorContent(section)),
       _SectionStatus.loaded when section.tracks.length < 3 =>
         const KeyedSubtree(key: ValueKey('empty'), child: SizedBox.shrink()),
-      _SectionStatus.loaded =>
-        KeyedSubtree(key: const ValueKey('loaded'), child: _tracksContent(section)),
+      _SectionStatus.loaded => KeyedSubtree(
+          key: const ValueKey('loaded'), child: _tracksContent(section)),
     };
 
     return SliverToBoxAdapter(
@@ -1089,42 +1141,59 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _shimmerContent() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-          child: Shimmer.fromColors(
-            baseColor: AppColors.surface,
-            highlightColor: AppColors.surfaceLight,
-            child: Container(width: 150, height: 22,
-                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
-          ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+        child: Shimmer.fromColors(
+          baseColor: AppColors.surface,
+          highlightColor: AppColors.surfaceLight,
+          child: Container(
+              width: 150,
+              height: 22,
+              decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(4))),
         ),
-        SizedBox(
-          height: 200,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: 5,
-            itemBuilder: (_, __) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Shimmer.fromColors(
-                baseColor: AppColors.surface,
-                highlightColor: AppColors.surfaceLight,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Container(width: 150, height: 150,
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14))),
-                  const SizedBox(height: 8),
-                  Container(width: 120, height: 14,
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
-                  const SizedBox(height: 4),
-                  Container(width: 80, height: 12,
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
-                ]),
-              ),
+      ),
+      SizedBox(
+        height: 200,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: 5,
+          itemBuilder: (_, __) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Shimmer.fromColors(
+              baseColor: AppColors.surface,
+              highlightColor: AppColors.surfaceLight,
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                        width: 150,
+                        height: 150,
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(14))),
+                    const SizedBox(height: 8),
+                    Container(
+                        width: 120,
+                        height: 14,
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(4))),
+                    const SizedBox(height: 4),
+                    Container(
+                        width: 80,
+                        height: 12,
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(4))),
+                  ]),
             ),
           ),
         ),
-      ]);
-
+      ),
+    ]);
   }
 
   /// Real error/retry UI — previously a failed section silently
@@ -1132,117 +1201,126 @@ class _HomeScreenState extends State<HomeScreen> {
   /// indication anything had gone wrong or how to recover.
   Widget _errorContent(_HomeSectionState section) {
     return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(children: [
-            Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.5)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('Couldn\'t load "${section.title}"',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
-            ),
-            TextButton(
-              onPressed: () => _loadSection(section),
-              child: const Text('Retry'),
-            ),
-          ]),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
         ),
-      );
+        child: Row(children: [
+          Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.5)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Couldn\'t load "${section.title}"',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+          ),
+          TextButton(
+            onPressed: () => _loadSection(section),
+            child: const Text('Retry'),
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _tracksContent(_HomeSectionState section) {
     final isPersonalized = section.title == 'Made For You';
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-          child: Row(children: [
-            if (isPersonalized) ...[
-              const Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
-              const SizedBox(width: 6),
-            ],
-            Text(section.title,
-                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-          ]),
-        ),
-        SizedBox(
-          height: 210,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: section.tracks.length,
-            itemBuilder: (context, i) {
-              final track = section.tracks[i];
-              // Phase 7 (Part D): each card gets a capped staggered
-              // fade+rise entrance on first appearance, and
-              // PressableScale for real tap feedback (previously a
-              // bare GestureDetector with zero visual press response).
-              return StaggeredEntrance(
-                index: i,
-                child: PressableScale(
-                  onTap: () => playTrack(context, track, section.tracks, i),
-                  child: RepaintBoundary(
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+        child: Row(children: [
+          if (isPersonalized) ...[
+            const Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
+            const SizedBox(width: 6),
+          ],
+          Text(section.title,
+              style:
+                  const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+        ]),
+      ),
+      SizedBox(
+        height: 210,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemCount: section.tracks.length,
+          itemBuilder: (context, i) {
+            final track = section.tracks[i];
+            // Phase 7 (Part D): each card gets a capped staggered
+            // fade+rise entrance on first appearance, and
+            // PressableScale for real tap feedback (previously a
+            // bare GestureDetector with zero visual press response).
+            return StaggeredEntrance(
+              index: i,
+              child: PressableScale(
+                onTap: () => playTrack(context, track, section.tracks, i),
+                child: RepaintBoundary(
                   child: Container(
-                  width: 150,
-                  margin: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    AspectRatio(
-                      aspectRatio: 1,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Stack(fit: StackFit.expand, children: [
-                          AppImage(
-                            (track['artwork'] as String?) ?? '',
-                            fit: BoxFit.cover,
-                            // Phase 7 fix (UI_PERFORMANCE_AUDIT.md
-                            // issue #3): explicit width/height so
-                            // AppImage's own memCacheWidth/Height
-                            // sizing actually activates — this card is
-                            // laid out at a fixed 150-wide slot, but
-                            // the raw YouTube thumbnail URL
-                            // (`highResUrl`, 480x360) was previously
-                            // decoded at full native resolution with
-                            // no cache-size hint at all.
-                            width: 150,
-                            height: 150,
-                            errorIconColor: AppColors.accent,
-                          ),
-                          Positioned(
-                            right: 8, bottom: 8,
-                            child: Container(
-                              width: 36, height: 36,
-                              decoration: const BoxDecoration(
-                                color: AppColors.accent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.play_arrow,
-                                  size: 20, color: Colors.white),
+                    width: 150,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 1,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: Stack(fit: StackFit.expand, children: [
+                                AppImage(
+                                  (track['artwork'] as String?) ?? '',
+                                  fit: BoxFit.cover,
+                                  // Phase 7 fix (UI_PERFORMANCE_AUDIT.md
+                                  // issue #3): explicit width/height so
+                                  // AppImage's own memCacheWidth/Height
+                                  // sizing actually activates — this card is
+                                  // laid out at a fixed 150-wide slot, but
+                                  // the raw YouTube thumbnail URL
+                                  // (`highResUrl`, 480x360) was previously
+                                  // decoded at full native resolution with
+                                  // no cache-size hint at all.
+                                  width: 150,
+                                  height: 150,
+                                  errorIconColor: AppColors.accent,
+                                ),
+                                Positioned(
+                                  right: 8,
+                                  bottom: 8,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.accent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.play_arrow,
+                                        size: 20, color: Colors.white),
+                                  ),
+                                ),
+                              ]),
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          Text((track['title'] as String?) ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
+                          Text((track['artist'] as String?) ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.5),
+                                  fontSize: 12)),
                         ]),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text((track['title'] as String?) ?? '',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                    Text((track['artist'] as String?) ?? '',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
-                  ]),
-                  ),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
-      ]);
+      ),
+    ]);
   }
 }
 
@@ -1314,7 +1392,7 @@ class _SearchScreenState extends State<SearchScreen> {
       });
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 400), () => _search(q));
+    _debounce = Timer(const Duration(milliseconds: 300), () => _search(q));
   }
 
   Future<void> _search(String q) async {
@@ -1440,10 +1518,12 @@ class _SearchScreenState extends State<SearchScreen> {
             decoration: InputDecoration(
               hintText: 'Search songs, artists...',
               hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
-              prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.4)),
+              prefixIcon: Icon(Icons.search,
+                  color: Colors.white.withValues(alpha: 0.4)),
               suffixIcon: _controller.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, color: AppColors.textMuted, size: 18),
+                      icon: const Icon(Icons.clear_rounded,
+                          color: AppColors.textMuted, size: 18),
                       onPressed: () {
                         _controller.clear();
                         _onQueryChanged('');
@@ -1468,120 +1548,134 @@ class _SearchScreenState extends State<SearchScreen> {
         switchInCurve: AppMotion.enter,
         switchOutCurve: AppMotion.exit,
         child: switch (_status) {
-        _SearchStatus.loading => KeyedSubtree(
-            key: const ValueKey('loading'),
-            child: _searchSkeleton(),
-          ),
-        _SearchStatus.error => KeyedSubtree(
-            key: const ValueKey('error'),
-            child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.wifi_off, size: 40, color: Colors.white.withValues(alpha: 0.4)),
-                const SizedBox(height: 12),
-                Text('Search failed — check your connection',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: () => _search(_lastQuery ?? _controller.text),
-                  child: const Text('Retry'),
-                ),
-              ],
+          _SearchStatus.loading => KeyedSubtree(
+              key: const ValueKey('loading'),
+              child: _searchSkeleton(),
             ),
-          ),
-          ),
-        _SearchStatus.loaded when _results.isEmpty => KeyedSubtree(
-            key: const ValueKey('empty'),
-            child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.search_off, size: 40, color: Colors.white.withValues(alpha: 0.3)),
-                const SizedBox(height: 12),
-                // Phase 7 fix: this is now a GENUINE "zero results"
-                // state (distinct from _SearchStatus.error above) —
-                // the request succeeded, it just found nothing.
-                Text('No results for "${_lastQuery ?? _controller.text}"',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
-              ],
-            ),
-          ),
-          ),
-        _SearchStatus.loaded => ListView.builder(
-            key: const ValueKey('loaded'),
-            padding: const EdgeInsets.all(16),
-            itemCount: _results.length,
-            itemBuilder: (ctx, i) {
-              final track = _results[i];
-              // Phase 7 (Part E): capped staggered entrance for result
-              // rows, matching Home's card entrance treatment so the
-              // two surfaces feel consistent.
-              return StaggeredEntrance(
-                index: i,
-                child: ListTile(
-                leading: AppImage(
-                  (track['artwork'] as String?) ?? '',
-                  width: 48,
-                  height: 48,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                title: Text((track['title'] as String?) ?? '',
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text((track['artist'] as String?) ?? '',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
-                onTap: () => playTrack(context, track, _results, i),
-                ),
-              );
-            },
-          ),
-        _SearchStatus.idle => ListView(
-                  key: const ValueKey('idle'),
-                  padding: const EdgeInsets.all(16),
+          _SearchStatus.error => KeyedSubtree(
+              key: const ValueKey('error'),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
-                      const Text('Recent Searches',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                      ...LocalLibrary.instance.recentSearches.value.take(5).map((s) => ListTile(
-                            leading: Icon(Icons.history, color: Colors.white.withValues(alpha: 0.5)),
+                    Icon(Icons.wifi_off,
+                        size: 40, color: Colors.white.withValues(alpha: 0.4)),
+                    const SizedBox(height: 12),
+                    Text('Search failed — check your connection',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6))),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () => _search(_lastQuery ?? _controller.text),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          _SearchStatus.loaded when _results.isEmpty => KeyedSubtree(
+              key: const ValueKey('empty'),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.search_off,
+                        size: 40, color: Colors.white.withValues(alpha: 0.3)),
+                    const SizedBox(height: 12),
+                    // Phase 7 fix: this is now a GENUINE "zero results"
+                    // state (distinct from _SearchStatus.error above) —
+                    // the request succeeded, it just found nothing.
+                    Text('No results for "${_lastQuery ?? _controller.text}"',
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5))),
+                  ],
+                ),
+              ),
+            ),
+          _SearchStatus.loaded => ListView.builder(
+              key: const ValueKey('loaded'),
+              padding: const EdgeInsets.all(16),
+              itemCount: _results.length,
+              itemBuilder: (ctx, i) {
+                final track = _results[i];
+                // Phase 7 (Part E): capped staggered entrance for result
+                // rows, matching Home's card entrance treatment so the
+                // two surfaces feel consistent.
+                return StaggeredEntrance(
+                  index: i,
+                  child: ListTile(
+                    leading: AppImage(
+                      (track['artwork'] as String?) ?? '',
+                      width: 48,
+                      height: 48,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    title: Text((track['title'] as String?) ?? '',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text((track['artist'] as String?) ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.6))),
+                    onTap: () => playTrack(context, track, _results, i),
+                  ),
+                );
+              },
+            ),
+          _SearchStatus.idle => ListView(
+              key: const ValueKey('idle'),
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
+                  const Text('Recent Searches',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  ...LocalLibrary.instance.recentSearches.value
+                      .take(5)
+                      .map((s) => ListTile(
+                            leading: Icon(Icons.history,
+                                color: Colors.white.withValues(alpha: 0.5)),
                             title: Text((s['query'] as String?) ?? ''),
                             onTap: () {
                               _controller.text = (s['query'] as String?) ?? '';
                               _search((s['query'] as String?) ?? '');
                             },
                           )),
-                      const SizedBox(height: 24),
-                    ],
-                    const Text('Browse Categories',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 10, runSpacing: 10,
-                      children: _categories
-                          .map((c) => PressableScale(
-                                onTap: () {
-                                  _controller.text = c.$1;
-                                  _search(c.$1);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: c.$3.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: c.$3.withValues(alpha: 0.3)),
-                                  ),
-                                  child: Text('${c.$2} ${c.$1}',
-                                      style: TextStyle(
-                                          color: c.$3, fontWeight: FontWeight.w500)),
-                                ),
-                              ))
-                          .toList(),
-                    ),
-                  ],
+                  const SizedBox(height: 24),
+                ],
+                const Text('Browse Categories',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: _categories
+                      .map((c) => PressableScale(
+                            onTap: () {
+                              _controller.text = c.$1;
+                              _search(c.$1);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: c.$3.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                    color: c.$3.withValues(alpha: 0.3)),
+                              ),
+                              child: Text('${c.$2} ${c.$1}',
+                                  style: TextStyle(
+                                      color: c.$3,
+                                      fontWeight: FontWeight.w500)),
+                            ),
+                          ))
+                      .toList(),
                 ),
-      },
+              ],
+            ),
+        },
       ),
     );
   }
@@ -1601,17 +1695,31 @@ class _SearchScreenState extends State<SearchScreen> {
           baseColor: AppColors.surface,
           highlightColor: AppColors.surfaceLight,
           child: Row(children: [
-            Container(width: 48, height: 48,
-                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8))),
+            Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(8))),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(width: double.infinity, height: 14,
-                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
-                const SizedBox(height: 6),
-                Container(width: 120, height: 12,
-                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(4))),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                        width: double.infinity,
+                        height: 14,
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(4))),
+                    const SizedBox(height: 6),
+                    Container(
+                        width: 120,
+                        height: 12,
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(4))),
+                  ]),
             ),
           ]),
         ),
@@ -1737,8 +1845,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   tracks: lib.downloadedTracks.value,
                   emptyMessage:
                       'No imported files yet — tap "Import" below to add audio files already on your device.',
-                  onRemove: (t) =>
-                      LocalLibrary.instance.removeDownloadedTrack(t['id'] as String),
+                  onRemove: (t) => LocalLibrary.instance
+                      .removeDownloadedTrack(t['id'] as String),
                 ),
               ),
             ),
@@ -1791,10 +1899,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
               lib.downloadedTracks.value.isEmpty)
             Center(
               child: Column(children: [
-                Icon(Icons.library_music, size: 48, color: Colors.white.withValues(alpha: 0.2)),
+                Icon(Icons.library_music,
+                    size: 48, color: Colors.white.withValues(alpha: 0.2)),
                 const SizedBox(height: 12),
                 Text('Your library is empty',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
+                    style:
+                        TextStyle(color: Colors.white.withValues(alpha: 0.4))),
               ]),
             ),
         ],
@@ -1807,7 +1917,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return ListTile(
       onTap: onTap,
       leading: Container(
-        width: 44, height: 44,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(10),
@@ -1816,7 +1927,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ),
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$count', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+        Text('$count',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
         const SizedBox(width: 8),
         Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3)),
       ]),
@@ -1883,9 +1995,11 @@ class TrackListScreen extends StatelessWidget {
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: Container(
-                              width: 48, height: 48,
+                              width: 48,
+                              height: 48,
                               color: AppColors.surface,
-                              child: const Icon(Icons.music_note, color: Color(0xFF4CAF50))))
+                              child: const Icon(Icons.music_note,
+                                  color: Color(0xFF4CAF50))))
                       : AppImage(
                           (track['artwork'] as String?) ?? '',
                           width: 48,
@@ -1895,8 +2009,10 @@ class TrackListScreen extends StatelessWidget {
                   title: Text((track['title'] as String?) ?? '',
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text((track['artist'] as String?) ?? '',
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6))),
                   trailing: onRemove != null
                       ? IconButton(
                           icon: const Icon(Icons.close, size: 20),
@@ -1921,7 +2037,8 @@ class TrackListScreen extends StatelessWidget {
     final path = track['localPath'] as String?;
     if (path == null || !LocalImportService.instance.fileStillExists(path)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This file is no longer available on your device.')),
+        const SnackBar(
+            content: Text('This file is no longer available on your device.')),
       );
       return;
     }
@@ -1986,23 +2103,25 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               itemCount: playlists.length,
               itemBuilder: (ctx, i) {
                 final playlist = playlists[i];
-                final tracks =
-                    List<Map<String, dynamic>>.from(playlist['tracks'] as List? ?? []);
+                final tracks = List<Map<String, dynamic>>.from(
+                    playlist['tracks'] as List? ?? []);
                 return ListTile(
                   leading: Container(
-                    width: 44, height: 44,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       color: const Color(0xFF2196F3).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.playlist_play, color: Color(0xFF2196F3)),
+                    child: const Icon(Icons.playlist_play,
+                        color: Color(0xFF2196F3)),
                   ),
                   title: Text(playlist['name'] as String? ?? ''),
                   subtitle: Text('${tracks.length} tracks'),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline, size: 20),
-                    onPressed: () =>
-                        LocalLibrary.instance.deletePlaylist(playlist['id'] as String),
+                    onPressed: () => LocalLibrary.instance
+                        .deletePlaylist(playlist['id'] as String),
                   ),
                   onTap: () => Navigator.push(
                     context,
@@ -2012,7 +2131,8 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                         tracks: tracks,
                         emptyMessage: 'This playlist is empty.',
                         onRemove: (t) => LocalLibrary.instance
-                            .removeTrackFromPlaylist(playlist['id'] as String, t['id'] as String),
+                            .removeTrackFromPlaylist(
+                                playlist['id'] as String, t['id'] as String),
                       ),
                     ),
                   ),
@@ -2034,7 +2154,8 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with SingleTickerProviderStateMixin {
   ProfileModel? _profile;
   bool _isLoading = true;
   late TabController _tabController;
@@ -2085,7 +2206,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ),
         title: const Text(
           'New Playlist',
-          style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.w700),
+          style:
+              TextStyle(color: AppColors.textMain, fontWeight: FontWeight.w700),
         ),
         content: TextField(
           controller: controller,
@@ -2099,12 +2221,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () {
               final name = controller.text.trim();
@@ -2113,7 +2237,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               }
               Navigator.pop(ctx);
             },
-            child: const Text('Create', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            child: const Text('Create',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -2124,12 +2250,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget build(BuildContext context) {
     final user = SupabaseService.currentUser;
     final isSignedIn = user != null;
-    final profile = _profile ?? ProfileModel(
-      id: 'self',
-      username: 'vshots_listener',
-      fullName: user?.email ?? 'Music Listener',
-      bio: 'Listening on V Shots',
-    );
+    final profile = _profile ??
+        ProfileModel(
+          id: 'self',
+          username: 'vshots_listener',
+          fullName: user?.email ?? 'Music Listener',
+          bio: 'Listening on V Shots',
+        );
 
     final likedSongs = LocalLibrary.instance.likedSongs.value;
     final playlists = LocalLibrary.instance.playlists.value;
@@ -2152,7 +2279,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings_outlined, color: AppColors.textMain),
+            icon:
+                const Icon(Icons.settings_outlined, color: AppColors.textMain),
             onPressed: () => Navigator.push(
               context,
               AppPageRoute<void>(builder: (_) => const SettingsScreen()),
@@ -2172,7 +2300,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 headerSliverBuilder: (context, innerBoxIsScrolled) => [
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
                       child: Column(
                         children: [
                           Center(
@@ -2195,7 +2324,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            isSignedIn ? (user.email ?? '@${profile.username}') : 'Guest Session',
+                            isSignedIn
+                                ? (user.email ?? '@${profile.username}')
+                                : 'Guest Session',
                             style: const TextStyle(
                               color: AppColors.textMuted,
                               fontSize: 13,
@@ -2205,20 +2336,40 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                           // Music Stats Row
                           Container(
-                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 14, horizontal: 16),
                             decoration: BoxDecoration(
                               color: AppColors.surface,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: AppColors.border, width: 1),
+                              border:
+                                  Border.all(color: AppColors.border, width: 1),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildMusicStat('Liked Songs', '${likedSongs.length}', Icons.favorite, AppColors.hotPink),
-                                Container(width: 1, height: 24, color: AppColors.border),
-                                _buildMusicStat('Playlists', '${playlists.length}', Icons.playlist_play, AppColors.accent),
-                                Container(width: 1, height: 24, color: AppColors.border),
-                                _buildMusicStat('Played', '${recentlyPlayed.length}', Icons.history, AppColors.warning),
+                                _buildMusicStat(
+                                    'Liked Songs',
+                                    '${likedSongs.length}',
+                                    Icons.favorite,
+                                    AppColors.hotPink),
+                                Container(
+                                    width: 1,
+                                    height: 24,
+                                    color: AppColors.border),
+                                _buildMusicStat(
+                                    'Playlists',
+                                    '${playlists.length}',
+                                    Icons.playlist_play,
+                                    AppColors.accent),
+                                Container(
+                                    width: 1,
+                                    height: 24,
+                                    color: AppColors.border),
+                                _buildMusicStat(
+                                    'Played',
+                                    '${recentlyPlayed.length}',
+                                    Icons.history,
+                                    AppColors.warning),
                               ],
                             ),
                           ),
@@ -2238,7 +2389,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                     AppPageRoute<void>(
                                       builder: (_) => EditProfileScreen(
                                         initialProfile: profile,
-                                        onProfileUpdated: (p) => setState(() => _profile = p),
+                                        onProfileUpdated: (p) =>
+                                            setState(() => _profile = p),
                                       ),
                                     ),
                                   ),
@@ -2248,17 +2400,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               Expanded(
                                 child: AppButton(
                                   text: isSignedIn ? 'Settings' : 'Sign In',
-                                  icon: isSignedIn ? Icons.settings_outlined : Icons.login_rounded,
-                                  variant: isSignedIn ? AppButtonVariant.secondary : AppButtonVariant.primary,
+                                  icon: isSignedIn
+                                      ? Icons.settings_outlined
+                                      : Icons.login_rounded,
+                                  variant: isSignedIn
+                                      ? AppButtonVariant.secondary
+                                      : AppButtonVariant.primary,
                                   size: AppButtonSize.medium,
                                   onPressed: () {
                                     if (isSignedIn) {
                                       Navigator.push(
                                         context,
-                                        AppPageRoute<void>(builder: (_) => const SettingsScreen()),
+                                        AppPageRoute<void>(
+                                            builder: (_) =>
+                                                const SettingsScreen()),
                                       ).then((_) => _loadProfileData());
                                     } else {
-                                      AuthModal.show(context).then((_) => _loadProfileData());
+                                      AuthModal.show(context)
+                                          .then((_) => _loadProfileData());
                                     }
                                   },
                                 ),
@@ -2280,9 +2439,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         labelColor: AppColors.accent,
                         unselectedLabelColor: AppColors.textMuted,
                         tabs: const [
-                          Tab(icon: Icon(Icons.favorite_rounded), text: 'Liked Songs'),
-                          Tab(icon: Icon(Icons.playlist_play_rounded), text: 'Playlists'),
-                          Tab(icon: Icon(Icons.history_rounded), text: 'Recently Played'),
+                          Tab(
+                              icon: Icon(Icons.favorite_rounded),
+                              text: 'Liked Songs'),
+                          Tab(
+                              icon: Icon(Icons.playlist_play_rounded),
+                              text: 'Playlists'),
+                          Tab(
+                              icon: Icon(Icons.history_rounded),
+                              text: 'Recently Played'),
                         ],
                       ),
                     ),
@@ -2301,7 +2466,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildMusicStat(String label, String value, IconData icon, Color iconColor) {
+  Widget _buildMusicStat(
+      String label, String value, IconData icon, Color iconColor) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -2336,7 +2502,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildLikedTracksTab(List<Map<String, dynamic>> liked) {
     if (liked.isEmpty) {
       return const Center(
-        child: Text('No liked songs yet — tap ♡ on any song to save it here.', style: TextStyle(color: AppColors.textMuted)),
+        child: Text('No liked songs yet — tap ♡ on any song to save it here.',
+            style: TextStyle(color: AppColors.textMuted)),
       );
     }
     return ListView.builder(
@@ -2347,11 +2514,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(t['artwork'] as String?, width: 48, height: 48, fit: BoxFit.cover),
+            child: AppImage(t['artwork'] as String?,
+                width: 48, height: 48, fit: BoxFit.cover),
           ),
-          title: Text(t['title'] as String? ?? '', style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
-          subtitle: Text(t['artist'] as String? ?? '', style: const TextStyle(color: AppColors.textMuted, fontSize: 12), maxLines: 1),
-          trailing: const Icon(Icons.favorite, color: AppColors.hotPink, size: 20),
+          title: Text(t['title'] as String? ?? '',
+              style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600),
+              maxLines: 1),
+          subtitle: Text(t['artist'] as String? ?? '',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              maxLines: 1),
+          trailing:
+              const Icon(Icons.favorite, color: AppColors.hotPink, size: 20),
           onTap: () => playTrack(context, t, liked, index),
         );
       },
@@ -2365,11 +2541,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         OutlinedButton.icon(
           onPressed: _createPlaylistDialog,
           icon: const Icon(Icons.add, color: AppColors.accent),
-          label: const Text('Create New Playlist', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
+          label: const Text('Create New Playlist',
+              style: TextStyle(
+                  color: AppColors.accent, fontWeight: FontWeight.w600)),
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: AppColors.accent),
             padding: const EdgeInsets.symmetric(vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
         ),
         const SizedBox(height: 12),
@@ -2377,12 +2556,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 40),
             child: Center(
-              child: Text('No playlists yet.', style: TextStyle(color: AppColors.textMuted)),
+              child: Text('No playlists yet.',
+                  style: TextStyle(color: AppColors.textMuted)),
             ),
           )
         else
           ...playlists.map((playlist) {
-            final tracks = List<Map<String, dynamic>>.from(playlist['tracks'] as List? ?? []);
+            final tracks = List<Map<String, dynamic>>.from(
+                playlist['tracks'] as List? ?? []);
             return ListTile(
               leading: Container(
                 width: 48,
@@ -2393,11 +2574,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ),
                 child: const Icon(Icons.playlist_play, color: AppColors.accent),
               ),
-              title: Text(playlist['name'] as String? ?? 'Playlist', style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w600)),
-              subtitle: Text('${tracks.length} songs', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              title: Text(playlist['name'] as String? ?? 'Playlist',
+                  style: const TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600)),
+              subtitle: Text('${tracks.length} songs',
+                  style: const TextStyle(
+                      color: AppColors.textMuted, fontSize: 12)),
               trailing: IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.textSubtle),
-                onPressed: () => LocalLibrary.instance.deletePlaylist(playlist['id'] as String),
+                icon: const Icon(Icons.delete_outline,
+                    size: 20, color: AppColors.textSubtle),
+                onPressed: () => LocalLibrary.instance
+                    .deletePlaylist(playlist['id'] as String),
               ),
               onTap: () => Navigator.push(
                 context,
@@ -2406,7 +2595,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     title: playlist['name'] as String? ?? 'Playlist',
                     tracks: tracks,
                     emptyMessage: 'This playlist is empty.',
-                    onRemove: (t) => LocalLibrary.instance.removeTrackFromPlaylist(playlist['id'] as String, t['id'] as String),
+                    onRemove: (t) => LocalLibrary.instance
+                        .removeTrackFromPlaylist(
+                            playlist['id'] as String, t['id'] as String),
                   ),
                 ),
               ),
@@ -2419,7 +2610,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildRecentlyPlayedTab(List<Map<String, dynamic>> recent) {
     if (recent.isEmpty) {
       return const Center(
-        child: Text('Nothing played yet — go explore and play music!', style: TextStyle(color: AppColors.textMuted)),
+        child: Text('Nothing played yet — go explore and play music!',
+            style: TextStyle(color: AppColors.textMuted)),
       );
     }
     return ListView.builder(
@@ -2430,11 +2622,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(t['artwork'] as String?, width: 48, height: 48, fit: BoxFit.cover),
+            child: AppImage(t['artwork'] as String?,
+                width: 48, height: 48, fit: BoxFit.cover),
           ),
-          title: Text(t['title'] as String? ?? '', style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
-          subtitle: Text(t['artist'] as String? ?? '', style: const TextStyle(color: AppColors.textMuted, fontSize: 12), maxLines: 1),
-          trailing: const Icon(Icons.play_arrow_rounded, color: AppColors.accent, size: 22),
+          title: Text(t['title'] as String? ?? '',
+              style: const TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600),
+              maxLines: 1),
+          subtitle: Text(t['artist'] as String? ?? '',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              maxLines: 1),
+          trailing: const Icon(Icons.play_arrow_rounded,
+              color: AppColors.accent, size: 22),
           onTap: () => playTrack(context, t, recent, index),
         );
       },
@@ -2452,7 +2653,8 @@ class _ProfileTabBarDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: AppColors.background,
       child: _tabBar,
@@ -2511,7 +2713,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     _currentTrack = widget.track;
     _currentIndex = widget.currentIndex;
-    _isLiked = LocalLibrary.instance.isLiked(_currentTrack['id'] as String? ?? '');
+    _isLiked =
+        LocalLibrary.instance.isLiked(_currentTrack['id'] as String? ?? '');
 
     // Listen to REAL player state
     _playerStateSub = audioPlayer.playerStateStream.listen((s) {
@@ -2540,7 +2743,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
               AppColors.accent.withValues(alpha: 0.12),
               AppColors.background,
@@ -2561,15 +2765,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                   Column(children: [
                     Text('PLAYING FROM',
-                        style: TextStyle(fontSize: 10,
+                        style: TextStyle(
+                            fontSize: 10,
                             color: Colors.white.withValues(alpha: 0.5))),
                     Text('Search',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                             color: Colors.white.withValues(alpha: 0.7))),
                   ]),
                   IconButton(
                     icon: const Icon(Icons.more_vert),
-                    onPressed: () => showMoreOptionsSheet(context, _currentTrack),
+                    onPressed: () =>
+                        showMoreOptionsSheet(context, _currentTrack),
                   ),
                 ],
               ),
@@ -2587,7 +2795,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   boxShadow: [
                     BoxShadow(
                         color: AppColors.accent.withValues(alpha: 0.25),
-                        blurRadius: 40, offset: const Offset(0, 20)),
+                        blurRadius: 40,
+                        offset: const Offset(0, 20)),
                   ],
                 ),
                 // Phase 7 (Part F): matches the mini-player's Hero tag
@@ -2624,17 +2833,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Row(children: [
-                Expanded(child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                       Text((_currentTrack['title'] as String?) ?? '',
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                          style: const TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 4),
                       Text((_currentTrack['artist'] as String?) ?? '',
-                          style: TextStyle(fontSize: 16,
+                          style: TextStyle(
+                              fontSize: 16,
                               color: Colors.white.withValues(alpha: 0.7)),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                     ])),
                 IconButton(
                   // Phase 7 (Part F): LikePop plays a real one-shot
@@ -2647,7 +2861,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     child: Icon(
                       _isLiked ? Icons.favorite : Icons.favorite_border,
                       size: 28,
-                      color: _isLiked ? AppColors.accent : Colors.white.withValues(alpha: 0.7),
+                      color: _isLiked
+                          ? AppColors.accent
+                          : Colors.white.withValues(alpha: 0.7),
                     ),
                   ),
                   onPressed: () async {
@@ -2663,7 +2879,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     }
                     if (mounted) {
                       setState(() {
-                        _isLiked = LocalLibrary.instance.isLiked(_currentTrack['id'] as String);
+                        _isLiked = LocalLibrary.instance
+                            .isLiked(_currentTrack['id'] as String);
                       });
                     }
                   },
@@ -2671,7 +2888,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 IconButton(
                   icon: const Icon(Icons.playlist_add, size: 26),
                   tooltip: 'Add to playlist',
-                  onPressed: () => showAddToPlaylistSheet(context, _currentTrack),
+                  onPressed: () =>
+                      showAddToPlaylistSheet(context, _currentTrack),
                 ),
                 IconButton(
                   icon: const Icon(Icons.lyrics_outlined, size: 24),
@@ -2697,15 +2915,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
                     thumbColor: AppColors.accent,
                     trackHeight: 3,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
                   ),
                   child: Slider(
                     value: _duration.inMilliseconds > 0
-                        ? (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
+                        ? (_position.inMilliseconds / _duration.inMilliseconds)
+                            .clamp(0.0, 1.0)
                         : 0.0,
-                    onChanged: (v) => audioPlayer.seek(
-                        Duration(milliseconds: (v * _duration.inMilliseconds).round())),
+                    onChanged: (v) => audioPlayer.seek(Duration(
+                        milliseconds: (v * _duration.inMilliseconds).round())),
                   ),
                 ),
                 Padding(
@@ -2714,9 +2935,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(_fmt(_position),
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12)),
                       Text(_fmt(_duration),
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 12)),
                     ],
                   ),
                 ),
@@ -2734,7 +2959,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 // currently-playing track first, so turning shuffle on
                 // doesn't jump away from what's playing right now.
                 IconButton(
-                    icon: Icon(Icons.shuffle, size: 24,
+                    icon: Icon(Icons.shuffle,
+                        size: 24,
                         color: isShuffleOn
                             ? AppColors.accent
                             : Colors.white.withValues(alpha: 0.6)),
@@ -2769,7 +2995,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     }
                   },
                   child: Container(
-                    width: 72, height: 72,
+                    width: 72,
+                    height: 72,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                           colors: [AppColors.accent, AppColors.accentLight]),
@@ -2777,7 +3004,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       boxShadow: [
                         BoxShadow(
                             color: AppColors.accent.withValues(alpha: 0.4),
-                            blurRadius: 20, offset: const Offset(0, 8)),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8)),
                       ],
                     ),
                     child: Center(
@@ -2896,7 +3124,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _log('[PLAYER] Error: $e');
     }
   }
-
 }
 
 // ═══════════════════════════════════════════════
@@ -2920,14 +3147,16 @@ void showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
                 const Padding(
                   padding: EdgeInsets.all(16),
                   child: Text('Add to playlist',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 ),
                 if (playlists.isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
                       'No playlists yet. Create one from the Library tab first.',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                      style:
+                          TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                     ),
                   )
                 else
@@ -2978,7 +3207,8 @@ void showMoreOptionsSheet(
           children: [
             const SizedBox(height: 8),
             Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
@@ -3001,7 +3231,8 @@ void showMoreOptionsSheet(
                 final title = (track['title'] as String?) ?? 'this track';
                 final artist = (track['artist'] as String?) ?? '';
                 SharePlus.instance.share(
-                  ShareParams(text: 'Listening to "$title" by $artist on V Shots 🎵'),
+                  ShareParams(
+                      text: 'Listening to "$title" by $artist on V Shots 🎵'),
                 );
               },
             ),
@@ -3014,7 +3245,9 @@ void showMoreOptionsSheet(
                   Navigator.pop(ctx);
                   onNotInterested();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Got it — adjusting your recommendations')),
+                    const SnackBar(
+                        content:
+                            Text('Got it — adjusting your recommendations')),
                   );
                 },
               ),
@@ -3045,7 +3278,8 @@ void showSleepTimerSheet(BuildContext context) {
                 const Padding(
                   padding: EdgeInsets.all(16),
                   child: Text('Sleep timer',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 ),
                 if (remaining != null)
                   Padding(
@@ -3053,7 +3287,9 @@ void showSleepTimerSheet(BuildContext context) {
                     child: Column(children: [
                       Text(
                         '${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')} remaining',
-                        style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w600),
                       ),
                       TextButton(
                         onPressed: () {
@@ -3071,7 +3307,9 @@ void showSleepTimerSheet(BuildContext context) {
                         SleepTimer.instance.start(Duration(minutes: minutes));
                         Navigator.pop(ctx);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Playback will pause in $minutes minutes')),
+                          SnackBar(
+                              content: Text(
+                                  'Playback will pause in $minutes minutes')),
                         );
                       },
                     )),
@@ -3122,7 +3360,12 @@ class _LyricsScreenState extends State<LyricsScreen> {
       artistName: (widget.track['artist'] as String?) ?? '',
       durationSeconds: widget.track['duration'] as int?,
     );
-    if (mounted) setState(() { _result = result; _loading = false; });
+    if (mounted) {
+      setState(() {
+        _result = result;
+        _loading = false;
+      });
+    }
   }
 
   void _onPosition(Duration position) {
@@ -3146,7 +3389,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Lyrics')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.accent))
           : _buildContent(),
     );
   }
@@ -3160,7 +3404,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lyrics_outlined, size: 56, color: Colors.white.withValues(alpha: 0.2)),
+              Icon(Icons.lyrics_outlined,
+                  size: 56, color: Colors.white.withValues(alpha: 0.2)),
               const SizedBox(height: 16),
               Text(
                 'Lyrics not available for this track',
@@ -3194,7 +3439,9 @@ class _LyricsScreenState extends State<LyricsScreen> {
               style: TextStyle(
                 fontSize: isActive ? 20 : 16,
                 fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-                color: isActive ? AppColors.accent : Colors.white.withValues(alpha: 0.5),
+                color: isActive
+                    ? AppColors.accent
+                    : Colors.white.withValues(alpha: 0.5),
               ),
             ),
           );
