@@ -208,7 +208,8 @@ class ShotsService {
       userId: userId,
       caption: caption,
       videoUrl: videoUrl,
-      thumbnailUrl: thumbnailUrl ??
+      thumbnailUrl:
+          thumbnailUrl ??
           'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
       durationSeconds: durationSeconds,
       visibility: visibility,
@@ -438,8 +439,9 @@ class ShotsService {
           .from(bucket)
           .uploadBinary(fileName, bytes);
 
-      final publicUrl =
-          SupabaseService.client.storage.from(bucket).getPublicUrl(fileName);
+      final publicUrl = SupabaseService.client.storage
+          .from(bucket)
+          .getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
       debugPrint('[ShotsService] uploadShotMedia error: $e');

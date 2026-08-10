@@ -76,7 +76,7 @@ class MusicRepository {
   /// conflating it with "no results for this query" (Phase 7
   /// requirement: "genuine empty-results state").
   Future<({bool success, List<Map<String, dynamic>> tracks, String? error})>
-      searchDetailed(
+  searchDetailed(
     String query, {
     int limit = 20,
     int maxDurationMinutes = 15,

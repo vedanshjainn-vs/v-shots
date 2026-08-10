@@ -550,8 +550,8 @@ class _MainShellState extends State<MainShell> {
           return SlideTransition(
             position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
                 .animate(
-              CurvedAnimation(parent: animation, curve: AppMotion.enter),
-            ),
+                  CurvedAnimation(parent: animation, curve: AppMotion.enter),
+                ),
             child: child,
           );
         },
@@ -949,8 +949,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_activeFetches.contains(section.query)) return;
     _activeFetches.add(section.query);
 
-    final cached =
-        forceRefresh ? null : SearchCache.instance.get(section.query);
+    final cached = forceRefresh
+        ? null
+        : SearchCache.instance.get(section.query);
     if (cached != null) {
       if (mounted) {
         setState(() {
@@ -1026,8 +1027,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final greeting = hour < 12
         ? 'Good morning'
         : hour < 17
-            ? 'Good afternoon'
-            : 'Good evening';
+        ? 'Good afternoon'
+        : 'Good evening';
 
     return Scaffold(
       body: RefreshIndicator(
@@ -1219,19 +1220,19 @@ class _HomeScreenState extends State<HomeScreen> {
     // simply omitted, same behavior as before.
     final Widget content = switch (section.status) {
       _SectionStatus.loading => KeyedSubtree(
-          key: const ValueKey('loading'),
-          child: _shimmerContent(),
-        ),
+        key: const ValueKey('loading'),
+        child: _shimmerContent(),
+      ),
       _SectionStatus.error => KeyedSubtree(
-          key: const ValueKey('error'),
-          child: _errorContent(section),
-        ),
+        key: const ValueKey('error'),
+        child: _errorContent(section),
+      ),
       _SectionStatus.loaded when section.tracks.length < 3 =>
         const KeyedSubtree(key: ValueKey('empty'), child: SizedBox.shrink()),
       _SectionStatus.loaded => KeyedSubtree(
-          key: const ValueKey('loaded'),
-          child: _tracksContent(section),
-        ),
+        key: const ValueKey('loaded'),
+        child: _tracksContent(section),
+      ),
     };
 
     return SliverToBoxAdapter(
@@ -1702,162 +1703,164 @@ class _SearchScreenState extends State<SearchScreen> {
         switchOutCurve: AppMotion.exit,
         child: switch (_status) {
           _SearchStatus.loading => KeyedSubtree(
-              key: const ValueKey('loading'),
-              child: _searchSkeleton(),
-            ),
+            key: const ValueKey('loading'),
+            child: _searchSkeleton(),
+          ),
           _SearchStatus.error => KeyedSubtree(
-              key: const ValueKey('error'),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.wifi_off,
-                      size: 40,
-                      color: Colors.white.withValues(alpha: 0.4),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Search failed — check your connection',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => _search(_lastQuery ?? _controller.text),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          _SearchStatus.loaded when _results.isEmpty => KeyedSubtree(
-              key: const ValueKey('empty'),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.search_off,
-                      size: 40,
-                      color: Colors.white.withValues(alpha: 0.3),
-                    ),
-                    const SizedBox(height: 12),
-                    // Phase 7 fix: this is now a GENUINE "zero results"
-                    // state (distinct from _SearchStatus.error above) —
-                    // the request succeeded, it just found nothing.
-                    Text(
-                      'No results for "${_lastQuery ?? _controller.text}"',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          _SearchStatus.loaded => ListView.builder(
-              key: const ValueKey('loaded'),
-              padding: const EdgeInsets.all(16),
-              itemCount: _results.length,
-              itemBuilder: (ctx, i) {
-                final track = _results[i];
-                // Phase 7 (Part E): capped staggered entrance for result
-                // rows, matching Home's card entrance treatment so the
-                // two surfaces feel consistent.
-                return StaggeredEntrance(
-                  index: i,
-                  child: ListTile(
-                    leading: AppImage(
-                      (track['artwork'] as String?) ?? '',
-                      width: 48,
-                      height: 48,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    title: Text(
-                      (track['title'] as String?) ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text(
-                      (track['artist'] as String?) ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    onTap: () => playTrack(context, track, _results, i),
+            key: const ValueKey('error'),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.wifi_off,
+                    size: 40,
+                    color: Colors.white.withValues(alpha: 0.4),
                   ),
-                );
-              },
-            ),
-          _SearchStatus.idle => ListView(
-              key: const ValueKey('idle'),
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
-                  const Text(
-                    'Recent Searches',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Search failed — check your connection',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
                   ),
-                  ...LocalLibrary.instance.recentSearches.value.take(5).map(
-                        (s) => ListTile(
-                          leading: Icon(
-                            Icons.history,
-                            color: Colors.white.withValues(alpha: 0.5),
-                          ),
-                          title: Text((s['query'] as String?) ?? ''),
-                          onTap: () {
-                            _controller.text = (s['query'] as String?) ?? '';
-                            _search((s['query'] as String?) ?? '');
-                          },
-                        ),
-                      ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => _search(_lastQuery ?? _controller.text),
+                    child: const Text('Retry'),
+                  ),
                 ],
-                const Text(
-                  'Browse Categories',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          _SearchStatus.loaded when _results.isEmpty => KeyedSubtree(
+            key: const ValueKey('empty'),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.search_off,
+                    size: 40,
+                    color: Colors.white.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(height: 12),
+                  // Phase 7 fix: this is now a GENUINE "zero results"
+                  // state (distinct from _SearchStatus.error above) —
+                  // the request succeeded, it just found nothing.
+                  Text(
+                    'No results for "${_lastQuery ?? _controller.text}"',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          _SearchStatus.loaded => ListView.builder(
+            key: const ValueKey('loaded'),
+            padding: const EdgeInsets.all(16),
+            itemCount: _results.length,
+            itemBuilder: (ctx, i) {
+              final track = _results[i];
+              // Phase 7 (Part E): capped staggered entrance for result
+              // rows, matching Home's card entrance treatment so the
+              // two surfaces feel consistent.
+              return StaggeredEntrance(
+                index: i,
+                child: ListTile(
+                  leading: AppImage(
+                    (track['artwork'] as String?) ?? '',
+                    width: 48,
+                    height: 48,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  title: Text(
+                    (track['title'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    (track['artist'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  onTap: () => playTrack(context, track, _results, i),
                 ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: _categories
-                      .map(
-                        (c) => PressableScale(
-                          onTap: () {
-                            _controller.text = c.$1;
-                            _search(c.$1);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
+              );
+            },
+          ),
+          _SearchStatus.idle => ListView(
+            key: const ValueKey('idle'),
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (LocalLibrary.instance.recentSearches.value.isNotEmpty) ...[
+                const Text(
+                  'Recent Searches',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                ...LocalLibrary.instance.recentSearches.value
+                    .take(5)
+                    .map(
+                      (s) => ListTile(
+                        leading: Icon(
+                          Icons.history,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                        title: Text((s['query'] as String?) ?? ''),
+                        onTap: () {
+                          _controller.text = (s['query'] as String?) ?? '';
+                          _search((s['query'] as String?) ?? '');
+                        },
+                      ),
+                    ),
+                const SizedBox(height: 24),
+              ],
+              const Text(
+                'Browse Categories',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _categories
+                    .map(
+                      (c) => PressableScale(
+                        onTap: () {
+                          _controller.text = c.$1;
+                          _search(c.$1);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.$3.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: c.$3.withValues(alpha: 0.3),
                             ),
-                            decoration: BoxDecoration(
-                              color: c.$3.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: c.$3.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Text(
-                              '${c.$2} ${c.$1}',
-                              style: TextStyle(
-                                color: c.$3,
-                                fontWeight: FontWeight.w500,
-                              ),
+                          ),
+                          child: Text(
+                            '${c.$2} ${c.$1}',
+                            style: TextStyle(
+                              color: c.$3,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
-                      )
-                      .toList(),
-                ),
-              ],
-            ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          ),
         },
       ),
     );
@@ -2363,9 +2366,9 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                         emptyMessage: 'This playlist is empty.',
                         onRemove: (t) =>
                             LocalLibrary.instance.removeTrackFromPlaylist(
-                          playlist['id'] as String,
-                          t['id'] as String,
-                        ),
+                              playlist['id'] as String,
+                              t['id'] as String,
+                            ),
                       ),
                     ),
                   ),
@@ -2492,7 +2495,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget build(BuildContext context) {
     final user = SupabaseService.currentUser;
     final isSignedIn = user != null;
-    final profile = _profile ??
+    final profile =
+        _profile ??
         ProfileModel(
           id: 'self',
           username: 'vshots_listener',
@@ -2776,6 +2780,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       padding: const EdgeInsets.all(14),
       itemCount: liked.length,
       itemBuilder: (context, index) {
+        if (index < 0 || index >= liked.length) return const SizedBox.shrink();
         final t = liked[index];
         return ListTile(
           leading: ClipRRect(
@@ -2894,9 +2899,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                     emptyMessage: 'This playlist is empty.',
                     onRemove: (t) =>
                         LocalLibrary.instance.removeTrackFromPlaylist(
-                      playlist['id'] as String,
-                      t['id'] as String,
-                    ),
+                          playlist['id'] as String,
+                          t['id'] as String,
+                        ),
                   ),
                 ),
               ),
@@ -2919,6 +2924,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       padding: const EdgeInsets.all(14),
       itemCount: recent.length,
       itemBuilder: (context, index) {
+        if (index < 0 || index >= recent.length) return const SizedBox.shrink();
         final t = recent[index];
         return ListTile(
           leading: ClipRRect(
@@ -3263,13 +3269,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       child: Slider(
                         value: _duration.inMilliseconds > 0
                             ? (_position.inMilliseconds /
-                                    _duration.inMilliseconds)
-                                .clamp(0.0, 1.0)
+                                      _duration.inMilliseconds)
+                                  .clamp(0.0, 1.0)
                             : 0.0,
                         onChanged: (v) => audioPlayer.seek(
                           Duration(
-                            milliseconds:
-                                (v * _duration.inMilliseconds).round(),
+                            milliseconds: (v * _duration.inMilliseconds)
+                                .round(),
                           ),
                         ),
                       ),

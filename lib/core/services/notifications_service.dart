@@ -109,7 +109,8 @@ class NotificationsService {
     try {
       await SupabaseService.client
           .from('notifications')
-          .update({'read': true}).eq('recipient_id', user.id);
+          .update({'read': true})
+          .eq('recipient_id', user.id);
     } catch (e) {
       debugPrint('[NotificationsService] markAllAsRead error: $e');
     }

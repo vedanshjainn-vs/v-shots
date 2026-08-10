@@ -176,13 +176,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 
   MediaItem _trackToMediaItem(Map<String, dynamic> track) => MediaItem(
-        id: (track['id'] as String?) ?? '',
-        title: (track['title'] as String?) ?? 'Unknown title',
-        artist: (track['artist'] as String?) ?? 'Unknown artist',
-        artUri: (track['artwork'] as String?) != null
-            ? Uri.tryParse(track['artwork'] as String)
-            : null,
-      );
+    id: (track['id'] as String?) ?? '',
+    title: (track['title'] as String?) ?? 'Unknown title',
+    artist: (track['artist'] as String?) ?? 'Unknown artist',
+    artUri: (track['artwork'] as String?) != null
+        ? Uri.tryParse(track['artwork'] as String)
+        : null,
+  );
 
   void _showMoodPicker() {
     showModalBottomSheet<void>(
@@ -266,15 +266,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                 onNotInterested: () => _handleNotInterested(index),
                 onSkipPrevious: index > 0
                     ? () => _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        )
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                      )
                     : null,
                 onSkipNext: index < _items.length - 1
                     ? () => _pageController.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        )
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                      )
                     : null,
               ),
             ),
@@ -444,8 +444,9 @@ class _MoodPickerSheet extends StatelessWidget {
                       color: isSelected ? null : AppColors.surface2,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color:
-                            isSelected ? Colors.transparent : AppColors.border,
+                        color: isSelected
+                            ? Colors.transparent
+                            : AppColors.border,
                         width: 1,
                       ),
                       boxShadow: isSelected
@@ -468,11 +469,13 @@ class _MoodPickerSheet extends StatelessWidget {
                         Text(
                           m['label'] ?? '',
                           style: TextStyle(
-                            color:
-                                isSelected ? Colors.white : AppColors.textMain,
+                            color: isSelected
+                                ? Colors.white
+                                : AppColors.textMain,
                             fontSize: 13,
-                            fontWeight:
-                                isSelected ? FontWeight.w700 : FontWeight.w500,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                           ),
                         ),
                       ],
@@ -600,12 +603,13 @@ class _ForYouCardState extends State<_ForYouCard> {
                       final position = snapshot.data ?? Duration.zero;
                       final duration = audioPlayer.duration ?? Duration.zero;
                       final totalMs = duration.inMilliseconds.toDouble();
-                      final currentMs = _dragPosition ??
+                      final currentMs =
+                          _dragPosition ??
                           (totalMs > 0
                               ? position.inMilliseconds.toDouble().clamp(
-                                    0.0,
-                                    totalMs,
-                                  )
+                                  0.0,
+                                  totalMs,
+                                )
                               : 0.0);
 
                       return Column(
