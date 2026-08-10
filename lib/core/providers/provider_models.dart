@@ -50,12 +50,12 @@ class ProviderTrack {
   /// main.dart's own `_search()`/`ForYouFeedService.fetchNextBatch()`
   /// already produced, so no downstream code needs to change.
   Map<String, dynamic> toTrackMap() => {
-        'id': id,
-        'title': title,
-        'artist': artist,
-        'artwork': artworkUrl,
-        'duration': durationSeconds,
-      };
+    'id': id,
+    'title': title,
+    'artist': artist,
+    'artwork': artworkUrl,
+    'duration': durationSeconds,
+  };
 
   /// Builds a [ProviderTrack] from the app's existing
   /// `Map<String, dynamic>` shape — used where existing code already
