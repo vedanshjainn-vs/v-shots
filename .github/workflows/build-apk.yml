@@ -12,6 +12,9 @@ jobs:
     name: Build & Validate V Shots APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: 1. Checkout Repository
@@ -54,20 +57,53 @@ jobs:
       - name: 8. Run Unit & Widget Tests
         run: flutter test
 
-      - name: 9. Build Debug APK
+      - name: 9. Setup Release Keystore
+        run: |
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+          else
+            keytool -genkeypair -v \
+              -keystore android/app/keystores/release.keystore \
+              -storepass vshots2024 \
+              -alias vshots \
+              -keypass vshots2024 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=V Shots, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+          fi
+          echo "✅ Keystore ready"
+
+      - name: 10. Build Debug APK
         run: flutter build apk --debug
 
-      - name: 10. Validate Generated APK
+      - name: 11. Build Signed Release APK
+        env:
+          ANDROID_KEYSTORE_PATH: "keystores/release.keystore"
+          ANDROID_KEYSTORE_PASSWORD: "vshots2024"
+          ANDROID_KEY_ALIAS: "vshots"
+          ANDROID_KEY_PASSWORD: "vshots2024"
+        run: flutter build apk --release
+
+      - name: 12. Validate Generated APKs
         run: |
-          APK_PATH="build/app/outputs/flutter-apk/app-debug.apk"
-          if [ ! -f "$APK_PATH" ]; then
-            echo "::error::APK was not found at expected path: $APK_PATH"
+          DEBUG_APK="build/app/outputs/flutter-apk/app-debug.apk"
+          RELEASE_APK="build/app/outputs/flutter-apk/app-release.apk"
+          if [ ! -f "$DEBUG_APK" ]; then
+            echo "::error::Debug APK was not found at expected path: $DEBUG_APK"
             exit 1
           fi
-          SIZE=$(stat -c%s "$APK_PATH" 2>/dev/null || stat -f%z "$APK_PATH")
-          echo "✅ Debug APK built successfully! Size: $SIZE bytes"
+          if [ ! -f "$RELEASE_APK" ]; then
+            echo "::error::Release APK was not found at expected path: $RELEASE_APK"
+            exit 1
+          fi
+          DEBUG_SIZE=$(stat -c%s "$DEBUG_APK" 2>/dev/null || stat -f%z "$DEBUG_APK")
+          RELEASE_SIZE=$(stat -c%s "$RELEASE_APK" 2>/dev/null || stat -f%z "$RELEASE_APK")
+          echo "✅ Debug APK Size: $DEBUG_SIZE bytes"
+          echo "✅ Release APK Size: $RELEASE_SIZE bytes"
 
-      - name: 11. Upload Debug APK Artifact
+      - name: 13. Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-debug-apk
@@ -75,7 +111,39 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: 12. Upload APK to BrowserStack App Automate
+      - name: 14. Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: 15. Publish GitHub Release with Direct APK Downloads
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.4.0-release.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.4.0-debug.apk
+          gh release create v5.4.0 \
+            ./v-shots-5.4.0-release.apk \
+            ./v-shots-5.4.0-debug.apk \
+            --title "V Shots v5.4.0 (Build 13) — Official YouTube Player & Hybrid Streaming" \
+            --notes "### V Shots v5.4.0 Production Build
+- **Official YouTube Player**: Official YouTube IFrame foreground player with attribution.
+- **YouTube Data API v3**: Fast, debounced search and curated offline resilience.
+- **5-Tab Navigation**: Clean 1:1 tab bar (Home, Discover, Search, Inbox, Profile).
+- **Dynamic Creator Gating**: Dynamic Supabase access check via profiles.is_creator.
+- **Direct APK Downloads**: Installable on any Android 7.0+ (API 24 to 35) device.
+
+#### 📲 Installation Steps:
+1. Tap **v-shots-5.4.0-release.apk** below to download directly to your Android device.
+2. If a previous version of V Shots is already on your phone, **uninstall it first**.
+3. Open the downloaded file and tap **Install**. (If Play Protect asks, tap *More details* -> *Install anyway*)." \
+            --clobber || true
+
+      - name: 16. Upload APK to BrowserStack App Automate
         if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
@@ -95,7 +163,7 @@ jobs:
           echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
           echo "✅ Uploaded to BrowserStack: $APP_URL"
 
-      - name: 13. Run BrowserStack Real-Device Smoke Test
+      - name: 17. Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
