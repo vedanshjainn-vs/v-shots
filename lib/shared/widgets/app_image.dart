@@ -84,13 +84,13 @@ class AppImage extends StatelessWidget {
   }
 
   Widget _fallback() => Container(
-        width: width,
-        height: height,
-        color: placeholderColor,
-        child: Icon(
-          errorIcon,
-          color: errorIconColor,
-          size: (width ?? height ?? 48) * 0.4,
-        ),
-      );
+    width: width,
+    height: height,
+    color: placeholderColor,
+    child: Icon(
+      errorIcon,
+      color: errorIconColor,
+      size: (width ?? height ?? 48) * 0.4,
+    ),
+  );
 }

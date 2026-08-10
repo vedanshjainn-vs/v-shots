@@ -50,7 +50,8 @@ class YouTubeVideoItem {
     final high = thumbnails['high']?['url'] as String?;
     final medium = thumbnails['medium']?['url'] as String?;
     final def = thumbnails['default']?['url'] as String?;
-    final thumb = maxres ??
+    final thumb =
+        maxres ??
         high ??
         medium ??
         def ??
@@ -107,11 +108,9 @@ class YouTubeVideoItem {
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
 /// rate-limiting protection, and fallback music catalog.
 class YouTubeDataApiClient {
-  YouTubeDataApiClient({
-    http.Client? httpClient,
-    String? apiKey,
-  })  : _http = httpClient ?? http.Client(),
-        _customApiKey = apiKey;
+  YouTubeDataApiClient({http.Client? httpClient, String? apiKey})
+    : _http = httpClient ?? http.Client(),
+      _customApiKey = apiKey;
 
   final http.Client _http;
   final String? _customApiKey;

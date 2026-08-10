@@ -30,7 +30,7 @@ class MusicRepository {
 
   /// Detailed search that preserves success/failure distinction.
   Future<({bool success, List<Map<String, dynamic>> tracks, String? error})>
-      searchDetailed(
+  searchDetailed(
     String query, {
     int limit = 20,
     int maxDurationMinutes = 15,

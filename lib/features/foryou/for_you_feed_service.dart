@@ -224,9 +224,10 @@ class ForYouFeedService {
       if (roll < 0.45) {
         return '$artist songs official audio';
       } else {
-        final template = _genreDiscoveryTemplates[_random.nextInt(
-          _genreDiscoveryTemplates.length,
-        )];
+        final template =
+            _genreDiscoveryTemplates[_random.nextInt(
+              _genreDiscoveryTemplates.length,
+            )];
         return template.replaceAll('{artist}', artist);
       }
     }
@@ -239,8 +240,8 @@ class ForYouFeedService {
     final pool = hour >= 22 || hour < 5
         ? _nightQueries
         : hour >= 17
-            ? _eveningQueries
-            : _dayQueries;
+        ? _eveningQueries
+        : _dayQueries;
     return pool[_random.nextInt(pool.length)];
   }
 }
