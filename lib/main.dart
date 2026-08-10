@@ -35,6 +35,7 @@ import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
+import 'shared/widgets/animated_equalizer.dart';
 import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
@@ -742,16 +743,17 @@ Future<void> playTrack(
     audioHandler?.updateNowPlaying(_trackToMediaItem(track));
 
     // Step 11: Persist to Recently Played + feed the "For You"
-    // taste-profile signal — previously this ONLY happened when
-    // playing from the Discover/For You feed itself, meaning normal
-    // Home/Search plays never improved recommendations at all.
+    // taste-profile signal
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
-    // Phase 7 (Part I): real playback signal for the new
-    // recommendation engine — this is THE primary entry point for
-    // Home/Search/Library taps, so this is where most PLAY signals
-    // originate. If a different track was previously playing,
-    // onTrackStarted auto-finalizes it as a real (explicit) skip.
     playbackSignalTracker.onTrackStarted(track);
+
+    // Pre-fetch next track stream URL in background so skip-next starts instantly
+    if (index + 1 < queue.length) {
+      final nextTrackId = queue[index + 1]['id'] as String?;
+      if (nextTrackId != null && nextTrackId.isNotEmpty) {
+        unawaited(musicRepository.getStream(nextTrackId));
+      }
+    }
 
     _log('═══ PLAYBACK SUCCESS ═══');
 
@@ -1422,19 +1424,53 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Positioned(
                                     right: 8,
                                     bottom: 8,
-                                    child: Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: const BoxDecoration(
-                                        color: AppColors.accent,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: const Icon(
-                                        Icons.play_arrow,
-                                        size: 20,
-                                        color: Colors.white,
-                                      ),
-                                    ),
+                                    child:
+                                        ValueListenableBuilder<
+                                          Map<String, dynamic>?
+                                        >(
+                                          valueListenable: currentTrackNotifier,
+                                          builder: (context, current, _) {
+                                            final isThisPlaying =
+                                                current?['id'] == track['id'] &&
+                                                audioPlayer.playing;
+                                            return Container(
+                                              width: 36,
+                                              height: 36,
+                                              decoration: BoxDecoration(
+                                                color: isThisPlaying
+                                                    ? AppColors.primary
+                                                    : AppColors.accent,
+                                                shape: BoxShape.circle,
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color:
+                                                        (isThisPlaying
+                                                                ? AppColors
+                                                                      .primary
+                                                                : AppColors
+                                                                      .accent)
+                                                            .withValues(
+                                                              alpha: 0.4,
+                                                            ),
+                                                    blurRadius: 8,
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Center(
+                                                child: isThisPlaying
+                                                    ? const AnimatedEqualizer(
+                                                        size: 16,
+                                                        color: Colors.white,
+                                                      )
+                                                    : const Icon(
+                                                        Icons.play_arrow,
+                                                        size: 20,
+                                                        color: Colors.white,
+                                                      ),
+                                              ),
+                                            );
+                                          },
+                                        ),
                                   ),
                                 ],
                               ),
@@ -1788,6 +1824,24 @@ class _SearchScreenState extends State<SearchScreen> {
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.6),
                     ),
+                  ),
+                  trailing: ValueListenableBuilder<Map<String, dynamic>?>(
+                    valueListenable: currentTrackNotifier,
+                    builder: (context, current, _) {
+                      final isThisPlaying =
+                          current?['id'] == track['id'] && audioPlayer.playing;
+                      if (isThisPlaying) {
+                        return const AnimatedEqualizer(
+                          size: 18,
+                          color: AppColors.accent,
+                        );
+                      }
+                      return const Icon(
+                        Icons.play_arrow_rounded,
+                        color: AppColors.textMuted,
+                        size: 24,
+                      );
+                    },
                   ),
                   onTap: () => playTrack(context, track, _results, i),
                 ),

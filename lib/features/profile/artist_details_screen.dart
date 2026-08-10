@@ -5,9 +5,11 @@
 import 'package:flutter/material.dart';
 import '../../core/motion/motion.dart';
 import '../../core/theme/app_colors.dart';
+import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
-import '../../main.dart' show musicRepository, playTrack;
+import '../../main.dart'
+    show musicRepository, playTrack, currentTrackNotifier, audioPlayer;
 
 class ArtistDetailsScreen extends StatefulWidget {
   const ArtistDetailsScreen({
@@ -272,14 +274,28 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                         fontSize: 12,
                       ),
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(
-                        Icons.play_circle_fill_rounded,
-                        color: AppColors.accent,
-                        size: 28,
-                      ),
-                      onPressed: () =>
-                          playTrack(context, track, _tracks, index),
+                    trailing: ValueListenableBuilder<Map<String, dynamic>?>(
+                      valueListenable: currentTrackNotifier,
+                      builder: (context, current, _) {
+                        final isThisPlaying =
+                            current?['id'] == track['id'] &&
+                            audioPlayer.playing;
+                        if (isThisPlaying) {
+                          return const AnimatedEqualizer(
+                            size: 20,
+                            color: AppColors.accent,
+                          );
+                        }
+                        return IconButton(
+                          icon: const Icon(
+                            Icons.play_circle_fill_rounded,
+                            color: AppColors.accent,
+                            size: 28,
+                          ),
+                          onPressed: () =>
+                              playTrack(context, track, _tracks, index),
+                        );
+                      },
                     ),
                     onTap: () => playTrack(context, track, _tracks, index),
                   ),
