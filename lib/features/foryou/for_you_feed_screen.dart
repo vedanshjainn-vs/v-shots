@@ -44,6 +44,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   final Map<int, String> _resolvedStreamUrls = {}; // index -> stream URL
 
   int _currentIndex = 0;
+  int _playSeq = 0;
   bool _isLoadingMore = false;
   bool _initialLoading = true;
 
@@ -70,6 +71,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_items.isNotEmpty) {
       unawaited(_playIndex(0));
       unawaited(_preloadIndex(1));
+      unawaited(_preloadIndex(2));
     }
   }
 
@@ -120,6 +122,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   Future<void> _playIndex(int index) async {
     if (index < 0 || index >= _items.length) return;
     final track = _items[index];
+    final seq = ++_playSeq;
 
     setState(() => _currentIndex = index);
 
@@ -127,9 +130,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       String? streamUrl = _resolvedStreamUrls[index];
       streamUrl ??= await musicRepository.getStream(track['id'] as String);
 
-      if (streamUrl == null) return;
+      if (streamUrl == null || seq != _playSeq || !mounted) return;
 
       await audioPlayer.setUrl(streamUrl);
+      if (seq != _playSeq || !mounted) return;
       await audioPlayer.play();
 
       currentTrack = track;
@@ -144,6 +148,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     }
 
     unawaited(_preloadIndex(index + 1));
+    unawaited(_preloadIndex(index + 2));
     unawaited(_maybeLoadMore());
   }
 

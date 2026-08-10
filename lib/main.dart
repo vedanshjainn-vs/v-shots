@@ -24,7 +24,6 @@ import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
 import 'core/models/profile_model.dart';
-import 'core/models/shot_model.dart';
 import 'core/motion/motion.dart';
 import 'core/player/queue_controller.dart';
 import 'core/player/repeat_mode.dart';
@@ -35,20 +34,16 @@ import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
 import 'core/services/profile_service.dart';
-import 'core/services/shots_service.dart';
 import 'core/theme/app_colors.dart';
 import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
 import 'shared/widgets/bottom_tab_bar.dart';
-import 'shared/widgets/profile_stats.dart';
-import 'shared/widgets/video_player_card.dart';
 import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/library/local_import_service.dart';
-import 'features/notifications/notifications_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
@@ -452,9 +447,14 @@ class _SplashScreenState extends State<SplashScreen>
   }
 }
 
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════
+// CREATOR PERMISSION FLAG (Configurable)
+// ════════════════════════════════════════════════
+const bool kCreatorUploadEnabled = false;
+
+// ════════════════════════════════════════════════
 // MAIN SHELL
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -478,6 +478,86 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
   }
 
+  void _handleCreateTap(BuildContext context) {
+    if (kCreatorUploadEnabled) {
+      Navigator.of(context).push(
+        AppPageRoute<void>(
+          builder: (_) => const UploadShotScreen(),
+        ),
+      );
+    } else {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppColors.border),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.lock_outline_rounded, color: AppColors.accent, size: 22),
+              SizedBox(width: 8),
+              Text(
+                'Creator Upload',
+                style: TextStyle(
+                  color: AppColors.textMain,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Limited Access',
+                style: TextStyle(
+                  color: AppColors.accent,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Uploading is currently available to selected/approved creators.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Maybe Later', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Access requested! Our team will review your account.'),
+                    backgroundColor: AppColors.surface2,
+                  ),
+                );
+              },
+              child: const Text('Request Access', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -489,7 +569,7 @@ class _MainShellState extends State<MainShell> {
               HomeScreen(),
               ForYouFeedScreen(),
               UploadShotScreen(),
-              NotificationsScreen(),
+              SearchScreen(),
               ProfileScreen(),
             ],
           ),
@@ -511,11 +591,7 @@ class _MainShellState extends State<MainShell> {
         currentIndex: _index,
         onTap: (i) {
           if (i == 2) {
-            Navigator.of(context).push(
-              AppPageRoute<void>(
-                builder: (_) => const UploadShotScreen(),
-              ),
-            );
+            _handleCreateTap(context);
           } else {
             setState(() => _index = i);
           }
@@ -579,15 +655,6 @@ class _MiniPlayer extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 12),
-            // Phase 7 (Part F): Hero-tagged so tapping the mini-player
-            // shares this artwork element with PlayerScreen's own
-            // Hero of the same tag, producing a real shared-element
-            // "fly" transition into the full player instead of the
-            // artwork abruptly appearing in its new size/position.
-            // Tag includes the track id so it's unique per track (not
-            // just one static tag reused across track changes, which
-            // would either not animate or animate incorrectly across
-            // unrelated tracks).
             Hero(
               tag: 'artwork-${track['id']}',
               child: AppImage(
@@ -613,18 +680,12 @@ class _MiniPlayer extends StatelessWidget {
                 ],
               ),
             ),
-            // Use StreamBuilder for real state
             StreamBuilder<PlayerState>(
               stream: audioPlayer.playerStateStream,
               builder: (context, snapshot) {
                 final isPlaying = snapshot.data?.playing ?? false;
                 return IconButton(
-                  // Phase 7 (Part F): shared PlayPauseMorph instead of
-                  // a bare, unanimated Icon swap — now cross-fades+
-                  // scales between play/pause, matching the same
-                  // motion PlayerScreen's big play button and
-                  // Discover's indicator use.
-                  icon: PlayPauseMorph(isPlaying: isPlaying, size: 32),
+                  icon: PlayPauseMorph(isPlaying: isPlaying, size: 30),
                   onPressed: () {
                     HapticFeedback.selectionClick();
                     if (isPlaying) {
@@ -636,7 +697,11 @@ class _MiniPlayer extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 28),
+              onPressed: () => _playAdjacentInQueue(context, 1),
+            ),
+            const SizedBox(width: 4),
           ],
         ),
       ),
@@ -828,16 +893,11 @@ class _HomeScreenState extends State<HomeScreen> {
   //     refresh (RefreshIndicator) now force-bypasses the cache so the
   //     user can explicitly ask for fresh results at any time, not
   //     just wait for the TTL to lapse.
+  final Set<String> _activeFetches = <String>{};
+
   late final List<_HomeSectionState> _sections = [
     _HomeSectionState(query: 'trending music today official audio', title: 'Trending Now'),
     _HomeSectionState(query: 'new music releases official audio', title: 'New Releases'),
-    // Phase 7 (Part V): "Made For You" and "Because You Listened To"
-    // now run through RecommendationEngine.generateFeed() (candidate
-    // generation -> hybrid scoring -> diversity), replacing the
-    // simpler single-query approach the pre-Phase-7 version used —
-    // still gated on real play history existing at all (an
-    // empty/generic section for a brand-new user is worse than not
-    // showing it, same rule as before).
     if (forYouFeedService.hasTasteProfile) ...[
       _HomeSectionState(
         query: '__engine_made_for_you__',
@@ -850,13 +910,13 @@ class _HomeScreenState extends State<HomeScreen> {
         intent: FeedIntent.becauseYouListenedTo,
       ),
     ],
-    _HomeSectionState(query: 'bollywood hit songs official audio', title: 'Bollywood'),
-    _HomeSectionState(query: 'punjabi hit songs official audio', title: 'Punjabi'),
-    _HomeSectionState(query: 'hindi songs official audio', title: 'Hindi'),
-    _HomeSectionState(query: 'english pop songs official audio', title: 'English'),
-    _HomeSectionState(query: 'hip hop rap songs official audio', title: 'Hip-Hop'),
+    _HomeSectionState(query: 'top indian songs official audio', title: 'India Hits'),
+    _HomeSectionState(query: 'punjabi hit songs official audio', title: 'Punjabi Hits'),
+    _HomeSectionState(query: 'hindi hit songs official audio', title: 'Hindi Hits'),
+    _HomeSectionState(query: 'international pop hits official audio', title: 'International Pop'),
+    _HomeSectionState(query: 'hip hop rap songs official audio', title: 'Hip-Hop & Rap'),
     _HomeSectionState(query: 'edm dance party songs official audio', title: 'EDM & Party'),
-    _HomeSectionState(query: 'chill lofi songs official audio', title: 'Chill & Lofi'),
+    _HomeSectionState(query: 'chill lofi acoustic music', title: 'Chill & Lofi'),
   ];
 
   @override
@@ -875,15 +935,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadSection(_HomeSectionState section, {bool forceRefresh = false}) async {
-    // Stale-while-revalidate: show a cached result instantly if we
-    // have one (even if it's a little stale), then quietly refresh in
-    // the background — this is what makes reopening the app or
-    // switching back to Home feel instant instead of re-shimmering a
-    // query that was already answered moments ago.
-    //
-    // forceRefresh (pull-to-refresh) skips the cache entirely so the
-    // user gets genuinely fresh results on demand, not just whatever
-    // was cached up to 5 minutes ago.
+    if (_activeFetches.contains(section.query)) return;
+    _activeFetches.add(section.query);
+
     final cached = forceRefresh ? null : SearchCache.instance.get(section.query);
     if (cached != null) {
       if (mounted) {
@@ -893,11 +947,9 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
       if (SearchCache.instance.isFresh(section.query)) {
-        return; // cache is fresh enough, no need to hit the network
+        _activeFetches.remove(section.query);
+        return;
       }
-      // else: fall through and refresh quietly (status stays "loaded"
-      // so the UI doesn't flash back to a loading/shimmer state for
-      // data the user can already see).
     } else if (mounted) {
       setState(() => section.status = _SectionStatus.loading);
     }
@@ -921,8 +973,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted && cached == null) {
         setState(() => section.status = _SectionStatus.error);
       }
-      // If we had cached data, silently keep showing it rather than
-      // surfacing a background-refresh failure as a hard error.
+    } finally {
+      _activeFetches.remove(section.query);
     }
   }
 
@@ -1379,13 +1431,26 @@ class _SearchScreenState extends State<SearchScreen> {
             // submit-only — onSubmitted kept too so pressing
             // Enter/search still works instantly without waiting out
             // the debounce.
-            onChanged: _onQueryChanged,
+            onChanged: (q) {
+              setState(() {});
+              _onQueryChanged(q);
+            },
             onSubmitted: _search,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Search songs, artists...',
               hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
               prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.4)),
+              suffixIcon: _controller.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, color: AppColors.textMuted, size: 18),
+                      onPressed: () {
+                        _controller.clear();
+                        _onQueryChanged('');
+                        setState(() {});
+                      },
+                    )
+                  : null,
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
@@ -1959,7 +2024,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
 }
 
 // ════════════════════════════════════════════════
-// PROFILE SCREEN
+// PROFILE SCREEN (Music-Focused)
 // ════════════════════════════════════════════════
 
 class ProfileScreen extends StatefulWidget {
@@ -1971,7 +2036,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
   ProfileModel? _profile;
-  List<ShotModel> _userShots = <ShotModel>[];
   bool _isLoading = true;
   late TabController _tabController;
 
@@ -1980,25 +2044,80 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadProfileData();
+    LocalLibrary.instance.likedSongs.addListener(_onLibraryChange);
+    LocalLibrary.instance.playlists.addListener(_onLibraryChange);
+    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChange);
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    LocalLibrary.instance.likedSongs.removeListener(_onLibraryChange);
+    LocalLibrary.instance.playlists.removeListener(_onLibraryChange);
+    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChange);
     super.dispose();
+  }
+
+  void _onLibraryChange() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadProfileData() async {
     setState(() => _isLoading = true);
     final profile = await ProfileService.instance.getCurrentProfile();
-    final shots = await ShotsService.instance.fetchUserShots(profile.id);
     if (mounted) {
       setState(() {
         _profile = profile;
-        _userShots = shots;
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _createPlaylistDialog() async {
+    final controller = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: const Text(
+          'New Playlist',
+          style: TextStyle(color: AppColors.textMain, fontWeight: FontWeight.w700),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textMain),
+          decoration: const InputDecoration(
+            hintText: 'Playlist name',
+            hintStyle: TextStyle(color: AppColors.textSubtle),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                LocalLibrary.instance.createPlaylist(name);
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Create', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -2007,25 +2126,27 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final isSignedIn = user != null;
     final profile = _profile ?? ProfileModel(
       id: 'self',
-      username: 'vshots_creator',
-      fullName: user?.email ?? 'V Shots Creator',
-      bio: 'Creating vibes on V Shots 🎬✨',
-      followersCount: 1420,
-      followingCount: 280,
-      shotsCount: _userShots.length,
+      username: 'vshots_listener',
+      fullName: user?.email ?? 'Music Listener',
+      bio: 'Listening on V Shots',
     );
+
+    final likedSongs = LocalLibrary.instance.likedSongs.value;
+    final playlists = LocalLibrary.instance.playlists.value;
+    final recentlyPlayed = LocalLibrary.instance.recentlyPlayed.value;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        title: Text(
-          '@${profile.username}',
-          style: const TextStyle(
+        title: const Text(
+          'My Music Profile',
+          style: TextStyle(
             color: AppColors.textMain,
             fontSize: 18,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.3,
           ),
         ),
         centerTitle: true,
@@ -2058,7 +2179,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             child: AppAvatar(
                               avatarUrl: profile.avatarUrl,
                               name: profile.fullName,
-                              size: 88,
+                              size: 84,
                               hasGradientBorder: true,
                             ),
                           ),
@@ -2072,27 +2193,38 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               letterSpacing: -0.3,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          if (profile.bio.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-                              child: Text(
-                                profile.bio,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 13,
-                                  height: 1.4,
-                                ),
-                              ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isSignedIn ? (user.email ?? '@${profile.username}') : 'Guest Session',
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 13,
                             ),
-                          const SizedBox(height: 16),
-                          ProfileStats(
-                            shotsCount: _userShots.length,
-                            followersCount: profile.followersCount,
-                            followingCount: profile.followingCount,
                           ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 16),
+
+                          // Music Stats Row
+                          Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.border, width: 1),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                _buildMusicStat('Liked Songs', '${likedSongs.length}', Icons.favorite, AppColors.hotPink),
+                                Container(width: 1, height: 24, color: AppColors.border),
+                                _buildMusicStat('Playlists', '${playlists.length}', Icons.playlist_play, AppColors.accent),
+                                Container(width: 1, height: 24, color: AppColors.border),
+                                _buildMusicStat('Played', '${recentlyPlayed.length}', Icons.history, AppColors.warning),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Action Buttons
                           Row(
                             children: [
                               Expanded(
@@ -2113,19 +2245,27 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              if (!isSignedIn)
-                                Expanded(
-                                  child: AppButton(
-                                    text: 'Sign In',
-                                    icon: Icons.login_rounded,
-                                    variant: AppButtonVariant.primary,
-                                    size: AppButtonSize.medium,
-                                    onPressed: () => AuthModal.show(context).then((_) => _loadProfileData()),
-                                  ),
+                              Expanded(
+                                child: AppButton(
+                                  text: isSignedIn ? 'Settings' : 'Sign In',
+                                  icon: isSignedIn ? Icons.settings_outlined : Icons.login_rounded,
+                                  variant: isSignedIn ? AppButtonVariant.secondary : AppButtonVariant.primary,
+                                  size: AppButtonSize.medium,
+                                  onPressed: () {
+                                    if (isSignedIn) {
+                                      Navigator.push(
+                                        context,
+                                        AppPageRoute<void>(builder: (_) => const SettingsScreen()),
+                                      ).then((_) => _loadProfileData());
+                                    } else {
+                                      AuthModal.show(context).then((_) => _loadProfileData());
+                                    }
+                                  },
                                 ),
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 14),
                         ],
                       ),
                     ),
@@ -2140,9 +2280,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         labelColor: AppColors.accent,
                         unselectedLabelColor: AppColors.textMuted,
                         tabs: const [
-                          Tab(icon: Icon(Icons.grid_view_rounded), text: 'Shots'),
-                          Tab(icon: Icon(Icons.favorite_rounded), text: 'Liked'),
-                          Tab(icon: Icon(Icons.bookmark_rounded), text: 'Saved'),
+                          Tab(icon: Icon(Icons.favorite_rounded), text: 'Liked Songs'),
+                          Tab(icon: Icon(Icons.playlist_play_rounded), text: 'Playlists'),
+                          Tab(icon: Icon(Icons.history_rounded), text: 'Recently Played'),
                         ],
                       ),
                     ),
@@ -2151,9 +2291,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 body: TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildShotsGrid(_userShots),
-                    _buildLikedTracksTab(),
-                    _buildSavedTab(),
+                    _buildLikedTracksTab(likedSongs),
+                    _buildPlaylistsTab(playlists),
+                    _buildRecentlyPlayedTab(recentlyPlayed),
                   ],
                 ),
               ),
@@ -2161,72 +2301,56 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildShotsGrid(List<ShotModel> shots) {
-    if (shots.isEmpty) {
-      return Center(
-        child: Column(
+  Widget _buildMusicStat(String label, String value, IconData icon, Color iconColor) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.videocam_outlined, size: 48, color: AppColors.textSubtle),
-            const SizedBox(height: 12),
-            const Text('No shots published yet', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              icon: const Icon(Icons.add_rounded, color: AppColors.accent),
-              label: const Text('Create First Shot', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
-              onPressed: () => Navigator.of(context).push(
-                AppPageRoute<void>(builder: (_) => const UploadShotScreen()),
-              ).then((_) => _loadProfileData()),
+            Icon(icon, size: 16, color: iconColor),
+            const SizedBox(width: 6),
+            Text(
+              value,
+              style: const TextStyle(
+                color: AppColors.textMain,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ],
         ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 0.72,
-      ),
-      itemCount: shots.length,
-      itemBuilder: (context, index) {
-        final s = shots[index];
-        return VideoPlayerCard(
-          videoUrl: s.videoUrl,
-          thumbnailUrl: s.thumbnailUrl,
-          durationSeconds: s.durationSeconds,
-          title: s.caption,
-          creatorName: _profile?.username ?? 'creator',
-          onTap: () {
-            // Open full shot
-          },
-        );
-      },
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildLikedTracksTab() {
-    final liked = LocalLibrary.instance.likedSongs.value;
+  Widget _buildLikedTracksTab(List<Map<String, dynamic>> liked) {
     if (liked.isEmpty) {
       return const Center(
-        child: Text('No liked songs yet ♡', style: TextStyle(color: AppColors.textMuted)),
+        child: Text('No liked songs yet — tap ♡ on any song to save it here.', style: TextStyle(color: AppColors.textMuted)),
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       itemCount: liked.length,
       itemBuilder: (context, index) {
         final t = liked[index];
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(t['artwork'] as String?, width: 44, height: 44, fit: BoxFit.cover),
+            child: AppImage(t['artwork'] as String?, width: 48, height: 48, fit: BoxFit.cover),
           ),
-          title: Text(t['title'] as String? ?? '', style: const TextStyle(color: AppColors.textMain, fontSize: 14), maxLines: 1),
-          subtitle: Text(t['artist'] as String? ?? '', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          title: Text(t['title'] as String? ?? '', style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
+          subtitle: Text(t['artist'] as String? ?? '', style: const TextStyle(color: AppColors.textMuted, fontSize: 12), maxLines: 1),
           trailing: const Icon(Icons.favorite, color: AppColors.hotPink, size: 20),
           onTap: () => playTrack(context, t, liked, index),
         );
@@ -2234,16 +2358,86 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildSavedTab() {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.bookmark_border_rounded, size: 42, color: AppColors.textSubtle),
-          SizedBox(height: 10),
-          Text('Bookmarks saved to cloud sync', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
-        ],
-      ),
+  Widget _buildPlaylistsTab(List<Map<String, dynamic>> playlists) {
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        OutlinedButton.icon(
+          onPressed: _createPlaylistDialog,
+          icon: const Icon(Icons.add, color: AppColors.accent),
+          label: const Text('Create New Playlist', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: AppColors.accent),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (playlists.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: Text('No playlists yet.', style: TextStyle(color: AppColors.textMuted)),
+            ),
+          )
+        else
+          ...playlists.map((playlist) {
+            final tracks = List<Map<String, dynamic>>.from(playlist['tracks'] as List? ?? []);
+            return ListTile(
+              leading: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.playlist_play, color: AppColors.accent),
+              ),
+              title: Text(playlist['name'] as String? ?? 'Playlist', style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text('${tracks.length} songs', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.textSubtle),
+                onPressed: () => LocalLibrary.instance.deletePlaylist(playlist['id'] as String),
+              ),
+              onTap: () => Navigator.push(
+                context,
+                AppPageRoute<void>(
+                  builder: (_) => TrackListScreen(
+                    title: playlist['name'] as String? ?? 'Playlist',
+                    tracks: tracks,
+                    emptyMessage: 'This playlist is empty.',
+                    onRemove: (t) => LocalLibrary.instance.removeTrackFromPlaylist(playlist['id'] as String, t['id'] as String),
+                  ),
+                ),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _buildRecentlyPlayedTab(List<Map<String, dynamic>> recent) {
+    if (recent.isEmpty) {
+      return const Center(
+        child: Text('Nothing played yet — go explore and play music!', style: TextStyle(color: AppColors.textMuted)),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(14),
+      itemCount: recent.length,
+      itemBuilder: (context, index) {
+        final t = recent[index];
+        return ListTile(
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: AppImage(t['artwork'] as String?, width: 48, height: 48, fit: BoxFit.cover),
+          ),
+          title: Text(t['title'] as String? ?? '', style: const TextStyle(color: AppColors.textMain, fontSize: 14, fontWeight: FontWeight.w600), maxLines: 1),
+          subtitle: Text(t['artist'] as String? ?? '', style: const TextStyle(color: AppColors.textMuted, fontSize: 12), maxLines: 1),
+          trailing: const Icon(Icons.play_arrow_rounded, color: AppColors.accent, size: 22),
+          onTap: () => playTrack(context, t, recent, index),
+        );
+      },
     );
   }
 }

@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — BottomTabBar (Nova Design System Floating Tab Bar)
+// V Shots — BottomTabBar (Nova Music Design System)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -48,17 +48,16 @@ class BottomTabBar extends StatelessWidget {
               ),
               _buildTabItem(
                 index: 1,
-                icon: Icons.explore_rounded,
-                inactiveIcon: Icons.explore_outlined,
+                icon: Icons.auto_awesome_rounded,
+                inactiveIcon: Icons.auto_awesome_outlined,
                 label: 'Discover',
               ),
               _buildCreateButton(),
               _buildTabItem(
                 index: 3,
-                icon: Icons.notifications_rounded,
-                inactiveIcon: Icons.notifications_none_rounded,
-                label: 'Inbox',
-                hasBadge: hasUnreadNotifications,
+                icon: Icons.search_rounded,
+                inactiveIcon: Icons.search_outlined,
+                label: 'Search',
               ),
               _buildTabItem(
                 index: 4,
@@ -132,7 +131,7 @@ class BottomTabBar extends StatelessWidget {
     return GestureDetector(
       onTap: () => onTap(2),
       child: Container(
-        width: 46,
+        width: 44,
         height: 38,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
