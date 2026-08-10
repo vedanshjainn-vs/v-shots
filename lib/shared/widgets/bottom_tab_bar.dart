@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — BottomTabBar (Nova Design System Floating Tab Bar)
+// V Shots — BottomTabBar (Nova Design System Floating 5-Tab Bar)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -36,7 +36,7 @@ class BottomTabBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -52,7 +52,12 @@ class BottomTabBar extends StatelessWidget {
                 inactiveIcon: Icons.explore_outlined,
                 label: 'Discover',
               ),
-              _buildCreateButton(),
+              _buildTabItem(
+                index: 2,
+                icon: Icons.search_rounded,
+                inactiveIcon: Icons.search_outlined,
+                label: 'Search',
+              ),
               _buildTabItem(
                 index: 3,
                 icon: Icons.notifications_rounded,
@@ -86,7 +91,7 @@ class BottomTabBar extends StatelessWidget {
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -123,30 +128,6 @@ class BottomTabBar extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCreateButton() {
-    return GestureDetector(
-      onTap: () => onTap(2),
-      child: Container(
-        width: 46,
-        height: 38,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          gradient: AppColors.primaryGradient,
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.4),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Icon(Icons.add_rounded, color: Colors.white, size: 26),
         ),
       ),
     );

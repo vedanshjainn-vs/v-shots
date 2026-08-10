@@ -1,73 +1,41 @@
-# Terms of Service
+# V Shots — Terms of Service
 
-**Last Updated: January 2025**
+**Last Updated: August 2026**
 
-## Acceptance of Terms
+Welcome to V Shots! These Terms of Service ("Terms") govern your use of the V Shots application (`com.vshots.live`) and related services.
 
-By accessing or using Project Lyra ("the Service"), you agree to be bound by these Terms of Service.
+## 1. Acceptance of Terms
 
-## Description of Service
+By downloading, installing, or using V Shots, you agree to comply with and be bound by these Terms and our Privacy Policy. If you do not agree to these Terms, please do not use the app.
 
-Project Lyra is a music streaming application that provides:
-- Music playback and streaming
-- Playlist creation and management
-- Music recommendations
-- Offline downloads (Premium)
-- Podcast and audiobook streaming
+## 2. YouTube API Services & Third-Party Content
 
-## User Accounts
+V Shots utilizes **YouTube API Services** to enable discovery, search, and official playback of YouTube video content.
 
-- You must be at least 13 years old to create an account
-- You are responsible for maintaining account security
-- You must provide accurate registration information
-- One account per person
+- Your use of YouTube features is subject to the **YouTube Terms of Service**: [https://www.youtube.com/t/terms](https://www.youtube.com/t/terms).
+- Playback of YouTube content is powered exclusively through the **Official YouTube IFrame Player**.
+- You agree not to attempt to circumvent, disable, or tamper with the official YouTube player, advertisements, or playback restrictions.
+- V Shots is an independent application and is **not affiliated with, associated with, or endorsed by YouTube or Google LLC**.
 
-## Acceptable Use
+## 3. User-Generated Content (UGC) & Creator Uploads
 
-You agree NOT to:
-- Violate any laws or regulations
-- Infringe on intellectual property rights
-- Use the service for commercial purposes without authorization
-- Attempt to reverse engineer or hack the service
-- Share account credentials
-- Use automated tools to access the service
+- **Creator Gating**: Uploading original music and shots is available to authorized creators verified through V Shots.
+- **Rights & Ownership**: When uploading content to V Shots, you represent and warrant that you own or hold all necessary licenses, rights, consents, and permissions to distribute your content.
+- **Prohibited Content**: You may not upload copyright-infringing, defamatory, violent, or unlawful material.
+- **Takedown & Moderation**: V Shots reserves the right to remove any content that violates intellectual property rights or community guidelines.
 
-## Premium Subscriptions
+## 4. User Accounts & Security
 
-- Premium features require an active subscription
-- Subscriptions auto-renew unless cancelled
-- Refunds are handled according to platform policies
-- Prices may change with notice
+- You are responsible for safeguarding your account credentials.
+- V Shots utilizes Supabase for secure identity authentication and Row Level Security (RLS) protection.
 
-## Intellectual Property
+## 5. Disclaimers & Limitation of Liability
 
-- All content is licensed, not sold
-- You may not copy, distribute, or modify content
-- User-generated content remains yours, but you grant us a license to use it
+- The service is provided on an "AS IS" and "AS AVAILABLE" basis without warranties of any kind.
+- V Shots shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the application.
 
-## Limitation of Liability
+## 6. Governing Law & Contact
 
-Project Lyra is provided "as is" without warranties. We are not liable for:
-- Service interruptions
-- Data loss
-- Indirect damages
-
-## Termination
-
-We may terminate your account for:
-- Violation of these terms
-- Fraudulent activity
-- Extended inactivity
-
-## Governing Law
-
-These terms are governed by the laws of India.
-
-## Contact
-
-For questions about these terms:
-- Email: legal@projectlyra.com
-
----
-
-*This is a template. Replace with your actual terms before publishing.*
+These Terms are governed by applicable laws. For questions or support, contact:
+- **Email**: support@vshots.live
+- **Repository**: [https://github.com/vedanshjainn-vs/v-shots](https://github.com/vedanshjainn-vs/v-shots)

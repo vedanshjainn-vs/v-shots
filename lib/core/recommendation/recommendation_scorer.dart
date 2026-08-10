@@ -107,8 +107,7 @@ class RecommendationScorer {
     const repetitionPenalty =
         0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
 
-    final total =
-        config.weightUserAffinity * userAffinity +
+    final total = config.weightUserAffinity * userAffinity +
         config.weightArtistAffinity * artistAffinity +
         config.weightRecency * recency +
         config.weightSimilarity * similarity +
@@ -175,9 +174,8 @@ class RecommendationScorer {
           (e.type == SignalType.completed || e.type == SignalType.skip),
     );
     if (relevant.isEmpty) return 0.5;
-    final completions = relevant
-        .where((e) => e.type == SignalType.completed)
-        .length;
+    final completions =
+        relevant.where((e) => e.type == SignalType.completed).length;
     return completions / relevant.length;
   }
 

@@ -1,12 +1,13 @@
-# 🎬 V Shots (Nova Edition)
+# 🎬 V Shots (Nova Edition) — Official YouTube Player & Hybrid Streaming
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.47+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
-[![Dart](https://img.shields.io/badge/Dart-3.14+-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![Flutter](https://img.shields.io/badge/Flutter-3.44.9-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![YouTube API](https://img.shields.io/badge/YouTube%20API-v3%20%26%20Official%20IFrame-FF0000?logo=youtube&logoColor=white)](https://developers.google.com/youtube/v3)
 [![Supabase](https://img.shields.io/badge/Supabase-Backend%20%26%20RLS-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![Android](https://img.shields.io/badge/Android-com.vshots.live-3DDC84?logo=android&logoColor=white)](https://android.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A production-ready, dark-first short-video & social music streaming platform for Android, powered by Flutter and Supabase.
+A compliant, high-performance Android Flutter music discovery & social streaming platform backed by Supabase and the **Official YouTube IFrame Player & YouTube Data API v3**.
 
 ---
 
@@ -15,45 +16,40 @@ A production-ready, dark-first short-video & social music streaming platform for
 - **App Name:** `V Shots`
 - **Package Name:** `com.vshots.live`
 - **Version:** `5.4.0 (Build 13)`
-- **Design System:** `V Shots Nova UI`
+- **Design System:** `V Shots Nova UI` (Dark-first `#070A12` with purple, cyan, and pink accents)
 
 ---
 
-## ✨ Core Features
+## ⚡ Architecture & Compliance Highlights
 
-1. **Splash & Onboarding:**
-   - Animated Nova visual branding with dark gradient aesthetics.
-   - Interactive onboarding carousel showcasing trending shots, creator tools, and social discovery.
+1. **Official YouTube Playback:**
+   - Powered by the **Official YouTube IFrame Player API** (`youtube_player_iframe`).
+   - Genuine, visible 16:9 player surface with official branding preserved and no obstructing overlays.
+   - Clear "Powered by YouTube" attribution badge and direct links to YouTube Terms.
+   - Foreground-only compliant YouTube video playback.
 
-2. **Supabase Auth & Social Profiles:**
-   - Email/Password login & signup with friendly validation.
-   - Native Google Sign-In with OAuth token exchange.
-   - Public user profiles, customizable avatars (`avatars` storage bucket), bios, and real-time stats (`ProfileStats`).
-   - Follow/Unfollow creators with optimistic updates.
+2. **Zero Unofficial Scraping or Stream Extraction:**
+   - Completely removed all unofficial stream extractors (`youtube_explode_dart`, `getManifest`, `audioOnly`).
+   - No caching or saving of raw YouTube stream URLs.
 
-3. **Shorts & Social Video Feed:**
-   - Full-screen vertical swipe feed (`ForYouFeedScreen`) with preloading and auto-play.
-   - Interactive `LikeButton` with heart pop animation.
-   - `CommentSheet` modal with instant commenting and timestamps.
-   - Native platform sharing (`share_plus`) and bookmarking.
+3. **YouTube Data API v3 & Resilience:**
+   - Real-time search, metadata resolution, channel names, thumbnails, and ISO 8601 duration parsing.
+   - Curated fallback music catalog providing 100% offline and rate-limit resilience.
 
-4. **Upload & Create Shot:**
-   - Select video/audio media from device (`file_picker`).
-   - Caption, hashtags, and visibility controls (Public, Followers, Private).
-   - Direct upload to Supabase Storage (`shots` bucket) and database insertion with progress tracking (`UploadProgressCard`).
+4. **Hybrid Provider Architecture (`ProviderManager`):**
+   - Clean separation between **YouTubeProvider** (official IFrame foreground player + Data API v3 metadata) and **LicensedMusicProvider / UGC** (authorized media streams via `just_audio` + `audio_service` for background playback, lock-screen controls, and Bluetooth).
 
-5. **Discover & Search:**
-   - Search with debouncing, cache-first revalidation (`SearchCache`), and search history.
-   - Curated category pills (Trending, New Releases, Bollywood, Punjabi, Hip-Hop, Chill & Lofi, EDM).
+5. **5-Tab Navigation System (`BottomTabBar`):**
+   - **Home (0):** Hero branding, Creator "+ Create" button, Top Artists Carousel (Arijit Singh, Diljit Dosanjh, Shreya Ghoshal, AP Dhillon, Anuv Jain, Pritam), and trending music sections.
+   - **Discover (1):** Centered artwork, interactive vibe/mood selector pill, and YouTube player launch.
+   - **Search (2):** 300ms debounced search, category filters, and recent searches history.
+   - **Inbox (3):** Activity notifications and community updates.
+   - **Profile (4):** Music-first profile with Liked Songs, Playlists, Recently Played, and Creator Studio Hub.
 
-6. **Activity & Notifications:**
-   - Inbox with activity filtering (All, Likes, Comments, Followers).
-   - "Mark all as read" support.
-
-7. **Audio & Background Playback:**
-   - Lock-screen media notifications and controls via `audio_service`.
-   - LRCLIB live-scrolling synced lyrics.
-   - Sleep timer and cache management in `SettingsScreen`.
+6. **Dynamic Creator Gating:**
+   - Dynamic check via `profiles.is_creator` in Supabase.
+   - Approved creators access `UploadShotScreen` to publish UGC video/audio shots.
+   - Listeners receive a "Creator Upload — Limited Access" bottom sheet with "Request Access".
 
 ---
 
@@ -67,134 +63,33 @@ A production-ready, dark-first short-video & social music streaming platform for
 | **Primary** | `#7C3AED` | Primary brand purple / gradient start |
 | **Accent** | `#22D3EE` | Cyan highlights, badges, icons |
 | **Hot Pink** | `#EC4899` | Likes, gradients, notification badges |
-| **Success** | `#22C55E` | Positive confirmations |
-| **Warning** | `#F59E0B` | Saved bookmarks, caution alerts |
-| **Error** | `#EF4444` | Destructive actions, validation errors |
-| **Text Main** | `#F8FAFC` | Primary headings and text |
-| **Text Muted** | `#94A3B8` | Subtitles, timestamps, placeholders |
 | **Border** | `#273044` | Card and input borders |
 
 ---
 
-## 🏗️ Architecture & Project Structure
-
-```
-v-shots/
-├── android/                   # Android native project (com.vshots.live)
-│   ├── app/
-│   │   ├── build.gradle       # Signing configs, compileSdk 36, versionCode 13
-│   │   └── proguard-rules.pro # R8/Proguard optimization rules
-│   └── ...
-├── docs/                      # Deployment, security, and setup guides
-│   ├── DEPLOYMENT.md          # CI/CD & Play Store release guide
-│   ├── SECURITY.md            # Security policy and secret guidelines
-│   └── SUPABASE_SETUP.md      # Database schema and RLS policies
-├── lib/
-│   ├── core/
-│   │   ├── audio/             # Background AudioService handler & stream resolver
-│   │   ├── backend/           # Supabase client & Google Auth service
-│   │   ├── models/            # Shot, Profile, Comment, Notification data models
-│   │   ├── services/          # Shots, Profiles, Notifications Supabase CRUD
-│   │   ├── storage/           # LocalLibrary persistence (shared_preferences)
-│   │   ├── theme/             # AppColors & AppTypography tokens
-│   │   └── providers/         # Music repository & YouTube music provider
-│   ├── features/
-│   │   ├── auth/              # AuthModal (Sign in / Sign up)
-│   │   ├── foryou/            # Vertical swipe ForYouFeedScreen
-│   │   ├── onboarding/        # Onboarding carousel
-│   │   ├── profile/           # ProfileScreen & EditProfileScreen
-│   │   ├── notifications/     # NotificationsScreen
-│   │   └── shots/             # UploadShotScreen & Shot detail
-│   ├── shared/
-│   │   └── widgets/           # AppButton, AppTextInput, AppCard, AppAvatar,
-│   │                          # ShotCard, VideoPlayerCard, BottomTabBar, etc.
-│   └── main.dart              # Entry point, SplashScreen, MainShell, Player
-├── supabase/
-│   └── migrations/            # SQL migration files with RLS & triggers
-├── test/                      # 91 unit and widget tests (100% passing)
-├── .env.example               # Environment variables template (no secrets)
-└── pubspec.yaml               # Dependencies & assets configuration
-```
-
----
-
-## 🚀 Getting Started
-
-### 1. Prerequisites
-
-- Flutter SDK `^3.44.0` or `^3.47.0` (Dart `^3.10.0`)
-- JDK 17+
-- Android Studio / Android SDK (API 34+)
-
-### 2. Configure Environment
-
-Copy `.env.example` to `.env`:
+## 🚀 Verification & Testing
 
 ```bash
-cp .env.example .env
-```
-
-Fill in your configuration values:
-
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-GOOGLE_ANDROID_CLIENT_ID=your-android-client-id.apps.googleusercontent.com
-GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
-```
-
-> **Security Rule:** Never commit `.env` or keystores to git. All `.env*` files are strictly gitignored.
-
-### 3. Install Dependencies & Run Tests
-
-```bash
+# 1. Fetch dependencies
 flutter pub get
+
+# 2. Format Dart code
+dart format .
+
+# 3. Analyze codebase (0 issues)
 flutter analyze
+
+# 4. Run full test suite (100% passing)
 flutter test
-```
 
-### 4. Run on Device / Emulator
-
-```bash
-flutter run
-```
-
----
-
-## 📦 Building Artifacts
-
-### Debug APK
-```bash
+# 5. Build Debug APK
 flutter build apk --debug
 ```
-*Output: `build/app/outputs/flutter-apk/app-debug.apk`*
-
-### Release AAB (Google Play Store)
-```bash
-export ANDROID_KEYSTORE_PATH="/path/to/release.keystore"
-export ANDROID_KEYSTORE_PASSWORD="your-keystore-password"
-export ANDROID_KEY_ALIAS="your-key-alias"
-export ANDROID_KEY_PASSWORD="your-key-password"
-
-flutter build appbundle --release
-```
-*Output: `build/app/outputs/bundle/release/app-release.aab`*
 
 ---
 
-## 🔒 Security & Supabase Row Level Security (RLS)
+## ⚖️ Legal & Attribution
 
-Every table has Row Level Security enabled:
-
-- **Profiles:** Publicly readable. Users can insert/update only their own profile (`auth.uid() = id`).
-- **Shots:** Public shots viewable by all. Users can insert, update, or delete only their own shots (`auth.uid() = user_id`).
-- **Likes:** Users can like/unlike only on their own behalf (`auth.uid() = user_id`).
-- **Comments:** Viewable by everyone. Authors can create and delete only their own comments.
-- **Bookmarks:** Visible only to the owner (`auth.uid() = user_id`).
-- **Storage:** Authenticated users can upload media to `shots/`, `avatars/`, and `thumbnails/` buckets.
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](LICENSE).
+- **YouTube Terms of Service:** [https://www.youtube.com/t/terms](https://www.youtube.com/t/terms)
+- **Google Privacy Policy:** [https://policies.google.com/privacy](https://policies.google.com/privacy)
+- V Shots is an independent application and is **not affiliated with, associated with, or endorsed by YouTube or Google LLC**.

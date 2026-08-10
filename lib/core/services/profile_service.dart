@@ -39,11 +39,9 @@ class ProfileService {
       if (response == null) {
         return _currentLocalProfile.copyWith(
           id: user.id,
-          username:
-              user.userMetadata?['username'] as String? ??
+          username: user.userMetadata?['username'] as String? ??
               'user_${user.id.substring(0, 6)}',
-          fullName:
-              user.userMetadata?['full_name'] as String? ??
+          fullName: user.userMetadata?['full_name'] as String? ??
               user.email ??
               'V Shots User',
           avatarUrl: user.userMetadata?['avatar_url'] as String? ?? '',
@@ -201,9 +199,8 @@ class ProfileService {
           .from('avatars')
           .uploadBinary(fileName, bytes);
 
-      final publicUrl = SupabaseService.client.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
+      final publicUrl =
+          SupabaseService.client.storage.from('avatars').getPublicUrl(fileName);
       await updateProfile(avatarUrl: publicUrl);
       return publicUrl;
     } catch (e) {

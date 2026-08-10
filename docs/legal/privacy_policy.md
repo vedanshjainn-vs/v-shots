@@ -1,74 +1,59 @@
-# Privacy Policy
+# V Shots — Privacy Policy
 
-**Last Updated: January 2025**
+**Last Updated: August 2026**
 
 ## Introduction
 
-Project Lyra ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and share information when you use our mobile application.
+V Shots ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how our mobile application (`com.vshots.live`) collects, uses, and safeguards information when you use our services.
+
+## YouTube API Services & Embedded Playback
+
+V Shots uses **YouTube API Services** to provide music discovery, metadata, and official embedded video playback. 
+
+By using V Shots, you agree to be bound by:
+- **YouTube Terms of Service**: [https://www.youtube.com/t/terms](https://www.youtube.com/t/terms)
+- **Google Privacy Policy**: [https://policies.google.com/privacy](https://policies.google.com/privacy)
+
+### YouTube Data Collection & Handling
+- V Shots accesses public metadata (video title, channel/artist name, thumbnail artwork, and duration) via YouTube Data API v3.
+- Playback of YouTube content is conducted strictly through the **Official YouTube IFrame Player**.
+- V Shots **does not** collect, store, cache, or extract raw YouTube audio or video stream files.
+- V Shots is not affiliated with, endorsed by, or sponsored by YouTube or Google LLC.
 
 ## Information We Collect
 
-### Information You Provide
-- **Account Information**: Email address, display name, profile picture
-- **Preferences**: Audio quality, language, theme settings
-- **Content Interactions**: Liked songs, playlists, listening history
+### 1. User-Provided Information
+- **Account Data**: When you sign in with Supabase Authentication or Google OAuth, we receive your email address, full name, and avatar picture.
+- **Library & Preferences**: Liked tracks, created playlists, and app theme settings.
+- **Creator Uploads (UGC)**: If you are an authorized creator, audio/video shots and captions you upload to V Shots storage.
 
-### Information Collected Automatically
-- **Device Information**: Device type, operating system, unique device identifiers
-- **Usage Data**: Features used, content accessed, interaction patterns
-- **Network Information**: Connection type, IP address (anonymized)
+### 2. Automatically Collected Information
+- **Listening Signals & Taste Profile**: Play duration, track completions, and skips stored locally on your device to personalize recommendation carousels.
+- **Device & Network Data**: Operating system version, screen dimensions, and connection status for performance optimization.
 
-### Information from Third Parties
-- **Authentication**: When you sign in with Google or Apple
-- **Analytics**: Usage patterns via Firebase Analytics
+## How We Use Information
 
-## How We Use Your Information
+We use collected information to:
+- Deliver personalized music discovery and "For You" recommendations.
+- Enable playlist management, liked tracks library, and creator UGC sharing.
+- Monitor application health, debug crashes, and prevent abuse.
+- Comply with applicable laws and YouTube API Developer Policies.
 
-We use your information to:
-- Provide and improve our music streaming service
-- Personalize your experience and recommendations
-- Process your premium subscription
-- Send you relevant notifications
-- Ensure security and prevent fraud
-- Comply with legal obligations
+## Data Retention & Storage
 
-## Information Sharing
+- User account details, UGC shots, and social interactions are securely stored in Supabase with Row Level Security (RLS) policies enabled.
+- Listening history and taste-profile metrics are stored locally via device storage.
+- YouTube metadata is stored ephemerally in compliance with YouTube API Developer Policies.
 
-We do not sell your personal information. We may share information with:
-- **Service Providers**: Supabase (backend), Firebase (analytics), RevenueCat (payments)
-- **Legal Requirements**: When required by law or to protect our rights
+## Your Data Rights & Controls
 
-## Data Security
-
-We implement industry-standard security measures:
-- Encrypted data transmission (TLS)
-- Secure token storage (Android Keystore)
-- Certificate pinning
-- Regular security audits
-
-## Your Rights
-
-You have the right to:
-- Access your personal data
-- Correct inaccurate data
-- Delete your account and data
-- Export your data
-- Opt out of analytics
-
-## Children's Privacy
-
-Our service is not intended for children under 13. We do not knowingly collect personal information from children.
-
-## Changes to This Policy
-
-We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new policy in the app.
+You have full control over your data:
+- **Clear Local History**: Clear recent searches and listening history directly in Settings.
+- **Account Deletion**: Request complete deletion of your Supabase profile and uploaded UGC shots.
+- **Google Security Permissions**: Manage third-party app access via your Google Security Settings: [https://myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 ## Contact Us
 
-If you have questions about this Privacy Policy, please contact us at:
-- Email: privacy@projectlyra.com
-- Website: https://projectlyra.com/privacy
-
----
-
-*This is a template. Replace with your actual privacy policy before publishing.*
+For questions regarding this Privacy Policy or data requests:
+- **Email**: support@vshots.live
+- **Repository**: [https://github.com/vedanshjainn-vs/v-shots](https://github.com/vedanshjainn-vs/v-shots)
