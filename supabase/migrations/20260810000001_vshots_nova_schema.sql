@@ -1,9 +1,9 @@
 -- ═════════════════════════════════════════════════════════════════════════════
--- V Shots — Supabase Database Setup & RLS Policies (Complete Master Setup)
+-- V Shots Nova Schema & RLS Policies Migration
+-- Version: 2.0.0 (Production Release)
 -- ═════════════════════════════════════════════════════════════════════════════
--- Run this in Supabase SQL Editor (https://supabase.com/dashboard/project/_/sql)
 
--- 1. Enable Required Extensions
+-- 1. Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 );
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- Performance Indexes
+-- Indexes for Performance
 -- ═════════════════════════════════════════════════════════════════════════════
 CREATE INDEX IF NOT EXISTS idx_shots_user_id ON public.shots(user_id);
 CREATE INDEX IF NOT EXISTS idx_shots_created_at ON public.shots(created_at DESC);
@@ -107,9 +107,7 @@ BEGIN
     COALESCE(NEW.raw_user_meta_data->>'avatar_url', NEW.raw_user_meta_data->>'picture', ''),
     ''
   )
-  ON CONFLICT (id) DO UPDATE SET
-    avatar_url = EXCLUDED.avatar_url,
-    full_name = EXCLUDED.full_name;
+  ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

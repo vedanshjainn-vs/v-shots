@@ -7,7 +7,7 @@ import 'package:v_shots/core/recommendation/recommendation_cache.dart';
 import 'package:v_shots/core/recommendation/taste_profile.dart';
 
 void main() {
-  setUp(() => RecommendationCache.instance.clear());
+  setUp(RecommendationCache.instance.clear);
 
   test('setFeed then getFeed returns the same tracks', () {
     RecommendationCache.instance.setFeed('key1', const []);

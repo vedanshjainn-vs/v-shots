@@ -28,17 +28,14 @@ lib/generated/
 lib/l10n/*.dart
 !lib/l10n/*.arb
 
-# Environment
-# NOTE: .env IS committed for this project (see .env's own header
-# comment) — it contains only the Supabase anon key (public-by-design,
-# every table has RLS enabled) and a Google OAuth Client ID, neither of
-# which is a secret. Real secrets (DB password, service_role key, any
-# API tokens) must NEVER go in this file — use GitHub Actions Secrets
-# instead. .env.local and .env.*.local remain ignored for any
-# developer-local overrides that shouldn't be shared.
-.env.local
-.env.*.local
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.env
+*.local
 firebase_options.dart
+google-services.json
 
 # IDE
 .vscode/
@@ -47,7 +44,7 @@ firebase_options.dart
 .DS_Store
 Thumbs.db
 
-# Testing
+# Testing & Coverage
 coverage/
 *.lcov
 
@@ -55,6 +52,8 @@ coverage/
 *.log
 
 # Keystores (keep these secure!)
-# android/app/debug.keystore
-# android/app/release.keystore
-android/local.properties
+*.jks
+*.keystore
+*.p12
+*.key
+local.properties

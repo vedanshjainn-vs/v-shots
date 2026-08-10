@@ -23,6 +23,8 @@ import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
+import 'core/models/profile_model.dart';
+import 'core/models/shot_model.dart';
 import 'core/motion/motion.dart';
 import 'core/player/queue_controller.dart';
 import 'core/player/repeat_mode.dart';
@@ -30,16 +32,26 @@ import 'core/player/sleep_timer.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/feed_intent.dart';
 import 'core/recommendation/recommendation_engine.dart';
-import 'core/recommendation/recommendation_scorer.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
+import 'core/services/profile_service.dart';
+import 'core/services/shots_service.dart';
 import 'core/theme/app_colors.dart';
+import 'shared/widgets/app_avatar.dart';
+import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
+import 'shared/widgets/bottom_tab_bar.dart';
+import 'shared/widgets/profile_stats.dart';
+import 'shared/widgets/video_player_card.dart';
 import 'core/storage/local_library.dart';
+import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/library/local_import_service.dart';
+import 'features/notifications/notifications_screen.dart';
+import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
+import 'features/shots/upload_shot_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -384,7 +396,7 @@ class _SplashScreenState extends State<SplashScreen>
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const MainShell()),
+          MaterialPageRoute<void>(builder: (_) => const MainShell()),
         );
       }
     });
@@ -406,25 +418,32 @@ class _SplashScreenState extends State<SplashScreen>
               Container(
                 width: 110, height: 110,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                      colors: [AppColors.accent, AppColors.accentLight]),
+                  gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                        color: AppColors.accent.withOpacity(0.4),
-                        blurRadius: 30,
+                        color: AppColors.primary.withValues(alpha: 0.45),
+                        blurRadius: 32,
                         offset: const Offset(0, 10)),
                   ],
                 ),
-                child: const Icon(Icons.music_note,
-                    size: 52, color: Colors.white),
+                child: const Icon(Icons.bolt_rounded,
+                    size: 56, color: Colors.white),
               ),
               const SizedBox(height: 28),
               const Text('V Shots',
                   style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.5,
                       color: Colors.white)),
+              const SizedBox(height: 6),
+              const Text('Nova Edition',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 3.0,
+                      color: AppColors.accent)),
             ],
           ),
         ),
@@ -450,41 +469,12 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    // Phase 7 fix (UI_PERFORMANCE_AUDIT.md issue #1): this used to also
-    // do `setState(() => isCurrentlyPlaying = state.playing)` on every
-    // single playback state tick (play/pause/buffer/every track
-    // start) — forcing the ENTIRE IndexedStack (5 full screens:
-    // Home/Discover/Search/Library/Profile) + NavigationBar to
-    // rebuild for a value `MainShell.build()` never actually reads
-    // (confirmed via grep — `isCurrentlyPlaying` had zero read sites
-    // anywhere). The mini-player's own play/pause icon already
-    // reacts correctly via its own `StreamBuilder<PlayerState>` (see
-    // _MiniPlayer below), so this listener is now a no-op observer
-    // only kept for any future non-widget code that might want the
-    // global flag, WITHOUT triggering a shell-wide rebuild to set it.
     audioPlayer.playerStateStream.listen((state) {
       isCurrentlyPlaying = state.playing;
     });
 
-    // Route OS media-session commands (lock screen / notification /
-    // headset / Android Auto skip buttons) back to the app's real
-    // queue-navigation logic — see core/audio/vshots_audio_handler.dart
-    // and _playAdjacentInQueue's doc comment for the full design.
     audioHandler?.onSkipNext = () => _playAdjacentInQueue(context, 1);
     audioHandler?.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
-
-    // Auto-advance to the next track when the current one finishes —
-    // now respects real Repeat state (off/one/all), see
-    // _handleTrackCompleted's doc comment and
-    // core/player/queue_controller.dart's nextIndexOnCompletion() for
-    // the actual off/one/all branching logic (Phase 8 fix — this
-    // previously always unconditionally advanced by one with no
-    // repeat-mode concept at all). Wired here (not inside
-    // PlayerScreen) specifically so auto-advance keeps working even
-    // when the user has navigated away from the full-screen player
-    // back to Home/Search/Library — matching how every real music app
-    // behaves (music keeps playing/advancing in the background
-    // regardless of which screen is currently open).
     audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
   }
 
@@ -498,27 +488,13 @@ class _MainShellState extends State<MainShell> {
             children: const [
               HomeScreen(),
               ForYouFeedScreen(),
-              SearchScreen(),
-              LibraryScreen(),
+              UploadShotScreen(),
+              NotificationsScreen(),
               ProfileScreen(),
             ],
           ),
-          // Mini-player is hidden on the Discover tab (index 1):
-          // ForYouFeedScreen is already a full-screen immersive
-          // now-playing surface (its own artwork/title/progress/
-          // play-pause are the primary content, not a secondary
-          // overlay) — stacking the global mini-player on top of it
-          // duplicated playback controls and ate into the swipeable
-          // card's visible area for no benefit. Every other tab keeps
-          // the mini-player exactly as before.
-          // Phase 7 (Part D): the mini-player now eases in/out via
-          // MiniPlayerTransition (AnimatedSlide+AnimatedOpacity)
-          // instead of instantly appearing/disappearing through a bare
-          // conditional `if` — kept mounted (not removed from the
-          // tree) whenever the tab shows it in principle, so the
-          // transition can actually animate rather than popping.
           Positioned(
-            left: 8, right: 8, bottom: 72,
+            left: 8, right: 8, bottom: 68,
             child: MiniPlayerTransition(
               visible: currentTrack != null && _index != 1,
               child: currentTrack != null
@@ -531,46 +507,27 @@ class _MainShellState extends State<MainShell> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        backgroundColor: AppColors.background.withOpacity(0.95),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home'),
-          NavigationDestination(
-              icon: Icon(Icons.auto_awesome_outlined),
-              selectedIcon: Icon(Icons.auto_awesome_rounded),
-              label: 'Discover'),
-          NavigationDestination(
-              icon: Icon(Icons.search_outlined),
-              selectedIcon: Icon(Icons.search_rounded),
-              label: 'Search'),
-          NavigationDestination(
-              icon: Icon(Icons.library_music_outlined),
-              selectedIcon: Icon(Icons.library_music_rounded),
-              label: 'Library'),
-          NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person_rounded),
-              label: 'Profile'),
-        ],
+      bottomNavigationBar: BottomTabBar(
+        currentIndex: _index,
+        onTap: (i) {
+          if (i == 2) {
+            Navigator.of(context).push(
+              AppPageRoute<void>(
+                builder: (_) => const UploadShotScreen(),
+              ),
+            );
+          } else {
+            setState(() => _index = i);
+          }
+        },
       ),
     );
   }
 
   void _openPlayer(BuildContext context) {
     if (currentTrack == null) return;
-    // Kept as a hand-written PageRouteBuilder (not AppPageRoute) since
-    // the full-screen player specifically wants a slide-up-from-bottom
-    // "sheet" feel (matching a real music app's now-playing screen
-    // convention), distinct from AppPageRoute's fade+slight-slide used
-    // for ordinary secondary screens (Settings/Library/etc.) — see
-    // core/motion/motion.dart's AppPageRoute doc for that distinction.
     Navigator.of(context).push(
-      PageRouteBuilder(
+      PageRouteBuilder<void>(
         pageBuilder: (_, __, ___) => PlayerScreen(
           track: currentTrack!,
           queue: currentQueue,
@@ -611,12 +568,12 @@ class _MiniPlayer extends StatelessWidget {
       child: Container(
         height: 64,
         decoration: BoxDecoration(
-          color: AppColors.surface.withOpacity(0.95),
+          color: AppColors.surface.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.4), blurRadius: 12),
+                color: Colors.black.withValues(alpha: 0.4), blurRadius: 12),
           ],
         ),
         child: Row(
@@ -652,7 +609,7 @@ class _MiniPlayer extends StatelessWidget {
                   Text((track['artist'] as String?) ?? '',
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                          color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
                 ],
               ),
             ),
@@ -710,7 +667,7 @@ Future<void> playTrack(
   // Immediate tactile feedback on tap — previously the only feedback
   // was the loading snackbar a moment later, which reads as "did my
   // tap register?" on a slower connection.
-  HapticFeedback.selectionClick();
+  unawaited(HapticFeedback.selectionClick());
 
   try {
     // Step 1: Show loading
@@ -1021,13 +978,13 @@ class _HomeScreenState extends State<HomeScreen> {
             title: Row(children: [
               Container(width: 36, height: 36,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.music_note, size: 20, color: Colors.white),
+                child: const Icon(Icons.bolt_rounded, size: 20, color: Colors.white),
               ),
               const SizedBox(width: 10),
-              const Text('V Shots', style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text('V Shots', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.3)),
             ]),
           ),
           SliverToBoxAdapter(
@@ -1037,7 +994,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(greeting, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
                 Text('What do you want to listen to?',
-                    style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
               ]),
             ),
           ),
@@ -1131,11 +1088,11 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(14),
           ),
           child: Row(children: [
-            Icon(Icons.wifi_off, color: Colors.white.withOpacity(0.5)),
+            Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.5)),
             const SizedBox(width: 12),
             Expanded(
               child: Text('Couldn\'t load "${section.title}"',
-                  style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
             ),
             TextButton(
               onPressed: () => _loadSection(section),
@@ -1153,7 +1110,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
           child: Row(children: [
             if (isPersonalized) ...[
-              Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
+              const Icon(Icons.auto_awesome, size: 18, color: AppColors.accent),
               const SizedBox(width: 6),
             ],
             Text(section.title,
@@ -1206,7 +1163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             right: 8, bottom: 8,
                             child: Container(
                               width: 36, height: 36,
-                              decoration: BoxDecoration(
+                              decoration: const BoxDecoration(
                                 color: AppColors.accent,
                                 shape: BoxShape.circle,
                               ),
@@ -1224,7 +1181,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text((track['artist'] as String?) ?? '',
                         maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                            color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                            color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
                   ]),
                   ),
                   ),
@@ -1407,11 +1364,11 @@ class _SearchScreenState extends State<SearchScreen> {
           curve: AppMotion.enter,
           height: 44,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(_searchFocused ? 0.12 : 0.08),
+            color: Colors.white.withValues(alpha: _searchFocused ? 0.12 : 0.08),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: _searchFocused
-                  ? AppColors.accent.withOpacity(0.6)
+                  ? AppColors.accent.withValues(alpha: 0.6)
                   : Colors.transparent,
             ),
           ),
@@ -1427,8 +1384,8 @@ class _SearchScreenState extends State<SearchScreen> {
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Search songs, artists...',
-              hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
-              prefixIcon: Icon(Icons.search, color: Colors.white.withOpacity(0.4)),
+              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+              prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.4)),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
@@ -1456,10 +1413,10 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.wifi_off, size: 40, color: Colors.white.withOpacity(0.4)),
+                Icon(Icons.wifi_off, size: 40, color: Colors.white.withValues(alpha: 0.4)),
                 const SizedBox(height: 12),
                 Text('Search failed — check your connection',
-                    style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: () => _search(_lastQuery ?? _controller.text),
@@ -1475,13 +1432,13 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.search_off, size: 40, color: Colors.white.withOpacity(0.3)),
+                Icon(Icons.search_off, size: 40, color: Colors.white.withValues(alpha: 0.3)),
                 const SizedBox(height: 12),
                 // Phase 7 fix: this is now a GENUINE "zero results"
                 // state (distinct from _SearchStatus.error above) —
                 // the request succeeded, it just found nothing.
                 Text('No results for "${_lastQuery ?? _controller.text}"',
-                    style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
               ],
             ),
           ),
@@ -1508,7 +1465,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text((track['artist'] as String?) ?? '',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
                 onTap: () => playTrack(context, track, _results, i),
                 ),
               );
@@ -1522,7 +1479,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       const Text('Recent Searches',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                       ...LocalLibrary.instance.recentSearches.value.take(5).map((s) => ListTile(
-                            leading: Icon(Icons.history, color: Colors.white.withOpacity(0.5)),
+                            leading: Icon(Icons.history, color: Colors.white.withValues(alpha: 0.5)),
                             title: Text((s['query'] as String?) ?? ''),
                             onTap: () {
                               _controller.text = (s['query'] as String?) ?? '';
@@ -1546,9 +1503,9 @@ class _SearchScreenState extends State<SearchScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 16, vertical: 10),
                                   decoration: BoxDecoration(
-                                    color: c.$3.withOpacity(0.15),
+                                    color: c.$3.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: c.$3.withOpacity(0.3)),
+                                    border: Border.all(color: c.$3.withValues(alpha: 0.3)),
                                   ),
                                   child: Text('${c.$2} ${c.$1}',
                                       style: TextStyle(
@@ -1691,7 +1648,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.likedSongs.value.length,
             () => Navigator.push(
               context,
-              AppPageRoute(
+              AppPageRoute<void>(
                 builder: (_) => TrackListScreen(
                   title: 'Liked Songs',
                   tracks: lib.likedSongs.value,
@@ -1709,7 +1666,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.downloadedTracks.value.length,
             () => Navigator.push(
               context,
-              AppPageRoute(
+              AppPageRoute<void>(
                 builder: (_) => TrackListScreen(
                   title: 'Downloads',
                   tracks: lib.downloadedTracks.value,
@@ -1729,12 +1686,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.recentlyPlayed.value.length,
             () => Navigator.push(
               context,
-              AppPageRoute(
+              AppPageRoute<void>(
                 builder: (_) => TrackListScreen(
                   title: 'Recently Played',
                   tracks: lib.recentlyPlayed.value,
                   emptyMessage: 'Nothing played yet — go play something!',
-                  onClearAll: () => LocalLibrary.instance.clearRecentlyPlayed(),
+                  onClearAll: LocalLibrary.instance.clearRecentlyPlayed,
                 ),
               ),
             ),
@@ -1747,7 +1704,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             lib.playlists.value.length,
             () => Navigator.push(
               context,
-              AppPageRoute(builder: (_) => const PlaylistsScreen()),
+              AppPageRoute<void>(builder: (_) => const PlaylistsScreen()),
             ),
           ),
           const SizedBox(height: 24),
@@ -1769,10 +1726,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
               lib.downloadedTracks.value.isEmpty)
             Center(
               child: Column(children: [
-                Icon(Icons.library_music, size: 48, color: Colors.white.withOpacity(0.2)),
+                Icon(Icons.library_music, size: 48, color: Colors.white.withValues(alpha: 0.2)),
                 const SizedBox(height: 12),
                 Text('Your library is empty',
-                    style: TextStyle(color: Colors.white.withOpacity(0.4))),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
               ]),
             ),
         ],
@@ -1787,16 +1744,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
       leading: Container(
         width: 44, height: 44,
         decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Icon(icon, color: color, size: 22),
       ),
       title: Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$count', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+        Text('$count', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
         const SizedBox(width: 8),
-        Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3)),
+        Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3)),
       ]),
     );
   }
@@ -1846,7 +1803,7 @@ class TrackListScreen extends StatelessWidget {
                 child: Text(
                   emptyMessage,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                 ),
               ),
             )
@@ -1874,7 +1831,7 @@ class TrackListScreen extends StatelessWidget {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text((track['artist'] as String?) ?? '',
                       maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withOpacity(0.6))),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
                   trailing: onRemove != null
                       ? IconButton(
                           icon: const Icon(Icons.close, size: 20),
@@ -1909,9 +1866,11 @@ class TrackListScreen extends StatelessWidget {
       currentTrack = track;
       audioHandler?.updateNowPlaying(_trackToMediaItem(track));
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not play file: $e')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not play file: $e')),
+        );
+      }
     }
   }
 }
@@ -1954,7 +1913,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
               child: Text(
                 'No playlists yet — create one from the Library tab.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
               ),
             )
           : ListView.builder(
@@ -1968,7 +1927,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   leading: Container(
                     width: 44, height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2196F3).withOpacity(0.12),
+                      color: const Color(0xFF2196F3).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.playlist_play, color: Color(0xFF2196F3)),
@@ -1982,7 +1941,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                   ),
                   onTap: () => Navigator.push(
                     context,
-                    AppPageRoute(
+                    AppPageRoute<void>(
                       builder: (_) => TrackListScreen(
                         title: playlist['name'] as String? ?? 'Playlist',
                         tracks: tracks,
@@ -1999,9 +1958,9 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   }
 }
 
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════
 // PROFILE SCREEN
-// ═══════════════════════════════════════════════
+// ════════════════════════════════════════════════
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -2010,164 +1969,305 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
-  bool _busy = false;
+class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+  ProfileModel? _profile;
+  List<ShotModel> _userShots = <ShotModel>[];
+  bool _isLoading = true;
+  late TabController _tabController;
 
-  Future<void> _handleGoogleSignIn() async {
-    setState(() => _busy = true);
-    final result = await AuthService.instance.signInWithGoogle();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (result.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.error!)),
-      );
-    }
-    // No need to manually setState on success — SupabaseService's auth
-    // state is read fresh in build() below, and the sign-in flow
-    // itself already awaited completion.
-    setState(() {});
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _loadProfileData();
   }
 
-  Future<void> _handleSignOut() async {
-    await AuthService.instance.signOut();
-    if (mounted) setState(() {});
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadProfileData() async {
+    setState(() => _isLoading = true);
+    final profile = await ProfileService.instance.getCurrentProfile();
+    final shots = await ShotsService.instance.fetchUserShots(profile.id);
+    if (mounted) {
+      setState(() {
+        _profile = profile;
+        _userShots = shots;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final user = SupabaseService.currentUser;
     final isSignedIn = user != null;
-    final displayName = (user?.userMetadata?['full_name'] as String?) ??
-        (user?.userMetadata?['name'] as String?) ??
-        'V Shots User';
-    final email = user?.email ?? 'Not signed in';
+    final profile = _profile ?? ProfileModel(
+      id: 'self',
+      username: 'vshots_creator',
+      fullName: user?.email ?? 'V Shots Creator',
+      bio: 'Creating vibes on V Shots 🎬✨',
+      followersCount: 1420,
+      followingCount: 280,
+      shotsCount: _userShots.length,
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Center(child: Column(children: [
-            CircleAvatar(
-              radius: 44,
-              backgroundColor: AppColors.surface,
-              backgroundImage:
-                  (user?.userMetadata?['avatar_url'] as String?) != null
-                      ? NetworkImage(user!.userMetadata!['avatar_url'] as String)
-                      : null,
-              child: (user?.userMetadata?['avatar_url'] as String?) == null
-                  ? Text(displayName.isNotEmpty ? displayName[0] : 'V',
-                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700,
-                          color: Colors.white.withOpacity(0.8)))
-                  : null,
-            ),
-            const SizedBox(height: 12),
-            Text(displayName,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-            Text(email,
-                style: TextStyle(color: Colors.white.withOpacity(0.5))),
-          ])),
-          const SizedBox(height: 24),
-          if (!isSignedIn)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: ElevatedButton.icon(
-                onPressed: _busy ? null : _handleGoogleSignIn,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.login),
-                label: Text(_busy ? 'Signing in...' : 'Sign in with Google'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accent,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          const SizedBox(height: 8),
-          // "Upgrade to Premium" — REMOVED (Phase 8 fix). There is no
-          // real subscription/billing/premium-gating implementation
-          // anywhere in this codebase; per this task's Phase 10 rule
-          // ("if a feature is not implemented, remove the button
-          // rather than leaving a dummy button"), a fake "Coming
-          // Soon" dialog would still be a non-functional decoration,
-          // so the row is gone entirely rather than wired to nothing.
-          _item(
-            context,
-            Icons.settings,
-            'Settings',
-            onTap: () => Navigator.push(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        elevation: 0,
+        title: Text(
+          '@${profile.username}',
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: AppColors.textMain),
+            onPressed: () => Navigator.push(
               context,
               AppPageRoute<void>(builder: (_) => const SettingsScreen()),
-            ),
+            ).then((_) => _loadProfileData()),
           ),
-          _item(
-            context,
-            Icons.help_outline,
-            'Help & Support',
-            onTap: () => Navigator.push(
-              context,
-              AppPageRoute<void>(builder: (_) => const HelpScreen()),
-            ),
-          ),
-          _item(
-            context,
-            Icons.privacy_tip_outlined,
-            'Privacy Policy',
-            onTap: () => Navigator.push(
-              context,
-              AppPageRoute<void>(
-                builder: (_) => const LegalDocScreen(
-                  title: 'Privacy Policy',
-                  assetPath: 'docs/legal/privacy_policy.md',
+        ],
+      ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primaryLight),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadProfileData,
+              color: AppColors.primaryLight,
+              backgroundColor: AppColors.surface2,
+              child: NestedScrollView(
+                headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      child: Column(
+                        children: [
+                          Center(
+                            child: AppAvatar(
+                              avatarUrl: profile.avatarUrl,
+                              name: profile.fullName,
+                              size: 88,
+                              hasGradientBorder: true,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            profile.fullName,
+                            style: const TextStyle(
+                              color: AppColors.textMain,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (profile.bio.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                              child: Text(
+                                profile.bio,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 16),
+                          ProfileStats(
+                            shotsCount: _userShots.length,
+                            followersCount: profile.followersCount,
+                            followingCount: profile.followingCount,
+                          ),
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AppButton(
+                                  text: 'Edit Profile',
+                                  icon: Icons.edit_outlined,
+                                  variant: AppButtonVariant.secondary,
+                                  size: AppButtonSize.medium,
+                                  onPressed: () => Navigator.push(
+                                    context,
+                                    AppPageRoute<void>(
+                                      builder: (_) => EditProfileScreen(
+                                        initialProfile: profile,
+                                        onProfileUpdated: (p) => setState(() => _profile = p),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              if (!isSignedIn)
+                                Expanded(
+                                  child: AppButton(
+                                    text: 'Sign In',
+                                    icon: Icons.login_rounded,
+                                    variant: AppButtonVariant.primary,
+                                    size: AppButtonSize.medium,
+                                    onPressed: () => AuthModal.show(context).then((_) => _loadProfileData()),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _ProfileTabBarDelegate(
+                      TabBar(
+                        controller: _tabController,
+                        indicatorColor: AppColors.accent,
+                        indicatorWeight: 3,
+                        labelColor: AppColors.accent,
+                        unselectedLabelColor: AppColors.textMuted,
+                        tabs: const [
+                          Tab(icon: Icon(Icons.grid_view_rounded), text: 'Shots'),
+                          Tab(icon: Icon(Icons.favorite_rounded), text: 'Liked'),
+                          Tab(icon: Icon(Icons.bookmark_rounded), text: 'Saved'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                body: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildShotsGrid(_userShots),
+                    _buildLikedTracksTab(),
+                    _buildSavedTab(),
+                  ],
                 ),
               ),
             ),
-          ),
-          _item(
-            context,
-            Icons.description_outlined,
-            'Terms of Service',
-            onTap: () => Navigator.push(
-              context,
-              AppPageRoute<void>(
-                builder: (_) => const LegalDocScreen(
-                  title: 'Terms of Service',
-                  assetPath: 'docs/legal/terms_of_service.md',
-                ),
-              ),
+    );
+  }
+
+  Widget _buildShotsGrid(List<ShotModel> shots) {
+    if (shots.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.videocam_outlined, size: 48, color: AppColors.textSubtle),
+            const SizedBox(height: 12),
+            const Text('No shots published yet', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              icon: const Icon(Icons.add_rounded, color: AppColors.accent),
+              label: const Text('Create First Shot', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600)),
+              onPressed: () => Navigator.of(context).push(
+                AppPageRoute<void>(builder: (_) => const UploadShotScreen()),
+              ).then((_) => _loadProfileData()),
             ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.72,
+      ),
+      itemCount: shots.length,
+      itemBuilder: (context, index) {
+        final s = shots[index];
+        return VideoPlayerCard(
+          videoUrl: s.videoUrl,
+          thumbnailUrl: s.thumbnailUrl,
+          durationSeconds: s.durationSeconds,
+          title: s.caption,
+          creatorName: _profile?.username ?? 'creator',
+          onTap: () {
+            // Open full shot
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildLikedTracksTab() {
+    final liked = LocalLibrary.instance.likedSongs.value;
+    if (liked.isEmpty) {
+      return const Center(
+        child: Text('No liked songs yet ♡', style: TextStyle(color: AppColors.textMuted)),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: liked.length,
+      itemBuilder: (context, index) {
+        final t = liked[index];
+        return ListTile(
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: AppImage(t['artwork'] as String?, width: 44, height: 44, fit: BoxFit.cover),
           ),
-          const SizedBox(height: 16),
-          if (isSignedIn)
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Sign Out', style: TextStyle(color: Colors.red)),
-              onTap: _handleSignOut,
-            ),
+          title: Text(t['title'] as String? ?? '', style: const TextStyle(color: AppColors.textMain, fontSize: 14), maxLines: 1),
+          subtitle: Text(t['artist'] as String? ?? '', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          trailing: const Icon(Icons.favorite, color: AppColors.hotPink, size: 20),
+          onTap: () => playTrack(context, t, liked, index),
+        );
+      },
+    );
+  }
+
+  Widget _buildSavedTab() {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.bookmark_border_rounded, size: 42, color: AppColors.textSubtle),
+          SizedBox(height: 10),
+          Text('Bookmarks saved to cloud sync', style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
         ],
       ),
     );
   }
+}
 
-  /// Real, working row — Phase 8 fix. Previously this helper took no
-  /// `onTap` at all, meaning every row using it (including this
-  /// method's own former callers) was silently unclickable despite
-  /// showing a chevron. Every caller now passes a real destination
-  /// (see above) — this is no longer possible to call without one.
-  Widget _item(BuildContext context, IconData icon, String label,
-      {required VoidCallback onTap, Color? color}) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? Colors.white.withOpacity(0.7)),
-      title: Text(label),
-      trailing: Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3)),
-      onTap: onTap,
+class _ProfileTabBarDelegate extends SliverPersistentHeaderDelegate {
+  _ProfileTabBarDelegate(this._tabBar);
+  final TabBar _tabBar;
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppColors.background,
+      child: _tabBar,
     );
+  }
+
+  @override
+  bool shouldRebuild(_ProfileTabBarDelegate oldDelegate) {
+    return false;
   }
 }
 
@@ -2248,7 +2348,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter, end: Alignment.bottomCenter,
             colors: [
-              AppColors.accent.withOpacity(0.12),
+              AppColors.accent.withValues(alpha: 0.12),
               AppColors.background,
             ],
           ),
@@ -2268,10 +2368,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   Column(children: [
                     Text('PLAYING FROM',
                         style: TextStyle(fontSize: 10,
-                            color: Colors.white.withOpacity(0.5))),
+                            color: Colors.white.withValues(alpha: 0.5))),
                     Text('Search',
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                            color: Colors.white.withOpacity(0.7))),
+                            color: Colors.white.withValues(alpha: 0.7))),
                   ]),
                   IconButton(
                     icon: const Icon(Icons.more_vert),
@@ -2292,7 +2392,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                        color: AppColors.accent.withOpacity(0.25),
+                        color: AppColors.accent.withValues(alpha: 0.25),
                         blurRadius: 40, offset: const Offset(0, 20)),
                   ],
                 ),
@@ -2339,7 +2439,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       const SizedBox(height: 4),
                       Text((_currentTrack['artist'] as String?) ?? '',
                           style: TextStyle(fontSize: 16,
-                              color: Colors.white.withOpacity(0.7)),
+                              color: Colors.white.withValues(alpha: 0.7)),
                           maxLines: 1, overflow: TextOverflow.ellipsis),
                     ])),
                 IconButton(
@@ -2353,11 +2453,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     child: Icon(
                       _isLiked ? Icons.favorite : Icons.favorite_border,
                       size: 28,
-                      color: _isLiked ? AppColors.accent : Colors.white.withOpacity(0.7),
+                      color: _isLiked ? AppColors.accent : Colors.white.withValues(alpha: 0.7),
                     ),
                   ),
                   onPressed: () async {
-                    HapticFeedback.lightImpact();
+                    unawaited(HapticFeedback.lightImpact());
                     final wasLiked = _isLiked;
                     await LocalLibrary.instance.toggleLiked(_currentTrack);
                     // Phase 7 (Part I): real like/unlike signal for the
@@ -2384,7 +2484,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   tooltip: 'Lyrics',
                   onPressed: () => Navigator.push(
                     context,
-                    AppPageRoute(
+                    AppPageRoute<void>(
                       builder: (_) => LyricsScreen(track: _currentTrack),
                     ),
                   ),
@@ -2400,7 +2500,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 SliderTheme(
                   data: SliderThemeData(
                     activeTrackColor: AppColors.accent,
-                    inactiveTrackColor: Colors.white.withOpacity(0.1),
+                    inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
                     thumbColor: AppColors.accent,
                     trackHeight: 3,
                     thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
@@ -2420,9 +2520,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(_fmt(_position),
-                          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
                       Text(_fmt(_duration),
-                          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
                     ],
                   ),
                 ),
@@ -2443,7 +2543,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     icon: Icon(Icons.shuffle, size: 24,
                         color: isShuffleOn
                             ? AppColors.accent
-                            : Colors.white.withOpacity(0.6)),
+                            : Colors.white.withValues(alpha: 0.6)),
                     tooltip: isShuffleOn ? 'Shuffle on' : 'Shuffle off',
                     onPressed: () {
                       HapticFeedback.selectionClick();
@@ -2482,7 +2582,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                            color: AppColors.accent.withOpacity(0.4),
+                            color: AppColors.accent.withValues(alpha: 0.4),
                             blurRadius: 20, offset: const Offset(0, 8)),
                       ],
                     ),
@@ -2510,7 +2610,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             : Icons.repeat,
                         size: 24,
                         color: repeatMode == RepeatMode.off
-                            ? Colors.white.withOpacity(0.6)
+                            ? Colors.white.withValues(alpha: 0.6)
                             : AppColors.accent),
                     tooltip: switch (repeatMode) {
                       RepeatMode.off => 'Repeat off',
@@ -2633,7 +2733,7 @@ void showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
                     padding: const EdgeInsets.all(24),
                     child: Text(
                       'No playlists yet. Create one from the Library tab first.',
-                      style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                     ),
                   )
                 else
@@ -2686,7 +2786,7 @@ void showMoreOptionsSheet(
             Container(
               width: 36, height: 4,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -2759,7 +2859,7 @@ void showSleepTimerSheet(BuildContext context) {
                     child: Column(children: [
                       Text(
                         '${remaining.inMinutes}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')} remaining',
-                        style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600),
+                        style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600),
                       ),
                       TextButton(
                         onPressed: () {
@@ -2866,12 +2966,12 @@ class _LyricsScreenState extends State<LyricsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lyrics_outlined, size: 56, color: Colors.white.withOpacity(0.2)),
+              Icon(Icons.lyrics_outlined, size: 56, color: Colors.white.withValues(alpha: 0.2)),
               const SizedBox(height: 16),
               Text(
                 'Lyrics not available for this track',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
               ),
             ],
           ),
@@ -2882,7 +2982,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
     if (result.instrumental) {
       return Center(
         child: Text('🎵 Instrumental — no lyrics',
-            style: TextStyle(color: Colors.white.withOpacity(0.5))),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
       );
     }
 
@@ -2900,7 +3000,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
               style: TextStyle(
                 fontSize: isActive ? 20 : 16,
                 fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
-                color: isActive ? AppColors.accent : Colors.white.withOpacity(0.5),
+                color: isActive ? AppColors.accent : Colors.white.withValues(alpha: 0.5),
               ),
             ),
           );

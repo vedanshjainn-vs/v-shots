@@ -11,7 +11,7 @@ description: V Shots - Music Streaming App
 # field from lying about the app's real version. Bump BOTH values
 # together going forward (this file AND build.gradle) until/unless
 # build.gradle is switched to read from here automatically.
-version: 5.3.0+12
+version: 5.4.0+13
 publish_to: "none"
 
 environment:
@@ -67,6 +67,7 @@ dependencies:
   url_launcher: ^6.3.2
 
 dev_dependencies:
+  flutter_lints: ^5.0.0
   flutter_test:
     sdk: flutter
 

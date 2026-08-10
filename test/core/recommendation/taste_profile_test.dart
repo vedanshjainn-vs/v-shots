@@ -1,6 +1,7 @@
 // ════════════════════════════════════════════════
 // V Shots — TasteProfileBuilder tests (Phase 7, Part X)
 // ════════════════════════════════════════════════
+// ignore_for_file: unnecessary_null_checks
 //
 // Tests artist affinity, genre affinity, skip penalty, and completion
 // reward — all against real SignalEvent lists (no shared_preferences
@@ -51,7 +52,7 @@ void main() {
           trackId: 't2',
         ),
       ]);
-      expect(profile.artistAffinity['B'], greaterThanOrEqualTo(4.0));
+      expect(profile.artistAffinity['B']!, greaterThanOrEqualTo(4.0));
     });
 
     test('unlike is a mild negative, not punitive', () {
@@ -60,8 +61,8 @@ void main() {
       ]);
       // Should be negative but small in magnitude (not treated like a
       // skip-level penalty).
-      expect(profile.artistAffinity['C'], lessThan(0));
-      expect(profile.artistAffinity['C'], greaterThan(-2.0));
+      expect(profile.artistAffinity['C']!, lessThan(0));
+      expect(profile.artistAffinity['C']!, greaterThan(-2.0));
     });
 
     test('affinity decays with age (recency-weighted)', () {
@@ -92,7 +93,7 @@ void main() {
           value: 3.0, // 3 seconds listened before skip
         ),
       ]);
-      expect(profile.artistSkipPenalty['E'], greaterThan(0));
+      expect(profile.artistSkipPenalty['E']!, greaterThan(0));
     });
 
     test('late skip (near end of track) produces a smaller penalty than an immediate skip', () {

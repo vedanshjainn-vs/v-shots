@@ -29,13 +29,13 @@ void main() {
 
   test('a track from a high-affinity artist scores higher than a neutral one', () {
     final scorer = RecommendationScorer();
-    final highAffinityProfile = TasteProfile(
+    const highAffinityProfile = TasteProfile(
       artistAffinity: {'Known Artist': 5.0},
-      genreAffinity: const {},
-      artistSkipPenalty: const {},
+      genreAffinity: {},
+      artistSkipPenalty: {},
       totalSignalCount: 5,
     );
-    final neutralProfile = TasteProfile.empty;
+    const neutralProfile = TasteProfile.empty;
 
     final highScore = scorer.score(track, highAffinityProfile,
         sourceQuery: null, isTrendingOrNewSource: false);
@@ -47,16 +47,16 @@ void main() {
 
   test('skip penalty lowers the score for that artist', () {
     final scorer = RecommendationScorer();
-    final withSkipPenalty = TasteProfile(
+    const withSkipPenalty = TasteProfile(
       artistAffinity: {'Known Artist': 2.0},
-      genreAffinity: const {},
+      genreAffinity: {},
       artistSkipPenalty: {'Known Artist': 3.0},
       totalSignalCount: 5,
     );
-    final withoutSkipPenalty = TasteProfile(
+    const withoutSkipPenalty = TasteProfile(
       artistAffinity: {'Known Artist': 2.0},
-      genreAffinity: const {},
-      artistSkipPenalty: const {},
+      genreAffinity: {},
+      artistSkipPenalty: {},
       totalSignalCount: 5,
     );
 
@@ -70,7 +70,7 @@ void main() {
 
   test('trending/new-content source gets a popularity boost', () {
     final scorer = RecommendationScorer();
-    final profile = TasteProfile.empty;
+    const profile = TasteProfile.empty;
     final trending = scorer.score(track, profile,
         sourceQuery: null, isTrendingOrNewSource: true);
     final nonTrending = scorer.score(track, profile,
@@ -111,10 +111,10 @@ void main() {
 
   test('genre similarity contributes when candidate tags overlap user top genres', () {
     final scorer = RecommendationScorer();
-    final profile = TasteProfile(
-      artistAffinity: const {},
+    const profile = TasteProfile(
+      artistAffinity: {},
       genreAffinity: {'Punjabi': 5.0},
-      artistSkipPenalty: const {},
+      artistSkipPenalty: {},
       totalSignalCount: 5,
     );
     const punjabiTrack = ProviderTrack(

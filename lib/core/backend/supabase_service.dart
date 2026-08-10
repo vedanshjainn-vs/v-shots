@@ -66,6 +66,7 @@ class SupabaseService {
         return;
       }
 
+      // ignore: deprecated_member_use
       await Supabase.initialize(url: url, anonKey: anonKey);
       _available = true;
       debugPrint('[SupabaseService] Initialized successfully.');

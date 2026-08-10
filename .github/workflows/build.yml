@@ -1,45 +1,96 @@
-name: Build APK
+name: V Shots CI/CD Build & Test
 
 on:
   push:
+    branches: [ main, v2-fresh-ui-secure-release ]
+  pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build_and_test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Secret Scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
-      # .env is intentionally committed to the repo (see .env's own
-      # header comment) — it contains only the Supabase anon key
-      # (public-by-design, RLS-governed) and the Google Web Client ID
-      # (also not a secret). Nothing sensitive is written here.
-      - run: flutter pub get
-      - run: flutter build apk --debug
-      - name: Check APK
-        run: ls -lh build/app/outputs/flutter-apk/
-      - name: Upload APK (GitHub artifact)
+          channel: 'stable'
+          cache: true
+
+      - name: Configure Environment (.env)
+        run: |
+          cat <<EOF > .env
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          EOF
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Linter & Static Analysis
+        run: flutter analyze
+
+      - name: Run Unit & Widget Tests
+        run: flutter test
+
+      - name: Build Debug APK
+        run: flutter build apk --debug
+
+      - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: v-shots-universal
+          name: v-shots-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
 
-      # ── BrowserStack App Automate: real-device smoke test ──────────
-      # Uses BrowserStack's documented upload API directly via curl —
-      # see https://www.browserstack.com/docs/app-automate/api-reference/appium/apps#upload-app
-      # Requires BROWSERSTACK_USERNAME / BROWSERSTACK_ACCESS_KEY to be
-      # set in this repo's GitHub Actions secrets (Settings -> Secrets
-      # and variables -> Actions) — see BROWSERSTACK_SETUP.md.
+      - name: Setup Release Keystore & Build Release AAB / APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app/keystores
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/keystores/release.keystore
+          export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
+          flutter build appbundle --release
+          flutter build apk --release
+
+      - name: Upload Release Artifacts
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-release-artifacts
+          path: |
+            build/app/outputs/bundle/release/app-release.aab
+            build/app/outputs/flutter-apk/app-release.apk
+
+      # ── BrowserStack App Automate Upload & Smoke Test ──────────────
       - name: Upload APK to BrowserStack App Automate
-        if: ${{ env.BROWSERSTACK_USERNAME != '' }}
+        if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
@@ -58,7 +109,7 @@ jobs:
           echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
           echo "✅ Uploaded to BrowserStack: $APP_URL"
 
-      - name: Run BrowserStack real-device smoke test
+      - name: Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
