@@ -850,40 +850,84 @@ class YouTubeDataApiClient {
   }) {
     final cleanQuery = query.toLowerCase().trim();
 
-    // Map common query words directly to categories
+    // Map common query words directly to categories — comprehensive mapping for all filters
     String? matchedCategory;
+    List<String>? multiCategories;
     if (cleanQuery.contains('devotional') ||
         cleanQuery.contains('bhajan') ||
         cleanQuery.contains('hanuman') ||
-        cleanQuery.contains('aarti')) {
+        cleanQuery.contains('aarti') ||
+        cleanQuery.contains('bhakti')) {
       matchedCategory = 'devotional';
     } else if (cleanQuery.contains('sufi') ||
         cleanQuery.contains('ghazal') ||
-        cleanQuery.contains('nusrat')) {
+        cleanQuery.contains('nusrat') ||
+        cleanQuery.contains('qawwali')) {
       matchedCategory = 'sufi';
     } else if (cleanQuery.contains('90s') ||
         cleanQuery.contains('nostalgia') ||
         cleanQuery.contains('evergreen') ||
-        cleanQuery.contains('classic')) {
+        cleanQuery.contains('classic') ||
+        cleanQuery.contains('retro')) {
       matchedCategory = 'nostalgia';
     } else if (cleanQuery.contains('workout') ||
         cleanQuery.contains('gym') ||
         cleanQuery.contains('cardio') ||
-        cleanQuery.contains('hype')) {
+        cleanQuery.contains('hype') ||
+        cleanQuery.contains('fitness') ||
+        cleanQuery.contains('running')) {
       matchedCategory = 'workout';
     } else if (cleanQuery.contains('punjabi') ||
         cleanQuery.contains('diljit') ||
         cleanQuery.contains('aujla') ||
-        cleanQuery.contains('dhillon')) {
+        cleanQuery.contains('dhillon') ||
+        cleanQuery.contains('shubh')) {
       matchedCategory = 'punjabi';
+    } else if (cleanQuery.contains('english') ||
+        cleanQuery.contains('international') ||
+        cleanQuery.contains('billboard') ||
+        cleanQuery.contains('global') ||
+        cleanQuery.contains('ed sheeran') ||
+        cleanQuery.contains('weeknd') ||
+        cleanQuery.contains('adele')) {
+      matchedCategory = 'global';
+    } else if (cleanQuery.contains('hip hop') ||
+        cleanQuery.contains('hip-hop') ||
+        cleanQuery.contains('hiphop') ||
+        cleanQuery.contains('rap') ||
+        cleanQuery.contains('eminem') ||
+        cleanQuery.contains('drake')) {
+      matchedCategory = 'workout';
+      multiCategories = ['workout', 'global'];
+    } else if (cleanQuery.contains('edm') ||
+        cleanQuery.contains('electro') ||
+        cleanQuery.contains('house music') ||
+        cleanQuery.contains('dance')) {
+      multiCategories = ['global', 'workout', 'ambient'];
+    } else if (cleanQuery.contains('romantic') ||
+        cleanQuery.contains('love song') ||
+        cleanQuery.contains('romance')) {
+      multiCategories = ['bollywood', 'indie', 'global'];
+    } else if (cleanQuery.contains('sad') ||
+        cleanQuery.contains('heartbroken') ||
+        cleanQuery.contains('emotional') ||
+        cleanQuery.contains('breakup') ||
+        cleanQuery.contains('heart break')) {
+      multiCategories = ['nostalgia', 'indie', 'bollywood'];
+    } else if (cleanQuery.contains('party') ||
+        cleanQuery.contains('celebration') ||
+        cleanQuery.contains('festival')) {
+      multiCategories = ['punjabi', 'workout', 'bollywood'];
     } else if (cleanQuery.contains('bollywood') ||
-        cleanQuery.contains('hindi') ||
-        cleanQuery.contains('arijit')) {
+        (cleanQuery.contains('hindi') && !cleanQuery.contains('indie')) ||
+        cleanQuery.contains('arijit') ||
+        cleanQuery.contains('bolly')) {
       matchedCategory = 'bollywood';
     } else if (cleanQuery.contains('indie') ||
         cleanQuery.contains('acoustic') ||
         cleanQuery.contains('anuv') ||
-        cleanQuery.contains('kuhad')) {
+        cleanQuery.contains('kuhad') ||
+        cleanQuery.contains('prateek')) {
       matchedCategory = 'indie';
     } else if (cleanQuery.contains('marathi')) {
       matchedCategory = 'marathi';
@@ -896,14 +940,49 @@ class YouTubeDataApiClient {
       matchedCategory = 'telugu';
     } else if (cleanQuery.contains('bengali')) {
       matchedCategory = 'bengali';
+    } else if (cleanQuery.contains('trending') ||
+        cleanQuery.contains('viral') ||
+        cleanQuery.contains('top hits')) {
+      matchedCategory = 'global';
     } else if (cleanQuery.contains('chill') ||
         cleanQuery.contains('sleep') ||
         cleanQuery.contains('lofi') ||
-        cleanQuery.contains('ambient')) {
+        cleanQuery.contains('ambient') ||
+        cleanQuery.contains('study') ||
+        cleanQuery.contains('focus')) {
       matchedCategory = 'ambient';
     }
 
-    // 1. Direct category match
+    // 1. Direct category match (single or multi-category)
+    if (multiCategories != null && multiCategories.isNotEmpty) {
+      final multiMatches = <YouTubeVideoItem>[];
+      for (final cat in multiCategories) {
+        multiMatches.addAll(
+          _curatedCatalog.where((item) {
+            return !excludeIds.contains(item.id) &&
+                item.category == cat &&
+                !multiMatches.any((m) => m.id == item.id);
+          }),
+        );
+      }
+      // Interleave for diversity: take round-robin from each category
+      if (multiMatches.isNotEmpty) {
+        // Respect order param: viewCount/date sorting simulation
+        if (order == 'viewCount') {
+          multiMatches.sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
+        } else if (order == 'date') {
+          multiMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020)).compareTo(a.publishedAt ?? DateTime(2020)));
+        }
+        if (multiMatches.length < maxResults) {
+          final others = _curatedCatalog.where((item) {
+            return !excludeIds.contains(item.id) &&
+                !multiMatches.any((m) => m.id == item.id);
+          }).toList();
+          multiMatches.addAll(others.take(maxResults - multiMatches.length));
+        }
+        return multiMatches.take(maxResults).toList();
+      }
+    }
     if (matchedCategory != null) {
       final catMatches = _curatedCatalog.where((item) {
         return !excludeIds.contains(item.id) &&
@@ -911,6 +990,14 @@ class YouTubeDataApiClient {
       }).toList();
 
       if (catMatches.isNotEmpty) {
+        // Apply order sorting simulation for fallback determinism
+        if (order == 'viewCount') {
+          catMatches.sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
+        } else if (order == 'date') {
+          catMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020)).compareTo(a.publishedAt ?? DateTime(2020)));
+        } else {
+          catMatches.shuffle();
+        }
         if (catMatches.length < maxResults) {
           final others = _curatedCatalog.where((item) {
             return !excludeIds.contains(item.id) &&

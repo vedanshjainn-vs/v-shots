@@ -11,7 +11,7 @@ description: V Shots - Music Streaming App
 # field from lying about the app's real version. Bump BOTH values
 # together going forward (this file AND build.gradle) until/unless
 # build.gradle is switched to read from here automatically.
-version: 5.4.0+13
+version: 5.4.1+14
 publish_to: "none"
 
 environment:

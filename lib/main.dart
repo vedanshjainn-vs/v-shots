@@ -386,6 +386,7 @@ class _MainShellState extends State<MainShell> {
                 return ValueListenableBuilder<bool>(
                   valueListenable: isPlayerExpandedNotifier,
                   builder: (context, isExpanded, _) {
+                    if (!isExpanded && _index == 1) return const SizedBox.shrink();
                     return _PersistentPlayerOverlay(
                       track: track,
                       isExpanded: isExpanded,
@@ -1476,6 +1477,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             _buildArtistsSpotlightSliver(),
             for (final section in _sections) _buildSectionSliver(section),
+            _buildRecentlyPlayedSliver(),
+            _buildMoodGenresSliver(),
             const SliverToBoxAdapter(child: SizedBox(height: 160)),
           ],
         ),
@@ -1830,6 +1833,211 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ],
     );
   }
+
+  Widget _buildRecentlyPlayedSliver() {
+    return SliverToBoxAdapter(
+      child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+        valueListenable: LocalLibrary.instance.recentlyPlayed,
+        builder: (context, recent, _) {
+          if (recent.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.history_rounded, size: 18, color: AppColors.warning),
+                      SizedBox(width: 6),
+                      Text('Recently Played', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+                    child: Row(
+                      children: [
+                        Container(width: 48, height: 48, decoration: BoxDecoration(color: AppColors.surface2, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.music_note_rounded, color: AppColors.textMuted)),
+                        const SizedBox(width: 14),
+                        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('No recent plays yet', style: TextStyle(fontWeight: FontWeight.w600)), SizedBox(height: 2), Text('Play any track — it will appear here', style: TextStyle(color: AppColors.textMuted, fontSize: 12))])), 
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          final display = recent.take(15).toList();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.history_rounded, size: 18, color: AppColors.warning),
+                    const SizedBox(width: 6),
+                    const Text('Recently Played', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    TextButton(onPressed: () => LocalLibrary.instance.clearRecentlyPlayed(), child: const Text('Clear', style: TextStyle(color: AppColors.textMuted, fontSize: 12))),
+                  ],
+                ),
+              ),
+              SizedBox(
+                height: 210,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: display.length,
+                  itemBuilder: (context, i) {
+                    final track = display[i];
+                    return PressableScale(
+                      onTap: () => playTrack(context, track, display, i),
+                      child: Container(
+                        width: 150,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AspectRatio(
+                              aspectRatio: 1,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    AppImage((track['artwork'] as String?) ?? '', fit: BoxFit.cover, width: 150, height: 150),
+                                    Positioned(right: 8, bottom: 8, child: ValueListenableBuilder<Map<String, dynamic>?>(valueListenable: currentTrackNotifier, builder: (context, current, _) {
+                                      final isThisPlaying = current?['id'] == track['id'];
+                                      return Container(width: 36, height: 36, decoration: BoxDecoration(color: isThisPlaying ? AppColors.primary : AppColors.accent, shape: BoxShape.circle, boxShadow: [BoxShadow(color: (isThisPlaying ? AppColors.primary : AppColors.accent).withValues(alpha: 0.4), blurRadius: 8)]), child: Center(child: isThisPlaying ? const AnimatedEqualizer(size: 16, color: Colors.white) : const Icon(Icons.play_arrow, size: 20, color: Colors.white)));
+                                    })),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text((track['title'] as String?) ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                            Text((track['artist'] as String?) ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMoodGenresSliver() {
+    const moods = [
+      ('Trending Hits', '🔥', Color(0xFFE91E63), 'trending hits viral songs official audio'),
+      ('Romantic', '💖', Color(0xFFEC4899), 'romantic love songs official audio hindi'),
+      ('Party & Dance', '🎉', Color(0xFF7C3AED), 'party dance bollywood punjabi hits'),
+      ('Chill & Sleep', '😌', Color(0xFF22D3EE), 'chill lofi sleep beats official audio'),
+      ('Workout', '💪', Color(0xFFF59E0B), 'workout gym motivation hype songs'),
+      ('Sad & Emotional', '🌧️', Color(0xFF64748B), 'sad heartbroken emotional songs'),
+      ('Devotional', '🙏', Color(0xFFF59E0B), 'devotional bhajan aarti official audio'),
+      ('Hip-Hop', '🎤', Color(0xFF111827), 'hip hop rap desi english songs'),
+      ('EDM', '🎧', Color(0xFF0891B2), 'edm electronic dance music hits'),
+      ('Bollywood', '🎬', Color(0xFFE91E63), 'top bollywood hindi songs official'),
+      ('Punjabi', '🥁', Color(0xFFFF9800), 'latest punjabi pop hits official audio'),
+      ('English Pop', '🌍', Color(0xFF2196F3), 'top english pop billboard hits official'),
+    ];
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
+            child: Row(
+              children: [
+                Icon(Icons.mood_rounded, size: 18, color: AppColors.accent),
+                SizedBox(width: 6),
+                Text('Mood & Genres', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, childAspectRatio: 2.8, crossAxisSpacing: 10, mainAxisSpacing: 10),
+              itemCount: moods.length,
+              itemBuilder: (context, i) {
+                final (label, emoji, color, query) = moods[i];
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    Navigator.push(context, AppPageRoute<void>(builder: (_) => _MoodGenreSearchScaffold(initialQuery: query, title: label)));
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [color.withValues(alpha: 0.22), color.withValues(alpha: 0.08)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: color.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(emoji, style: const TextStyle(fontSize: 20)),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppColors.textMuted),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoodGenreSearchScaffold extends StatefulWidget {
+  const _MoodGenreSearchScaffold({required this.initialQuery, required this.title});
+  final String initialQuery;
+  final String title;
+  @override
+  State<_MoodGenreSearchScaffold> createState() => _MoodGenreSearchScaffoldState();
+}
+
+class _MoodGenreSearchScaffoldState extends State<_MoodGenreSearchScaffold> {
+  List<Map<String, dynamic>> _tracks = [];
+  bool _loading = true;
+  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final res = await musicRepository.search(widget.initialQuery, limit: 20);
+      if (!mounted) return;
+      setState(() { _tracks = res; _loading = false; if (res.isEmpty) _error = 'No tracks found'; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _loading = false; _error = e.toString(); });
+    }
+  }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(backgroundColor: AppColors.surface, title: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w800)), leading: IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => Navigator.pop(context)), actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load)]),
+      body: _loading ? const Center(child: CircularProgressIndicator(color: AppColors.accent)) : _error != null ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text(_error!, style: const TextStyle(color: AppColors.textMuted)), const SizedBox(height: 12), ElevatedButton(onPressed: _load, child: const Text('Retry'))])) : ListView.builder(padding: const EdgeInsets.fromLTRB(16, 12, 16, 100), itemCount: _tracks.length, itemBuilder: (c,i){ final t=_tracks[i]; return ListTile(leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: AppImage(t['artwork'] as String?, width: 50, height: 50, fit: BoxFit.cover)), title: Text((t['title'] as String?)??'', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), subtitle: Text((t['artist'] as String?)??'', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)), trailing: const Icon(Icons.play_circle_filled_rounded, color: AppColors.accent), onTap: ()=> playTrack(context, t, _tracks, i));}),
+    );
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -1854,6 +2062,11 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searchFocused = false;
   Timer? _debounce;
   int _requestSeq = 0;
+  final ScrollController _scrollController = ScrollController();
+  final Set<String> _seenIds = {};
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  static const int _pageSize = 20;
 
   static const _categories = [
     ('Bollywood', '🎵', Color(0xFFE91E63)),
@@ -1874,6 +2087,8 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _status = _SearchStatus.idle;
         _results = [];
+        _hasMore = true;
+        _seenIds.clear();
       });
       return;
     }
@@ -1883,27 +2098,33 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<void> _search(String q) async {
     final query = q.trim();
     if (query.isEmpty) return;
+    _seenIds.clear();
+    _hasMore = true;
+    _isLoadingMore = false;
 
     final cached = SearchCache.instance.get(query);
     final isFresh = SearchCache.instance.isFresh(query);
     if (cached != null) {
+      _seenIds.addAll(cached.map((e) => e['id'] as String? ?? '').where((id) => id.isNotEmpty));
       setState(() {
         _results = cached;
         _status = _SearchStatus.loaded;
         _lastQuery = query;
+        _hasMore = cached.length >= _pageSize;
       });
       if (isFresh) return;
     } else {
       setState(() {
         _status = _SearchStatus.loading;
         _lastQuery = query;
+        _results = [];
       });
     }
 
     final seq = ++_requestSeq;
 
     try {
-      final detailed = await musicRepository.searchDetailed(query);
+      final detailed = await musicRepository.searchDetailed(query, limit: _pageSize);
       if (seq != _requestSeq || !mounted) return;
 
       if (!detailed.success) {
@@ -1913,26 +2134,72 @@ class _SearchScreenState extends State<SearchScreen> {
         return;
       }
 
-      final seenIds = <String>{};
-      final uniqueResults = detailed.tracks.where((track) {
+      final uniqueResults = <Map<String, dynamic>>[];
+      for (final track in detailed.tracks) {
         final id = track['id'] as String? ?? '';
-        if (id.isEmpty) return false;
-        return seenIds.add(id);
-      }).toList();
+        if (id.isEmpty || _seenIds.contains(id)) continue;
+        _seenIds.add(id);
+        uniqueResults.add(track);
+      }
 
-      SearchCache.instance.set(query, uniqueResults);
+      // If cached exists and isFresh was false, merge with fresh results (deduped)
+      final merged = cached != null && !isFresh ? <Map<String, dynamic>>[] : uniqueResults;
+      if (cached != null && !isFresh) {
+        // Prefer fresh unique results, keep cached only if not duplicate
+        merged.addAll(uniqueResults);
+      }
+
+      final toShow = merged.isNotEmpty ? merged : uniqueResults;
+      if (toShow.isNotEmpty) {
+        SearchCache.instance.set(query, toShow);
+      }
       unawaited(LocalLibrary.instance.recordRecentSearch(query));
       playbackSignalTracker.onSearched(query);
 
       setState(() {
-        _results = uniqueResults;
+        _results = toShow;
         _status = _SearchStatus.loaded;
+        _hasMore = detailed.tracks.length >= _pageSize;
       });
     } catch (_) {
       if (seq != _requestSeq || !mounted) return;
       if (cached == null) {
         setState(() => _status = _SearchStatus.error);
       }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore || _lastQuery == null || _lastQuery!.isEmpty) return;
+    if (_status != _SearchStatus.loaded) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final detailed = await musicRepository.searchDetailed(_lastQuery!, limit: _pageSize, excludeIds: _seenIds);
+      if (!mounted) return;
+      if (!detailed.success || detailed.tracks.isEmpty) {
+        setState(() { _hasMore = false; _isLoadingMore = false; });
+        return;
+      }
+      final newItems = <Map<String, dynamic>>[];
+      for (final t in detailed.tracks) {
+        final id = t['id'] as String? ?? '';
+        if (id.isEmpty || _seenIds.contains(id)) continue;
+        _seenIds.add(id);
+        newItems.add(t);
+      }
+      if (newItems.isEmpty) {
+        setState(() { _hasMore = detailed.tracks.length >= _pageSize; _isLoadingMore = false; });
+        return;
+      }
+      setState(() {
+        _results = [..._results, ...newItems];
+        _hasMore = detailed.tracks.length >= _pageSize;
+        _isLoadingMore = false;
+      });
+      // Update cache with expanded results
+      SearchCache.instance.set(_lastQuery!, _results);
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
@@ -1943,11 +2210,20 @@ class _SearchScreenState extends State<SearchScreen> {
       if (mounted) setState(() => _searchFocused = _searchFocusNode.hasFocus);
     });
     LocalLibrary.instance.recentSearches.addListener(_onRecentSearchesChanged);
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 300) {
+      _loadMore();
+    }
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _searchFocusNode.dispose();
     _controller.dispose();
     LocalLibrary.instance.recentSearches.removeListener(
@@ -2228,9 +2504,33 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResultsList() {
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: _results.length,
+      itemCount: _results.length + 1,
       itemBuilder: (context, i) {
+        if (i == _results.length) {
+          if (!_hasMore) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Text('No more results', style: TextStyle(color: AppColors.textMuted, fontSize: 12))),
+            );
+          }
+          if (_isLoadingMore) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: TextButton(
+                onPressed: _loadMore,
+                child: const Text('Load more', style: TextStyle(color: AppColors.accent)),
+              ),
+            ),
+          );
+        }
         final track = _results[i];
         final title = (track['title'] as String?) ?? '';
         final artist = (track['artist'] as String?) ?? '';
