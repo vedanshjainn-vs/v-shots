@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — YouTube Data API v3 Client (Compliant & Robust)
+// V Shots — YouTube Data API v3 Client (Compliant, Robust & Rich Fallbacks)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -18,6 +18,7 @@ class YouTubeVideoItem {
     required this.durationSeconds,
     this.publishedAt,
     this.viewCount,
+    this.category = 'music',
   });
 
   final String id;
@@ -27,10 +28,12 @@ class YouTubeVideoItem {
   final int durationSeconds;
   final DateTime? publishedAt;
   final int? viewCount;
+  final String category;
 
   factory YouTubeVideoItem.fromJson(
     Map<String, dynamic> json, {
     int duration = 0,
+    String category = 'music',
   }) {
     final idVal = json['id'];
     String videoId = '';
@@ -86,6 +89,7 @@ class YouTubeVideoItem {
       durationSeconds: parsedDuration,
       publishedAt: published,
       viewCount: views,
+      category: category,
     );
   }
 
@@ -106,7 +110,7 @@ class YouTubeVideoItem {
 }
 
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
-/// rate-limiting protection, and fallback music catalog.
+/// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
   YouTubeDataApiClient({http.Client? httpClient, String? apiKey})
     : _http = httpClient ?? http.Client(),
@@ -138,6 +142,7 @@ class YouTubeDataApiClient {
   /// Searches for music videos using YouTube Data API v3.
   Future<List<YouTubeVideoItem>> searchMusicVideos(
     String query, {
+    String order = 'relevance',
     int maxResults = 20,
     Set<String> excludeIds = const {},
   }) async {
@@ -145,6 +150,7 @@ class YouTubeDataApiClient {
     if (key.isEmpty) {
       return _fallbackSearch(
         query,
+        order: order,
         maxResults: maxResults,
         excludeIds: excludeIds,
       );
@@ -157,6 +163,7 @@ class YouTubeDataApiClient {
           'type': 'video',
           'videoCategoryId': '10', // Music category
           'q': query,
+          'order': order,
           'maxResults': maxResults.clamp(1, 50).toString(),
           'key': key,
         },
@@ -183,12 +190,11 @@ class YouTubeDataApiClient {
 
         if (videoIds.isEmpty) return [];
 
-        // Fetch duration details for the video IDs
         final durationMap = await _fetchVideoDurations(videoIds, key: key);
 
         return rawItems.map((item) {
           final vid = item['id']?['videoId'] as String? ?? '';
-          final dur = durationMap[vid] ?? 210; // Default 3:30 if unavailable
+          final dur = durationMap[vid] ?? 210;
           return YouTubeVideoItem.fromJson(item, duration: dur);
         }).toList();
       } else {
@@ -197,6 +203,7 @@ class YouTubeDataApiClient {
         );
         return _fallbackSearch(
           query,
+          order: order,
           maxResults: maxResults,
           excludeIds: excludeIds,
         );
@@ -205,6 +212,7 @@ class YouTubeDataApiClient {
       debugPrint('[YouTubeDataApiClient] Search network error: $e');
       return _fallbackSearch(
         query,
+        order: order,
         maxResults: maxResults,
         excludeIds: excludeIds,
       );
@@ -283,16 +291,18 @@ class YouTubeDataApiClient {
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // Curated Fallback Music Catalog (Ensures 100% Resilience & Testability)
+  // Rich Categorized Music Fallback Catalog
   // ═════════════════════════════════════════════════════════════════════════
 
   static const List<YouTubeVideoItem> _curatedCatalog = [
+    // ── Global / Pop Hits ────────────────────────────────────────────────────
     YouTubeVideoItem(
       id: 'kJQP7kiw5Fk',
       title: 'Despacito',
-      channelTitle: 'Luis Fonsi',
+      channelTitle: 'Luis Fonsi ft. Daddy Yankee',
       thumbnailUrl: 'https://img.youtube.com/vi/kJQP7kiw5Fk/hqdefault.jpg',
       durationSeconds: 282,
+      category: 'global',
     ),
     YouTubeVideoItem(
       id: 'JGwWNGJdvx8',
@@ -300,6 +310,7 @@ class YouTubeDataApiClient {
       channelTitle: 'Ed Sheeran',
       thumbnailUrl: 'https://img.youtube.com/vi/JGwWNGJdvx8/hqdefault.jpg',
       durationSeconds: 234,
+      category: 'global',
     ),
     YouTubeVideoItem(
       id: 'fJ9rUzIMcZQ',
@@ -307,6 +318,7 @@ class YouTubeDataApiClient {
       channelTitle: 'Queen',
       thumbnailUrl: 'https://img.youtube.com/vi/fJ9rUzIMcZQ/hqdefault.jpg',
       durationSeconds: 359,
+      category: 'nostalgia',
     ),
     YouTubeVideoItem(
       id: '4NRXx6U8ABQ',
@@ -314,69 +326,7 @@ class YouTubeDataApiClient {
       channelTitle: 'The Weeknd',
       thumbnailUrl: 'https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg',
       durationSeconds: 200,
-    ),
-    YouTubeVideoItem(
-      id: 'hT_nvWreIhg',
-      title: 'Counting Stars',
-      channelTitle: 'OneRepublic',
-      thumbnailUrl: 'https://img.youtube.com/vi/hT_nvWreIhg/hqdefault.jpg',
-      durationSeconds: 257,
-    ),
-    YouTubeVideoItem(
-      id: 'L0MK7qz13bU',
-      title: 'Kesariya (Brahmāstra)',
-      channelTitle: 'Arijit Singh & Pritam',
-      thumbnailUrl: 'https://img.youtube.com/vi/L0MK7qz13bU/hqdefault.jpg',
-      durationSeconds: 268,
-    ),
-    YouTubeVideoItem(
-      id: 'v_zZmsFZDao',
-      title: 'Apna Bana Le (Bhediya)',
-      channelTitle: 'Arijit Singh & Sachin-Jigar',
-      thumbnailUrl: 'https://img.youtube.com/vi/v_zZmsFZDao/hqdefault.jpg',
-      durationSeconds: 261,
-    ),
-    YouTubeVideoItem(
-      id: 'cl0a3i2wFcc',
-      title: 'GOAT',
-      channelTitle: 'Diljit Dosanjh',
-      thumbnailUrl: 'https://img.youtube.com/vi/cl0a3i2wFcc/hqdefault.jpg',
-      durationSeconds: 223,
-    ),
-    YouTubeVideoItem(
-      id: 'D-YDEiaPn0s',
-      title: 'Lover',
-      channelTitle: 'Diljit Dosanjh',
-      thumbnailUrl: 'https://img.youtube.com/vi/D-YDEiaPn0s/hqdefault.jpg',
-      durationSeconds: 204,
-    ),
-    YouTubeVideoItem(
-      id: '0yW7w8F2TVA',
-      title: 'Excuses',
-      channelTitle: 'AP Dhillon & Gurinder Gill',
-      thumbnailUrl: 'https://img.youtube.com/vi/0yW7w8F2TVA/hqdefault.jpg',
-      durationSeconds: 176,
-    ),
-    YouTubeVideoItem(
-      id: 'v7mK69U5Rvg',
-      title: 'With You',
-      channelTitle: 'AP Dhillon',
-      thumbnailUrl: 'https://img.youtube.com/vi/v7mK69U5Rvg/hqdefault.jpg',
-      durationSeconds: 154,
-    ),
-    YouTubeVideoItem(
-      id: '8g48AxyqJsc',
-      title: 'Husn',
-      channelTitle: 'Anuv Jain',
-      thumbnailUrl: 'https://img.youtube.com/vi/8g48AxyqJsc/hqdefault.jpg',
-      durationSeconds: 219,
-    ),
-    YouTubeVideoItem(
-      id: 'xR3V5Ow65RE',
-      title: 'Baarishein',
-      channelTitle: 'Anuv Jain',
-      thumbnailUrl: 'https://img.youtube.com/vi/xR3V5Ow65RE/hqdefault.jpg',
-      durationSeconds: 207,
+      category: 'trending',
     ),
     YouTubeVideoItem(
       id: 'K4DyBUG242c',
@@ -384,6 +334,15 @@ class YouTubeDataApiClient {
       channelTitle: 'The Weeknd ft. Daft Punk',
       thumbnailUrl: 'https://img.youtube.com/vi/K4DyBUG242c/hqdefault.jpg',
       durationSeconds: 230,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'hT_nvWreIhg',
+      title: 'Counting Stars',
+      channelTitle: 'OneRepublic',
+      thumbnailUrl: 'https://img.youtube.com/vi/hT_nvWreIhg/hqdefault.jpg',
+      durationSeconds: 257,
+      category: 'global',
     ),
     YouTubeVideoItem(
       id: 'YQHsXMglC9A',
@@ -391,6 +350,7 @@ class YouTubeDataApiClient {
       channelTitle: 'Adele',
       thumbnailUrl: 'https://img.youtube.com/vi/YQHsXMglC9A/hqdefault.jpg',
       durationSeconds: 295,
+      category: 'global',
     ),
     YouTubeVideoItem(
       id: 'OPf0YbXqDm0',
@@ -398,29 +358,262 @@ class YouTubeDataApiClient {
       channelTitle: 'Mark Ronson ft. Bruno Mars',
       thumbnailUrl: 'https://img.youtube.com/vi/OPf0YbXqDm0/hqdefault.jpg',
       durationSeconds: 270,
+      category: 'party',
+    ),
+    YouTubeVideoItem(
+      id: '2Vv-BfVoq4g',
+      title: 'Perfect',
+      channelTitle: 'Ed Sheeran',
+      thumbnailUrl: 'https://img.youtube.com/vi/2Vv-BfVoq4g/hqdefault.jpg',
+      durationSeconds: 263,
+      category: 'romantic',
+    ),
+    YouTubeVideoItem(
+      id: 'kXYiU_JCYtU',
+      title: 'Numb',
+      channelTitle: 'Linkin Park',
+      thumbnailUrl: 'https://img.youtube.com/vi/kXYiU_JCYtU/hqdefault.jpg',
+      durationSeconds: 187,
+      category: 'motivational',
+    ),
+
+    // ── Bollywood & Hindi Hits ───────────────────────────────────────────────
+    YouTubeVideoItem(
+      id: 'L0MK7qz13bU',
+      title: 'Kesariya (Brahmāstra)',
+      channelTitle: 'Arijit Singh & Pritam',
+      thumbnailUrl: 'https://img.youtube.com/vi/L0MK7qz13bU/hqdefault.jpg',
+      durationSeconds: 268,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'v_zZmsFZDao',
+      title: 'Apna Bana Le (Bhediya)',
+      channelTitle: 'Arijit Singh & Sachin-Jigar',
+      thumbnailUrl: 'https://img.youtube.com/vi/v_zZmsFZDao/hqdefault.jpg',
+      durationSeconds: 261,
+      category: 'romantic',
+    ),
+    YouTubeVideoItem(
+      id: 'Umqb9KENgmk',
+      title: 'Tum Hi Ho (Aashiqui 2)',
+      channelTitle: 'Arijit Singh & Mithoon',
+      thumbnailUrl: 'https://img.youtube.com/vi/Umqb9KENgmk/hqdefault.jpg',
+      durationSeconds: 262,
+      category: 'romantic',
+    ),
+    YouTubeVideoItem(
+      id: 'Oq5P-kF_n9c',
+      title: 'O Maahi (Dunki)',
+      channelTitle: 'Arijit Singh & Pritam',
+      thumbnailUrl: 'https://img.youtube.com/vi/Oq5P-kF_n9c/hqdefault.jpg',
+      durationSeconds: 233,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'gVYr5M2wF4o',
+      title: 'Pehle Bhi Main (Animal)',
+      channelTitle: 'Vishal Mishra & Harshavardhan',
+      thumbnailUrl: 'https://img.youtube.com/vi/gVYr5M2wF4o/hqdefault.jpg',
+      durationSeconds: 250,
+      category: 'romantic',
+    ),
+    YouTubeVideoItem(
+      id: 'gCYcMz34bko',
+      title: 'Channa Mereya',
+      channelTitle: 'Arijit Singh & Pritam',
+      thumbnailUrl: 'https://img.youtube.com/vi/gCYcMz34bko/hqdefault.jpg',
+      durationSeconds: 289,
+      category: 'sad',
+    ),
+    YouTubeVideoItem(
+      id: 'g6fnFALEseI',
+      title: 'Raataan Lambiyan (Shershaah)',
+      channelTitle: 'Jubin Nautiyal & Asees Kaur',
+      thumbnailUrl: 'https://img.youtube.com/vi/g6fnFALEseI/hqdefault.jpg',
+      durationSeconds: 230,
+      category: 'romantic',
+    ),
+
+    // ── Punjabi Bangers ──────────────────────────────────────────────────────
+    YouTubeVideoItem(
+      id: 'cl0a3i2wFcc',
+      title: 'G.O.A.T.',
+      channelTitle: 'Diljit Dosanjh',
+      thumbnailUrl: 'https://img.youtube.com/vi/cl0a3i2wFcc/hqdefault.jpg',
+      durationSeconds: 223,
+      category: 'punjabi',
+    ),
+    YouTubeVideoItem(
+      id: 'D-YDEiaPn0s',
+      title: 'Lover',
+      channelTitle: 'Diljit Dosanjh',
+      thumbnailUrl: 'https://img.youtube.com/vi/D-YDEiaPn0s/hqdefault.jpg',
+      durationSeconds: 204,
+      category: 'punjabi',
+    ),
+    YouTubeVideoItem(
+      id: '0yW7w8F2TVA',
+      title: 'Excuses',
+      channelTitle: 'AP Dhillon & Gurinder Gill',
+      thumbnailUrl: 'https://img.youtube.com/vi/0yW7w8F2TVA/hqdefault.jpg',
+      durationSeconds: 176,
+      category: 'punjabi',
+    ),
+    YouTubeVideoItem(
+      id: 'v7mK69U5Rvg',
+      title: 'With You',
+      channelTitle: 'AP Dhillon',
+      thumbnailUrl: 'https://img.youtube.com/vi/v7mK69U5Rvg/hqdefault.jpg',
+      durationSeconds: 154,
+      category: 'punjabi',
+    ),
+    YouTubeVideoItem(
+      id: '6mbwJ2xhgzM',
+      title: 'Softly',
+      channelTitle: 'Karan Aujla & Ikky',
+      thumbnailUrl: 'https://img.youtube.com/vi/6mbwJ2xhgzM/hqdefault.jpg',
+      durationSeconds: 155,
+      category: 'punjabi',
+    ),
+    YouTubeVideoItem(
+      id: 'Qp3y_fE-7pU',
+      title: 'Tauba Tauba',
+      channelTitle: 'Karan Aujla',
+      thumbnailUrl: 'https://img.youtube.com/vi/Qp3y_fE-7pU/hqdefault.jpg',
+      durationSeconds: 208,
+      category: 'party',
+    ),
+
+    // ── Hindi Indie & Acoustic ───────────────────────────────────────────────
+    YouTubeVideoItem(
+      id: '8g48AxyqJsc',
+      title: 'Husn',
+      channelTitle: 'Anuv Jain',
+      thumbnailUrl: 'https://img.youtube.com/vi/8g48AxyqJsc/hqdefault.jpg',
+      durationSeconds: 219,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: 'xR3V5Ow65RE',
+      title: 'Baarishein',
+      channelTitle: 'Anuv Jain',
+      thumbnailUrl: 'https://img.youtube.com/vi/xR3V5Ow65RE/hqdefault.jpg',
+      durationSeconds: 207,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: '2Fm_zWq_VbU',
+      title: 'cold/mess',
+      channelTitle: 'Prateek Kuhad',
+      thumbnailUrl: 'https://img.youtube.com/vi/2Fm_zWq_VbU/hqdefault.jpg',
+      durationSeconds: 279,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: 'lJ8XfX8CwtU',
+      title: 'Kasoor',
+      channelTitle: 'Prateek Kuhad',
+      thumbnailUrl: 'https://img.youtube.com/vi/lJ8XfX8CwtU/hqdefault.jpg',
+      durationSeconds: 196,
+      category: 'indie',
+    ),
+
+    // ── Devotional, Sufi & Regional ──────────────────────────────────────────
+    YouTubeVideoItem(
+      id: 'hM_9cE7W4dE',
+      title: 'Shri Hanuman Chalisa',
+      channelTitle: 'Hariharan & Gulshan Kumar',
+      thumbnailUrl: 'https://img.youtube.com/vi/hM_9cE7W4dE/hqdefault.jpg',
+      durationSeconds: 580,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: '8aN4H6u1z3Y',
+      title: 'Kun Faya Kun (Rockstar)',
+      channelTitle: 'A.R. Rahman, Javed Ali, Mohit Chauhan',
+      thumbnailUrl: 'https://img.youtube.com/vi/8aN4H6u1z3Y/hqdefault.jpg',
+      durationSeconds: 471,
+      category: 'sufi',
+    ),
+    YouTubeVideoItem(
+      id: 'k8Xk6f8p4eI',
+      title: 'Afreen Afreen',
+      channelTitle: 'Rahat Fateh Ali Khan & Momina Mustehsan',
+      thumbnailUrl: 'https://img.youtube.com/vi/k8Xk6f8p4eI/hqdefault.jpg',
+      durationSeconds: 405,
+      category: 'sufi',
+    ),
+    YouTubeVideoItem(
+      id: 'qFkNATtc3mc',
+      title: 'Aashayein (Iqbal)',
+      channelTitle: 'KK & Salim-Sulaiman',
+      thumbnailUrl: 'https://img.youtube.com/vi/qFkNATtc3mc/hqdefault.jpg',
+      durationSeconds: 259,
+      category: 'motivational',
+    ),
+    YouTubeVideoItem(
+      id: '5Eqb_-j3FDA',
+      title: 'Zingaat (Sairat)',
+      channelTitle: 'Ajay-Atul',
+      thumbnailUrl: 'https://img.youtube.com/vi/5Eqb_-j3FDA/hqdefault.jpg',
+      durationSeconds: 228,
+      category: 'marathi',
+    ),
+    YouTubeVideoItem(
+      id: 'kJ2eW-2Ew6k',
+      title: 'Arabic Kuthu (Beast)',
+      channelTitle: 'Anirudh Ravichander & Jonita Gandhi',
+      thumbnailUrl: 'https://img.youtube.com/vi/kJ2eW-2Ew6k/hqdefault.jpg',
+      durationSeconds: 280,
+      category: 'tamil',
+    ),
+    YouTubeVideoItem(
+      id: 'tOM-nWPcR4U',
+      title: 'Naatu Naatu (RRR)',
+      channelTitle: 'M.M. Keeravaani, Rahul Sipligunj',
+      thumbnailUrl: 'https://img.youtube.com/vi/tOM-nWPcR4U/hqdefault.jpg',
+      durationSeconds: 215,
+      category: 'telugu',
+    ),
+    YouTubeVideoItem(
+      id: '9lOaHq0_t_A',
+      title: 'Lofi Sleep Beats',
+      channelTitle: 'Lofi Girl & Chill Beats',
+      thumbnailUrl: 'https://img.youtube.com/vi/9lOaHq0_t_A/hqdefault.jpg',
+      durationSeconds: 300,
+      category: 'ambient',
     ),
   ];
 
   List<YouTubeVideoItem> _fallbackSearch(
     String query, {
+    String order = 'relevance',
     required int maxResults,
     Set<String> excludeIds = const {},
   }) {
     final cleanQuery = query.toLowerCase().trim();
+
+    // Priority filter by matching keywords
     final matches = _curatedCatalog.where((item) {
       if (excludeIds.contains(item.id)) return false;
       if (cleanQuery.isEmpty) return true;
       final qTokens = cleanQuery.split(' ');
       final title = item.title.toLowerCase();
       final artist = item.channelTitle.toLowerCase();
-      return qTokens.any((t) => title.contains(t) || artist.contains(t));
+      final cat = item.category.toLowerCase();
+      return qTokens.any(
+        (t) =>
+            t.length > 2 &&
+            (title.contains(t) || artist.contains(t) || cat.contains(t)),
+      );
     }).toList();
 
     if (matches.isNotEmpty) {
       return matches.take(maxResults).toList();
     }
 
-    // Return general catalog if no specific match
+    // Diverse fallback across different categories
     return _curatedCatalog
         .where((item) => !excludeIds.contains(item.id))
         .take(maxResults)

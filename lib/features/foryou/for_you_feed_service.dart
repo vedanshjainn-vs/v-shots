@@ -1,10 +1,11 @@
-// ════════════════════════════════════════════════
-// V Shots — "For You" Feed Service (Music Recommendation Source)
-// ════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════════
+// V Shots — "For You" Feed Service (Expanded Vibes & Recommendation Pipeline)
+// ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../../core/providers/music_repository.dart';
+import '../../core/recommendation/recommendation_service.dart';
 import '../../core/storage/local_library.dart';
 
 class ForYouFeedService {
@@ -89,6 +90,90 @@ class ForYouFeedService {
       'icon': '🌍',
       'query': 'billboard top global pop hits official audio',
     },
+    {
+      'id': 'devotional',
+      'label': 'Devotional & Bhajans',
+      'icon': '🙏',
+      'query': 'top devotional bhajan aarti songs official audio',
+    },
+    {
+      'id': 'sufi',
+      'label': 'Sufi & Ghazals',
+      'icon': '✨',
+      'query': 'best sufi songs and soulful ghazals official audio',
+    },
+    {
+      'id': 'nostalgia',
+      'label': '90s Nostalgia',
+      'icon': '📻',
+      'query': '90s 2000s bollywood evergreen classic hit songs',
+    },
+    {
+      'id': 'cardio',
+      'label': 'Workout Cardio',
+      'icon': '🏃',
+      'query': 'high energy cardio running workout music mix',
+    },
+    {
+      'id': 'ambient',
+      'label': 'Sleep & Ambient',
+      'icon': '🌌',
+      'query': 'deep sleep ambient relaxation meditation music',
+    },
+    {
+      'id': 'kids',
+      'label': 'Kids & Family',
+      'icon': '🎈',
+      'query': 'nursery rhymes kids friendly happy music playlist',
+    },
+    {
+      'id': 'marathi',
+      'label': 'Marathi Hits',
+      'icon': '🥁',
+      'query': 'top marathi super hit songs official audio',
+    },
+    {
+      'id': 'gujarati',
+      'label': 'Gujarati Hits',
+      'icon': '🪕',
+      'query': 'gujarati garba and folk hit songs official',
+    },
+    {
+      'id': 'tamil',
+      'label': 'Tamil Hits',
+      'icon': '🎻',
+      'query': 'latest tamil super hit songs official audio',
+    },
+    {
+      'id': 'telugu',
+      'label': 'Telugu Hits',
+      'icon': '🪘',
+      'query': 'top telugu mass and melody hit songs official audio',
+    },
+    {
+      'id': 'bengali',
+      'label': 'Bengali Hits',
+      'icon': '🎼',
+      'query': 'top bengali modern and classic songs official audio',
+    },
+    {
+      'id': 'wedding',
+      'label': 'Wedding & Sangeet',
+      'icon': '💍',
+      'query': 'indian wedding sangeet dance celebration songs',
+    },
+    {
+      'id': 'monsoon',
+      'label': 'Monsoon Vibes',
+      'icon': '☔',
+      'query': 'rainy day monsoon vibes hindi romantic songs',
+    },
+    {
+      'id': 'motivational',
+      'label': 'Motivational',
+      'icon': '🏆',
+      'query': 'inspirational motivational victory songs hindi english',
+    },
   ];
 
   static const _dayQueries = [
@@ -103,6 +188,7 @@ class ForYouFeedService {
     'top 40 hits this week',
     'new music friday releases',
   ];
+
   static const _eveningQueries = [
     'romantic songs hindi official',
     'chill lofi mix',
@@ -115,6 +201,7 @@ class ForYouFeedService {
     'k-pop hits official',
     'love songs playlist',
   ];
+
   static const _nightQueries = [
     'sleep music lofi chill',
     'sad songs hindi 2026',
@@ -127,6 +214,7 @@ class ForYouFeedService {
     'breakup songs hindi',
     'soft acoustic guitar songs',
   ];
+
   static const _genreDiscoveryTemplates = [
     'artists similar to {artist}',
     '{artist} type songs',
@@ -137,22 +225,13 @@ class ForYouFeedService {
   void setMood(String? moodLabel, String? query) {
     activeMood = moodLabel;
     activeMoodQuery = query;
+    if (moodLabel != null && query != null) {
+      RecommendationService.instance.setMood(moodLabel, query);
+    }
   }
 
   Map<String, double> _recencyWeightedArtistScores() {
-    final scores = <String, double>{};
-    final now = DateTime.now();
-    for (final entry in LocalLibrary.instance.recentlyPlayed.value) {
-      final artist = entry['artist'] as String?;
-      final playedAtRaw = entry['playedAt'] as String?;
-      if (artist == null || artist.isEmpty || playedAtRaw == null) continue;
-      final playedAt = DateTime.tryParse(playedAtRaw);
-      if (playedAt == null) continue;
-      final hoursAgo = now.difference(playedAt).inMinutes / 60.0;
-      final weight = pow(0.5, hoursAgo / 72.0).toDouble();
-      scores[artist] = (scores[artist] ?? 0) + weight;
-    }
-    return scores;
+    return RecommendationService.instance.getRecencyWeightedArtistScores();
   }
 
   Future<List<Map<String, dynamic>>> fetchNextBatch({
@@ -184,11 +263,7 @@ class ForYouFeedService {
   bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;
 
   String personalizedQueryForHome() {
-    final scores = _recencyWeightedArtistScores();
-    if (scores.isEmpty) return _pickTimeOfDayQuery();
-    final sorted = scores.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return '${sorted.first.key} songs official audio';
+    return RecommendationService.instance.getPersonalizedHomeQuery();
   }
 
   final Set<String> _excludedArtists = {};

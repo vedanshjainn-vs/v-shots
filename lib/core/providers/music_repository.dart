@@ -13,6 +13,7 @@ class MusicRepository {
   /// Searches for tracks and returns them as `Map<String, dynamic>` track models.
   Future<List<Map<String, dynamic>>> search(
     String query, {
+    String order = 'relevance',
     int limit = 20,
     int maxDurationMinutes = 15,
     int minDurationMinutes = 0,
@@ -20,6 +21,7 @@ class MusicRepository {
   }) async {
     final result = await _manager.search(
       query,
+      order: order,
       limit: limit,
       maxDurationMinutes: maxDurationMinutes,
       minDurationMinutes: minDurationMinutes,
@@ -32,6 +34,7 @@ class MusicRepository {
   Future<({bool success, List<Map<String, dynamic>> tracks, String? error})>
   searchDetailed(
     String query, {
+    String order = 'relevance',
     int limit = 20,
     int maxDurationMinutes = 15,
     int minDurationMinutes = 0,
@@ -39,6 +42,7 @@ class MusicRepository {
   }) async {
     final result = await _manager.search(
       query,
+      order: order,
       limit: limit,
       maxDurationMinutes: maxDurationMinutes,
       minDurationMinutes: minDurationMinutes,
@@ -67,7 +71,6 @@ class MusicRepository {
     return result.orElse(const []).map((t) => t.toTrackMap()).toList();
   }
 
-  /// Resolves a playable stream URL for licensed / UGC content.
   Future<String?> getStream(String trackId) async {
     final result = await _manager.getStream(trackId);
     return result.isSuccess ? result.data : null;

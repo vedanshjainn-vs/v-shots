@@ -1,11 +1,6 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // V Shots — YouTubeMusicProvider (Official YouTube Data API Provider)
 // ═════════════════════════════════════════════════════════════════════════════
-//
-// Compliant YouTube provider backed by YouTube Data API v3.
-// Playback is strictly delegated to the official YouTube IFrame Player.
-// No unofficial audio extraction or stream resolving is permitted.
-// ═════════════════════════════════════════════════════════════════════════════
 
 import '../../../lyrics/lyrics_service.dart';
 import '../../music_provider.dart';
@@ -66,6 +61,7 @@ class YouTubeMusicProvider extends MusicProvider {
   @override
   Future<ProviderResult<List<ProviderTrack>>> search(
     String query, {
+    String order = 'relevance',
     int limit = 20,
     int maxDurationMinutes = 15,
     int minDurationMinutes = 0,
@@ -74,6 +70,7 @@ class YouTubeMusicProvider extends MusicProvider {
     try {
       final results = await _apiClient.searchMusicVideos(
         query,
+        order: order,
         maxResults: limit,
         excludeIds: excludeIds,
       );
@@ -105,8 +102,6 @@ class YouTubeMusicProvider extends MusicProvider {
 
   @override
   Future<ProviderResult<String>> getStream(String id) async {
-    // Official YouTube playback is handled via YouTube IFrame Player.
-    // Unofficial stream extraction is prohibited by YouTube terms of service.
     return ProviderResult.failure(
       'YouTube audio extraction is prohibited. Use official YouTube Player for playback.',
     );
@@ -148,7 +143,11 @@ class YouTubeMusicProvider extends MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getTrending({
     int limit = 15,
   }) async {
-    return search('trending music hits official audio', limit: limit);
+    return search(
+      'trending music hits official audio',
+      order: 'viewCount',
+      limit: limit,
+    );
   }
 
   @override
