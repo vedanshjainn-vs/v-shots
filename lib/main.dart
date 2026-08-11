@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_const_constructors, unnecessary_lambdas, curly_braces_in_flow_control_structures, directives_ordering
 // ═════════════════════════════════════════════════════════════════════════════
 // V Shots — Diagnostic Playback & Hybrid Streaming Engine (Nova Edition)
 // ═════════════════════════════════════════════════════════════════════════════
