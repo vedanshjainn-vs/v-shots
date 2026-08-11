@@ -127,6 +127,12 @@ String? globalPlayingVideoId;
 final ValueNotifier<bool> globalPlaybackStateNotifier =
     ValueNotifier<bool>(false);
 
+/// Fires whenever the current YouTube video reaches ENDED. The Discover feed
+/// listens to this to auto-advance to the next item (record completion ->
+/// next page -> load + autoplay next video).
+final ValueNotifier<String?> globalVideoEndedNotifier =
+    ValueNotifier<String?>(null);
+
 /// There is exactly ONE YouTube IFrame engine in the app: [globalYtController].
 ///
 /// Home, Search, the full player, the mini-player and (when relevant) any
@@ -162,10 +168,11 @@ YoutubePlayerController ensureGlobalPlayer({
       final st = value.playerState;
       if (st == PlayerState.playing || st == PlayerState.buffering) {
         globalPlaybackStateNotifier.value = true;
-      } else if (st == PlayerState.paused ||
-          st == PlayerState.cued ||
-          st == PlayerState.ended) {
+      } else if (st == PlayerState.paused || st == PlayerState.cued) {
         globalPlaybackStateNotifier.value = false;
+      } else if (st == PlayerState.ended) {
+        globalPlaybackStateNotifier.value = false;
+        globalVideoEndedNotifier.value = globalPlayingVideoId;
       }
     });
     globalYtController = controller;
@@ -605,16 +612,15 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
     final bottomPadding = mediaQuery.padding.bottom;
 
     if (!widget.isExpanded) {
-      // ── MINI PLAYER DOCK VIEW ───────────────────────────────────────────
-      // Compliant mini-player: a compact dock showing the CURRENT track's own
-      // thumbnail, title, artist and live playback state, plus expand/play
-      // controls. The dock does NOT render a visible second YouTube IFrame.
+      // ── COMPACT PLAYER (COMPLIANT ≥200x200) ────────────────────────────
       //
-      // IMPORTANT: the single global IFrame (same engine, not a duplicate) is
-      // kept mounted OFF-SCREEN behind the dock so audio keeps playing while
-      // minimized — youtube_player_iframe only produces sound while its
-      // `YoutubePlayer` widget is attached. Without this, minimizing the player
-      // would silently stop the music (the "mini player not playing" bug).
+      // YouTube's embedded-player policy requires a minimum 200x200 player
+      // viewport. The previous 96x54 mini-dock iframe VIOLATED that, so it is
+      // replaced here with a compliant compact player: the single global IFrame
+      // is kept mounted at a fixed 200x200 viewport (the minimum legal size),
+      // so audio keeps playing while minimized, WITHOUT a hidden-webview trick
+      // and WITHOUT any sub-200px iframe. Metadata + controls sit beside it,
+      // outside the player viewport.
       return ValueListenableBuilder<bool>(
         valueListenable: globalPlaybackStateNotifier,
         builder: (context, playing, _) {
@@ -622,164 +628,146 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
             left: 8,
             right: 8,
             bottom: 64,
-            child: Stack(
-              children: [
-                GestureDetector(
-                  onTap: () => widget.onToggleExpand(true),
-                  child: Container(
-                    height: 68,
-                    decoration: BoxDecoration(
-                      color: AppColors.surface.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.border, width: 1),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          blurRadius: 16,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+            child: GestureDetector(
+              onTap: () => widget.onToggleExpand(true),
+              child: Container(
+                height: 212,
+                decoration: BoxDecoration(
+                  color: AppColors.surface.withValues(alpha: 0.98),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.border, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
                     ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // Compliant 200x200 YouTube player viewport (the single
+                    // global engine, never a duplicate). Video is letterboxed
+                    // inside the square viewport; controls remain YouTube's own.
+                    if (globalYtController != null)
+                      Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
                           child: SizedBox(
-                            width: 96,
-                            height: 54,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                // The single global IFrame stays mounted INSIDE
-                                // the dock (in-bounds, not off-screen where
-                                // Android may throttle the WebView) so audio
-                                // keeps playing while minimized. The artwork
-                                // thumbnail is layered on top, keeping the dock
-                                // a compliant compact player.
-                                if (globalYtController != null)
-                                  YoutubePlayer(
-                                    controller: globalYtController!,
-                                    aspectRatio: 16 / 9,
-                                  ),
-                                AppImage(
-                                  widget.track['artwork'] as String?,
-                                  fit: BoxFit.cover,
-                                ),
-                                if (playing)
-                                  Container(
-                                    color: Colors.black.withValues(alpha: 0.25),
-                                    child: const Center(
-                                      child: AnimatedEqualizer(
-                                        isPlaying: true,
-                                        color: AppColors.accent,
-                                        size: 14,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    color: Colors.black.withValues(alpha: 0.25),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.play_arrow_rounded,
-                                        color: Colors.white,
-                                        size: 22,
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                            width: 200,
+                            height: 200,
+                            child: YoutubePlayer(
+                              controller: globalYtController!,
+                              aspectRatio: 1,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: SizedBox(
+                          width: 200,
+                          height: 200,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: AppImage(
+                              widget.track['artwork'] as String?,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+                    // Metadata + controls OUTSIDE the player viewport.
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                              color: AppColors.textMain,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Powered by YouTube',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
                             children: [
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: AppColors.textMain,
+                              IconButton(
+                                icon: Icon(
+                                  playing
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  color: AppColors.accent,
+                                  size: 30,
                                 ),
+                                tooltip: playing ? 'Pause' : 'Play',
+                                onPressed: () {
+                                  final id =
+                                      widget.track['id'] as String? ?? '';
+                                  if (playing) {
+                                    globalYtController?.pauseVideo();
+                                    globalPlaybackStateNotifier.value = false;
+                                  } else {
+                                    ensureGlobalPlayer(
+                                      videoId: id,
+                                      autoPlay: true,
+                                    );
+                                  }
+                                },
                               ),
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  Icon(
-                                    playing
-                                        ? Icons.graphic_eq_rounded
-                                        : Icons.pause_circle_filled_rounded,
-                                    size: 11,
-                                    color: playing
-                                        ? Colors.redAccent
-                                        : Colors.white54,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      artist,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.6),
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.skip_next_rounded,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                                onPressed: () =>
+                                    _playAdjacentInQueue(context, 1),
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.open_in_full_rounded,
+                                  color: AppColors.accent,
+                                  size: 22,
+                                ),
+                                tooltip: 'Full Player',
+                                onPressed: () => widget.onToggleExpand(true),
                               ),
                             ],
                           ),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            playing
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: AppColors.accent,
-                            size: 24,
-                          ),
-                          tooltip: playing ? 'Pause' : 'Play',
-                          onPressed: () {
-                            final id = widget.track['id'] as String? ?? '';
-                            if (playing) {
-                              globalYtController?.pauseVideo();
-                              globalPlaybackStateNotifier.value = false;
-                            } else {
-                              ensureGlobalPlayer(videoId: id, autoPlay: true);
-                            }
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.open_in_full_rounded,
-                            color: AppColors.accent,
-                            size: 20,
-                          ),
-                          tooltip: 'Full Player',
-                          onPressed: () => widget.onToggleExpand(true),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.skip_next_rounded,
-                            color: Colors.white,
-                            size: 26,
-                          ),
-                          onPressed: () => _playAdjacentInQueue(context, 1),
-                        ),
-                        const SizedBox(width: 4),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                  ],
                 ),
-              ],
+              ),
             ),
           );
         },

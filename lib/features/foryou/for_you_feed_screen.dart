@@ -24,6 +24,7 @@ import '../../main.dart'
         currentTabIndexNotifier,
         ensureGlobalPlayer,
         forYouFeedService,
+        globalVideoEndedNotifier,
         globalYtController,
         playbackSignalTracker,
         recommendationEngine,
@@ -58,7 +59,21 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // Rebuild when the user switches to/from the Discover tab so the active
     // card correctly (re)attaches the single global IFrame.
     currentTabIndexNotifier.addListener(_onTabChanged);
+    globalVideoEndedNotifier.addListener(_onVideoEnded);
     _loadInitialBatch();
+  }
+
+  void _onVideoEnded() {
+    if (!mounted || !_onDiscoverTab) return;
+    final endedId = globalVideoEndedNotifier.value;
+    if (endedId == null) return;
+    // Only auto-advance if the ended video is the one currently visible.
+    if (endedId != _activeVideoId) return;
+    // Record a completed play (recommendation signal).
+    if (_currentIndex < _items.length) {
+      playbackSignalTracker.onTrackEnded(completed: true);
+    }
+    _goToPage(_currentIndex + 1);
   }
 
   void _onTabChanged() {
@@ -79,8 +94,50 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   @override
   void dispose() {
     currentTabIndexNotifier.removeListener(_onTabChanged);
+    globalVideoEndedNotifier.removeListener(_onVideoEnded);
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// Animate to [index], clamping and load-more-triggering so the feed never
+  /// runs out (auto-advance / swipe share this path).
+  void _goToPage(int index) {
+    if (!mounted) return;
+    if (index >= _items.length) {
+      // At the end: fetch more, then advance if new items arrived.
+      unawaited(_fetchMoreThenJump(index));
+      return;
+    }
+    if (index < 0) index = 0;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
+    );
+    unawaited(_maybeLoadMore());
+  }
+
+  Future<void> _fetchMoreThenJump(int index) async {
+    if (_isLoadingMore) return;
+    _isLoadingMore = true;
+    final batch = await _fetchDiscoverBatch();
+    _isLoadingMore = false;
+    if (!mounted) return;
+    if (batch.isNotEmpty) {
+      setState(() {
+        _items.addAll(batch);
+        _seenIds.addAll(batch.map((t) => t['id'] as String));
+      });
+      if (index < _items.length) {
+        unawaited(
+          _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _loadInitialBatch() async {
@@ -324,6 +381,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   isPlaying: _isPlaying,
                   onPlayPauseToggle: _togglePlayPause,
                   onNotInterested: () => _handleNotInterested(index),
+                  onDoubleTapLike: () => _handleDoubleTapLike(_items[index]),
                   onSkipPrevious: index > 0
                       ? () => _pageController.previousPage(
                             duration: const Duration(milliseconds: 300),
@@ -400,6 +458,16 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         ],
       ),
     );
+  }
+
+  void _handleDoubleTapLike(Map<String, dynamic> track) {
+    final id = track['id'] as String? ?? '';
+    if (id.isEmpty) return;
+    final wasLiked = LocalLibrary.instance.isLiked(id);
+    if (!wasLiked) {
+      LocalLibrary.instance.toggleLiked(track);
+      playbackSignalTracker.onLiked(track);
+    }
   }
 
   void _handleNotInterested(int index) {
@@ -560,13 +628,14 @@ class _MoodPickerSheet extends StatelessWidget {
   }
 }
 
-class _ForYouCard extends StatelessWidget {
+class _ForYouCard extends StatefulWidget {
   const _ForYouCard({
     required this.track,
     required this.isActive,
     required this.isPlaying,
     required this.onPlayPauseToggle,
     required this.onNotInterested,
+    required this.onDoubleTapLike,
     this.onSkipPrevious,
     this.onSkipNext,
   });
@@ -576,11 +645,48 @@ class _ForYouCard extends StatelessWidget {
   final bool isPlaying;
   final VoidCallback onPlayPauseToggle;
   final VoidCallback onNotInterested;
+  final VoidCallback onDoubleTapLike;
   final VoidCallback? onSkipPrevious;
   final VoidCallback? onSkipNext;
 
   @override
+  State<_ForYouCard> createState() => _ForYouCardState();
+}
+
+class _ForYouCardState extends State<_ForYouCard>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _heartCtl;
+  Animation<double>? _heartScale;
+  Animation<double>? _heartOpacity;
+
+  @override
+  void dispose() {
+    _heartCtl?.dispose();
+    super.dispose();
+  }
+
+  void _pulseHeart() {
+    final ctl = _heartCtl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    _heartScale = CurvedAnimation(parent: ctl, curve: Curves.easeOutBack);
+    _heartOpacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+      CurvedAnimation(parent: ctl, curve: const Interval(0.4, 1.0)),
+    );
+    unawaited(HapticFeedback.mediumImpact());
+    ctl.forward(from: 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final track = widget.track;
+    final isActive = widget.isActive;
+    final isPlaying = widget.isPlaying;
+    final onPlayPauseToggle = widget.onPlayPauseToggle;
+    final onNotInterested = widget.onNotInterested;
+    final onSkipPrevious = widget.onSkipPrevious;
+    final onSkipNext = widget.onSkipNext;
     final title = (track['title'] as String?) ?? '';
     final artist = (track['artist'] as String?) ?? '';
     final trackId = track['id'] as String? ?? '';
@@ -640,126 +746,180 @@ class _ForYouCard extends StatelessWidget {
             ),
           ),
 
-        // Bottom metadata + play controls
-        SafeArea(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    artist,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.play_circle_filled_rounded,
-                          size: 14,
-                          color: Colors.redAccent,
+        // Double-tap like heart burst (premium). Triggered from the safe
+        // metadata region BELOW the video, never from the YouTube surface.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedBuilder(
+              animation: _heartCtl ?? const AlwaysStoppedAnimation(1.0),
+              builder: (context, _) {
+                final ctl = _heartCtl;
+                if (ctl == null || !ctl.isAnimating) {
+                  return const SizedBox.shrink();
+                }
+                return Center(
+                  child: Transform.scale(
+                    scale: _heartScale?.value ?? 1.0,
+                    child: Opacity(
+                      opacity: _heartOpacity?.value ?? 0.0,
+                      child: Container(
+                        width: 90,
+                        height: 90,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.black.withValues(alpha: 0.35),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.hotPink.withValues(alpha: 0.5),
+                              blurRadius: 24,
+                              spreadRadius: 4,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 5),
-                        Text(
-                          'Powered by YouTube',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            fontWeight: FontWeight.w600,
-                          ),
+                        child: const Icon(
+                          Icons.favorite_rounded,
+                          color: AppColors.hotPink,
+                          size: 44,
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Playback Controls Row: Prev, Play/Pause Toggle, Next
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.skip_previous_rounded,
-                          color: Colors.white,
-                          size: 34,
-                        ),
-                        onPressed: onSkipPrevious,
                       ),
-                      const SizedBox(width: 20),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
 
-                      // In-Card Play/Pause Toggle
-                      GestureDetector(
-                        onTap: onPlayPauseToggle,
-                        child: Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: AppColors.primaryGradient,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.4),
-                                blurRadius: 18,
-                                spreadRadius: 2,
-                              ),
-                            ],
+        // Bottom metadata + play controls (safe double-tap region, BELOW the
+        // YouTube player — double-tap here to like without hijacking the
+        // YouTube player's own controls).
+        GestureDetector(
+          onDoubleTap: () {
+            unawaited(HapticFeedback.mediumImpact());
+            widget.onDoubleTapLike();
+            _pulseHeart();
+          },
+          child: SafeArea(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      artist,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.play_circle_filled_rounded,
+                            size: 14,
+                            color: Colors.redAccent,
                           ),
-                          child: Center(
-                            child: Icon(
-                              isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 36,
+                          const SizedBox(width: 5),
+                          Text(
+                            'Powered by YouTube',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.white.withValues(alpha: 0.85),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Playback Controls Row: Prev, Play/Pause Toggle, Next
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.skip_previous_rounded,
+                            color: Colors.white,
+                            size: 34,
+                          ),
+                          onPressed: onSkipPrevious,
+                        ),
+                        const SizedBox(width: 20),
+
+                        // In-Card Play/Pause Toggle
+                        GestureDetector(
+                          onTap: onPlayPauseToggle,
+                          child: Container(
+                            width: 64,
+                            height: 64,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: AppColors.primaryGradient,
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      AppColors.primary.withValues(alpha: 0.4),
+                                  blurRadius: 18,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Icon(
+                                isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 36,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 20),
+                        const SizedBox(width: 20),
 
-                      IconButton(
-                        icon: const Icon(
-                          Icons.skip_next_rounded,
-                          color: Colors.white,
-                          size: 34,
+                        IconButton(
+                          icon: const Icon(
+                            Icons.skip_next_rounded,
+                            color: Colors.white,
+                            size: 34,
+                          ),
+                          onPressed: onSkipNext,
                         ),
-                        onPressed: onSkipNext,
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

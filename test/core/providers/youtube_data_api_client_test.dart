@@ -67,7 +67,8 @@ void main() {
       expect(details.title, contains('Despacito'));
     });
 
-    test('catalog has no fabricated video IDs or thumbnail mismatches', () async {
+    test('catalog has no fabricated video IDs or thumbnail mismatches',
+        () async {
       // Search across several categories and assert every returned video has
       // a well-formed, non-empty videoId and a thumbnail that corresponds to
       // THAT SAME videoId (never a generic/placeholder or a different video).
@@ -82,12 +83,14 @@ void main() {
       ];
       for (final q in queries) {
         final results = await client.searchMusicVideos(q, maxResults: 25);
-        expect(results, isNotEmpty, reason: 'fallback should never be empty for "$q"');
+        expect(results, isNotEmpty,
+            reason: 'fallback should never be empty for "$q"');
         for (final r in results) {
           expect(r.id.length, 11,
               reason: 'videoId for "${r.title}" must be an 11-char YouTube id');
           expect(r.thumbnailUrl, contains(r.id),
-              reason: 'thumbnail for "${r.title}" must come from the same videoId ${r.id}');
+              reason:
+                  'thumbnail for "${r.title}" must come from the same videoId ${r.id}');
         }
       }
     });
@@ -101,6 +104,34 @@ void main() {
 
       final chooLo = await client.getVideoDetails('sFMRqxCexDk');
       expect(chooLo!.title.toLowerCase(), contains('choo lo'));
+    });
+  });
+  group('Home Section Isolation', () {
+    late YouTubeDataApiClient client;
+    setUp(() => client = YouTubeDataApiClient());
+    tearDown(() => client.dispose());
+
+    test('each Home section returns ONLY its own category', () async {
+      const cases = {
+        'chill lofi late night beats official audio': 'ambient',
+        'top bollywood hindi songs official music video': 'bollywood',
+        'latest punjabi pop hits official audio': 'punjabi',
+        'hindi indie acoustic songs official audio': 'indie',
+        'billboard top global pop hits official audio': 'global',
+        'devotional bhajan aarti official audio': 'devotional',
+        'workout gym motivation hype songs': 'workout',
+      };
+      for (final entry in cases.entries) {
+        final results = await client.searchMusicVideos(
+          entry.key,
+          maxResults: 15,
+        );
+        expect(results, isNotEmpty, reason: '${entry.key} should not be empty');
+        for (final r in results) {
+          expect(r.category, entry.value,
+              reason: 'category leak for "${entry.key}" -> ${r.title}');
+        }
+      }
     });
   });
 }

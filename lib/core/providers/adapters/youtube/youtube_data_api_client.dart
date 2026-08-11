@@ -958,6 +958,70 @@ class YouTubeDataApiClient {
       durationSeconds: 230,
       category: 'ambient',
     ),
+    YouTubeVideoItem(
+      id: '1P5BSm_oFJg',
+      title: 'Snowman (Lofi Girl)',
+      channelTitle: 'Lofi Girl',
+      thumbnailUrl: 'https://img.youtube.com/vi/1P5BSm_oFJg/hqdefault.jpg',
+      durationSeconds: 210,
+      category: 'ambient',
+    ),
+    YouTubeVideoItem(
+      id: 'XfJMVvZh838',
+      title: 'Love in Lo-Fi',
+      channelTitle: 'Chayla Hope',
+      thumbnailUrl: 'https://img.youtube.com/vi/XfJMVvZh838/hqdefault.jpg',
+      durationSeconds: 200,
+      category: 'ambient',
+    ),
+    YouTubeVideoItem(
+      id: 'MDzJ6ynL-5g',
+      title: 'Skylines (Chill Morning Lofi)',
+      channelTitle: 'Kainbeats',
+      thumbnailUrl: 'https://img.youtube.com/vi/MDzJ6ynL-5g/hqdefault.jpg',
+      durationSeconds: 220,
+      category: 'ambient',
+    ),
+    YouTubeVideoItem(
+      id: 'LlwHphMhUOo',
+      title: 'Aarzu',
+      channelTitle: 'Noor, Khan & Madhurxo',
+      thumbnailUrl: 'https://img.youtube.com/vi/LlwHphMhUOo/hqdefault.jpg',
+      durationSeconds: 220,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: 'l6E16JAk_Fs',
+      title: 'Khat',
+      channelTitle: 'Navjot Ahuja',
+      thumbnailUrl: 'https://img.youtube.com/vi/l6E16JAk_Fs/hqdefault.jpg',
+      durationSeconds: 200,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: 'vnDaD43wt2w',
+      title: 'Sirf Tujhse',
+      channelTitle: 'Indie Artist',
+      thumbnailUrl: 'https://img.youtube.com/vi/vnDaD43wt2w/hqdefault.jpg',
+      durationSeconds: 210,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: 'eTucXMU8ctw',
+      title: 'Mann',
+      channelTitle: 'The Yellow Diary',
+      thumbnailUrl: 'https://img.youtube.com/vi/eTucXMU8ctw/hqdefault.jpg',
+      durationSeconds: 260,
+      category: 'indie',
+    ),
+    YouTubeVideoItem(
+      id: '_kUrW9SEaJc',
+      title: 'Sage',
+      channelTitle: 'Ritviz',
+      thumbnailUrl: 'https://img.youtube.com/vi/_kUrW9SEaJc/hqdefault.jpg',
+      durationSeconds: 230,
+      category: 'indie',
+    ),
   ];
 
   List<YouTubeVideoItem> _fallbackSearch(
@@ -1080,7 +1144,12 @@ class YouTubeDataApiClient {
       matchedCategory = 'ambient';
     }
 
-    // 1. Direct category match (single or multi-category)
+    // 1. Direct category match (single or multi-category).
+    // STRICT ISOLATION: a matched category returns ONLY that category's
+    // candidates. It NEVER appends unrelated "others" just to fill the list —
+    // that was the bug where Chill & Lofi showed Kesariya and sections leaked
+    // each other's content. If a category is short, the section shows fewer
+    // (but correct) items rather than wrong ones.
     if (multiCategories != null && multiCategories.isNotEmpty) {
       final multiMatches = <YouTubeVideoItem>[];
       for (final cat in multiCategories) {
@@ -1092,9 +1161,7 @@ class YouTubeDataApiClient {
           }),
         );
       }
-      // Interleave for diversity: take round-robin from each category
       if (multiMatches.isNotEmpty) {
-        // Respect order param: viewCount/date sorting simulation
         if (order == 'viewCount') {
           multiMatches
               .sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
@@ -1102,13 +1169,7 @@ class YouTubeDataApiClient {
           multiMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020))
               .compareTo(a.publishedAt ?? DateTime(2020)));
         }
-        if (multiMatches.length < maxResults) {
-          final others = _curatedCatalog.where((item) {
-            return !excludeIds.contains(item.id) &&
-                !multiMatches.any((m) => m.id == item.id);
-          }).toList();
-          multiMatches.addAll(others.take(maxResults - multiMatches.length));
-        }
+        // NO cross-category fallback.
         return multiMatches.take(maxResults).toList();
       }
     }
@@ -1129,13 +1190,7 @@ class YouTubeDataApiClient {
         } else {
           catMatches.shuffle();
         }
-        if (catMatches.length < maxResults) {
-          final others = _curatedCatalog.where((item) {
-            return !excludeIds.contains(item.id) &&
-                !catMatches.any((m) => m.id == item.id);
-          }).toList();
-          catMatches.addAll(others.take(maxResults - catMatches.length));
-        }
+        // STRICT ISOLATION: no cross-category fallback.
         return catMatches.take(maxResults).toList();
       }
     }
@@ -1157,7 +1212,8 @@ class YouTubeDataApiClient {
       return tokenMatches.take(maxResults).toList();
     }
 
-    // 3. Fallback to broad catalog
+    // 3. Fallback to broad catalog (only used when NO category matched, e.g.
+    // free-form search — never used to pollute a matched category section).
     final combined = List<YouTubeVideoItem>.from(tokenMatches);
     for (final item in _curatedCatalog) {
       if (!excludeIds.contains(item.id) &&
