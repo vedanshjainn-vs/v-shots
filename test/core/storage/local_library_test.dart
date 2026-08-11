@@ -149,4 +149,21 @@ void main() {
       );
     });
   });
+
+  group('Recently Shown Songs (Section 2)', () {
+    test('recordShownSong adds id to recentlyShownIds', () {
+      LocalLibrary.instance.recordShownSong('videoId123');
+      expect(LocalLibrary.instance.recentlyShownIds.contains('videoId123'),
+          isTrue);
+    });
+
+    test('recordShownSong dedupes by id (moves to front, no duplicates)', () {
+      LocalLibrary.instance.recordShownSong('a');
+      LocalLibrary.instance.recordShownSong('b');
+      LocalLibrary.instance.recordShownSong('a');
+      final ids = LocalLibrary.instance.recentlyShownIds.toList();
+      expect(ids.where((e) => e == 'a').length, 1,
+          reason: 'duplicate id must not appear twice');
+    });
+  });
 }

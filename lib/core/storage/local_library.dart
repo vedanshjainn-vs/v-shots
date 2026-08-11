@@ -37,6 +37,7 @@ class LocalLibrary {
   static const _kArtistPlayCounts = 'v_shots.artist_play_counts.v1';
   static const _kDownloadedTracks = 'v_shots.downloaded_tracks.v1';
   static const _kRecentSearches = 'v_shots.recent_searches.v1';
+  static const _kShownSongs = 'v_shots.shown_songs.v1';
 
   SharedPreferences? _prefs;
   bool _ready = false;
@@ -56,7 +57,65 @@ class LocalLibrary {
       ValueNotifier([]);
   Map<String, int> artistPlayCounts = {};
 
+  /// Recently-shown song video IDs (Section 2). Capped and time-stamped so
+  /// Home/Discover can exclude songs shown recently (e.g. within the last 24h)
+  /// for a fresher, less repetitive feed.
+  final List<({String id, int shownAt})> _shownSongIds = [];
+  static const int _maxShownSongs = 100;
+  static const Duration _shownTtl = Duration(hours: 24);
+
   static const int _maxRecentlyPlayed = 100;
+
+  /// Records that a song was surfaced to the user. Used to avoid re-showing
+  /// the same track too soon. Safe to call often (cheap, capped list).
+  void recordShownSong(String videoId) {
+    if (videoId.isEmpty) return;
+    _shownSongIds.removeWhere((e) => e.id == videoId);
+    _shownSongIds.insert(
+        0, (id: videoId, shownAt: DateTime.now().millisecondsSinceEpoch));
+    if (_shownSongIds.length > _maxShownSongs) {
+      _shownSongIds.removeRange(_maxShownSongs, _shownSongIds.length);
+    }
+    _persistShown();
+  }
+
+  /// Video IDs shown within the last [_shownTtl] (currently 24h), as an
+  /// exclusion set for fetches.
+  Set<String> get recentlyShownIds {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cutoff = now - _shownTtl.inMilliseconds;
+    return _shownSongIds
+        .where((e) => e.shownAt > cutoff)
+        .map((e) => e.id)
+        .toSet();
+  }
+
+  void _persistShown() {
+    try {
+      _prefs?.setString(
+        _kShownSongs,
+        jsonEncode(
+          _shownSongIds.map((e) => {'id': e.id, 'shownAt': e.shownAt}).toList(),
+        ),
+      );
+    } catch (_) {}
+  }
+
+  void _loadShown() {
+    final raw = _prefs?.getString(_kShownSongs);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      _shownSongIds.clear();
+      for (final item in decoded.cast<Map<String, dynamic>>()) {
+        final id = item['id'] as String?;
+        final shownAt = item['shownAt'] as int? ?? 0;
+        if (id != null && id.isNotEmpty) {
+          _shownSongIds.add((id: id, shownAt: shownAt));
+        }
+      }
+    } catch (_) {}
+  }
 
   Future<void> initialize() async {
     if (_ready) return;
@@ -72,6 +131,7 @@ class LocalLibrary {
         final decoded = jsonDecode(rawCounts) as Map<String, dynamic>;
         artistPlayCounts = decoded.map((k, v) => MapEntry(k, v as int));
       }
+      _loadShown();
       _ready = true;
       debugPrint(
         '[LocalLibrary] Loaded: '

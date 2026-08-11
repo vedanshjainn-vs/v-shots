@@ -161,14 +161,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ENABLE_RELEASE: ${{ vars.ENABLE_RELEASE }}
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.7.0-release.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.7.0-debug.apk
-          cp build/app/outputs/bundle/release/app-release.aab ./v-shots-5.7.0-release.aab
-          gh release create v5.7.0 \
-            ./v-shots-5.7.0-release.apk \
-            ./v-shots-5.7.0-debug.apk \
-            ./v-shots-5.7.0-release.aab \
-            --title "V Shots v5.7.0 (Build 19)" \
+          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.8.0-release.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.8.0-debug.apk
+          cp build/app/outputs/bundle/release/app-release.aab ./v-shots-5.8.0-release.aab
+          gh release create v5.8.0 \
+            ./v-shots-5.8.0-release.apk \
+            ./v-shots-5.8.0-debug.apk \
+            ./v-shots-5.8.0-release.aab \
+            --title "V Shots v5.8.0 (Build 20)" \
             --notes "Release publishing is gated — only publishes when ENABLE_RELEASE=true and the acceptance gate is passed." \
             --clobber || echo "::warning::Release step skipped (gate not enabled)."
 

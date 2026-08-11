@@ -46,6 +46,10 @@ class AdConfig {
   static const int homeAdEvery = 8;
   static const int searchAdEvery = 8;
 
+  /// Insert one clearly-separated Discovery ad page after this many organic
+  /// videos (Section 7: ~8-10 videos, never over the player).
+  static const int discoveryAdEvery = 9;
+
   /// If true, real-user builds should be treated as test devices for AdMob.
   /// Production builds should keep this false.
   static bool get isTestMode => !adsEnabled;

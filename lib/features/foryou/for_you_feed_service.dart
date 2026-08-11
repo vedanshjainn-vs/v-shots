@@ -4,8 +4,10 @@
 
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../../core/config/discovery_categories.dart';
 import '../../core/providers/adapters/youtube/youtube_data_api_client.dart';
 import '../../core/recommendation/recommendation_service.dart';
+import '../../core/storage/local_library.dart';
 
 class ForYouFeedService {
   ForYouFeedService({
@@ -280,6 +282,41 @@ class ForYouFeedService {
         'artwork': v.thumbnailUrl,
         'duration': v.durationSeconds,
       };
+
+  /// Fetches a batch for a specific [DiscoveryCategory] using its own query.
+  /// This is the single reactive path the Discovery feed calls whenever the
+  /// active category changes. Live API pagination + category-specific fallback.
+  Future<List<Map<String, dynamic>>> fetchForCategory(
+    DiscoveryCategory category, {
+    required Set<String> excludeIds,
+    int count = 10,
+  }) async {
+    final query = category.query;
+    // Reset pagination when the category changed so we start at page 1.
+    if (_tokenQuery != query) {
+      _tokenQuery = query;
+      _nextPageToken = null;
+    }
+    try {
+      final page = await _apiClient.searchMusicVideosPaginated(
+        query,
+        maxResults: count,
+        excludeIds: excludeIds,
+        pageToken: _nextPageToken,
+      );
+      _nextPageToken = page.nextPageToken;
+      final tracks = page.items.map(_videoToTrack).toList();
+      // Section 2: record shown IDs so the same song isn't re-surfaced soon.
+      for (final t in tracks) {
+        final id = t['id'] as String?;
+        if (id != null) LocalLibrary.instance.recordShownSong(id);
+      }
+      return tracks;
+    } catch (e) {
+      debugPrint('[ForYouFeedService] fetchForCategory failed: $e');
+      return [];
+    }
+  }
 
   bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;
 

@@ -18,6 +18,7 @@ import 'core/ads/ad_manager.dart';
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'core/remote_config/remote_config_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
@@ -55,6 +56,7 @@ void main() async {
     SupabaseService.initialize(),
     LocalLibrary.instance.initialize(),
     SignalStore.instance.initialize(),
+    RemoteConfigService.instance.init(),
   ]);
 
   await AuthService.instance.initializeGoogleSignIn();
@@ -1311,6 +1313,7 @@ class _HomeSectionState {
     this.order = 'relevance',
     this.isPersonalized = false,
     this.isBecauseListened = false,
+    this.maxItems = 15,
   });
 
   final String query;
@@ -1318,6 +1321,7 @@ class _HomeSectionState {
   final String order;
   final bool isPersonalized;
   final bool isBecauseListened;
+  final int maxItems;
   _SectionStatus status = _SectionStatus.loading;
   List<Map<String, dynamic>> tracks = [];
 }
@@ -1412,53 +1416,84 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     },
   ];
 
-  late final List<_HomeSectionState> _sections = [
-    _HomeSectionState(
-      query: 'trending songs official music video 2026',
-      title: 'Trending Now',
-      order: 'viewCount',
-    ),
-    _HomeSectionState(
-      query: 'new music friday official audio 2026',
-      title: 'New Releases',
-      order: 'date',
-    ),
-    _HomeSectionState(
-      query: '__made_for_you__',
-      title: 'Made For You',
-      isPersonalized: true,
-    ),
-    _HomeSectionState(
-      query: '__because_you_listened__',
-      title: 'Because You Listened To',
-      isBecauseListened: true,
-    ),
-    _HomeSectionState(
-      query: 'top bollywood hindi songs official music video',
-      title: 'India Hits (Bollywood)',
-    ),
-    _HomeSectionState(
-      query: 'latest punjabi pop hits official audio',
-      title: 'Punjabi Bangers',
-    ),
-    _HomeSectionState(
-      query: 'hindi indie acoustic songs official audio',
-      title: 'Hindi Indie & Acoustic',
-    ),
-    _HomeSectionState(
-      query: 'billboard top global pop hits official audio',
-      title: 'International Pop 100',
-    ),
-    _HomeSectionState(
-      query: 'chill lofi late night beats official audio',
-      title: 'Chill & Lofi',
-    ),
-  ];
+  late List<_HomeSectionState> _sections;
+
+  /// Builds the Home section list from RemoteConfig (Section 3) when present,
+  /// otherwise the compiled defaults. Adding/removing/reordering a row in the
+  /// `home_layout_config` Supabase table changes Home WITHOUT an app update.
+  List<_HomeSectionState> _buildDefaultSections() => [
+        _HomeSectionState(
+          query: 'trending songs official music video 2026',
+          title: 'Trending Now',
+          order: 'viewCount',
+        ),
+        _HomeSectionState(
+          query: 'new music friday official audio 2026',
+          title: 'New Releases',
+          order: 'date',
+        ),
+        _HomeSectionState(
+          query: '__made_for_you__',
+          title: 'Made For You',
+          isPersonalized: true,
+        ),
+        _HomeSectionState(
+          query: '__because_you_listened__',
+          title: 'Because You Listened To',
+          isBecauseListened: true,
+        ),
+        _HomeSectionState(
+          query: 'top bollywood hindi songs official music video',
+          title: 'India Hits (Bollywood)',
+        ),
+        _HomeSectionState(
+          query: 'latest punjabi pop hits official audio',
+          title: 'Punjabi Bangers',
+        ),
+        _HomeSectionState(
+          query: 'hindi indie acoustic songs official audio',
+          title: 'Hindi Indie & Acoustic',
+        ),
+        _HomeSectionState(
+          query: 'billboard top global pop hits official audio',
+          title: 'International Pop 100',
+        ),
+        _HomeSectionState(
+          query: 'chill lofi late night beats official audio',
+          title: 'Chill & Lofi',
+        ),
+      ];
+
+  List<_HomeSectionState> _sectionsFromRemote() {
+    final remote = RemoteConfigService.instance.homeSections;
+    if (remote.isEmpty) return _buildDefaultSections();
+    final result = <_HomeSectionState>[];
+    for (final row in remote) {
+      final title = (row['title'] as String?) ?? '';
+      final query = (row['query'] as String?) ?? '';
+      final maxItems = (row['max_items'] as num?)?.toInt() ?? 15;
+      if (title.isEmpty) continue;
+      result.add(
+        _HomeSectionState(
+          query: query.isEmpty ? title : query,
+          title: title,
+          maxItems: maxItems,
+          isPersonalized:
+              query == '__made_for_you__' || query.contains('made for you'),
+          isBecauseListened:
+              query == '__because_you_listened__' || query.contains('because'),
+        ),
+      );
+    }
+    return result.isEmpty ? _buildDefaultSections() : result;
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Build sections from remote config (Supabase) with compiled defaults.
+    _sections = _sectionsFromRemote();
     unawaited(_resolveArtistAvatars());
     for (final section in _sections) {
       unawaited(_loadSection(section));
@@ -1469,11 +1504,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  DateTime? _lastRefreshTs;
+  static const Duration _minRefreshInterval = Duration(minutes: 5);
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_refreshAll());
+      // Section 6: silent refresh on resume, rate-limited to once per 5 min.
+      final now = DateTime.now();
+      if (_lastRefreshTs == null ||
+          now.difference(_lastRefreshTs!) >= _minRefreshInterval) {
+        unawaited(_silentRefresh());
+      }
     }
+  }
+
+  /// Silent background refresh: shows existing cached content immediately
+  /// (sections already loaded), then swaps in fresh data — no full-screen
+  /// loading state. Rate-limited.
+  Future<void> _silentRefresh() async {
+    _lastRefreshTs = DateTime.now();
+    for (final section in _sections) {
+      unawaited(_loadSection(section, forceRefresh: true));
+    }
+    unawaited(RemoteConfigService.instance.refresh());
   }
 
   @override
@@ -1519,10 +1573,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     try {
+      // Section 2: exclude songs shown recently (within 24h) for a fresher,
+      // non-repetitive Home feed, and never re-show within the same load.
+      final shownRecently = LocalLibrary.instance.recentlyShownIds;
       final results = await musicRepository.search(
         queryKey,
         order: section.order,
-        limit: 15,
+        limit: section.maxItems,
+        excludeIds: shownRecently,
       );
       if (!mounted) return;
       if (results.isEmpty && cached == null) {
@@ -1531,6 +1589,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       if (results.isNotEmpty) {
         SearchCache.instance.set(queryKey, results);
+        for (final t in results) {
+          final id = t['id'] as String?;
+          if (id != null) LocalLibrary.instance.recordShownSong(id);
+        }
         setState(() {
           section.tracks = results;
           section.status = _SectionStatus.loaded;

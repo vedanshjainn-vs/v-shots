@@ -8,13 +8,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
+import '../../core/ads/ad_config.dart';
+import '../../core/ads/native_ad_widget.dart';
+import '../../core/config/discovery_categories.dart';
 import '../../core/motion/motion.dart';
+import '../../core/remote_config/remote_config_service.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
-import 'for_you_feed_service.dart';
 import '../../main.dart'
     show
         currentTrack,
@@ -47,15 +50,67 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   int _currentIndex = 0;
   bool _isLoadingMore = false;
   bool _initialLoading = true;
-  String _currentVibeLabel = 'Trending Hits';
+
+  // ── Discovery ad page mapping (Section 7) ──────────────────────────────
+  // The feed is a vertical PageView. Every [AdConfig.discoveryAdEvery] organic
+  // videos we insert one clearly-separated ad page. To keep the video index
+  // math (currentQueue, auto-advance, skip) intact, we map a PageView page
+  // index to a song index via [_songIndexForPage]; ad pages never touch the
+  // player. Ads are only inserted when ads are enabled (production config).
+  bool get _adsEnabled => AdConfig.adsEnabled;
+
+  /// Number of ad pages inserted for [songCount] songs (one after every
+  /// [AdConfig.discoveryAdEvery] songs).
+  int _adCountFor(int songCount) => songCount ~/ AdConfig.discoveryAdEvery;
+
+  /// Total PageView pages = songs + inserted ad pages.
+  int get _pageCount => _items.length + _adCountFor(_items.length);
+
+  /// Is the given PageView page an ad page? Ad pages appear right after every
+  /// [AdConfig.discoveryAdEvery]-th song: at page = adEvery, 2*adEvery+1, ...,
+  /// i.e. page where (page - adEvery) % (adEvery+1) == 0 (never the first page).
+  bool _isAdPage(int page) {
+    if (!_adsEnabled) return false;
+    if (page == 0) return false;
+    return (page - AdConfig.discoveryAdEvery) %
+            (AdConfig.discoveryAdEvery + 1) ==
+        0;
+  }
+
+  /// Maps a PageView page index to the underlying song index, skipping ad pages.
+  int _songIndexForPage(int page) {
+    if (!_adsEnabled) return page;
+    final adsBefore = page ~/ (AdConfig.discoveryAdEvery + 1);
+    return page - adsBefore;
+  }
+
+  /// Maps a song index to its PageView page index (accounting for ads).
+  int _pageForSongIndex(int songIndex) {
+    if (!_adsEnabled) return songIndex;
+    return songIndex + (songIndex ~/ AdConfig.discoveryAdEvery);
+  }
+
+  /// The single source of truth for the currently selected Discovery category.
+  /// Both the displayed label AND the active fetch query come from this one
+  /// object (Section 1, point 1) — there is no separate "label" vs "fetch"
+  /// variable that can drift apart.
+  DiscoveryCategory? _activeCategory;
 
   String? _activeVideoId;
   bool _isPlaying = false;
 
+  DiscoveryCategory get _defaultCategory =>
+      RemoteConfigService.instance.categories.isNotEmpty
+          ? RemoteConfigService.instance.categories.first
+          : kDiscoveryCategories.first;
+
+  String get _currentVibeLabel =>
+      _activeCategory?.label ?? _defaultCategory.label;
+
   @override
   void initState() {
     super.initState();
-    _currentVibeLabel = forYouFeedService.activeMood ?? 'Trending Hits';
+    _activeCategory = _defaultCategory;
     // Rebuild when the user switches to/from the Discover tab so the active
     // card correctly (re)attaches the single global IFrame.
     currentTabIndexNotifier.addListener(_onTabChanged);
@@ -73,7 +128,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_currentIndex < _items.length) {
       playbackSignalTracker.onTrackEnded(completed: true);
     }
-    _goToPage(_currentIndex + 1);
+    // Advance to the NEXT SONG (page math handles skipping ad pages).
+    final nextSong = _currentIndex + 1;
+    if (nextSong < _items.length) {
+      _goToPage(_pageForSongIndex(nextSong));
+    } else {
+      _goToPage(_pageCount); // at end -> fetch more then jump
+    }
   }
 
   void _onTabChanged() {
@@ -99,25 +160,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     super.dispose();
   }
 
-  /// Animate to [index], clamping and load-more-triggering so the feed never
-  /// runs out (auto-advance / swipe share this path).
-  void _goToPage(int index) {
+  /// Animate to a PageView [page], clamping and load-more-triggering so the
+  /// feed never runs out. Callers pass a PAGE index (use [_pageForSongIndex]).
+  void _goToPage(int page) {
     if (!mounted) return;
-    if (index >= _items.length) {
+    if (page >= _pageCount) {
       // At the end: fetch more, then advance if new items arrived.
-      unawaited(_fetchMoreThenJump(index));
+      unawaited(_fetchMoreThenJump(page));
       return;
     }
-    if (index < 0) index = 0;
+    if (page < 0) page = 0;
     _pageController.animateToPage(
-      index,
+      page,
       duration: const Duration(milliseconds: 400),
       curve: Curves.easeOutCubic,
     );
     unawaited(_maybeLoadMore());
   }
 
-  Future<void> _fetchMoreThenJump(int index) async {
+  Future<void> _fetchMoreThenJump(int page) async {
     if (_isLoadingMore) return;
     _isLoadingMore = true;
     final batch = await _fetchDiscoverBatch();
@@ -128,10 +189,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         _items.addAll(batch);
         _seenIds.addAll(batch.map((t) => t['id'] as String));
       });
-      if (index < _items.length) {
+      if (page < _pageCount) {
         unawaited(
           _pageController.animateToPage(
-            index,
+            page,
             duration: const Duration(milliseconds: 400),
             curve: Curves.easeOutCubic,
           ),
@@ -200,16 +261,35 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
+    // The selected category is the single source of truth for the query.
+    final cat = _activeCategory ?? _defaultCategory;
+    // Section 1 point 6 (verification): log the exact outgoing query so we can
+    // confirm each category selection hits a DIFFERENT query.
+    debugPrint(
+      '[Discover] Fetching category="${cat.label}" query="${cat.query}"',
+    );
     try {
-      if (forYouFeedService.activeMoodQuery == null) {
-        final scored = await recommendationEngine.generateFeed(
-          intent: FeedIntent.discoverSomethingNew,
+      // Prefer the category's own query (via the feed service, which handles
+      // live pagination + category fallback). Only if no category is active do
+      // we fall through to the recommendation engine's generic discover feed.
+      if (cat.query.isNotEmpty) {
+        return forYouFeedService.fetchForCategory(
+          cat,
           excludeIds: _seenIds,
           count: 12,
         );
-        if (scored.isNotEmpty) {
-          return scored.map((s) => s.track.toTrackMap()).toList();
-        }
+      }
+    } catch (e) {
+      debugPrint('[ForYouFeed] Category fetch failed, falling back: $e');
+    }
+    try {
+      final scored = await recommendationEngine.generateFeed(
+        intent: FeedIntent.discoverSomethingNew,
+        excludeIds: _seenIds,
+        count: 12,
+      );
+      if (scored.isNotEmpty) {
+        return scored.map((s) => s.track.toTrackMap()).toList();
       }
     } catch (e) {
       debugPrint('[ForYouFeed] Engine discover batch failed, falling back: $e');
@@ -231,7 +311,14 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _isLoadingMore = false;
   }
 
-  void _onPageChanged(int index) {
+  void _onPageChanged(int page) {
+    // On an ad page we do NOT change playback — the current song keeps playing
+    // behind the clearly-labeled ad card. Only song pages update the player.
+    if (_isAdPage(page)) {
+      setState(() {});
+      return;
+    }
+    final index = _songIndexForPage(page);
     if (index < 0 || index >= _items.length) return;
     unawaited(HapticFeedback.selectionClick());
     final track = _items[index];
@@ -297,8 +384,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         currentMood: _currentVibeLabel,
         onMoodSelected: (label, query) {
           Navigator.pop(ctx);
+          final cat = discoveryCategoryByLabel(label);
           setState(() {
-            _currentVibeLabel = label;
+            // Replace results entirely (never merge with the previous
+            // category's list). Reset to index 0. (Section 1 point 5)
+            _activeCategory = cat ?? _defaultCategory;
             _initialLoading = true;
             _items.clear();
             _seenIds.clear();
@@ -370,25 +460,37 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             controller: _pageController,
             scrollDirection: Axis.vertical,
             physics: const BouncingScrollPhysics(),
-            itemCount: _items.length,
+            itemCount: _pageCount,
             onPageChanged: _onPageChanged,
-            itemBuilder: (context, index) {
-              final isCurrent = index == _currentIndex;
+            itemBuilder: (context, page) {
+              final isCurrent = page == _currentIndex;
+              // Ad page: a clearly-separated, labeled native ad card. It never
+              // touches the YouTube player (which keeps playing the song that
+              // was active before/after), so it can't violate YouTube policy.
+              if (_isAdPage(page)) {
+                return RepaintBoundary(
+                  child: _ForYouAdCard(
+                    onSkip: () => _goToPage(page + 1),
+                  ),
+                );
+              }
+              final songIndex = _songIndexForPage(page);
+              final track = _items[songIndex];
               return RepaintBoundary(
                 child: _ForYouCard(
-                  track: _items[index],
+                  track: track,
                   isActive: isCurrent,
                   isPlaying: _isPlaying,
                   onPlayPauseToggle: _togglePlayPause,
-                  onNotInterested: () => _handleNotInterested(index),
-                  onDoubleTapLike: () => _handleDoubleTapLike(_items[index]),
-                  onSkipPrevious: index > 0
+                  onNotInterested: () => _handleNotInterested(songIndex),
+                  onDoubleTapLike: () => _handleDoubleTapLike(track),
+                  onSkipPrevious: page > 0
                       ? () => _pageController.previousPage(
                             duration: const Duration(milliseconds: 300),
                             curve: Curves.easeOutCubic,
                           )
                       : null,
-                  onSkipNext: index < _items.length - 1
+                  onSkipNext: page < _pageCount - 1
                       ? () => _pageController.nextPage(
                             duration: const Duration(milliseconds: 300),
                             curve: Curves.easeOutCubic,
@@ -560,10 +662,10 @@ class _MoodPickerSheet extends StatelessWidget {
                 child: Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: ForYouFeedService.availableMoods.map((m) {
-                    final isSelected = m['label'] == currentMood;
+                  children: RemoteConfigService.instance.categories.map((m) {
+                    final isSelected = m.label == currentMood;
                     return GestureDetector(
-                      onTap: () => onMoodSelected(m['label']!, m['query']!),
+                      onTap: () => onMoodSelected(m.label, m.query),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(
@@ -596,12 +698,12 @@ class _MoodPickerSheet extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              m['icon'] ?? '🎵',
+                              m.icon,
                               style: const TextStyle(fontSize: 14),
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              m['label'] ?? '',
+                              m.label,
                               style: TextStyle(
                                 color: isSelected
                                     ? Colors.white
@@ -622,6 +724,78 @@ class _MoodPickerSheet extends StatelessWidget {
             ),
             const SizedBox(height: 16),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A clearly-separated Discovery ad page (Section 7). Shown between organic
+/// video cards. It does NOT render or touch the YouTube player — the previous
+/// song keeps playing behind it — so it can never violate YouTube ad policy.
+class _ForYouAdCard extends StatelessWidget {
+  const _ForYouAdCard({required this.onSkip});
+
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black,
+      child: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Ad · Sponsored',
+                style: TextStyle(
+                  color: AppColors.hotPink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Advertisement',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  'This is an advertisement, not a V Shots track.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white60, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const NativeAdWidget(height: 180),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: onSkip,
+                icon: const Icon(Icons.skip_next_rounded),
+                label: const Text('Continue'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.accent,
+                  side: BorderSide(
+                      color: AppColors.accent.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -925,83 +1099,96 @@ class _ForYouCardState extends State<_ForYouCard>
           ),
         ),
 
-        // Right Side Action Buttons (Like, Comments, Playlist, More)
+        // Right Side Action Buttons (Like, Comments, Playlist, More).
+        // Sits ABOVE the player (last Stack child = highest z-index) inside a
+        // translucent pill so the icons stay visible regardless of video
+        // brightness/color (Section 5). Never overlaid on the YouTube player
+        // itself — it sits beside/below the video frame.
         Positioned(
           right: 16,
           bottom: 150,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              StatefulBuilder(
-                builder: (context, setLikeState) {
-                  final isLiked = LocalLibrary.instance.isLiked(trackId);
-                  return IconButton(
-                    icon: LikePop(
-                      liked: isLiked,
-                      child: Icon(
-                        isLiked
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: isLiked ? AppColors.hotPink : Colors.white,
-                        size: 32,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                StatefulBuilder(
+                  builder: (context, setLikeState) {
+                    final isLiked = LocalLibrary.instance.isLiked(trackId);
+                    return IconButton(
+                      icon: LikePop(
+                        liked: isLiked,
+                        child: Icon(
+                          isLiked
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          color: isLiked ? AppColors.hotPink : Colors.white,
+                          size: 32,
+                        ),
                       ),
-                    ),
-                    onPressed: () {
-                      unawaited(HapticFeedback.lightImpact());
-                      final wasLiked = isLiked;
-                      LocalLibrary.instance.toggleLiked(track).then((_) {
-                        if (wasLiked) {
-                          playbackSignalTracker.onUnliked(track);
-                        } else {
-                          playbackSignalTracker.onLiked(track);
-                        }
-                        setLikeState(() {});
-                      });
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              IconButton(
-                icon: const Icon(
-                  Icons.chat_bubble_outline_rounded,
-                  color: Colors.white,
-                  size: 28,
+                      onPressed: () {
+                        unawaited(HapticFeedback.lightImpact());
+                        final wasLiked = isLiked;
+                        LocalLibrary.instance.toggleLiked(track).then((_) {
+                          if (wasLiked) {
+                            playbackSignalTracker.onUnliked(track);
+                          } else {
+                            playbackSignalTracker.onLiked(track);
+                          }
+                          setLikeState(() {});
+                        });
+                      },
+                    );
+                  },
                 ),
-                onPressed: () {
-                  unawaited(HapticFeedback.lightImpact());
-                  CommentSheet.show(context, shotId: trackId, commentCount: 18);
-                },
-              ),
-              const SizedBox(height: 12),
-              IconButton(
-                icon: const Icon(
-                  Icons.playlist_add_rounded,
-                  color: Colors.white,
-                  size: 30,
+                const SizedBox(height: 12),
+                IconButton(
+                  icon: const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  onPressed: () {
+                    unawaited(HapticFeedback.lightImpact());
+                    CommentSheet.show(context,
+                        shotId: trackId, commentCount: 18);
+                  },
                 ),
-                onPressed: () {
-                  unawaited(HapticFeedback.lightImpact());
-                  showAddToPlaylistSheet(context, track);
-                },
-              ),
-              const SizedBox(height: 12),
-              IconButton(
-                icon: const Icon(
-                  Icons.more_horiz_rounded,
-                  color: Colors.white,
-                  size: 30,
+                const SizedBox(height: 12),
+                IconButton(
+                  icon: const Icon(
+                    Icons.playlist_add_rounded,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                  onPressed: () {
+                    unawaited(HapticFeedback.lightImpact());
+                    showAddToPlaylistSheet(context, track);
+                  },
                 ),
-                onPressed: () {
-                  unawaited(HapticFeedback.lightImpact());
-                  showMoreOptionsSheet(
-                    context,
-                    track,
-                    onNotInterested: onNotInterested,
-                  );
-                },
-              ),
-            ],
+                const SizedBox(height: 12),
+                IconButton(
+                  icon: const Icon(
+                    Icons.more_horiz_rounded,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                  onPressed: () {
+                    unawaited(HapticFeedback.lightImpact());
+                    showMoreOptionsSheet(
+                      context,
+                      track,
+                      onNotInterested: onNotInterested,
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ],

@@ -1269,6 +1269,18 @@ class YouTubeDataApiClient {
       matchedCategory = 'telugu';
     } else if (cleanQuery.contains('bengali')) {
       matchedCategory = 'bengali';
+    } else if (cleanQuery.contains('wedding') ||
+        cleanQuery.contains('sangeet')) {
+      // Wedding & Sangeet → Bollywood celebration tracks.
+      matchedCategory = 'bollywood';
+    } else if (cleanQuery.contains('monsoon') ||
+        cleanQuery.contains('rain')) {
+      // Monsoon Vibes → Hindi romantic Bollywood.
+      multiCategories = ['bollywood', 'indie'];
+    } else if (cleanQuery.contains('motivational') ||
+        cleanQuery.contains('inspirational')) {
+      // Motivational → upbeat global / workout.
+      multiCategories = ['global', 'workout'];
     } else if (cleanQuery.contains('trending') ||
         cleanQuery.contains('viral') ||
         cleanQuery.contains('top hits')) {
