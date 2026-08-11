@@ -104,17 +104,13 @@ jobs:
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — built with a CI throwaway keystore, NOT the production key."
           fi
           flutter build apk --release
+          # Build the Play Store AAB in the SAME step so it inherits the same
+          # keystore + password (secrets when configured, otherwise the CI
+          # throwaway keystore created above).
+          flutter build appbundle --release
 
       - name: 10. Build Debug APK
         run: flutter build apk --debug
-
-      - name: 10b. Build Release AAB (Play Store)
-        env:
-          ANDROID_KEYSTORE_PATH: "keystores/release.keystore"
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: flutter build appbundle --release
 
       - name: 11. Validate Generated APKs & AAB
         run: |
