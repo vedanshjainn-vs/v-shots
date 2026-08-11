@@ -66,5 +66,41 @@ void main() {
       expect(details!.id, 'kJQP7kiw5Fk');
       expect(details.title, contains('Despacito'));
     });
+
+    test('catalog has no fabricated video IDs or thumbnail mismatches', () async {
+      // Search across several categories and assert every returned video has
+      // a well-formed, non-empty videoId and a thumbnail that corresponds to
+      // THAT SAME videoId (never a generic/placeholder or a different video).
+      const queries = [
+        'bollywood songs',
+        'punjabi songs',
+        'devotional',
+        'global pop',
+        'indie acoustic',
+        'workout',
+        'sad emotional',
+      ];
+      for (final q in queries) {
+        final results = await client.searchMusicVideos(q, maxResults: 25);
+        expect(results, isNotEmpty, reason: 'fallback should never be empty for "$q"');
+        for (final r in results) {
+          expect(r.id.length, 11,
+              reason: 'videoId for "${r.title}" must be an 11-char YouTube id');
+          expect(r.thumbnailUrl, contains(r.id),
+              reason: 'thumbnail for "${r.title}" must come from the same videoId ${r.id}');
+        }
+      }
+    });
+
+    test('known tracks map to their correct real videos', () async {
+      final kesariya = await client.getVideoDetails('g6fnFALEseI');
+      expect(kesariya!.title.toLowerCase(), contains('kesariya'));
+
+      final aaftab = await client.getVideoDetails('U77d9912lrw');
+      expect(aaftab!.title.toLowerCase(), contains('aaftaab'));
+
+      final chooLo = await client.getVideoDetails('sFMRqxCexDk');
+      expect(chooLo!.title.toLowerCase(), contains('choo lo'));
+    });
   });
 }

@@ -53,8 +53,7 @@ class YouTubeVideoItem {
     final high = thumbnails['high']?['url'] as String?;
     final medium = thumbnails['medium']?['url'] as String?;
     final def = thumbnails['default']?['url'] as String?;
-    final thumb =
-        maxres ??
+    final thumb = maxres ??
         high ??
         medium ??
         def ??
@@ -113,8 +112,8 @@ class YouTubeVideoItem {
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
   YouTubeDataApiClient({http.Client? httpClient, String? apiKey})
-    : _http = httpClient ?? http.Client(),
-      _customApiKey = apiKey;
+      : _http = httpClient ?? http.Client(),
+        _customApiKey = apiKey;
 
   final http.Client _http;
   final String? _customApiKey;
@@ -295,20 +294,19 @@ class YouTubeDataApiClient {
   // ═════════════════════════════════════════════════════════════════════════
 
   static const List<YouTubeVideoItem> _curatedCatalog = [
-    // ── Bollywood & Hindi Hits ───────────────────────────────────────────────
     YouTubeVideoItem(
-      id: 'L0MK7qz13bU',
-      title: 'Kesariya (Brahmāstra)',
+      id: 'g6fnFALEseI',
+      title: 'Kesariya (Brahmastra)',
       channelTitle: 'Arijit Singh & Pritam',
-      thumbnailUrl: 'https://img.youtube.com/vi/L0MK7qz13bU/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/g6fnFALEseI/hqdefault.jpg',
       durationSeconds: 268,
       category: 'bollywood',
     ),
     YouTubeVideoItem(
-      id: 'v_zZmsFZDao',
+      id: 'UEvOsQBu1jY',
       title: 'Apna Bana Le (Bhediya)',
       channelTitle: 'Arijit Singh & Sachin-Jigar',
-      thumbnailUrl: 'https://img.youtube.com/vi/v_zZmsFZDao/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/UEvOsQBu1jY/hqdefault.jpg',
       durationSeconds: 261,
       category: 'bollywood',
     ),
@@ -321,63 +319,125 @@ class YouTubeDataApiClient {
       category: 'bollywood',
     ),
     YouTubeVideoItem(
-      id: 'Oq5P-kF_n9c',
+      id: 'Etkd-07gnxM',
       title: 'O Maahi (Dunki)',
       channelTitle: 'Arijit Singh & Pritam',
-      thumbnailUrl: 'https://img.youtube.com/vi/Oq5P-kF_n9c/hqdefault.jpg',
-      durationSeconds: 233,
-      category: 'bollywood',
-    ),
-    YouTubeVideoItem(
-      id: 'gVYr5M2wF4o',
-      title: 'Pehle Bhi Main (Animal)',
-      channelTitle: 'Vishal Mishra & Harshavardhan',
-      thumbnailUrl: 'https://img.youtube.com/vi/gVYr5M2wF4o/hqdefault.jpg',
-      durationSeconds: 250,
-      category: 'bollywood',
-    ),
-    YouTubeVideoItem(
-      id: 'g6fnFALEseI',
-      title: 'Raataan Lambiyan (Shershaah)',
-      channelTitle: 'Jubin Nautiyal & Asees Kaur',
-      thumbnailUrl: 'https://img.youtube.com/vi/g6fnFALEseI/hqdefault.jpg',
-      durationSeconds: 230,
-      category: 'bollywood',
-    ),
-    YouTubeVideoItem(
-      id: 'hvxD4kH9p_Y',
-      title: 'Shayad (Love Aaj Kal)',
-      channelTitle: 'Arijit Singh & Pritam',
-      thumbnailUrl: 'https://img.youtube.com/vi/hvxD4kH9p_Y/hqdefault.jpg',
-      durationSeconds: 247,
-      category: 'bollywood',
-    ),
-    YouTubeVideoItem(
-      id: 'MEb_lZ6Vv0A',
-      title: 'Dil Diyan Gallan (Tiger Zinda Hai)',
-      channelTitle: 'Atif Aslam & Vishal-Shekhar',
-      thumbnailUrl: 'https://img.youtube.com/vi/MEb_lZ6Vv0A/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/Etkd-07gnxM/hqdefault.jpg',
       durationSeconds: 260,
       category: 'bollywood',
     ),
     YouTubeVideoItem(
-      id: 'qFDf9y1A_fQ',
+      id: 'iAIBF2ngbWY',
+      title: 'Pehle Bhi Main (Animal)',
+      channelTitle: 'Vishal Mishra & Harshavardhan',
+      thumbnailUrl: 'https://img.youtube.com/vi/iAIBF2ngbWY/hqdefault.jpg',
+      durationSeconds: 250,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'MJyKN-8UncM',
+      title: 'Shayad (Love Aaj Kal)',
+      channelTitle: 'Arijit Singh & Pritam',
+      thumbnailUrl: 'https://img.youtube.com/vi/MJyKN-8UncM/hqdefault.jpg',
+      durationSeconds: 247,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'gvyUuxdRdR4',
+      title: 'Raataan Lambiyan (Shershaah)',
+      channelTitle: 'Jubin Nautiyal & Asees Kaur',
+      thumbnailUrl: 'https://img.youtube.com/vi/gvyUuxdRdR4/hqdefault.jpg',
+      durationSeconds: 230,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'SAcpESN_Fk4',
+      title: 'Dil Diyan Gallan (Tiger Zinda Hai)',
+      channelTitle: 'Atif Aslam & Vishal-Shekhar',
+      thumbnailUrl: 'https://img.youtube.com/vi/SAcpESN_Fk4/hqdefault.jpg',
+      durationSeconds: 260,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'qFkNATtc3mc',
       title: 'Ghungroo (War)',
       channelTitle: 'Arijit Singh & Shilpa Rao',
-      thumbnailUrl: 'https://img.youtube.com/vi/qFDf9y1A_fQ/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/qFkNATtc3mc/hqdefault.jpg',
       durationSeconds: 302,
       category: 'bollywood',
     ),
     YouTubeVideoItem(
-      id: 'BddP6PYo2gs',
-      title: 'Tere Vaaste (Zara Hatke Zara Bachke)',
-      channelTitle: 'Varun Jain, Sachin-Jigar',
-      thumbnailUrl: 'https://img.youtube.com/vi/BddP6PYo2gs/hqdefault.jpg',
+      id: 'g5WZLO8BAC8',
+      title: 'Tere Vaaste (Zara Hatke)',
+      channelTitle: 'Varun Jain & Sachin-Jigar',
+      thumbnailUrl: 'https://img.youtube.com/vi/g5WZLO8BAC8/hqdefault.jpg',
       durationSeconds: 189,
       category: 'bollywood',
     ),
-
-    // ── Punjabi Bangers ──────────────────────────────────────────────────────
+    YouTubeVideoItem(
+      id: 'jHNNMj5bNQw',
+      title: 'Kabira (YJHD)',
+      channelTitle: 'Pritam, Tochi & Rekha',
+      thumbnailUrl: 'https://img.youtube.com/vi/jHNNMj5bNQw/hqdefault.jpg',
+      durationSeconds: 263,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'RemShT6JAHw',
+      title: 'Tum Hi Aana (Marjaavaan)',
+      channelTitle: 'Jubin Nautiyal & Payal Dev',
+      thumbnailUrl: 'https://img.youtube.com/vi/RemShT6JAHw/hqdefault.jpg',
+      durationSeconds: 224,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'DteVJ4Eq7bM',
+      title: 'Pachtaoge',
+      channelTitle: 'Arijit Singh & Tanishk Bagchi',
+      thumbnailUrl: 'https://img.youtube.com/vi/DteVJ4Eq7bM/hqdefault.jpg',
+      durationSeconds: 233,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'DUwlGduupRI',
+      title: 'Filhaal2 Mohabbat',
+      channelTitle: 'BPraak & Ammy Virk',
+      thumbnailUrl: 'https://img.youtube.com/vi/DUwlGduupRI/hqdefault.jpg',
+      durationSeconds: 268,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'TRa9IMvccjg',
+      title: 'Dilbar (Satyameva Jayate)',
+      channelTitle: 'Neha Kakkar & Tanishk Bagchi',
+      thumbnailUrl: 'https://img.youtube.com/vi/TRa9IMvccjg/hqdefault.jpg',
+      durationSeconds: 211,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: '57GvNFJTFlI',
+      title: 'Lut Gaye',
+      channelTitle: 'Jubin Nautiyal & Tanishk Bagchi',
+      thumbnailUrl: 'https://img.youtube.com/vi/57GvNFJTFlI/hqdefault.jpg',
+      durationSeconds: 236,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'zZasH6qkn8M',
+      title: 'Teri Deewani',
+      channelTitle: 'Kailash Kher',
+      thumbnailUrl: 'https://img.youtube.com/vi/zZasH6qkn8M/hqdefault.jpg',
+      durationSeconds: 326,
+      category: 'bollywood',
+    ),
+    YouTubeVideoItem(
+      id: 'iv7lcUkFVSc',
+      title: 'O Re Piya (Aaja Nachle)',
+      channelTitle: 'Rahat Fateh Ali Khan',
+      thumbnailUrl: 'https://img.youtube.com/vi/iv7lcUkFVSc/hqdefault.jpg',
+      durationSeconds: 289,
+      category: 'bollywood',
+    ),
     YouTubeVideoItem(
       id: 'cl0a3i2wFcc',
       title: 'G.O.A.T.',
@@ -387,253 +447,245 @@ class YouTubeDataApiClient {
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: 'D-YDEiaPn0s',
+      id: 'mH_LFkWxpI0',
       title: 'Lover',
       channelTitle: 'Diljit Dosanjh',
-      thumbnailUrl: 'https://img.youtube.com/vi/D-YDEiaPn0s/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/mH_LFkWxpI0/hqdefault.jpg',
       durationSeconds: 204,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: '0yW7w8F2TVA',
+      id: 'vX2cDW8LUWk',
       title: 'Excuses',
       channelTitle: 'AP Dhillon & Gurinder Gill',
-      thumbnailUrl: 'https://img.youtube.com/vi/0yW7w8F2TVA/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/vX2cDW8LUWk/hqdefault.jpg',
       durationSeconds: 176,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: 'v7mK69U5Rvg',
+      id: 'mZQH8CPQ-wo',
       title: 'With You',
       channelTitle: 'AP Dhillon',
-      thumbnailUrl: 'https://img.youtube.com/vi/v7mK69U5Rvg/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/mZQH8CPQ-wo/hqdefault.jpg',
       durationSeconds: 154,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: '6mbwJ2xhgzM',
+      id: 'cWMxCE2HTag',
       title: 'Softly',
       channelTitle: 'Karan Aujla & Ikky',
-      thumbnailUrl: 'https://img.youtube.com/vi/6mbwJ2xhgzM/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/cWMxCE2HTag/hqdefault.jpg',
       durationSeconds: 155,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: 'Qp3y_fE-7pU',
+      id: 'LK7-_dgAVQE',
       title: 'Tauba Tauba',
       channelTitle: 'Karan Aujla',
-      thumbnailUrl: 'https://img.youtube.com/vi/Qp3y_fE-7pU/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/LK7-_dgAVQE/hqdefault.jpg',
       durationSeconds: 208,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: 'dCmp56tSSmA',
+      id: 'VNs_cCtdbPc',
       title: 'Brown Munde',
-      channelTitle: 'AP Dhillon, Gurinder Gill, Shinda Kahlon',
-      thumbnailUrl: 'https://img.youtube.com/vi/dCmp56tSSmA/hqdefault.jpg',
+      channelTitle: 'AP Dhillon & Gurinder Gill',
+      thumbnailUrl: 'https://img.youtube.com/vi/VNs_cCtdbPc/hqdefault.jpg',
       durationSeconds: 268,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: 'vX2cDW8LUWk',
+      id: '4tywp83zkmk',
       title: 'Cheques',
       channelTitle: 'Shubh',
-      thumbnailUrl: 'https://img.youtube.com/vi/vX2cDW8LUWk/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/4tywp83zkmk/hqdefault.jpg',
       durationSeconds: 183,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: '8nK_P6a4e2k',
+      id: 'IvJKmLWeHlg',
       title: 'No Love',
       channelTitle: 'Shubh',
-      thumbnailUrl: 'https://img.youtube.com/vi/8nK_P6a4e2k/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/IvJKmLWeHlg/hqdefault.jpg',
       durationSeconds: 170,
       category: 'punjabi',
     ),
     YouTubeVideoItem(
-      id: '7zp1TbLFPXA',
+      id: 'I1nX5EuvwzE',
       title: 'Elevated',
       channelTitle: 'Shubh',
-      thumbnailUrl: 'https://img.youtube.com/vi/7zp1TbLFPXA/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/I1nX5EuvwzE/hqdefault.jpg',
       durationSeconds: 201,
       category: 'punjabi',
     ),
-
-    // ── Devotional & Bhajans ─────────────────────────────────────────────────
     YouTubeVideoItem(
-      id: 'hM_9cE7W4dE',
+      id: 'AETFvQonfV8',
       title: 'Shri Hanuman Chalisa',
       channelTitle: 'Hariharan & Gulshan Kumar',
-      thumbnailUrl: 'https://img.youtube.com/vi/hM_9cE7W4dE/hqdefault.jpg',
-      durationSeconds: 580,
-      category: 'devotional',
-    ),
-    YouTubeVideoItem(
-      id: 'O8T_m3q3e5M',
-      title: 'Achyutam Keshavam',
-      channelTitle: 'Vikram Hazra & Art of Living',
-      thumbnailUrl: 'https://img.youtube.com/vi/O8T_m3q3e5M/hqdefault.jpg',
-      durationSeconds: 320,
-      category: 'devotional',
-    ),
-    YouTubeVideoItem(
-      id: '3tXw7x8y9z0',
-      title: 'Shiv Tandav Stotram',
-      channelTitle: 'Shankar Mahadevan',
-      thumbnailUrl: 'https://img.youtube.com/vi/3tXw7x8y9z0/hqdefault.jpg',
-      durationSeconds: 550,
-      category: 'devotional',
-    ),
-    YouTubeVideoItem(
-      id: 'kLmNoPqRsTu',
-      title: 'Ram Siya Ram (Adipurush)',
-      channelTitle: 'Sachet-Parampara',
-      thumbnailUrl: 'https://img.youtube.com/vi/kLmNoPqRsTu/hqdefault.jpg',
-      durationSeconds: 230,
-      category: 'devotional',
-    ),
-    YouTubeVideoItem(
-      id: '9uVwXyZ0123',
-      title: 'Namo Namo (Kedarnath)',
-      channelTitle: 'Amit Trivedi',
-      thumbnailUrl: 'https://img.youtube.com/vi/9uVwXyZ0123/hqdefault.jpg',
-      durationSeconds: 322,
-      category: 'devotional',
-    ),
-    YouTubeVideoItem(
-      id: 'AbCdEfGhIjK',
-      title: 'Radhe Radhe Radhe Barsane Wali Radhe',
-      channelTitle: 'Gaurav Krishna Goswami',
-      thumbnailUrl: 'https://img.youtube.com/vi/AbCdEfGhIjK/hqdefault.jpg',
-      durationSeconds: 410,
-      category: 'devotional',
-    ),
-    YouTubeVideoItem(
-      id: 'LmNoPqRsTuV',
-      title: 'Mahamrityunjaya Mantra 108 Times',
-      channelTitle: 'Suresh Wadkar',
-      thumbnailUrl: 'https://img.youtube.com/vi/LmNoPqRsTuV/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/AETFvQonfV8/hqdefault.jpg',
       durationSeconds: 600,
       category: 'devotional',
     ),
     YouTubeVideoItem(
-      id: 'WxYz0123456',
-      title: 'Har Har Shambhu Shiv Mahadeva',
-      channelTitle: 'Abhilipsa Panda & Jeetu Sharma',
-      thumbnailUrl: 'https://img.youtube.com/vi/WxYz0123456/hqdefault.jpg',
-      durationSeconds: 350,
+      id: 'pzzPowh241o',
+      title: 'Achyutam Keshavam',
+      channelTitle: 'Vikram Hazra',
+      thumbnailUrl: 'https://img.youtube.com/vi/pzzPowh241o/hqdefault.jpg',
+      durationSeconds: 270,
       category: 'devotional',
     ),
-
-    // ── Sufi & Ghazals ───────────────────────────────────────────────────────
     YouTubeVideoItem(
-      id: '8aN4H6u1z3Y',
+      id: 'hMBKmQEPNzI',
+      title: 'Shiv Tandav Stotram',
+      channelTitle: 'Shankar Mahadevan',
+      thumbnailUrl: 'https://img.youtube.com/vi/hMBKmQEPNzI/hqdefault.jpg',
+      durationSeconds: 300,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: '61EGpAy4Ids',
+      title: 'Radhe Radhe Barsane Wali Radhe',
+      channelTitle: 'Vipul Music',
+      thumbnailUrl: 'https://img.youtube.com/vi/61EGpAy4Ids/hqdefault.jpg',
+      durationSeconds: 300,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: 'yALvgZi-84o',
+      title: 'Namo Namo (Kedarnath)',
+      channelTitle: 'Amit Trivedi',
+      thumbnailUrl: 'https://img.youtube.com/vi/yALvgZi-84o/hqdefault.jpg',
+      durationSeconds: 287,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: 'XXRcHfrL7SQ',
+      title: 'Mahamrityunjaya Mantra',
+      channelTitle: 'Suresh Wadkar',
+      thumbnailUrl: 'https://img.youtube.com/vi/XXRcHfrL7SQ/hqdefault.jpg',
+      durationSeconds: 660,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: 'FJtrC8vkFoE',
+      title: 'Har Har Shambhu',
+      channelTitle: 'Abhilipsa Panda & Jeetu Sharma',
+      thumbnailUrl: 'https://img.youtube.com/vi/FJtrC8vkFoE/hqdefault.jpg',
+      durationSeconds: 260,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: 'Tl4bQBfOtbg',
+      title: 'Ram Siya Ram (Adipurush)',
+      channelTitle: 'Sachet-Parampara',
+      thumbnailUrl: 'https://img.youtube.com/vi/Tl4bQBfOtbg/hqdefault.jpg',
+      durationSeconds: 220,
+      category: 'devotional',
+    ),
+    YouTubeVideoItem(
+      id: 'T94PHkuydcw',
       title: 'Kun Faya Kun (Rockstar)',
       channelTitle: 'A.R. Rahman, Javed Ali, Mohit Chauhan',
-      thumbnailUrl: 'https://img.youtube.com/vi/8aN4H6u1z3Y/hqdefault.jpg',
-      durationSeconds: 471,
+      thumbnailUrl: 'https://img.youtube.com/vi/T94PHkuydcw/hqdefault.jpg',
+      durationSeconds: 352,
       category: 'sufi',
     ),
     YouTubeVideoItem(
-      id: 'k8Xk6f8p4eI',
+      id: 'kw4tT7SCmaY',
       title: 'Afreen Afreen',
       channelTitle: 'Rahat Fateh Ali Khan & Momina Mustehsan',
-      thumbnailUrl: 'https://img.youtube.com/vi/k8Xk6f8p4eI/hqdefault.jpg',
-      durationSeconds: 405,
+      thumbnailUrl: 'https://img.youtube.com/vi/kw4tT7SCmaY/hqdefault.jpg',
+      durationSeconds: 360,
       category: 'sufi',
     ),
     YouTubeVideoItem(
-      id: '789AbCdEfGh',
+      id: 'dXdD1_AGBZg',
       title: 'Arziyan (Delhi-6)',
       channelTitle: 'Javed Ali & Kailash Kher',
-      thumbnailUrl: 'https://img.youtube.com/vi/789AbCdEfGh/hqdefault.jpg',
-      durationSeconds: 520,
+      thumbnailUrl: 'https://img.youtube.com/vi/dXdD1_AGBZg/hqdefault.jpg',
+      durationSeconds: 328,
       category: 'sufi',
     ),
     YouTubeVideoItem(
-      id: 'IjKlMnOpQrS',
+      id: '7SDrjwtfKMk',
       title: 'Chaap Tilak',
       channelTitle: 'Abida Parveen & Rahat Fateh Ali Khan',
-      thumbnailUrl: 'https://img.youtube.com/vi/IjKlMnOpQrS/hqdefault.jpg',
-      durationSeconds: 490,
+      thumbnailUrl: 'https://img.youtube.com/vi/7SDrjwtfKMk/hqdefault.jpg',
+      durationSeconds: 300,
       category: 'sufi',
     ),
     YouTubeVideoItem(
-      id: 'TuVwXyZ0123',
-      title: 'Yeh Jo Halka Halka Suroor Hai',
+      id: 'TF_cOANSeJ8',
+      title: 'Yeh Jo Halka Halka Suroor',
       channelTitle: 'Nusrat Fateh Ali Khan',
-      thumbnailUrl: 'https://img.youtube.com/vi/TuVwXyZ0123/hqdefault.jpg',
-      durationSeconds: 580,
+      thumbnailUrl: 'https://img.youtube.com/vi/TF_cOANSeJ8/hqdefault.jpg',
+      durationSeconds: 360,
       category: 'sufi',
     ),
     YouTubeVideoItem(
-      id: '456789AbCdE',
+      id: '5mxqQvVlsZg',
       title: 'Wo Kagaz Ki Kashti',
       channelTitle: 'Jagjit Singh',
-      thumbnailUrl: 'https://img.youtube.com/vi/456789AbCdE/hqdefault.jpg',
-      durationSeconds: 240,
+      thumbnailUrl: 'https://img.youtube.com/vi/5mxqQvVlsZg/hqdefault.jpg',
+      durationSeconds: 250,
       category: 'sufi',
     ),
     YouTubeVideoItem(
-      id: 'fGhIjKlMnOp',
+      id: 'uW6BXxnG5U4',
       title: 'Hothon Se Chhoo Lo Tum',
       channelTitle: 'Jagjit Singh',
-      thumbnailUrl: 'https://img.youtube.com/vi/fGhIjKlMnOp/hqdefault.jpg',
-      durationSeconds: 290,
+      thumbnailUrl: 'https://img.youtube.com/vi/uW6BXxnG5U4/hqdefault.jpg',
+      durationSeconds: 280,
       category: 'sufi',
     ),
-
-    // ── 90s Nostalgia ────────────────────────────────────────────────────────
+    YouTubeVideoItem(
+      id: 'ZhHGeH7hm2c',
+      title: 'Tujhe Dekha To Yeh Jaana (DDLJ)',
+      channelTitle: 'Kumar Sanu & Lata Mangeshkar',
+      thumbnailUrl: 'https://img.youtube.com/vi/ZhHGeH7hm2c/hqdefault.jpg',
+      durationSeconds: 310,
+      category: 'nostalgia',
+    ),
+    YouTubeVideoItem(
+      id: 'SBfPs-PMGTA',
+      title: 'Pehla Nasha',
+      channelTitle: 'Udit Narayan & Sadhana Sargam',
+      thumbnailUrl: 'https://img.youtube.com/vi/SBfPs-PMGTA/hqdefault.jpg',
+      durationSeconds: 330,
+      category: 'nostalgia',
+    ),
+    YouTubeVideoItem(
+      id: 'K-pX4qwtAxA',
+      title: 'Chaiyya Chaiyya (Dil Se)',
+      channelTitle: 'Sukhwinder Singh & Sapna Awasthi',
+      thumbnailUrl: 'https://img.youtube.com/vi/K-pX4qwtAxA/hqdefault.jpg',
+      durationSeconds: 380,
+      category: 'nostalgia',
+    ),
+    YouTubeVideoItem(
+      id: 'KeyfUuXPOcY',
+      title: 'Dheere Dheere Se (Aashiqui)',
+      channelTitle: 'Kumar Sanu & Anuradha Paudwal',
+      thumbnailUrl: 'https://img.youtube.com/vi/KeyfUuXPOcY/hqdefault.jpg',
+      durationSeconds: 320,
+      category: 'nostalgia',
+    ),
+    YouTubeVideoItem(
+      id: 'Yqj1_V90KJo',
+      title: 'Chura Ke Dil Mera',
+      channelTitle: 'Kumar Sanu & Alka Yagnik',
+      thumbnailUrl: 'https://img.youtube.com/vi/Yqj1_V90KJo/hqdefault.jpg',
+      durationSeconds: 300,
+      category: 'nostalgia',
+    ),
     YouTubeVideoItem(
       id: 'fJ9rUzIMcZQ',
       title: 'Bohemian Rhapsody',
       channelTitle: 'Queen',
       thumbnailUrl: 'https://img.youtube.com/vi/fJ9rUzIMcZQ/hqdefault.jpg',
-      durationSeconds: 359,
+      durationSeconds: 356,
       category: 'nostalgia',
     ),
-    YouTubeVideoItem(
-      id: 'QrStUvWxYz0',
-      title: 'Tujhe Dekha To Yeh Jaana Sanam (DDLJ)',
-      channelTitle: 'Kumar Sanu & Lata Mangeshkar',
-      thumbnailUrl: 'https://img.youtube.com/vi/QrStUvWxYz0/hqdefault.jpg',
-      durationSeconds: 305,
-      category: 'nostalgia',
-    ),
-    YouTubeVideoItem(
-      id: '123456789Ab',
-      title: 'Pehla Nasha (Jo Jeeta Wohi Sikandar)',
-      channelTitle: 'Udit Narayan & Sadhana Sargam',
-      thumbnailUrl: 'https://img.youtube.com/vi/123456789Ab/hqdefault.jpg',
-      durationSeconds: 290,
-      category: 'nostalgia',
-    ),
-    YouTubeVideoItem(
-      id: 'CdEfGhIjKlM',
-      title: 'Chaiyya Chaiyya (Dil Se)',
-      channelTitle: 'Sukhwinder Singh & Sapna Awasthi',
-      thumbnailUrl: 'https://img.youtube.com/vi/CdEfGhIjKlM/hqdefault.jpg',
-      durationSeconds: 395,
-      category: 'nostalgia',
-    ),
-    YouTubeVideoItem(
-      id: 'nOpQrStUvWx',
-      title: 'Dheere Dheere Se Meri Zindagi (Aashiqui)',
-      channelTitle: 'Kumar Sanu & Anuradha Paudwal',
-      thumbnailUrl: 'https://img.youtube.com/vi/nOpQrStUvWx/hqdefault.jpg',
-      durationSeconds: 310,
-      category: 'nostalgia',
-    ),
-    YouTubeVideoItem(
-      id: 'Yz012345678',
-      title: 'Chura Ke Dil Mera (Main Khiladi Tu Anari)',
-      channelTitle: 'Kumar Sanu & Alka Yagnik',
-      thumbnailUrl: 'https://img.youtube.com/vi/Yz012345678/hqdefault.jpg',
-      durationSeconds: 360,
-      category: 'nostalgia',
-    ),
-
-    // ── Workout Cardio & Gym Hype ────────────────────────────────────────────
     YouTubeVideoItem(
       id: '7wtfhZwyrcc',
       title: 'Believer',
@@ -655,15 +707,15 @@ class YouTubeDataApiClient {
       title: 'Counting Stars',
       channelTitle: 'OneRepublic',
       thumbnailUrl: 'https://img.youtube.com/vi/hT_nvWreIhg/hqdefault.jpg',
-      durationSeconds: 257,
+      durationSeconds: 258,
       category: 'workout',
     ),
     YouTubeVideoItem(
-      id: 'qFkNATtc3mc',
+      id: 'CaI0xNLpurM',
       title: 'Aashayein (Iqbal)',
       channelTitle: 'KK & Salim-Sulaiman',
-      thumbnailUrl: 'https://img.youtube.com/vi/qFkNATtc3mc/hqdefault.jpg',
-      durationSeconds: 259,
+      thumbnailUrl: 'https://img.youtube.com/vi/CaI0xNLpurM/hqdefault.jpg',
+      durationSeconds: 310,
       category: 'workout',
     ),
     YouTubeVideoItem(
@@ -671,7 +723,7 @@ class YouTubeDataApiClient {
       title: 'Eye of the Tiger',
       channelTitle: 'Survivor',
       thumbnailUrl: 'https://img.youtube.com/vi/btPJPFnesV4/hqdefault.jpg',
-      durationSeconds: 245,
+      durationSeconds: 250,
       category: 'workout',
     ),
     YouTubeVideoItem(
@@ -679,61 +731,73 @@ class YouTubeDataApiClient {
       title: 'Not Afraid',
       channelTitle: 'Eminem',
       thumbnailUrl: 'https://img.youtube.com/vi/j5-yKhDd64s/hqdefault.jpg',
-      durationSeconds: 250,
+      durationSeconds: 263,
       category: 'workout',
     ),
-
-    // ── Hindi Indie & Acoustic ───────────────────────────────────────────────
     YouTubeVideoItem(
-      id: '8g48AxyqJsc',
+      id: 'nCg3ufihKyU',
+      title: 'The Business',
+      channelTitle: 'Tiesto',
+      thumbnailUrl: 'https://img.youtube.com/vi/nCg3ufihKyU/hqdefault.jpg',
+      durationSeconds: 165,
+      category: 'workout',
+    ),
+    YouTubeVideoItem(
+      id: 'TUVcZfQe-Kw',
+      title: 'Levitating',
+      channelTitle: 'Dua Lipa',
+      thumbnailUrl: 'https://img.youtube.com/vi/TUVcZfQe-Kw/hqdefault.jpg',
+      durationSeconds: 203,
+      category: 'workout',
+    ),
+    YouTubeVideoItem(
+      id: 'gJLVTKhTnog',
       title: 'Husn',
       channelTitle: 'Anuv Jain',
-      thumbnailUrl: 'https://img.youtube.com/vi/8g48AxyqJsc/hqdefault.jpg',
-      durationSeconds: 219,
+      thumbnailUrl: 'https://img.youtube.com/vi/gJLVTKhTnog/hqdefault.jpg',
+      durationSeconds: 250,
       category: 'indie',
     ),
     YouTubeVideoItem(
-      id: 'xR3V5Ow65RE',
+      id: 'PJWemSzExXs',
       title: 'Baarishein',
       channelTitle: 'Anuv Jain',
-      thumbnailUrl: 'https://img.youtube.com/vi/xR3V5Ow65RE/hqdefault.jpg',
-      durationSeconds: 207,
+      thumbnailUrl: 'https://img.youtube.com/vi/PJWemSzExXs/hqdefault.jpg',
+      durationSeconds: 230,
       category: 'indie',
     ),
     YouTubeVideoItem(
-      id: '2Fm_zWq_VbU',
+      id: 'aBM77fRdQAM',
       title: 'cold/mess',
       channelTitle: 'Prateek Kuhad',
-      thumbnailUrl: 'https://img.youtube.com/vi/2Fm_zWq_VbU/hqdefault.jpg',
-      durationSeconds: 279,
+      thumbnailUrl: 'https://img.youtube.com/vi/aBM77fRdQAM/hqdefault.jpg',
+      durationSeconds: 270,
       category: 'indie',
     ),
     YouTubeVideoItem(
-      id: 'lJ8XfX8CwtU',
+      id: 'BmUe3-sfr7E',
       title: 'Kasoor',
       channelTitle: 'Prateek Kuhad',
-      thumbnailUrl: 'https://img.youtube.com/vi/lJ8XfX8CwtU/hqdefault.jpg',
-      durationSeconds: 196,
+      thumbnailUrl: 'https://img.youtube.com/vi/BmUe3-sfr7E/hqdefault.jpg',
+      durationSeconds: 220,
       category: 'indie',
     ),
     YouTubeVideoItem(
-      id: 'p8k9L8M7J6H',
+      id: 'sFMRqxCexDk',
       title: 'Choo Lo',
       channelTitle: 'The Local Train',
-      thumbnailUrl: 'https://img.youtube.com/vi/p8k9L8M7J6H/hqdefault.jpg',
-      durationSeconds: 235,
+      thumbnailUrl: 'https://img.youtube.com/vi/sFMRqxCexDk/hqdefault.jpg',
+      durationSeconds: 270,
       category: 'indie',
     ),
     YouTubeVideoItem(
-      id: 'k6j7h8g9f0e',
+      id: 'U77d9912lrw',
       title: 'Aaftaab',
       channelTitle: 'The Local Train',
-      thumbnailUrl: 'https://img.youtube.com/vi/k6j7h8g9f0e/hqdefault.jpg',
-      durationSeconds: 245,
+      thumbnailUrl: 'https://img.youtube.com/vi/U77d9912lrw/hqdefault.jpg',
+      durationSeconds: 300,
       category: 'indie',
     ),
-
-    // ── Global Pop 100 ───────────────────────────────────────────────────────
     YouTubeVideoItem(
       id: 'kJQP7kiw5Fk',
       title: 'Despacito',
@@ -747,7 +811,7 @@ class YouTubeDataApiClient {
       title: 'Shape of You',
       channelTitle: 'Ed Sheeran',
       thumbnailUrl: 'https://img.youtube.com/vi/JGwWNGJdvx8/hqdefault.jpg',
-      durationSeconds: 234,
+      durationSeconds: 233,
       category: 'global',
     ),
     YouTubeVideoItem(
@@ -759,10 +823,10 @@ class YouTubeDataApiClient {
       category: 'global',
     ),
     YouTubeVideoItem(
-      id: 'K4DyBUG242c',
+      id: '34Na4j8AVgA',
       title: 'Starboy',
       channelTitle: 'The Weeknd ft. Daft Punk',
-      thumbnailUrl: 'https://img.youtube.com/vi/K4DyBUG242c/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/34Na4j8AVgA/hqdefault.jpg',
       durationSeconds: 230,
       category: 'global',
     ),
@@ -771,7 +835,7 @@ class YouTubeDataApiClient {
       title: 'Hello',
       channelTitle: 'Adele',
       thumbnailUrl: 'https://img.youtube.com/vi/YQHsXMglC9A/hqdefault.jpg',
-      durationSeconds: 295,
+      durationSeconds: 355,
       category: 'global',
     ),
     YouTubeVideoItem(
@@ -790,54 +854,108 @@ class YouTubeDataApiClient {
       durationSeconds: 263,
       category: 'global',
     ),
-
-    // ── Regional (Marathi, Gujarati, Tamil, Telugu, Bengali) ──────────────────
     YouTubeVideoItem(
-      id: '5Eqb_-j3FDA',
+      id: 'kTJczUoc26U',
+      title: 'STAY',
+      channelTitle: 'The Kid LAROI & Justin Bieber',
+      thumbnailUrl: 'https://img.youtube.com/vi/kTJczUoc26U/hqdefault.jpg',
+      durationSeconds: 141,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'tQ0yjYUFKAE',
+      title: 'Peaches',
+      channelTitle: 'Justin Bieber ft. Daniel Caesar',
+      thumbnailUrl: 'https://img.youtube.com/vi/tQ0yjYUFKAE/hqdefault.jpg',
+      durationSeconds: 198,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'Uq9gPaIzbe8',
+      title: 'Unholy',
+      channelTitle: 'Sam Smith & Kim Petras',
+      thumbnailUrl: 'https://img.youtube.com/vi/Uq9gPaIzbe8/hqdefault.jpg',
+      durationSeconds: 156,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'H5v3kku4y6Q',
+      title: 'As It Was',
+      channelTitle: 'Harry Styles',
+      thumbnailUrl: 'https://img.youtube.com/vi/H5v3kku4y6Q/hqdefault.jpg',
+      durationSeconds: 167,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'KRaWnd3LJfs',
+      title: 'Payphone',
+      channelTitle: 'Maroon 5 ft. Wiz Khalifa',
+      thumbnailUrl: 'https://img.youtube.com/vi/KRaWnd3LJfs/hqdefault.jpg',
+      durationSeconds: 231,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: '31crA53Dgu0',
+      title: 'Cheap Thrills',
+      channelTitle: 'Sia',
+      thumbnailUrl: 'https://img.youtube.com/vi/31crA53Dgu0/hqdefault.jpg',
+      durationSeconds: 224,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'luhVm60Wiro',
       title: 'Zingaat (Sairat)',
       channelTitle: 'Ajay-Atul',
-      thumbnailUrl: 'https://img.youtube.com/vi/5Eqb_-j3FDA/hqdefault.jpg',
-      durationSeconds: 228,
+      thumbnailUrl: 'https://img.youtube.com/vi/luhVm60Wiro/hqdefault.jpg',
+      durationSeconds: 270,
       category: 'marathi',
     ),
     YouTubeVideoItem(
-      id: 'kJ2eW-2Ew6k',
+      id: 'KUN5Uf9mObQ',
       title: 'Arabic Kuthu (Beast)',
-      channelTitle: 'Anirudh Ravichander & Jonita Gandhi',
-      thumbnailUrl: 'https://img.youtube.com/vi/kJ2eW-2Ew6k/hqdefault.jpg',
-      durationSeconds: 280,
+      channelTitle: 'Anirudh Ravichander',
+      thumbnailUrl: 'https://img.youtube.com/vi/KUN5Uf9mObQ/hqdefault.jpg',
+      durationSeconds: 240,
       category: 'tamil',
     ),
     YouTubeVideoItem(
-      id: 'tOM-nWPcR4U',
+      id: '4_eEgJhsBMo',
       title: 'Naatu Naatu (RRR)',
-      channelTitle: 'M.M. Keeravaani, Rahul Sipligunj',
-      thumbnailUrl: 'https://img.youtube.com/vi/tOM-nWPcR4U/hqdefault.jpg',
-      durationSeconds: 215,
+      channelTitle: 'M.M. Keeravaani',
+      thumbnailUrl: 'https://img.youtube.com/vi/4_eEgJhsBMo/hqdefault.jpg',
+      durationSeconds: 250,
       category: 'telugu',
     ),
     YouTubeVideoItem(
-      id: 'khalasi12345',
+      id: 't7wSjy9Lv-o',
       title: 'Khalasi (Coke Studio Bharat)',
       channelTitle: 'Aditya Gadhvi & Achint',
-      thumbnailUrl: 'https://img.youtube.com/vi/L0MK7qz13bU/hqdefault.jpg',
-      durationSeconds: 250,
+      thumbnailUrl: 'https://img.youtube.com/vi/t7wSjy9Lv-o/hqdefault.jpg',
+      durationSeconds: 260,
       category: 'gujarati',
     ),
     YouTubeVideoItem(
-      id: 'bengali00123',
+      id: 'f6-FZFqmZgI',
       title: 'Bhalobashar Morshum (X=Prem)',
       channelTitle: 'Arijit Singh & Shreya Ghoshal',
-      thumbnailUrl: 'https://img.youtube.com/vi/Umqb9KENgmk/hqdefault.jpg',
+      thumbnailUrl: 'https://img.youtube.com/vi/f6-FZFqmZgI/hqdefault.jpg',
       durationSeconds: 260,
       category: 'bengali',
     ),
     YouTubeVideoItem(
-      id: '9lOaHq0_t_A',
-      title: 'Lofi Sleep Beats & Chill Atmosphere',
-      channelTitle: 'Lofi Girl & Chill Beats',
-      thumbnailUrl: 'https://img.youtube.com/vi/9lOaHq0_t_A/hqdefault.jpg',
-      durationSeconds: 300,
+      id: 'tOM-nWPcR4U',
+      title: 'Illuminati (Aavesham)',
+      channelTitle: 'Sushin Shyam & Dabzee',
+      thumbnailUrl: 'https://img.youtube.com/vi/tOM-nWPcR4U/hqdefault.jpg',
+      durationSeconds: 230,
+      category: 'global',
+    ),
+    YouTubeVideoItem(
+      id: 'K4DyBUG242c',
+      title: 'On & On (NCS)',
+      channelTitle: 'Cartoon & Jeja',
+      thumbnailUrl: 'https://img.youtube.com/vi/K4DyBUG242c/hqdefault.jpg',
+      durationSeconds: 230,
       category: 'ambient',
     ),
   ];
@@ -877,6 +995,14 @@ class YouTubeDataApiClient {
         cleanQuery.contains('fitness') ||
         cleanQuery.contains('running')) {
       matchedCategory = 'workout';
+    } else if (cleanQuery.contains('road trip') ||
+        cleanQuery.contains('travel') ||
+        cleanQuery.contains('drive') ||
+        cleanQuery.contains('highway') ||
+        cleanQuery.contains('journey')) {
+      // Road Trip / Drive → energetic, feel-good driving music across
+      // workout, global and punjabi (upbeat/highway vibes).
+      multiCategories = ['workout', 'global', 'punjabi'];
     } else if (cleanQuery.contains('punjabi') ||
         cleanQuery.contains('diljit') ||
         cleanQuery.contains('aujla') ||
@@ -943,7 +1069,8 @@ class YouTubeDataApiClient {
     } else if (cleanQuery.contains('trending') ||
         cleanQuery.contains('viral') ||
         cleanQuery.contains('top hits')) {
-      matchedCategory = 'global';
+      // Trending → popular content across the most-streamed categories.
+      multiCategories = ['global', 'punjabi', 'bollywood'];
     } else if (cleanQuery.contains('chill') ||
         cleanQuery.contains('sleep') ||
         cleanQuery.contains('lofi') ||
@@ -969,9 +1096,11 @@ class YouTubeDataApiClient {
       if (multiMatches.isNotEmpty) {
         // Respect order param: viewCount/date sorting simulation
         if (order == 'viewCount') {
-          multiMatches.sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
+          multiMatches
+              .sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
         } else if (order == 'date') {
-          multiMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020)).compareTo(a.publishedAt ?? DateTime(2020)));
+          multiMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020))
+              .compareTo(a.publishedAt ?? DateTime(2020)));
         }
         if (multiMatches.length < maxResults) {
           final others = _curatedCatalog.where((item) {
@@ -992,9 +1121,11 @@ class YouTubeDataApiClient {
       if (catMatches.isNotEmpty) {
         // Apply order sorting simulation for fallback determinism
         if (order == 'viewCount') {
-          catMatches.sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
+          catMatches
+              .sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
         } else if (order == 'date') {
-          catMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020)).compareTo(a.publishedAt ?? DateTime(2020)));
+          catMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020))
+              .compareTo(a.publishedAt ?? DateTime(2020)));
         } else {
           catMatches.shuffle();
         }

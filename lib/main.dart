@@ -7,7 +7,7 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -110,6 +110,14 @@ final ValueNotifier<Map<String, dynamic>?> currentTrackNotifier =
 
 final ValueNotifier<bool> isPlayerExpandedNotifier = ValueNotifier<bool>(false);
 
+/// Tracks the currently active bottom-tab index (0=Home,1=Discover,
+/// 2=Search,3=Profile). The single global YouTube IFrame is only ever
+/// rendered by ONE surface at a time: the Discover feed renders it while
+/// the Discover tab is active, and the persistent overlay (mini/full player)
+/// renders it on every other tab. This prevents two `YoutubePlayer` widgets
+/// sharing the same controller simultaneously.
+final ValueNotifier<int> currentTabIndexNotifier = ValueNotifier<int>(0);
+
 YoutubePlayerController? globalYtController;
 String? globalPlayingVideoId;
 
@@ -136,7 +144,7 @@ YoutubePlayerController ensureGlobalPlayer({
 }) {
   final targetId = videoId ?? 'kJQP7kiw5Fk';
   if (globalYtController == null) {
-    globalYtController = YoutubePlayerController.fromVideoId(
+    final controller = YoutubePlayerController.fromVideoId(
       videoId: targetId,
       autoPlay: autoPlay,
       params: const YoutubePlayerParams(
@@ -148,12 +156,30 @@ YoutubePlayerController ensureGlobalPlayer({
         showVideoAnnotations: false,
       ),
     );
+    // Mirror the official player's live state so the mini dock and UI show
+    // the true play/pause state (handles autoplay-blocked videos correctly).
+    controller.listen((value) {
+      final st = value.playerState;
+      if (st == PlayerState.playing || st == PlayerState.buffering) {
+        globalPlaybackStateNotifier.value = true;
+      } else if (st == PlayerState.paused ||
+          st == PlayerState.cued ||
+          st == PlayerState.ended) {
+        globalPlaybackStateNotifier.value = false;
+      }
+    });
+    globalYtController = controller;
     globalPlayingVideoId = targetId;
   } else if (globalPlayingVideoId != targetId) {
     unawaited(globalYtController!.loadVideoById(videoId: targetId));
     globalPlayingVideoId = targetId;
-  }
-  if (autoPlay) {
+    if (autoPlay) {
+      unawaited(globalYtController!.playVideo());
+      globalPlaybackStateNotifier.value = true;
+    } else {
+      globalPlaybackStateNotifier.value = false;
+    }
+  } else if (autoPlay) {
     unawaited(globalYtController!.playVideo());
     globalPlaybackStateNotifier.value = true;
   }
@@ -327,6 +353,7 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    currentTabIndexNotifier.value = 0;
     audioPlayer.playerStateStream.listen((state) {
       isCurrentlyPlaying = state.playing;
     });
@@ -344,7 +371,10 @@ class _MainShellState extends State<MainShell> {
     }
     // 2. If on Discover (1), Search (2), or Profile (3), go back to Home (0)
     if (_index != 0) {
-      setState(() => _index = 0);
+      setState(() {
+        _index = 0;
+        currentTabIndexNotifier.value = 0;
+      });
       return false;
     }
     // 3. If on Home tab, show exit confirmation dialog
@@ -434,8 +464,12 @@ class _MainShellState extends State<MainShell> {
                 return ValueListenableBuilder<bool>(
                   valueListenable: isPlayerExpandedNotifier,
                   builder: (context, isExpanded, _) {
-                    if (!isExpanded && _index == 1)
-                      return const SizedBox.shrink();
+                    // The Discover feed is a full-screen immersive surface
+                    // that renders the single global IFrame itself, so the
+                    // persistent overlay (mini/full player) is hidden while
+                    // the Discover tab is active to avoid two `YoutubePlayer`
+                    // widgets sharing the same controller.
+                    if (_index == 1) return const SizedBox.shrink();
                     return _PersistentPlayerOverlay(
                       track: track,
                       isExpanded: isExpanded,
@@ -456,7 +490,10 @@ class _MainShellState extends State<MainShell> {
             return BottomTabBar(
               currentIndex: _index.clamp(0, 3),
               onTap: (i) {
-                setState(() => _index = i.clamp(0, 3));
+                setState(() {
+                  _index = i.clamp(0, 3);
+                  currentTabIndexNotifier.value = i.clamp(0, 3);
+                });
               },
             );
           },
@@ -571,10 +608,13 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
       // ── MINI PLAYER DOCK VIEW ───────────────────────────────────────────
       // Compliant mini-player: a compact dock showing the CURRENT track's own
       // thumbnail, title, artist and live playback state, plus expand/play
-      // controls. It deliberately does NOT render a second live YouTube IFrame
-      // (a ~96x54 iframe violates YouTube's player-requirements and is
-      // unreliable). The single real IFrame lives only in the full player and
-      // always reflects the same current track via the one global controller.
+      // controls. The dock does NOT render a visible second YouTube IFrame.
+      //
+      // IMPORTANT: the single global IFrame (same engine, not a duplicate) is
+      // kept mounted OFF-SCREEN behind the dock so audio keeps playing while
+      // minimized — youtube_player_iframe only produces sound while its
+      // `YoutubePlayer` widget is attached. Without this, minimizing the player
+      // would silently stop the music (the "mini player not playing" bug).
       return ValueListenableBuilder<bool>(
         valueListenable: globalPlaybackStateNotifier,
         builder: (context, playing, _) {
@@ -582,147 +622,167 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
             left: 8,
             right: 8,
             bottom: 64,
-            child: GestureDetector(
-              onTap: () => widget.onToggleExpand(true),
-              child: Container(
-                height: 68,
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: 0.96),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: SizedBox(
-                        width: 96,
-                        height: 54,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            AppImage(
-                              widget.track['artwork'] as String?,
-                              fit: BoxFit.cover,
-                            ),
-                            if (playing)
-                              Container(
-                                color: Colors.black.withValues(alpha: 0.25),
-                                child: const Center(
-                                  child: AnimatedEqualizer(
-                                    isPlaying: true,
-                                    color: AppColors.accent,
-                                    size: 14,
-                                  ),
-                                ),
-                              )
-                            else
-                              Container(
-                                color: Colors.black.withValues(alpha: 0.25),
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.play_arrow_rounded,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+            child: Stack(
+              children: [
+                // Same-engine IFrame kept alive off-screen (clipped by Stack).
+                if (globalYtController != null)
+                  Positioned(
+                    left: -9999,
+                    top: -9999,
+                    child: SizedBox(
+                      width: 320,
+                      height: 180,
+                      child: YoutubePlayer(
+                        controller: globalYtController!,
+                        aspectRatio: 16 / 9,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              color: AppColors.textMain,
+                  ),
+                GestureDetector(
+                  onTap: () => widget.onToggleExpand(true),
+                  child: Container(
+                    height: 68,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.border, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.5),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(
+                            width: 96,
+                            height: 54,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                AppImage(
+                                  widget.track['artwork'] as String?,
+                                  fit: BoxFit.cover,
+                                ),
+                                if (playing)
+                                  Container(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                    child: const Center(
+                                      child: AnimatedEqualizer(
+                                        isPlaying: true,
+                                        color: AppColors.accent,
+                                        size: 14,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.play_arrow_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Row(
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                playing
-                                    ? Icons.graphic_eq_rounded
-                                    : Icons.pause_circle_filled_rounded,
-                                size: 11,
-                                color:
-                                    playing ? Colors.redAccent : Colors.white54,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  artist,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    fontSize: 11,
-                                  ),
+                              Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: AppColors.textMain,
                                 ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(
+                                    playing
+                                        ? Icons.graphic_eq_rounded
+                                        : Icons.pause_circle_filled_rounded,
+                                    size: 11,
+                                    color: playing
+                                        ? Colors.redAccent
+                                        : Colors.white54,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      artist,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.6),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: AppColors.accent,
+                            size: 24,
+                          ),
+                          tooltip: playing ? 'Pause' : 'Play',
+                          onPressed: () {
+                            final id = widget.track['id'] as String? ?? '';
+                            if (playing) {
+                              globalYtController?.pauseVideo();
+                              globalPlaybackStateNotifier.value = false;
+                            } else {
+                              ensureGlobalPlayer(videoId: id, autoPlay: true);
+                            }
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.open_in_full_rounded,
+                            color: AppColors.accent,
+                            size: 20,
+                          ),
+                          tooltip: 'Full Player',
+                          onPressed: () => widget.onToggleExpand(true),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.skip_next_rounded,
+                            color: Colors.white,
+                            size: 26,
+                          ),
+                          onPressed: () => _playAdjacentInQueue(context, 1),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                     ),
-                    IconButton(
-                      icon: Icon(
-                        playing
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        color: AppColors.accent,
-                        size: 24,
-                      ),
-                      tooltip: playing ? 'Pause' : 'Play',
-                      onPressed: () {
-                        final id = widget.track['id'] as String? ?? '';
-                        if (playing) {
-                          globalYtController?.pauseVideo();
-                          globalPlaybackStateNotifier.value = false;
-                        } else {
-                          ensureGlobalPlayer(videoId: id, autoPlay: true);
-                        }
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.open_in_full_rounded,
-                        color: AppColors.accent,
-                        size: 20,
-                      ),
-                      tooltip: 'Full Player',
-                      onPressed: () => widget.onToggleExpand(true),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.skip_next_rounded,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                      onPressed: () => _playAdjacentInQueue(context, 1),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           );
         },

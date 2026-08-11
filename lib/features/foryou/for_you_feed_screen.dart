@@ -22,7 +22,10 @@ import '../../main.dart'
         currentTrackNotifier,
         currentQueue,
         currentQueueIndex,
+        currentTabIndexNotifier,
+        ensureGlobalPlayer,
         forYouFeedService,
+        globalYtController,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
@@ -46,20 +49,37 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   bool _initialLoading = true;
   String _currentVibeLabel = 'Trending Hits';
 
-  YoutubePlayerController? _feedYtController;
   String? _activeVideoId;
-  bool _isPlaying = true;
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
     _currentVibeLabel = forYouFeedService.activeMood ?? 'Trending Hits';
+    // Rebuild when the user switches to/from the Discover tab so the active
+    // card correctly (re)attaches the single global IFrame.
+    currentTabIndexNotifier.addListener(_onTabChanged);
     _loadInitialBatch();
+  }
+
+  void _onTabChanged() {
+    if (!mounted) return;
+    setState(() {});
+    // When the user returns to the Discover tab, if the current video is cued
+    // but not playing, start it (gesture-initiated, so permitted to autoplay).
+    if (_onDiscoverTab && !_isPlaying && _items.isNotEmpty) {
+      final videoId =
+          _activeVideoId ?? (_items[_currentIndex]['id'] as String? ?? '');
+      if (videoId.isNotEmpty) {
+        ensureGlobalPlayer(videoId: videoId, autoPlay: true);
+        _isPlaying = true;
+      }
+    }
   }
 
   @override
   void dispose() {
-    _feedYtController?.close();
+    currentTabIndexNotifier.removeListener(_onTabChanged);
     _pageController.dispose();
     super.dispose();
   }
@@ -78,36 +98,49 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     }
   }
 
+  /// Plays through the SINGLE global YouTube engine. The swipe/page-change is
+  /// a user gesture, so loading + playing the next video here is gesture-
+  /// initiated and therefore permitted by Android/YouTube autoplay policies.
+  /// Loading a different [videoId] into the same engine stops the previous
+  /// video in-place — no second playback engine is ever created.
   void _initOrLoadVideo(String videoId) {
     if (!mounted) return;
     try {
-      if (_feedYtController == null) {
-        _feedYtController = YoutubePlayerController.fromVideoId(
-          videoId: videoId,
-          autoPlay: false,
-          params: const YoutubePlayerParams(
-            showControls: true,
-            showFullscreenButton: false,
-            mute: false,
-            loop: true,
-            enableCaption: false,
-            showVideoAnnotations: false,
-          ),
-        );
-        _activeVideoId = videoId;
-      } else if (_activeVideoId != videoId) {
-        // Loading a different video stops the previous one in-place.
-        unawaited(_feedYtController!.loadVideoById(videoId: videoId));
-        _activeVideoId = videoId;
+      if (_activeVideoId == videoId && globalYtController != null) {
+        // Already current — (re)start it (only when Discover is foreground).
+        if (_onDiscoverTab) {
+          unawaited(globalYtController!.playVideo());
+          _isPlaying = true;
+        }
+        return;
       }
-      // Do NOT force autoplay-with-sound: Android/WebView/YouTube blocks it
-      // (which manifests as a blank/dark surface). Videos are cued and the
-      // active card shows a clear Play interaction; the first user tap starts
-      // playback, which is the compliant behaviour.
-      _isPlaying = false;
+      // Autoplay only when the Discover tab is actually in the foreground —
+      // IndexedStack builds every tab at startup, so we must NOT start audio
+      // while the user is on Home/Search/Profile.
+      ensureGlobalPlayer(videoId: videoId, autoPlay: _onDiscoverTab);
+      _activeVideoId = videoId;
+      _isPlaying = _onDiscoverTab;
     } catch (_) {
       // Graceful in headless widget test environments
     }
+  }
+
+  void _togglePlayPause() {
+    if (globalYtController == null) return;
+    if (_isPlaying) {
+      unawaited(globalYtController!.pauseVideo());
+      _isPlaying = false;
+    } else {
+      final videoId = _activeVideoId ??
+          (_items.isNotEmpty
+              ? (_items[_currentIndex]['id'] as String? ?? '')
+              : '');
+      if (videoId.isNotEmpty) {
+        ensureGlobalPlayer(videoId: videoId, autoPlay: true);
+      }
+      _isPlaying = true;
+    }
+    setState(() {});
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
@@ -160,6 +193,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     playbackSignalTracker.onTrackStarted(track);
     unawaited(_maybeLoadMore());
   }
+
+  bool get _onDiscoverTab => currentTabIndexNotifier.value == 1;
 
   void _showMoodPicker() {
     showModalBottomSheet<void>(
@@ -239,18 +274,14 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                 child: _ForYouCard(
                   track: _items[index],
                   isActive: isCurrent,
-                  playerController: isCurrent ? _feedYtController : null,
+                  // The single global IFrame is only attached to the active
+                  // Discover card while the Discover tab is in the foreground
+                  // (the persistent overlay renders it on every other tab, so
+                  // the two never share the controller at the same time).
+                  playerController:
+                      (isCurrent && _onDiscoverTab) ? globalYtController : null,
                   isPlaying: _isPlaying,
-                  onPlayPauseToggle: () {
-                    if (_feedYtController != null) {
-                      if (_isPlaying) {
-                        unawaited(_feedYtController!.pauseVideo());
-                      } else {
-                        unawaited(_feedYtController!.playVideo());
-                      }
-                      setState(() => _isPlaying = !_isPlaying);
-                    }
-                  },
+                  onPlayPauseToggle: _togglePlayPause,
                   onNotInterested: () => _handleNotInterested(index),
                   onSkipPrevious: index > 0
                       ? () => _pageController.previousPage(
