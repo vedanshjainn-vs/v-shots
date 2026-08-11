@@ -1,5 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — "For You" Discover Feed (Official YouTube Discovery & Vibe Picker)
+// V Shots — "For You" Discover Feed (Reels-Style Swipe Playback & Vibe Picker)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -7,8 +7,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
-import '../../core/motion/motion.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
@@ -22,7 +22,6 @@ import '../../main.dart'
         currentQueue,
         currentQueueIndex,
         forYouFeedService,
-        playTrack,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
@@ -46,6 +45,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   bool _initialLoading = true;
   String _currentVibeLabel = 'Trending Hits';
 
+  YoutubePlayerController? _feedYtController;
+  String? _activeVideoId;
+  bool _isPlaying = true;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +58,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   @override
   void dispose() {
+    _feedYtController?.close();
     _pageController.dispose();
     super.dispose();
   }
@@ -67,6 +71,33 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _seenIds.addAll(batch.map((t) => t['id'] as String));
       _initialLoading = false;
     });
+
+    if (_items.isNotEmpty) {
+      _initOrLoadVideo(_items[0]['id'] as String? ?? 'kJQP7kiw5Fk');
+    }
+  }
+
+  void _initOrLoadVideo(String videoId) {
+    if (_feedYtController == null) {
+      _feedYtController = YoutubePlayerController.fromVideoId(
+        videoId: videoId,
+        autoPlay: true,
+        params: const YoutubePlayerParams(
+          showControls: true,
+          showFullscreenButton: false,
+          mute: false,
+          loop: true,
+          enableCaption: false,
+          showVideoAnnotations: false,
+        ),
+      );
+      _activeVideoId = videoId;
+      _isPlaying = true;
+    } else if (_activeVideoId != videoId) {
+      unawaited(_feedYtController!.loadVideoById(videoId: videoId));
+      _activeVideoId = videoId;
+      _isPlaying = true;
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
@@ -75,7 +106,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         final scored = await recommendationEngine.generateFeed(
           intent: FeedIntent.discoverSomethingNew,
           excludeIds: _seenIds,
-          count: 8,
+          count: 12,
         );
         if (scored.isNotEmpty) {
           return scored.map((s) => s.track.toTrackMap()).toList();
@@ -84,7 +115,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     } catch (e) {
       debugPrint('[ForYouFeed] Engine discover batch failed, falling back: $e');
     }
-    return forYouFeedService.fetchNextBatch(excludeIds: _seenIds);
+    return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
   }
 
   Future<void> _maybeLoadMore() async {
@@ -101,8 +132,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _isLoadingMore = false;
   }
 
-  void _onTrackSelected(int index) {
+  void _onPageChanged(int index) {
     if (index < 0 || index >= _items.length) return;
+    unawaited(HapticFeedback.selectionClick());
     final track = _items[index];
     setState(() => _currentIndex = index);
 
@@ -111,7 +143,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     currentQueue = List<Map<String, dynamic>>.from(_items);
     currentQueueIndex = index;
 
-    playTrack(context, track, _items, index);
+    final videoId = track['id'] as String? ?? 'kJQP7kiw5Fk';
+    _initOrLoadVideo(videoId);
+
+    unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
+    playbackSignalTracker.onTrackStarted(track);
     unawaited(_maybeLoadMore());
   }
 
@@ -129,6 +165,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             _initialLoading = true;
             _items.clear();
             _seenIds.clear();
+            _currentIndex = 0;
           });
           forYouFeedService.setMood(label, query);
           _loadInitialBatch();
@@ -179,37 +216,47 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Vertical swipe PageView
+          // Vertical Reel-Style Swipe PageView
           PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
             physics: const BouncingScrollPhysics(),
             itemCount: _items.length,
-            onPageChanged: (index) {
-              unawaited(HapticFeedback.selectionClick());
-              setState(() => _currentIndex = index);
-              unawaited(_maybeLoadMore());
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              final isCurrent = index == _currentIndex;
+              return RepaintBoundary(
+                child: _ForYouCard(
+                  track: _items[index],
+                  isActive: isCurrent,
+                  playerController: isCurrent ? _feedYtController : null,
+                  isPlaying: _isPlaying,
+                  onPlayPauseToggle: () {
+                    if (_feedYtController != null) {
+                      if (_isPlaying) {
+                        unawaited(_feedYtController!.pauseVideo());
+                      } else {
+                        unawaited(_feedYtController!.playVideo());
+                      }
+                      setState(() => _isPlaying = !_isPlaying);
+                    }
+                  },
+                  onNotInterested: () => _handleNotInterested(index),
+                  onSkipPrevious: index > 0
+                      ? () => _pageController.previousPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                        )
+                      : null,
+                  onSkipNext: index < _items.length - 1
+                      ? () => _pageController.nextPage(
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                        )
+                      : null,
+                ),
+              );
             },
-            itemBuilder: (context, index) => RepaintBoundary(
-              child: _ForYouCard(
-                track: _items[index],
-                isActive: index == _currentIndex,
-                onPlayTap: () => _onTrackSelected(index),
-                onNotInterested: () => _handleNotInterested(index),
-                onSkipPrevious: index > 0
-                    ? () => _pageController.previousPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                      )
-                    : null,
-                onSkipNext: index < _items.length - 1
-                    ? () => _pageController.nextPage(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                      )
-                    : null,
-              ),
-            ),
           ),
 
           // Top Floating Mood & Vibe Selector Pill
@@ -225,7 +272,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
+                    color: Colors.black.withValues(alpha: 0.65),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: AppColors.accent.withValues(alpha: 0.5),
@@ -310,7 +357,6 @@ class _MoodPickerSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle bar
             Center(
               child: Container(
                 width: 40,
@@ -358,63 +404,72 @@ class _MoodPickerSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: ForYouFeedService.availableMoods.map((m) {
-                final isSelected = m['label'] == currentMood;
-                return GestureDetector(
-                  onTap: () => onMoodSelected(m['label']!, m['query']!),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: isSelected ? AppColors.primaryGradient : null,
-                      color: isSelected ? null : AppColors.surface2,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isSelected
-                            ? Colors.transparent
-                            : AppColors.border,
-                        width: 1,
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: AppColors.primary.withValues(alpha: 0.3),
-                                blurRadius: 10,
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          m['icon'] ?? '🎵',
-                          style: const TextStyle(fontSize: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 380),
+              child: SingleChildScrollView(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: ForYouFeedService.availableMoods.map((m) {
+                    final isSelected = m['label'] == currentMood;
+                    return GestureDetector(
+                      onTap: () => onMoodSelected(m['label']!, m['query']!),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          m['label'] ?? '',
-                          style: TextStyle(
+                        decoration: BoxDecoration(
+                          gradient: isSelected
+                              ? AppColors.primaryGradient
+                              : null,
+                          color: isSelected ? null : AppColors.surface2,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
                             color: isSelected
-                                ? Colors.white
-                                : AppColors.textMain,
-                            fontSize: 13,
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                                ? Colors.transparent
+                                : AppColors.border,
+                            width: 1,
                           ),
+                          boxShadow: isSelected
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                    blurRadius: 10,
+                                  ),
+                                ]
+                              : null,
                         ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              m['icon'] ?? '🎵',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              m['label'] ?? '',
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.white
+                                    : AppColors.textMain,
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
           ],
@@ -428,7 +483,9 @@ class _ForYouCard extends StatelessWidget {
   const _ForYouCard({
     required this.track,
     required this.isActive,
-    required this.onPlayTap,
+    required this.playerController,
+    required this.isPlaying,
+    required this.onPlayPauseToggle,
     required this.onNotInterested,
     this.onSkipPrevious,
     this.onSkipNext,
@@ -436,7 +493,9 @@ class _ForYouCard extends StatelessWidget {
 
   final Map<String, dynamic> track;
   final bool isActive;
-  final VoidCallback onPlayTap;
+  final YoutubePlayerController? playerController;
+  final bool isPlaying;
+  final VoidCallback onPlayPauseToggle;
   final VoidCallback onNotInterested;
   final VoidCallback? onSkipPrevious;
   final VoidCallback? onSkipNext;
@@ -451,66 +510,50 @@ class _ForYouCard extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Blurred background
+        // Background Artwork Blur
         AppImage(artwork, fit: BoxFit.cover),
         BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: Container(color: Colors.black.withValues(alpha: 0.55)),
+          child: Container(color: Colors.black.withValues(alpha: 0.6)),
         ),
 
         // Centered Content Layout
         SafeArea(
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Centered Large Artwork
-                  GestureDetector(
-                    onTap: onPlayTap,
-                    child: Container(
-                      width: 250,
-                      height: 250,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.4),
-                            blurRadius: 40,
-                            spreadRadius: 4,
-                          ),
-                        ],
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          AppImage(
-                            artwork,
-                            fit: BoxFit.cover,
-                            borderRadius: BorderRadius.circular(24),
-                            errorIconColor: AppColors.primaryLight,
-                          ),
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black.withValues(alpha: 0.5),
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.play_arrow_rounded,
-                              color: Colors.white,
-                              size: 38,
-                            ),
-                          ),
-                        ],
+                  // Centered In-Card YouTube Player / Artwork
+                  Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.4),
+                          blurRadius: 36,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: isActive && playerController != null
+                            ? YoutubePlayer(
+                                controller: playerController!,
+                                aspectRatio: 16 / 9,
+                              )
+                            : AppImage(artwork, fit: BoxFit.cover),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
                   // Centered Title
                   Text(
@@ -519,27 +562,27 @@ class _ForYouCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
                       letterSpacing: -0.3,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 4),
 
                   // Centered Artist
                   Text(
                     artist,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       color: Colors.white.withValues(alpha: 0.75),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
 
-                  // Official YouTube Attribution Badge
+                  // Attribution Badge
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -569,29 +612,28 @@ class _ForYouCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  // Playback Controls Row: Prev, Play/Open, Next
+                  // Playback Controls Row: Prev, Play/Pause Toggle, Next
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Previous Track
                       IconButton(
                         icon: const Icon(
                           Icons.skip_previous_rounded,
                           color: Colors.white,
-                          size: 36,
+                          size: 34,
                         ),
                         onPressed: onSkipPrevious,
                       ),
                       const SizedBox(width: 16),
 
-                      // Large Play/Open Toggle
+                      // In-Card Play/Pause Toggle
                       GestureDetector(
-                        onTap: onPlayTap,
+                        onTap: onPlayPauseToggle,
                         child: Container(
-                          width: 68,
-                          height: 68,
+                          width: 64,
+                          height: 64,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: AppColors.primaryGradient,
@@ -603,23 +645,24 @@ class _ForYouCard extends StatelessWidget {
                               ),
                             ],
                           ),
-                          child: const Center(
+                          child: Center(
                             child: Icon(
-                              Icons.play_arrow_rounded,
+                              isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
                               color: Colors.white,
-                              size: 38,
+                              size: 36,
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 16),
 
-                      // Next Track
                       IconButton(
                         icon: const Icon(
                           Icons.skip_next_rounded,
                           color: Colors.white,
-                          size: 36,
+                          size: 34,
                         ),
                         onPressed: onSkipNext,
                       ),
@@ -634,7 +677,7 @@ class _ForYouCard extends StatelessWidget {
         // Right Side Action Buttons (Like, Comments, Playlist, More)
         Positioned(
           right: 16,
-          bottom: 120,
+          bottom: 110,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -645,7 +688,9 @@ class _ForYouCard extends StatelessWidget {
                     icon: LikePop(
                       liked: isLiked,
                       child: Icon(
-                        isLiked ? Icons.favorite : Icons.favorite_border,
+                        isLiked
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
                         color: isLiked ? AppColors.hotPink : Colors.white,
                         size: 32,
                       ),
@@ -680,7 +725,7 @@ class _ForYouCard extends StatelessWidget {
               const SizedBox(height: 12),
               IconButton(
                 icon: const Icon(
-                  Icons.playlist_add,
+                  Icons.playlist_add_rounded,
                   color: Colors.white,
                   size: 30,
                 ),
@@ -692,7 +737,7 @@ class _ForYouCard extends StatelessWidget {
               const SizedBox(height: 12),
               IconButton(
                 icon: const Icon(
-                  Icons.more_horiz,
+                  Icons.more_horiz_rounded,
                   color: Colors.white,
                   size: 30,
                 ),

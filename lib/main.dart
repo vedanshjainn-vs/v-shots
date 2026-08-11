@@ -288,54 +288,129 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // 4 Clean Tabs (Home, Discover, Search, Profile)
-          IndexedStack(
-            index: _index.clamp(0, 3),
-            children: const [
-              HomeScreen(),
-              ForYouFeedScreen(),
-              SearchScreen(),
-              ProfileScreen(),
-            ],
+  Future<bool> _onWillPop() async {
+    // 1. If player is currently expanded full screen, minimize down to mini player dock
+    if (isPlayerExpandedNotifier.value) {
+      isPlayerExpandedNotifier.value = false;
+      return false;
+    }
+    // 2. If on Discover (1), Search (2), or Profile (3), go back to Home (0)
+    if (_index != 0) {
+      setState(() => _index = 0);
+      return false;
+    }
+    // 3. If on Home tab, show exit confirmation dialog
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.border, width: 1),
+        ),
+        title: const Text(
+          'Exit V Shots?',
+          style: TextStyle(
+            color: AppColors.textMain,
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
           ),
-
-          // Persistent Overlay: Dual-State Player (Full screen & Mini-Player)
-          ValueListenableBuilder<Map<String, dynamic>?>(
-            valueListenable: currentTrackNotifier,
-            builder: (context, track, _) {
-              if (track == null) return const SizedBox.shrink();
-              return ValueListenableBuilder<bool>(
-                valueListenable: isPlayerExpandedNotifier,
-                builder: (context, isExpanded, _) {
-                  return _PersistentPlayerOverlay(
-                    track: track,
-                    isExpanded: isExpanded,
-                    onToggleExpand: (val) {
-                      isPlayerExpandedNotifier.value = val;
-                    },
-                  );
-                },
-              );
-            },
+        ),
+        content: const Text(
+          'Are you sure you want to exit the app?',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                color: AppColors.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.hotPink,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              'Exit',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ],
       ),
-      bottomNavigationBar: ValueListenableBuilder<bool>(
-        valueListenable: isPlayerExpandedNotifier,
-        builder: (context, isExpanded, _) {
-          if (isExpanded) return const SizedBox.shrink();
-          return BottomTabBar(
-            currentIndex: _index.clamp(0, 3),
-            onTap: (i) {
-              setState(() => _index = i.clamp(0, 3));
-            },
-          );
-        },
+    );
+    return shouldExit ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final canExit = await _onWillPop();
+        if (canExit) {
+          unawaited(SystemNavigator.pop());
+        }
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // 4 Clean Tabs (Home, Discover, Search, Profile)
+            IndexedStack(
+              index: _index.clamp(0, 3),
+              children: const [
+                HomeScreen(),
+                ForYouFeedScreen(),
+                SearchScreen(),
+                ProfileScreen(),
+              ],
+            ),
+
+            // Persistent Overlay: Dual-State Player (Full screen & Mini-Player)
+            ValueListenableBuilder<Map<String, dynamic>?>(
+              valueListenable: currentTrackNotifier,
+              builder: (context, track, _) {
+                if (track == null) return const SizedBox.shrink();
+                return ValueListenableBuilder<bool>(
+                  valueListenable: isPlayerExpandedNotifier,
+                  builder: (context, isExpanded, _) {
+                    return _PersistentPlayerOverlay(
+                      track: track,
+                      isExpanded: isExpanded,
+                      onToggleExpand: (val) {
+                        isPlayerExpandedNotifier.value = val;
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+        bottomNavigationBar: ValueListenableBuilder<bool>(
+          valueListenable: isPlayerExpandedNotifier,
+          builder: (context, isExpanded, _) {
+            if (isExpanded) return const SizedBox.shrink();
+            return BottomTabBar(
+              currentIndex: _index.clamp(0, 3),
+              onTap: (i) {
+                setState(() => _index = i.clamp(0, 3));
+              },
+            );
+          },
+        ),
       ),
     );
   }
