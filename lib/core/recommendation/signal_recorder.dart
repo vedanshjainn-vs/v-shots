@@ -167,7 +167,7 @@ class PlaybackSignalTracker {
     if (id == null || id.isEmpty) return;
     _engine.recordSignal(
       SignalEvent(
-        type: SignalType.playlistAdd,
+        type: SignalType.addToPlaylist,
         timestamp: DateTime.now(),
         trackId: id,
         artist: track['artist'] as String?,

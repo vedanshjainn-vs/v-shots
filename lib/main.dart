@@ -24,7 +24,6 @@ import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
-import 'core/recommendation/feed_intent.dart';
 import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/recommendation_service.dart';
 import 'core/recommendation/signal_recorder.dart';
@@ -167,15 +166,6 @@ void _handleTrackCompleted(BuildContext? context) {
   final nextTrack = currentQueue[nextIndex];
   playTrack(context, nextTrack, currentQueue, nextIndex);
 }
-
-MediaItem _trackToMediaItem(Map<String, dynamic> track) => MediaItem(
-  id: (track['id'] as String?) ?? '',
-  title: (track['title'] as String?) ?? 'Unknown title',
-  artist: (track['artist'] as String?) ?? 'Unknown artist',
-  artUri: (track['artwork'] as String?) != null
-      ? Uri.tryParse(track['artwork'] as String)
-      : null,
-);
 
 // ═══════════════════════════════════════════════
 // SPLASH SCREEN
@@ -1069,7 +1059,7 @@ Future<void> playTrack(
     );
     globalPlayingVideoId = videoId;
   } else if (globalPlayingVideoId != videoId) {
-    globalYtController!.loadVideoById(videoId: videoId);
+    unawaited(globalYtController!.loadVideoById(videoId: videoId));
     globalPlayingVideoId = videoId;
   }
 
@@ -1989,7 +1979,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               TextButton(
-                onPressed: () => LocalLibrary.instance.clearRecentSearches(),
+                onPressed: LocalLibrary.instance.clearRecentSearches,
                 child: const Text(
                   'Clear',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
