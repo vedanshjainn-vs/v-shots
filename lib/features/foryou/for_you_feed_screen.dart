@@ -84,7 +84,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       if (_feedYtController == null) {
         _feedYtController = YoutubePlayerController.fromVideoId(
           videoId: videoId,
-          autoPlay: true,
+          autoPlay: false,
           params: const YoutubePlayerParams(
             showControls: true,
             showFullscreenButton: false,
@@ -95,12 +95,16 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           ),
         );
         _activeVideoId = videoId;
-        _isPlaying = true;
       } else if (_activeVideoId != videoId) {
+        // Loading a different video stops the previous one in-place.
         unawaited(_feedYtController!.loadVideoById(videoId: videoId));
         _activeVideoId = videoId;
-        _isPlaying = true;
       }
+      // Do NOT force autoplay-with-sound: Android/WebView/YouTube blocks it
+      // (which manifests as a blank/dark surface). Videos are cued and the
+      // active card shows a clear Play interaction; the first user tap starts
+      // playback, which is the compliant behaviour.
+      _isPlaying = false;
     } catch (_) {
       // Graceful in headless widget test environments
     }
@@ -250,15 +254,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   onNotInterested: () => _handleNotInterested(index),
                   onSkipPrevious: index > 0
                       ? () => _pageController.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        )
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          )
                       : null,
                   onSkipNext: index < _items.length - 1
                       ? () => _pageController.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        )
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          )
                       : null,
                 ),
               );
@@ -427,9 +431,8 @@ class _MoodPickerSheet extends StatelessWidget {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          gradient: isSelected
-                              ? AppColors.primaryGradient
-                              : null,
+                          gradient:
+                              isSelected ? AppColors.primaryGradient : null,
                           color: isSelected ? null : AppColors.surface2,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
@@ -550,12 +553,37 @@ class _ForYouCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                       child: AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: isActive && playerController != null
-                            ? YoutubePlayer(
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (isActive && playerController != null)
+                              YoutubePlayer(
                                 controller: playerController!,
                                 aspectRatio: 16 / 9,
                               )
-                            : AppImage(artwork, fit: BoxFit.cover),
+                            else
+                              AppImage(artwork, fit: BoxFit.cover),
+                            // Clear Play interaction when the active video is
+                            // cued but not yet playing (YouTube/Android block
+                            // autoplay-with-sound). First tap starts playback.
+                            if (isActive &&
+                                playerController != null &&
+                                !isPlaying)
+                              GestureDetector(
+                                onTap: onPlayPauseToggle,
+                                child: Container(
+                                  color: Colors.black.withValues(alpha: 0.30),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.play_circle_filled_rounded,
+                                      color: Colors.white,
+                                      size: 64,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
