@@ -3,7 +3,6 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import '../backend/supabase_service.dart';
 import '../storage/local_library.dart';
 
@@ -33,7 +32,6 @@ class RecommendationService {
   static final RecommendationService instance = RecommendationService._();
 
   final UserContext _context = UserContext();
-  final Random _random = Random();
 
   UserContext get context => _context;
 
@@ -93,7 +91,6 @@ class RecommendationService {
       return '$topArtist top hit songs official audio';
     }
 
-    // Blend with selected vibe or regional language weighting
     if (_context.selectedMoodQuery != null &&
         _context.selectedMoodQuery!.isNotEmpty) {
       return _context.selectedMoodQuery!;

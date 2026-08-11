@@ -51,6 +51,7 @@ class FakeProvider implements MusicProvider {
   @override
   Future<ProviderResult<List<ProviderTrack>>> search(
     String query, {
+    String order = 'relevance',
     int limit = 20,
     int maxDurationMinutes = 15,
     int minDurationMinutes = 0,

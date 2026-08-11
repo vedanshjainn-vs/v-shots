@@ -238,4 +238,9 @@ class LocalLibrary {
     recentSearches.value = list;
     await _writeList(_kRecentSearches, list);
   }
+
+  Future<void> clearRecentSearches() async {
+    recentSearches.value = [];
+    await _writeList(_kRecentSearches, []);
+  }
 }

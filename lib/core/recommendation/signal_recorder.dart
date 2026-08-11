@@ -162,6 +162,20 @@ class PlaybackSignalTracker {
     _startedAt = null;
   }
 
+  void onPlaylistAdd(Map<String, dynamic> track) {
+    final id = track['id'] as String?;
+    if (id == null || id.isEmpty) return;
+    _engine.recordSignal(
+      SignalEvent(
+        type: SignalType.playlistAdd,
+        timestamp: DateTime.now(),
+        trackId: id,
+        artist: track['artist'] as String?,
+        title: track['title'] as String?,
+      ),
+    );
+  }
+
   void onLiked(Map<String, dynamic> track) {
     _engine.recordSignal(
       SignalEvent(

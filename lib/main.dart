@@ -40,7 +40,6 @@ import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
-import 'features/library/local_import_service.dart';
 import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
@@ -158,18 +157,7 @@ void _handleTrackCompleted(BuildContext? context) {
     return;
   }
 
-  if (isShuffleOn && shuffleOrder.length != currentQueue.length) {
-    QueueController.rebuildShuffleOrder(keepCurrentAt: currentQueueIndex);
-  }
-
-  final nextIndex = QueueController.computeCompletion(
-    queueLength: currentQueue.length,
-    currentIndex: currentQueueIndex,
-    repeatMode: repeatMode,
-    shuffleOn: isShuffleOn,
-    order: shuffleOrder,
-  );
-
+  final nextIndex = QueueController.nextIndexOnCompletion();
   if (nextIndex == null) {
     _log('[QUEUE] End of queue reached, playback stopped');
     return;
@@ -1103,7 +1091,6 @@ class _HomeSectionState {
     this.order = 'relevance',
     this.isPersonalized = false,
     this.isBecauseListened = false,
-    this.intent,
   });
 
   final String query;
@@ -1111,7 +1098,6 @@ class _HomeSectionState {
   final String order;
   final bool isPersonalized;
   final bool isBecauseListened;
-  final FeedIntent? intent;
   _SectionStatus status = _SectionStatus.loading;
   List<Map<String, dynamic>> tracks = [];
 }
@@ -1320,14 +1306,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _playArtistSpotlight(Map<String, String> artist) {
     unawaited(HapticFeedback.selectionClick());
-    Navigator.push(
-      context,
-      AppPageRoute<void>(
-        builder: (_) => ArtistDetailsScreen(
-          name: artist['name']!,
-          role: artist['role']!,
-          imageUrl: artist['image']!,
-          query: artist['query']!,
+    unawaited(
+      Navigator.push(
+        context,
+        AppPageRoute<void>(
+          builder: (_) => ArtistDetailsScreen(
+            name: artist['name']!,
+            role: artist['role']!,
+            imageUrl: artist['image']!,
+            query: artist['query']!,
+          ),
         ),
       ),
     );
@@ -1917,8 +1905,8 @@ class _SearchScreenState extends State<SearchScreen> {
             Padding(
               padding: const EdgeInsets.all(16),
               child: AnimatedContainer(
-                duration: AppMotion.short,
-                curve: AppMotion.standard,
+                duration: AppMotion.fast,
+                curve: AppMotion.enter,
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
@@ -2012,19 +2000,18 @@ class _SearchScreenState extends State<SearchScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: recents
-                .map(
-                  (q) => ActionChip(
-                    label: Text(q),
-                    backgroundColor: AppColors.surface,
-                    side: const BorderSide(color: AppColors.border),
-                    onPressed: () {
-                      _controller.text = q;
-                      _search(q);
-                    },
-                  ),
-                )
-                .toList(),
+            children: recents.map((item) {
+              final q = (item['query'] as String?) ?? '';
+              return ActionChip(
+                label: Text(q),
+                backgroundColor: AppColors.surface,
+                side: const BorderSide(color: AppColors.border),
+                onPressed: () {
+                  _controller.text = q;
+                  _search(q);
+                },
+              );
+            }).toList(),
           ),
           const SizedBox(height: 24),
         ],
@@ -2874,7 +2861,7 @@ void showAddToPlaylistSheet(BuildContext context, Map<String, dynamic> track) {
                           p['id'] as String,
                           track,
                         );
-                        playbackSignalTracker.onPlaylistAdded(track);
+                        playbackSignalTracker.onPlaylistAdd(track);
                         if (ctx.mounted) Navigator.pop(ctx);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -3000,28 +2987,28 @@ void _showSleepTimerDialog(BuildContext context) {
           ListTile(
             title: const Text('15 minutes'),
             onTap: () {
-              SleepTimer.instance.set(const Duration(minutes: 15));
+              SleepTimer.instance.start(const Duration(minutes: 15));
               Navigator.pop(ctx);
             },
           ),
           ListTile(
             title: const Text('30 minutes'),
             onTap: () {
-              SleepTimer.instance.set(const Duration(minutes: 30));
+              SleepTimer.instance.start(const Duration(minutes: 30));
               Navigator.pop(ctx);
             },
           ),
           ListTile(
             title: const Text('45 minutes'),
             onTap: () {
-              SleepTimer.instance.set(const Duration(minutes: 45));
+              SleepTimer.instance.start(const Duration(minutes: 45));
               Navigator.pop(ctx);
             },
           ),
           ListTile(
             title: const Text('60 minutes'),
             onTap: () {
-              SleepTimer.instance.set(const Duration(minutes: 60));
+              SleepTimer.instance.start(const Duration(minutes: 60));
               Navigator.pop(ctx);
             },
           ),

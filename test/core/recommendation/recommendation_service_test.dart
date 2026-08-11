@@ -9,7 +9,7 @@ import 'package:v_shots/features/foryou/for_you_feed_service.dart';
 void main() {
   group('RecommendationService & Expanded Vibes', () {
     test('availableMoods contains all expanded categories', () {
-      final moods = ForYouFeedService.availableMoods;
+      const moods = ForYouFeedService.availableMoods;
       expect(moods.length, greaterThanOrEqualTo(22));
 
       final labels = moods.map((m) => m['label']!).toList();
