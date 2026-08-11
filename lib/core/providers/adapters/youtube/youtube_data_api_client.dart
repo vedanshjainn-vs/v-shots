@@ -108,6 +108,13 @@ class YouTubeVideoItem {
   }
 }
 
+/// A page of search results plus the token to fetch the next page.
+class PaginatedSearchResult {
+  const PaginatedSearchResult({required this.items, this.nextPageToken});
+  final List<YouTubeVideoItem> items;
+  final String? nextPageToken;
+}
+
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
@@ -219,6 +226,138 @@ class YouTubeDataApiClient {
   }
 
   /// Fetches metadata for a single YouTube video by its video ID.
+  /// Resolves the official YouTube channel avatar image URL for [artistName].
+  ///
+  /// Uses the YouTube Data API Channels/Search metadata flow ONLY. Returns
+  /// null when no API key is configured or the channel cannot be found, so
+  /// callers must keep a graceful fallback. This is what powers real Top
+  /// Artist images without ever fabricating a URL when the key is missing.
+  Future<String?> resolveChannelAvatar(String artistName) async {
+    final key = apiKey;
+    if (key.isEmpty) return null;
+    try {
+      final uri = Uri.parse('$_baseUrl/search').replace(
+        queryParameters: {
+          'part': 'snippet',
+          'type': 'channel',
+          'q': artistName,
+          'maxResults': '1',
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      final snippet = (items.first as Map<String, dynamic>)['snippet']
+          as Map<String, dynamic>?;
+      if (snippet == null) return null;
+      final thumbs = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+      final url = (thumbs['high']?['url'] ??
+          thumbs['medium']?['url'] ??
+          thumbs['default']?['url']) as String?;
+      return (url == null || url.isEmpty) ? null : url;
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] resolveChannelAvatar error: $e');
+      return null;
+    }
+  }
+
+  /// Real Data-API pagination: returns one page of results plus the
+  /// [nextPageToken] to request the following page. Falls back to the verified
+  /// category-specific catalog when no API key is configured (with
+  /// [nextPageToken] null so the caller knows there are no more pages).
+  Future<PaginatedSearchResult> searchMusicVideosPaginated(
+    String query, {
+    String order = 'relevance',
+    int maxResults = 20,
+    Set<String> excludeIds = const {},
+    String? pageToken,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty) {
+      return PaginatedSearchResult(
+        items: _fallbackSearch(
+          query,
+          order: order,
+          maxResults: maxResults,
+          excludeIds: excludeIds,
+        ),
+        nextPageToken: null,
+      );
+    }
+    try {
+      final params = <String, String>{
+        'part': 'snippet',
+        'type': 'video',
+        'videoCategoryId': '10',
+        'q': query,
+        'order': order,
+        'maxResults': maxResults.clamp(1, 50).toString(),
+        'key': key,
+      };
+      if (pageToken != null && pageToken.isNotEmpty) {
+        params['pageToken'] = pageToken;
+      }
+      final uri =
+          Uri.parse('$_baseUrl/search').replace(queryParameters: params);
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[YouTubeDataApiClient] Paginated search HTTP ${response.statusCode}',
+        );
+        return PaginatedSearchResult(
+          items: _fallbackSearch(
+            query,
+            order: order,
+            maxResults: maxResults,
+            excludeIds: excludeIds,
+          ),
+          nextPageToken: null,
+        );
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final videoIds = <String>[];
+      final rawItems = <Map<String, dynamic>>[];
+      for (final item in items) {
+        if (item is Map<String, dynamic>) {
+          final id = item['id']?['videoId'] as String?;
+          if (id != null && id.isNotEmpty && !excludeIds.contains(id)) {
+            videoIds.add(id);
+            rawItems.add(item);
+          }
+        }
+      }
+      final durationMap = videoIds.isEmpty
+          ? <String, int>{}
+          : await _fetchVideoDurations(videoIds, key: key);
+      final mapped = rawItems.map((item) {
+        final vid = item['id']?['videoId'] as String? ?? '';
+        return YouTubeVideoItem.fromJson(
+          item,
+          duration: durationMap[vid] ?? 210,
+        );
+      }).toList();
+      return PaginatedSearchResult(
+        items: mapped,
+        nextPageToken: data['nextPageToken'] as String?,
+      );
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] Paginated search error: $e');
+      return PaginatedSearchResult(
+        items: _fallbackSearch(
+          query,
+          order: order,
+          maxResults: maxResults,
+          excludeIds: excludeIds,
+        ),
+        nextPageToken: null,
+      );
+    }
+  }
+
   Future<YouTubeVideoItem?> getVideoDetails(String videoId) async {
     final key = apiKey;
     if (key.isEmpty) {

@@ -13,6 +13,9 @@ import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
+import 'core/ads/ad_config.dart';
+import 'core/ads/ad_manager.dart';
+import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_service.dart';
@@ -55,6 +58,10 @@ void main() async {
   ]);
 
   await AuthService.instance.initializeGoogleSignIn();
+
+  // Initialize Google AdMob + UMP consent (no-op unless production ad IDs are
+  // configured via ADMOB_NATIVE_AD_ID).
+  await AdManager.instance.initialize();
 
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),
@@ -200,7 +207,7 @@ List<int> shuffleOrder = [];
 
 final YouTubeDataApiClient sharedYtApiClient = YouTubeDataApiClient();
 final musicRepository = buildMusicRepository(apiClient: sharedYtApiClient);
-final forYouFeedService = ForYouFeedService(musicRepository);
+final forYouFeedService = ForYouFeedService(apiClient: sharedYtApiClient);
 final recommendationEngine = RecommendationEngine(musicRepository);
 final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
 
@@ -1326,6 +1333,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final Set<String> _activeFetches = <String>{};
   Timer? _autoRefreshTimer;
 
+  /// Resolved official YouTube channel avatars, keyed by artist name. Populated
+  /// at startup via the YouTube Data API Channels flow; empty when no API key is
+  /// configured (in which case the existing placeholder image is used as a
+  /// graceful fallback). Real artist imagery only appears once YOUTUBE_DATA_API_KEY
+  /// is configured — never fabricated here.
+  final Map<String, String> _artistAvatars = {};
+
+  Future<void> _resolveArtistAvatars() async {
+    for (final artist in _officialArtists) {
+      final url = await sharedYtApiClient.resolveChannelAvatar(
+        artist['name']!,
+      );
+      if (url != null) _artistAvatars[artist['name']!] = url;
+    }
+    if (mounted && _artistAvatars.isNotEmpty) setState(() {});
+  }
+
+  String? _artistImage(Map<String, String> artist) =>
+      _artistAvatars[artist['name']!] ?? artist['image'];
+
   static const List<Map<String, String>> _officialArtists = [
     {
       'name': 'Arijit Singh',
@@ -1432,6 +1459,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_resolveArtistAvatars());
     for (final section in _sections) {
       unawaited(_loadSection(section));
     }
@@ -1624,6 +1652,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             _buildArtistsSpotlightSliver(),
             for (final section in _sections) _buildSectionSliver(section),
+            // Native ad placement after ~8 organic content sections.
+            _buildAdSliver(),
             _buildRecentlyPlayedSliver(),
             _buildMoodGenresSliver(),
             const SliverToBoxAdapter(child: SizedBox(height: 160)),
@@ -1685,7 +1715,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           child: ClipOval(
                             child: AppImage(
-                              artist['image'],
+                              _artistImage(artist),
                               fit: BoxFit.cover,
                               errorIconColor: AppColors.accent,
                             ),
@@ -1972,6 +2002,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
       ],
+    );
+  }
+
+  /// A native ad placement. Renders a clearly-labeled native ad only when ads
+  /// are enabled (production config present); otherwise empty.
+  Widget _buildAdSliver() {
+    return SliverToBoxAdapter(
+      child: AdConfig.adsEnabled
+          ? const NativeAdWidget()
+          : const SizedBox.shrink(),
     );
   }
 
@@ -2409,6 +2449,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searchFocused = false;
   Timer? _debounce;
   int _requestSeq = 0;
+  String? _nextPageToken;
   final ScrollController _scrollController = ScrollController();
   final Set<String> _seenIds = {};
   bool _isLoadingMore = false;
@@ -2436,6 +2477,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _results = [];
         _hasMore = true;
         _seenIds.clear();
+        _nextPageToken = null;
       });
       return;
     }
@@ -2471,21 +2513,23 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     final seq = ++_requestSeq;
+    _nextPageToken = null;
 
     try {
-      final detailed =
-          await musicRepository.searchDetailed(query, limit: _pageSize);
+      // Live Data-API first page with real pageToken support. Falls back to
+      // the verified catalog (nextPageToken null) when no API key is set.
+      final page = await sharedYtApiClient.searchMusicVideosPaginated(
+        query,
+        maxResults: _pageSize,
+        excludeIds: _seenIds,
+      );
       if (seq != _requestSeq || !mounted) return;
 
-      if (!detailed.success) {
-        if (cached == null) {
-          setState(() => _status = _SearchStatus.error);
-        }
-        return;
-      }
+      _nextPageToken = page.nextPageToken;
+      final rawResults = page.items.map(_videoToTrack).toList();
 
       final uniqueResults = <Map<String, dynamic>>[];
-      for (final track in detailed.tracks) {
+      for (final track in rawResults) {
         final id = track['id'] as String? ?? '';
         if (id.isEmpty || _seenIds.contains(id)) continue;
         _seenIds.add(id);
@@ -2510,7 +2554,7 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _results = toShow;
         _status = _SearchStatus.loaded;
-        _hasMore = detailed.tracks.length >= _pageSize;
+        _hasMore = _nextPageToken != null || uniqueResults.length >= _pageSize;
       });
     } catch (_) {
       if (seq != _requestSeq || !mounted) return;
@@ -2528,18 +2572,27 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_status != _SearchStatus.loaded) return;
     setState(() => _isLoadingMore = true);
     try {
-      final detailed = await musicRepository.searchDetailed(_lastQuery!,
-          limit: _pageSize, excludeIds: _seenIds);
+      // Real Data-API pagination: request the NEXT page via the stored token.
+      // Without an API key the fallback returns the same verified catalog with
+      // nextPageToken null, so `_hasMore` becomes false and stops cleanly.
+      final page = await sharedYtApiClient.searchMusicVideosPaginated(
+        _lastQuery!,
+        maxResults: _pageSize,
+        excludeIds: _seenIds,
+        pageToken: _nextPageToken,
+      );
       if (!mounted) return;
-      if (!detailed.success || detailed.tracks.isEmpty) {
+      if (page.items.isEmpty) {
         setState(() {
           _hasMore = false;
           _isLoadingMore = false;
         });
         return;
       }
+      _nextPageToken = page.nextPageToken;
       final newItems = <Map<String, dynamic>>[];
-      for (final t in detailed.tracks) {
+      for (final v in page.items) {
+        final t = _videoToTrack(v);
         final id = t['id'] as String? ?? '';
         if (id.isEmpty || _seenIds.contains(id)) continue;
         _seenIds.add(id);
@@ -2547,14 +2600,14 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       if (newItems.isEmpty) {
         setState(() {
-          _hasMore = detailed.tracks.length >= _pageSize;
+          _hasMore = _nextPageToken != null;
           _isLoadingMore = false;
         });
         return;
       }
       setState(() {
         _results = [..._results, ...newItems];
-        _hasMore = detailed.tracks.length >= _pageSize;
+        _hasMore = _nextPageToken != null || newItems.length >= _pageSize;
         _isLoadingMore = false;
       });
       // Update cache with expanded results
@@ -2563,6 +2616,17 @@ class _SearchScreenState extends State<SearchScreen> {
       if (mounted) setState(() => _isLoadingMore = false);
     }
   }
+
+  /// Converts a YouTubeDataApiClient video item into the app's track-map shape
+  /// (single canonical mapping so title/artist/thumbnail always come from the
+  /// SAME videoId — no cross-metadata mixing).
+  Map<String, dynamic> _videoToTrack(YouTubeVideoItem v) => {
+        'id': v.id,
+        'title': v.title,
+        'artist': v.channelTitle,
+        'artwork': v.thumbnailUrl,
+        'duration': v.durationSeconds,
+      };
 
   @override
   void initState() {
@@ -2865,12 +2929,19 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResultsList() {
+    // Insert one clearly-labeled native ad after ~8 organic results. When ads
+    // are not enabled (no production ad config) the ad slot count is 0, so the
+    // list behaves exactly as before.
+    final bool showAd =
+        AdConfig.adsEnabled && _results.length >= AdConfig.searchAdEvery;
+    final int adCount = showAd ? 1 : 0;
+    final int footerIndex = _results.length + adCount;
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: _results.length + 1,
+      itemCount: footerIndex + 1,
       itemBuilder: (context, i) {
-        if (i == _results.length) {
+        if (i == footerIndex) {
           if (!_hasMore) {
             return const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
@@ -2902,7 +2973,14 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           );
         }
-        final track = _results[i];
+        // Native ad slot after the 8th organic result.
+        if (showAd && i == AdConfig.searchAdEvery) {
+          return const NativeAdWidget();
+        }
+        // Account for the ad slot offset when indexing results.
+        final int resultIndex =
+            showAd && i > AdConfig.searchAdEvery ? i - 1 : i;
+        final track = _results[resultIndex];
         final title = (track['title'] as String?) ?? '';
         final artist = (track['artist'] as String?) ?? '';
 
@@ -2934,7 +3012,7 @@ class _SearchScreenState extends State<SearchScreen> {
             color: AppColors.accent,
             size: 26,
           ),
-          onTap: () => playTrack(context, track, _results, i),
+          onTap: () => playTrack(context, track, _results, resultIndex),
         );
       },
     );

@@ -4,17 +4,38 @@
 
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import '../../core/providers/music_repository.dart';
+import '../../core/providers/adapters/youtube/youtube_data_api_client.dart';
 import '../../core/recommendation/recommendation_service.dart';
 
 class ForYouFeedService {
-  ForYouFeedService(this._repository);
+  ForYouFeedService({
+    YouTubeDataApiClient? apiClient,
+  }) : _apiClient = apiClient ?? YouTubeDataApiClient();
 
-  final MusicRepository _repository;
+  final YouTubeDataApiClient _apiClient;
   final _random = Random();
 
   String? activeMood;
   String? activeMoodQuery;
+
+  /// Tracks the live Data-API page token for the currently selected vibe so
+  /// the Discover feed truly pages through results instead of restarting.
+  String? _nextPageToken;
+  String? _tokenQuery;
+
+  void _resetPagination() {
+    _nextPageToken = null;
+    _tokenQuery = null;
+  }
+
+  void setMood(String? moodLabel, String? query) {
+    activeMood = moodLabel;
+    activeMoodQuery = query;
+    _resetPagination();
+    if (moodLabel != null && query != null) {
+      RecommendationService.instance.setMood(moodLabel, query);
+    }
+  }
 
   static const List<Map<String, String>> availableMoods = [
     {
@@ -221,14 +242,6 @@ class ForYouFeedService {
     'songs like {artist} playlist',
   ];
 
-  void setMood(String? moodLabel, String? query) {
-    activeMood = moodLabel;
-    activeMoodQuery = query;
-    if (moodLabel != null && query != null) {
-      RecommendationService.instance.setMood(moodLabel, query);
-    }
-  }
-
   Map<String, double> _recencyWeightedArtistScores() {
     return RecommendationService.instance.getRecencyWeightedArtistScores();
   }
@@ -238,26 +251,35 @@ class ForYouFeedService {
     int count = 10,
   }) async {
     final query = _pickQuery();
+    // Reset page token when the vibe/query changed so we start from page 1.
+    if (_tokenQuery != query) {
+      _tokenQuery = query;
+      _nextPageToken = null;
+    }
     try {
-      final detailed = await _repository.searchDetailed(
+      // Live Data-API pagination with pageToken; falls back to the verified
+      // category-specific catalog (nextPageToken null) when no API key is set.
+      final page = await _apiClient.searchMusicVideosPaginated(
         query,
-        limit: count,
-        maxDurationMinutes: 12,
-        minDurationMinutes: 1,
+        maxResults: count,
         excludeIds: excludeIds,
+        pageToken: _nextPageToken,
       );
-      if (!detailed.success) {
-        debugPrint(
-          '[ForYouFeedService] fetchNextBatch failed: ${detailed.error}',
-        );
-        return [];
-      }
-      return detailed.tracks;
+      _nextPageToken = page.nextPageToken;
+      return page.items.map(_videoToTrack).toList();
     } catch (e) {
       debugPrint('[ForYouFeedService] fetchNextBatch failed: $e');
       return [];
     }
   }
+
+  Map<String, dynamic> _videoToTrack(YouTubeVideoItem v) => {
+        'id': v.id,
+        'title': v.title,
+        'artist': v.channelTitle,
+        'artwork': v.thumbnailUrl,
+        'duration': v.durationSeconds,
+      };
 
   bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;
 
@@ -298,10 +320,9 @@ class ForYouFeedService {
       if (roll < 0.45) {
         return '$artist songs official audio';
       } else {
-        final template =
-            _genreDiscoveryTemplates[_random.nextInt(
-              _genreDiscoveryTemplates.length,
-            )];
+        final template = _genreDiscoveryTemplates[_random.nextInt(
+          _genreDiscoveryTemplates.length,
+        )];
         return template.replaceAll('{artist}', artist);
       }
     }
@@ -314,8 +335,8 @@ class ForYouFeedService {
     final pool = hour >= 22 || hour < 5
         ? _nightQueries
         : hour >= 17
-        ? _eveningQueries
-        : _dayQueries;
+            ? _eveningQueries
+            : _dayQueries;
     return pool[_random.nextInt(pool.length)];
   }
 }

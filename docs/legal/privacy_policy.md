@@ -52,6 +52,22 @@ You have full control over your data:
 - **Account Deletion**: Request complete deletion of your Supabase profile and uploaded UGC shots.
 - **Google Security Permissions**: Manage third-party app access via your Google Security Settings: [https://myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
+## Advertising & Google AdMob
+
+V Shots may display advertisements served by Google AdMob ("ads"). This section discloses our advertising practices:
+
+- **Advertising SDK**: We use the Google Mobile Ads SDK to serve native advertisements inside the app.
+- **Ad Identifier**: Where permitted, the advertising ID of your device may be read by the advertising SDK for ad delivery, measurement, and frequency capping.
+- **Ad Personalization**: Ads may be personalized based on your interactions and the advertising ID, but only where you have provided appropriate consent (see below). If consent is not granted, only non-personalized ads are served.
+- **Google's User Messaging Platform (UMP)**: In regions that require consent (such as the EEA and UK), V Shots uses Google's approved consent mechanism. You can accept, decline, or customize ad personalization, and you can change your choices at any time from the in-app privacy options.
+- **Privacy Options**: A privacy-options entry point is available in-app where required by Google's UMP to review or withdraw consent.
+- **Third-Party Advertising Networks**: Currently only Google/AdMob demand is used. We do not add ad networks without an updated disclosure.
+
+## Data Collection for Ads
+
+Advertising-related data (such as ad impressions, clicks, and the device advertising ID) is processed by Google in accordance with Google's Privacy Policy and the policies of Google's advertising platforms. We do not combine your music listening history with ad data for advertising purposes, and we do not sell your personal data.
+
+
 ## Contact Us
 
 For questions regarding this Privacy Policy or data requests:

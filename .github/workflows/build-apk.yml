@@ -44,7 +44,18 @@ jobs:
           GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
           YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          ADMOB_NATIVE_AD_ID=${{ secrets.ADMOB_NATIVE_AD_ID }}
           EOF
+
+      - name: 4b. Inject Production AdMob App ID (when configured)
+        run: |
+          if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
+            sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" \
+              android/app/src/main/AndroidManifest.xml
+            echo "Injected production AdMob App ID."
+          else
+            echo "No ADMOB_APP_ID secret — keeping the TEST AdMob App ID."
+          fi
 
       - name: 5. Install Dependencies
         run: flutter pub get
@@ -59,46 +70,67 @@ jobs:
         run: flutter test
 
       - name: 9. Setup Keystore & Build Release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           mkdir -p android/app/keystores
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            # Use the real release keystore from GitHub Secrets.
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
+            export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
+            export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
+            export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
           else
+            # No release keystore secret configured: generate a CI throwaway
+            # keystore with a random, non-committed password so the build still
+            # succeeds. The resulting APK/AAB is NOT the production signing key.
+            CI_PASS=$(openssl rand -hex 16)
             keytool -genkeypair -v \
               -keystore android/app/keystores/release.keystore \
-              -storepass vshots2024 \
-              -alias vshots \
-              -keypass vshots2024 \
+              -storepass "$CI_PASS" \
+              -alias ci-build \
+              -keypass "$CI_PASS" \
               -keyalg RSA \
               -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=V Shots, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+              -validity 365 \
+              -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
+            export ANDROID_KEYSTORE_PASSWORD="$CI_PASS"
+            export ANDROID_KEY_ALIAS="ci-build"
+            export ANDROID_KEY_PASSWORD="$CI_PASS"
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — built with a CI throwaway keystore, NOT the production key."
           fi
-          export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
-          export ANDROID_KEYSTORE_PASSWORD="vshots2024"
-          export ANDROID_KEY_ALIAS="vshots"
-          export ANDROID_KEY_PASSWORD="vshots2024"
           flutter build apk --release
 
       - name: 10. Build Debug APK
         run: flutter build apk --debug
 
-      - name: 11. Validate Generated APKs
+      - name: 10b. Build Release AAB (Play Store)
+        env:
+          ANDROID_KEYSTORE_PATH: "keystores/release.keystore"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: flutter build appbundle --release
+
+      - name: 11. Validate Generated APKs & AAB
         run: |
+          set -e
           DEBUG_APK="build/app/outputs/flutter-apk/app-debug.apk"
           RELEASE_APK="build/app/outputs/flutter-apk/app-release.apk"
-          if [ ! -f "$DEBUG_APK" ]; then
-            echo "::error::Debug APK was not found at expected path: $DEBUG_APK"
-            exit 1
-          fi
-          if [ ! -f "$RELEASE_APK" ]; then
-            echo "::error::Release APK was not found at expected path: $RELEASE_APK"
-            exit 1
-          fi
-          DEBUG_SIZE=$(stat -c%s "$DEBUG_APK" 2>/dev/null || stat -f%z "$DEBUG_APK")
-          RELEASE_SIZE=$(stat -c%s "$RELEASE_APK" 2>/dev/null || stat -f%z "$RELEASE_APK")
-          echo "✅ Debug APK Size: $DEBUG_SIZE bytes"
-          echo "✅ Release APK Size: $RELEASE_SIZE bytes"
+          AAB="build/app/outputs/bundle/release/app-release.aab"
+          [ -f "$DEBUG_APK" ] || { echo "::error::Debug APK missing"; exit 1; }
+          [ -f "$RELEASE_APK" ] || { echo "::error::Release APK missing"; exit 1; }
+          [ -f "$AAB" ] || { echo "::error::Release AAB missing"; exit 1; }
+          echo "✅ Debug APK: $(stat -c%s "$DEBUG_APK") bytes"
+          echo "✅ Release APK: $(stat -c%s "$RELEASE_APK") bytes"
+          echo "✅ Release AAB: $(stat -c%s "$AAB") bytes"
+          echo "RELEASE_SHA256=$(sha256sum "$RELEASE_APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "DEBUG_SHA256=$(sha256sum "$DEBUG_APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "AAB_SHA256=$(sha256sum "$AAB" | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       - name: 12. Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -116,19 +148,33 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: 14. Publish GitHub Release with Direct APK Downloads
-        if: github.ref == 'refs/heads/main'
+      - name: 13b. Upload Release AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: 14. Publish GitHub Release
+        # Release creation is DISABLED until the production acceptance gate is
+        # fully passed (device testing + required secrets configured). Remove
+        # this `if` guard only once that gate is cleared.
+        if: github.ref == 'refs/heads/main' && env.ENABLE_RELEASE == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_RELEASE: ${{ vars.ENABLE_RELEASE }}
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.6.0-release.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.6.0-debug.apk
-          gh release create v5.6.0 \
-            ./v-shots-5.6.0-release.apk \
-            ./v-shots-5.6.0-debug.apk \
-            --title "V Shots v5.6.0 (Build 18) Nova Edition" \
-            --notes "V Shots v5.6.0 Nova Edition Production Build. 120+ verified tracks, YouTube IFrame only, premium Home/Discover/Search/Mini-Player, RLS secured. Download v-shots-5.6.0-release.apk below." \
-            --clobber || true
+          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.7.0-release.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.7.0-debug.apk
+          cp build/app/outputs/bundle/release/app-release.aab ./v-shots-5.7.0-release.aab
+          gh release create v5.7.0 \
+            ./v-shots-5.7.0-release.apk \
+            ./v-shots-5.7.0-debug.apk \
+            ./v-shots-5.7.0-release.aab \
+            --title "V Shots v5.7.0 (Build 19)" \
+            --notes "Release publishing is gated — only publishes when ENABLE_RELEASE=true and the acceptance gate is passed." \
+            --clobber || echo "::warning::Release step skipped (gate not enabled)."
 
       - name: 15. Upload APK to BrowserStack App Automate
         if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}

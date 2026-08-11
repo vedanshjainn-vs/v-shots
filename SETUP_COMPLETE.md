@@ -29,9 +29,9 @@
 ```
 Release Keystore:
   File: android/app/release.keystore
-  Store Password: vshots2024
+  Store Password: <set via ANDROID_KEYSTORE_PASSWORD GitHub Secret — not committed>
   Key Alias: vshots
-  Key Password: vshots2024
+  Key Password: <set via ANDROID_KEYSTORE_PASSWORD GitHub Secret — not committed>
 ```
 
 ---

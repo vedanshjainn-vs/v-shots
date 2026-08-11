@@ -26,13 +26,13 @@ Alias: androiddebugkey
 ### Release Keystore
 ```
 File: android/app/release.keystore
-Password: vshots2024
+Password: <set via ANDROID_KEYSTORE_PASSWORD GitHub Secret — not committed>
 Alias: vshots
 ```
 
 ⚠️ **IMPORTANT: Save these passwords!**
-- Store Password: `vshots2024`
-- Key Password: `vshots2024`
+- Store Password: `<set via ANDROID_KEYSTORE_PASSWORD GitHub Secret — not committed>`
+- Key Password: `<set via ANDROID_KEYSTORE_PASSWORD GitHub Secret — not committed>`
 - Key Alias: `vshots`
 
 ---
