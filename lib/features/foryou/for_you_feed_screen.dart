@@ -3,7 +3,6 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -196,6 +195,42 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   bool get _onDiscoverTab => currentTabIndexNotifier.value == 1;
 
+  /// The single always-mounted YouTube player used as the full-screen
+  /// background of the Discover feed. It is mounted in a FIXED position (not
+  /// inside any PageView card) so the WebView is never torn down on swipe;
+  /// swiping simply loads the next video into this same controller.
+  Widget _buildBackgroundPlayer() {
+    final controller = globalYtController;
+    if (controller == null) {
+      // No controller yet — fall back to the current track's artwork until the
+      // first video is created.
+      final artwork = (_items.isNotEmpty
+          ? (_items[_currentIndex]['artwork'] as String?)
+          : null);
+      return Container(
+        color: Colors.black,
+        child: artwork != null ? AppImage(artwork, fit: BoxFit.cover) : null,
+      );
+    }
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: YoutubePlayer(
+              controller: controller,
+              aspectRatio: 16 / 9,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showMoodPicker() {
     showModalBottomSheet<void>(
       context: context,
@@ -260,8 +295,20 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Vertical Reel-Style Swipe PageView
+          // 1. Single ALWAYS-MOUNTED YouTube player (background layer).
+          //
+          // The player is rendered ONCE at a fixed position and never moves
+          // between cards. Swiping only calls loadVideoById on the same
+          // controller, which is what makes video switching + autoplay reliable.
+          // (Rendering the player inside each PageView card re-created the
+          // WebView on every swipe, which is what made the video appear stuck
+          // on the first song and stop playing.)
+          if (_onDiscoverTab) _buildBackgroundPlayer(),
+
+          // 2. Vertical Reel-Style Swipe PageView (transparent metadata overlay
+          // on top of the always-mounted player).
           PageView.builder(
             controller: _pageController,
             scrollDirection: Axis.vertical,
@@ -274,12 +321,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                 child: _ForYouCard(
                   track: _items[index],
                   isActive: isCurrent,
-                  // The single global IFrame is only attached to the active
-                  // Discover card while the Discover tab is in the foreground
-                  // (the persistent overlay renders it on every other tab, so
-                  // the two never share the controller at the same time).
-                  playerController:
-                      (isCurrent && _onDiscoverTab) ? globalYtController : null,
                   isPlaying: _isPlaying,
                   onPlayPauseToggle: _togglePlayPause,
                   onNotInterested: () => _handleNotInterested(index),
@@ -523,7 +564,6 @@ class _ForYouCard extends StatelessWidget {
   const _ForYouCard({
     required this.track,
     required this.isActive,
-    required this.playerController,
     required this.isPlaying,
     required this.onPlayPauseToggle,
     required this.onNotInterested,
@@ -533,7 +573,6 @@ class _ForYouCard extends StatelessWidget {
 
   final Map<String, dynamic> track;
   final bool isActive;
-  final YoutubePlayerController? playerController;
   final bool isPlaying;
   final VoidCallback onPlayPauseToggle;
   final VoidCallback onNotInterested;
@@ -542,7 +581,6 @@ class _ForYouCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final artwork = track['artwork'] as String?;
     final title = (track['title'] as String?) ?? '';
     final artist = (track['artist'] as String?) ?? '';
     final trackId = track['id'] as String? ?? '';
@@ -550,77 +588,67 @@ class _ForYouCard extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Background Artwork Blur
-        AppImage(artwork, fit: BoxFit.cover),
-        BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: Container(color: Colors.black.withValues(alpha: 0.6)),
+        // Transparent metadata overlay — the always-mounted background player
+        // (single WebView) shows the actual video behind this card. A subtle
+        // scrim keeps text readable over bright video frames.
+        IgnorePointer(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.30),
+                  Colors.transparent,
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.60),
+                ],
+                stops: const [0.0, 0.35, 0.55, 1.0],
+              ),
+            ),
+          ),
         ),
 
-        // Centered Content Layout
+        // Clear Play interaction over the video when the active video is cued
+        // but not yet playing (YouTube/Android can block autoplay-with-sound).
+        // First tap starts playback.
+        if (isActive && !isPlaying)
+          GestureDetector(
+            onTap: onPlayPauseToggle,
+            behavior: HitTestBehavior.opaque,
+            child: Center(
+              child: Container(
+                width: 78,
+                height: 78,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.black.withValues(alpha: 0.5),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      blurRadius: 20,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 46,
+                ),
+              ),
+            ),
+          ),
+
+        // Bottom metadata + play controls
         SafeArea(
-          child: Center(
+          child: Align(
+            alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Centered In-Card YouTube Player / Artwork
-                  Container(
-                    width: double.infinity,
-                    constraints: const BoxConstraints(maxWidth: 340),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.4),
-                          blurRadius: 36,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            if (isActive && playerController != null)
-                              YoutubePlayer(
-                                controller: playerController!,
-                                aspectRatio: 16 / 9,
-                              )
-                            else
-                              AppImage(artwork, fit: BoxFit.cover),
-                            // Clear Play interaction when the active video is
-                            // cued but not yet playing (YouTube/Android block
-                            // autoplay-with-sound). First tap starts playback.
-                            if (isActive &&
-                                playerController != null &&
-                                !isPlaying)
-                              GestureDetector(
-                                onTap: onPlayPauseToggle,
-                                child: Container(
-                                  color: Colors.black.withValues(alpha: 0.30),
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.play_circle_filled_rounded,
-                                      color: Colors.white,
-                                      size: 64,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Centered Title
                   Text(
                     title,
                     textAlign: TextAlign.center,
@@ -634,20 +662,18 @@ class _ForYouCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-
-                  // Centered Artist
                   Text(
                     artist,
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.75),
+                      color: Colors.white.withValues(alpha: 0.8),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // Attribution Badge
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -670,14 +696,14 @@ class _ForYouCard extends StatelessWidget {
                           'Powered by YouTube',
                           style: TextStyle(
                             fontSize: 11,
-                            color: Colors.white.withValues(alpha: 0.8),
+                            color: Colors.white.withValues(alpha: 0.85),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
 
                   // Playback Controls Row: Prev, Play/Pause Toggle, Next
                   Row(
@@ -691,7 +717,7 @@ class _ForYouCard extends StatelessWidget {
                         ),
                         onPressed: onSkipPrevious,
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 20),
 
                       // In-Card Play/Pause Toggle
                       GestureDetector(
@@ -721,7 +747,7 @@ class _ForYouCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 20),
 
                       IconButton(
                         icon: const Icon(
@@ -742,7 +768,7 @@ class _ForYouCard extends StatelessWidget {
         // Right Side Action Buttons (Like, Comments, Playlist, More)
         Positioned(
           right: 16,
-          bottom: 110,
+          bottom: 150,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

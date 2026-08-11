@@ -624,20 +624,6 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
             bottom: 64,
             child: Stack(
               children: [
-                // Same-engine IFrame kept alive off-screen (clipped by Stack).
-                if (globalYtController != null)
-                  Positioned(
-                    left: -9999,
-                    top: -9999,
-                    child: SizedBox(
-                      width: 320,
-                      height: 180,
-                      child: YoutubePlayer(
-                        controller: globalYtController!,
-                        aspectRatio: 16 / 9,
-                      ),
-                    ),
-                  ),
                 GestureDetector(
                   onTap: () => widget.onToggleExpand(true),
                   child: Container(
@@ -665,6 +651,17 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
+                                // The single global IFrame stays mounted INSIDE
+                                // the dock (in-bounds, not off-screen where
+                                // Android may throttle the WebView) so audio
+                                // keeps playing while minimized. The artwork
+                                // thumbnail is layered on top, keeping the dock
+                                // a compliant compact player.
+                                if (globalYtController != null)
+                                  YoutubePlayer(
+                                    controller: globalYtController!,
+                                    aspectRatio: 16 / 9,
+                                  ),
                                 AppImage(
                                   widget.track['artwork'] as String?,
                                   fit: BoxFit.cover,

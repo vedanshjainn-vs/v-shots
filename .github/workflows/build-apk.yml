@@ -121,13 +121,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.5.1-release.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.5.1-debug.apk
-          gh release create v5.5.1 \
-            ./v-shots-5.5.1-release.apk \
-            ./v-shots-5.5.1-debug.apk \
-            --title "V Shots v5.5.1 (Build 16) Nova Edition" \
-            --notes "V Shots v5.5.1 Nova Edition Production Build. 120+ verified tracks, YouTube IFrame only, premium Home/Discover/Search/Mini-Player, RLS secured. Download v-shots-5.5.1-release.apk below." \
+          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.5.2-release.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.5.2-debug.apk
+          gh release create v5.5.2 \
+            ./v-shots-5.5.2-release.apk \
+            ./v-shots-5.5.2-debug.apk \
+            --title "V Shots v5.5.2 (Build 17) Nova Edition" \
+            --notes "V Shots v5.5.2 Nova Edition Production Build. 120+ verified tracks, YouTube IFrame only, premium Home/Discover/Search/Mini-Player, RLS secured. Download v-shots-5.5.2-release.apk below." \
             --clobber || true
 
       - name: 15. Upload APK to BrowserStack App Automate
