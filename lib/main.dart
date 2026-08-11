@@ -1934,7 +1934,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildMoodGenresSliver() {
-    const moods = [
+    final moods = <(String, String, Color, String)>[
       ('Trending Hits', '🔥', Color(0xFFE91E63), 'trending hits viral songs official audio'),
       ('Romantic', '💖', Color(0xFFEC4899), 'romantic love songs official audio hindi'),
       ('Party & Dance', '🎉', Color(0xFF7C3AED), 'party dance bollywood punjabi hits'),
