@@ -206,7 +206,7 @@ class HomeContentCoordinator {
       raw: deduped.map(_toProviderTrack).toList(),
       seed: seed,
       limit: limit,
-      preferredLanguage: _langCodeFor(prefs),
+      prefs: prefs,
     );
     final tracks = ranked.map((s) => s.track.toTrackMap()).toList();
     _registerUsed(tracks, allowOverlap);
@@ -289,22 +289,6 @@ class HomeContentCoordinator {
       return null;
     }
     return null;
-  }
-
-  /// Maps a preferred language name to a 2-letter code for the pool's language
-  /// relevance check.
-  String _langCodeFor(UserPreferences prefs) {
-    const map = {
-      'Hindi': 'hi',
-      'Punjabi': 'pa',
-      'English': 'en',
-      'Tamil': 'ta',
-      'Telugu': 'te',
-    };
-    final langs = prefs.languages.isNotEmpty
-        ? prefs.languages
-        : const <String>['English'];
-    return map[langs.first] ?? 'en';
   }
 
   Map<String, dynamic> _toTrack(YouTubeVideoItem v) => {

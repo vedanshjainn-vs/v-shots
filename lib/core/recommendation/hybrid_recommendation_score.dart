@@ -42,7 +42,21 @@ class HybridRecommendationScore {
     this.popularityWeight = 0.05,
     this.vibeWeight = 0.05,
     this.explorationWeight = 0.05,
-  });
+  }) {
+    // Phase 14: weights must sum exactly to 1.0. Validate at construction so a
+    // config typo is caught immediately, never silently mis-scores.
+    final sum = tasteWeight +
+        similarityWeight +
+        behaviorWeight +
+        languageWeight +
+        countryWeight +
+        freshnessWeight +
+        popularityWeight +
+        vibeWeight +
+        explorationWeight;
+    assert((sum - 1.0).abs() < 0.001,
+        'HybridRecommendationScore weights must sum to 1.0 (got $sum)');
+  }
 
   final double tasteWeight;
   final double similarityWeight;

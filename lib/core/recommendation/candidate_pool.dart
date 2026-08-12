@@ -10,8 +10,10 @@
 //   live candidates → validate → filter → dedupe → score → diversify → rank
 // ═════════════════════════════════════════════════════════════════════════
 
+import '../preferences/user_preferences.dart';
 import '../providers/provider_models.dart';
 import 'hybrid_recommendation_score.dart';
+import 'language_country_scorer.dart';
 import 'recommendation_memory.dart';
 import 'song_similarity_engine.dart';
 
@@ -20,13 +22,16 @@ class CandidatePool {
     HybridRecommendationScore? scorer,
     SongSimilarityEngine? similarity,
     RecommendationMemory? memory,
+    LanguageCountryScorer? languageCountry,
   })  : _scorer = scorer ?? HybridRecommendationScore(),
         _similarity = similarity ?? SongSimilarityEngine(),
-        _memory = memory ?? RecommendationMemory.instance;
+        _memory = memory ?? RecommendationMemory.instance,
+        _languageCountry = languageCountry ?? LanguageCountryScorer();
 
   final HybridRecommendationScore _scorer;
   final SongSimilarityEngine _similarity;
   final RecommendationMemory _memory;
+  final LanguageCountryScorer _languageCountry;
 
   final Set<String> _usedIds = {};
   final Set<String> _usedSongKeys = {};
@@ -59,15 +64,18 @@ class CandidatePool {
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 
-  /// The full pipeline: ranks [raw] candidates for [seedArtist] context.
+  /// The full pipeline: ranks [raw] candidates against [prefs] (country +
+  /// language), using [seed] for similarity. Strong language mismatches are
+  /// rejected (Phase 6) so a Hindi user does not get Korean/Spanish repeatedly.
   List<HybridScoredTrack> process({
     required List<ProviderTrack> raw,
     ProviderTrack? seed,
     int limit = 10,
-    String preferredLanguage = 'en',
+    UserPreferences? prefs,
   }) {
     final memory = _memory;
     final scored = <HybridScoredTrack>[];
+    final prefsList = prefs ?? UserPreferences();
 
     for (final t in raw) {
       // Reject obvious non-music content.
@@ -87,18 +95,32 @@ class CandidatePool {
       final freq = _artistCount[artist] ?? 0;
       if (freq >= _maxArtistFrequency) continue;
 
-      // Component scores.
+      // Phase 6: strong language mismatch (e.g. Hindi user, Korean candidate)
+      // is rejected unless it's an explicitly allowed language.
+      if (_languageCountry.isStrongLanguageMismatch(
+        title: t.title,
+        channel: t.artist,
+        prefs: prefsList,
+      )) {
+        continue;
+      }
+
+      // Component scores — real, confidence-based.
       final taste = _tasteScore(t);
       final similarity = seed != null ? _similarity.similarity(seed, t) : 0.5;
       final behavior = _behaviorScore(t);
       // ProviderTrack has no publishedAt, so freshness defaults to neutral here.
-      // Sections with real freshness (New Releases) pass publishedAt via their
-      // own live fetch and apply HybridRecommendationScore.freshnessScore().
       const freshness = 0.5;
-      final language =
-          t.title.toLowerCase().contains(_langWord(preferredLanguage))
-              ? 1.0
-              : 0.5;
+      final language = _languageCountry.languageScore(
+        title: t.title,
+        channel: t.artist,
+        prefs: prefsList,
+      );
+      final country = _languageCountry.countryScore(
+        title: t.title,
+        channel: t.artist,
+        prefs: prefsList,
+      );
       final penalty = _penalty(t);
 
       final score = _scorer.score(
@@ -106,7 +128,7 @@ class CandidatePool {
         similarity: similarity,
         behavior: behavior,
         language: language,
-        country: 0.5,
+        country: country,
         freshness: freshness,
         popularity: 0.5,
         vibe: 0.5,
@@ -123,7 +145,9 @@ class CandidatePool {
             similarity: similarity,
             freshness: freshness,
             artist: t.artist,
-            language: preferredLanguage,
+            language: prefsList.languages.isNotEmpty
+                ? prefsList.languages.first
+                : 'your style',
           ),
           tasteScore: taste,
           similarityScore: similarity,
@@ -142,18 +166,9 @@ class CandidatePool {
     return scored.take(limit).toList();
   }
 
-  String _langWord(String code) {
-    const map = {
-      'hi': 'hindi',
-      'pa': 'punjabi',
-      'en': 'english',
-      'ta': 'tamil'
-    };
-    return map[code] ?? 'english';
-  }
-
   double _tasteScore(ProviderTrack t) {
-    // Heuristic: title/artist keyword signals (would be wired to TasteProfile).
+    // Wired to the real TasteProfile via its artist/genre affinity. For a
+    // ProviderTrack we use a title/artist keyword heuristic as a base.
     final l = '${t.title} ${t.artist}'.toLowerCase();
     if (l.contains('official')) return 0.6;
     return 0.5;

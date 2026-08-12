@@ -13,6 +13,7 @@
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:v_shots/core/preferences/user_preferences.dart';
 import 'package:v_shots/core/providers/provider_models.dart';
 import 'package:v_shots/core/recommendation/candidate_pool.dart';
 import 'package:v_shots/core/recommendation/hybrid_recommendation_score.dart';
@@ -93,7 +94,11 @@ void main() {
         track('d', 'Podcast Episode 5', 'Podcast'), // reject
         track('b', 'New Hindi Song Official', 'Artist B'), // duplicate
       ];
-      final ranked = pool.process(raw: raw, preferredLanguage: 'hi', limit: 10);
+      final ranked = pool.process(
+        raw: raw,
+        limit: 10,
+        prefs: UserPreferences(country: 'India', languages: ['Hindi']),
+      );
       final ids = ranked.map((s) => s.track.id).toList();
       expect(ids.contains('d'), isFalse, reason: 'podcast must be rejected');
       expect(ids.where((i) => i == 'b').length, 1,
