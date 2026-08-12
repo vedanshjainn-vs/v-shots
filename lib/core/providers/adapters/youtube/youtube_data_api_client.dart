@@ -115,6 +115,37 @@ class PaginatedSearchResult {
   final String? nextPageToken;
 }
 
+/// Data model representing a YouTube channel/artist from Data API v3.
+class YouTubeChannelItem {
+  const YouTubeChannelItem({
+    required this.id,
+    required this.title,
+    required this.channelTitle,
+    required this.thumbnailUrl,
+  });
+
+  final String id;
+  final String title;
+  final String channelTitle;
+  final String thumbnailUrl;
+
+  factory YouTubeChannelItem.fromJson(Map<String, dynamic> json) {
+    final id = json['id'] as String? ?? '';
+    final snippet = (json['snippet'] as Map<String, dynamic>?) ?? {};
+    final title = (snippet['title'] as String?) ?? 'Unknown Artist';
+    final thumbnails = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+    final url = (thumbnails['high']?['url'] ??
+        thumbnails['medium']?['url'] ??
+        thumbnails['default']?['url']) as String?;
+    return YouTubeChannelItem(
+      id: id,
+      title: title,
+      channelTitle: title,
+      thumbnailUrl: url ?? '',
+    );
+  }
+}
+
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
@@ -260,6 +291,73 @@ class YouTubeDataApiClient {
       return (url == null || url.isEmpty) ? null : url;
     } catch (e) {
       debugPrint('[YouTubeDataApiClient] resolveChannelAvatar error: $e');
+      return null;
+    }
+  }
+
+  /// Searches for artist/channel entities (Data API Channels search). Returns
+  /// an empty list when no API key is configured (callers fall back gracefully).
+  Future<List<YouTubeChannelItem>> searchChannels(
+    String query, {
+    int maxResults = 10,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty) return [];
+    try {
+      final uri = Uri.parse('$_baseUrl/search').replace(
+        queryParameters: {
+          'part': 'snippet',
+          'type': 'channel',
+          'q': query,
+          'maxResults': maxResults.clamp(1, 50).toString(),
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubeChannelItem.fromJson)
+          .where((c) => c.id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] searchChannels error: $e');
+      return [];
+    }
+  }
+
+  /// Fetches a channel's details (name + avatar) by its channel id.
+  Future<({String name, String avatarUrl})?> getChannelDetails(
+    String channelId,
+  ) async {
+    final key = apiKey;
+    if (key.isEmpty) return null;
+    try {
+      final uri = Uri.parse('$_baseUrl/channels').replace(
+        queryParameters: {
+          'part': 'snippet',
+          'id': channelId,
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      final snippet = (items.first as Map<String, dynamic>)['snippet']
+          as Map<String, dynamic>?;
+      if (snippet == null) return null;
+      final name = (snippet['title'] as String?) ?? '';
+      final thumbs = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+      final url = (thumbs['high']?['url'] ??
+          thumbs['medium']?['url'] ??
+          thumbs['default']?['url']) as String?;
+      return (name: name, avatarUrl: url ?? '');
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] getChannelDetails error: $e');
       return null;
     }
   }
@@ -1273,8 +1371,7 @@ class YouTubeDataApiClient {
         cleanQuery.contains('sangeet')) {
       // Wedding & Sangeet → Bollywood celebration tracks.
       matchedCategory = 'bollywood';
-    } else if (cleanQuery.contains('monsoon') ||
-        cleanQuery.contains('rain')) {
+    } else if (cleanQuery.contains('monsoon') || cleanQuery.contains('rain')) {
       // Monsoon Vibes → Hindi romantic Bollywood.
       multiCategories = ['bollywood', 'indie'];
     } else if (cleanQuery.contains('motivational') ||

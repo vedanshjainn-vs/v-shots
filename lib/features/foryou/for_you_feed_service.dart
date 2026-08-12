@@ -286,6 +286,24 @@ class ForYouFeedService {
   /// Fetches a batch for a specific [DiscoveryCategory] using its own query.
   /// This is the single reactive path the Discovery feed calls whenever the
   /// active category changes. Live API pagination + category-specific fallback.
+  /// Alternate query candidates per category, used to regenerate the pool when
+  /// the primary query is exhausted (Phase 3: the feed must not terminate after
+  /// a finite static catalog). These stay within the same category vibe.
+  static const Map<String, List<String>> _alternateQueries = {
+    'trending': ['viral hits today official', 'top hits this week official'],
+    'sad': ['breakup songs hindi official', 'emotional sad songs official'],
+    'roadtrip': ['drive songs playlist official', 'highway music official'],
+    'chill': ['lofi beats official', 'relaxing chill songs official'],
+    'workout': ['gym motivation music official', 'high energy workout songs'],
+    'devotional': ['bhajan aarti official', 'spiritual mantras official'],
+    'bollywood': [
+      'bollywood romantic hits official',
+      'hindi film songs official'
+    ],
+    'punjabi': ['punjabi party songs official', 'new punjabi hits official'],
+    'romantic': ['love songs hindi official', 'romance hits official'],
+  };
+
   Future<List<Map<String, dynamic>>> fetchForCategory(
     DiscoveryCategory category, {
     required Set<String> excludeIds,
@@ -311,11 +329,49 @@ class ForYouFeedService {
         final id = t['id'] as String?;
         if (id != null) LocalLibrary.instance.recordShownSong(id);
       }
+      // Phase 3 hardening: if the pool is exhausted (nothing new), regenerate
+      // from alternate same-category queries so the feed never terminates.
+      if (tracks.isEmpty) {
+        return _fetchAlternates(category, excludeIds: excludeIds, count: count);
+      }
       return tracks;
     } catch (e) {
       debugPrint('[ForYouFeedService] fetchForCategory failed: $e');
       return [];
     }
+  }
+
+  /// Tries alternate same-vibe queries when the primary pool is exhausted.
+  Future<List<Map<String, dynamic>>> _fetchAlternates(
+    DiscoveryCategory category, {
+    required Set<String> excludeIds,
+    int count = 10,
+  }) async {
+    final alternates =
+        _alternateQueries[category.id] ?? <String>[category.query];
+    for (final altQuery in alternates) {
+      try {
+        final page = await _apiClient.searchMusicVideosPaginated(
+          altQuery,
+          maxResults: count,
+          excludeIds: excludeIds,
+          pageToken: null,
+        );
+        final tracks = page.items.map(_videoToTrack).toList();
+        if (tracks.isNotEmpty) {
+          for (final t in tracks) {
+            final id = t['id'] as String?;
+            if (id != null) LocalLibrary.instance.recordShownSong(id);
+          }
+          debugPrint(
+              '[ForYouFeed] Regenerated feed via alternate query: $altQuery');
+          return tracks;
+        }
+      } catch (_) {
+        // try next alternate
+      }
+    }
+    return [];
   }
 
   bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;

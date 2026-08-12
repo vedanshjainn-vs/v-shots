@@ -18,16 +18,20 @@ import 'core/ads/ad_manager.dart';
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'core/backend/supabase_sync_service.dart';
+import 'core/recommendation/recommendation_event_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
 import 'core/models/profile_model.dart';
 import 'core/motion/motion.dart';
+import 'core/player/playback_manager.dart';
 import 'core/player/queue_controller.dart';
 import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
+import 'core/providers/adapters/youtube/youtube_repository.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/recommendation_service.dart';
@@ -73,6 +77,16 @@ void main() async {
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
     ),
+  );
+
+  // Wire the formal PlaybackManager to the existing single global YouTube
+  // engine. It does NOT create a second player — it owns the same controller
+  // and mirrors into the global notifiers so existing UI keeps working.
+  PlaybackManager.instance.attach(
+    controllerProvider: () => globalYtController,
+    onTrackChanged: (t) => currentTrackNotifier.value = t,
+    onExpandedChanged: (v) => isPlayerExpandedNotifier.value = v,
+    onPlayStateChanged: (v) => globalPlaybackStateNotifier.value = v,
   );
 
   SystemChrome.setSystemUIOverlayStyle(
@@ -210,6 +224,9 @@ List<int> shuffleOrder = [];
 final YouTubeDataApiClient sharedYtApiClient = YouTubeDataApiClient();
 final musicRepository = buildMusicRepository(apiClient: sharedYtApiClient);
 final forYouFeedService = ForYouFeedService(apiClient: sharedYtApiClient);
+final YouTubeRepository youTubeRepository = YouTubeRepository(
+  client: sharedYtApiClient,
+);
 final recommendationEngine = RecommendationEngine(musicRepository);
 final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
 
@@ -603,6 +620,12 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
     } else {
       playbackSignalTracker.onLiked(widget.track);
     }
+    // Phase 9/10: optimistic local update + background Supabase like sync.
+    unawaited(SupabaseSyncService.instance.syncLikes());
+    RecommendationEventService.instance.track(
+      wasLiked ? RecommendationEvents.songLike : RecommendationEvents.songSkip,
+      videoId: widget.track['id'] as String?,
+    );
     if (mounted) {
       setState(() {
         _isLiked = LocalLibrary.instance.isLiked(
@@ -1298,6 +1321,13 @@ Future<void> playTrack(
   isPlayerExpandedNotifier.value = true;
   unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
   playbackSignalTracker.onTrackStarted(track);
+  // Phase 9/10: optimistic local update first, then background Supabase sync.
+  unawaited(SupabaseSyncService.instance.syncRecentlyPlayed());
+  RecommendationEventService.instance.track(
+    RecommendationEvents.songPlay,
+    videoId: videoId,
+    extra: {'title': track['title'] as String? ?? ''},
+  );
 }
 
 // ═══════════════════════════════════════════════
@@ -1461,6 +1491,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _HomeSectionState(
           query: 'chill lofi late night beats official audio',
           title: 'Chill & Lofi',
+        ),
+        _HomeSectionState(
+          query: 'devotional bhajan aarti songs official audio',
+          title: 'Devotional',
+        ),
+        _HomeSectionState(
+          query: 'workout gym motivation hype songs official audio',
+          title: 'Workout',
+        ),
+        _HomeSectionState(
+          query: 'romantic love songs official audio hindi',
+          title: 'Romantic',
+        ),
+        _HomeSectionState(
+          query: 'road trip driving travel songs playlist official',
+          title: 'Road Trip',
         ),
       ];
 
@@ -1717,6 +1763,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             // Native ad placement after ~8 organic content sections.
             _buildAdSliver(),
             _buildRecentlyPlayedSliver(),
+            _buildPlaylistsSliver(),
             _buildMoodGenresSliver(),
             const SliverToBoxAdapter(child: SizedBox(height: 160)),
           ],
@@ -2251,6 +2298,120 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   },
                 ),
               ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// "Your Playlists" horizontal section on Home (Phase 5). Reads the user's
+  /// actual local playlists; shows an empty prompt when there are none.
+  Widget _buildPlaylistsSliver() {
+    return SliverToBoxAdapter(
+      child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+        valueListenable: LocalLibrary.instance.playlists,
+        builder: (context, playlists, _) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                child: Row(
+                  children: const [
+                    Icon(
+                      Icons.queue_music_rounded,
+                      size: 18,
+                      color: AppColors.accent,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Your Playlists',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (playlists.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(
+                          Icons.playlist_add_rounded,
+                          color: AppColors.textMuted,
+                        ),
+                        SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            'Create a playlist to see it here',
+                            style: TextStyle(color: AppColors.textMuted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                SizedBox(
+                  height: 150,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: playlists.length,
+                    itemBuilder: (context, i) {
+                      final p = playlists[i];
+                      final name = (p['name'] as String?) ?? 'Playlist';
+                      final count =
+                          ((p['tracks'] as List?)?.length ?? 0).toString();
+                      return Container(
+                        width: 130,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.queue_music_rounded,
+                              color: Colors.white,
+                              size: 34,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              '$count tracks',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
             ],
           );
         },
