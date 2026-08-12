@@ -43,14 +43,28 @@ create table if not exists public.tracks (
 );
 
 -- ── 3. playlists ──────────────────────────────────────────────────────────
+-- NOTE: a `playlists` table may already exist with an `owner_id` column
+-- (the app's existing schema). We create it with `owner_id` if missing, and
+-- add the column if an older table lacks it, so this migration never fails on
+-- an existing table. Policies below reference `owner_id` accordingly.
 create table if not exists public.playlists (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
+  owner_id uuid references auth.users(id) on delete cascade not null,
   name text not null,
   description text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Tolerate an existing playlists table that lacks the owner column.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='playlists' and column_name='owner_id'
+  ) then
+    alter table public.playlists add column owner_id uuid references auth.users(id) on delete cascade;
+  end if;
+end $$;
 
 -- ── 4. playlist_tracks ────────────────────────────────────────────────────
 create table if not exists public.playlist_tracks (
@@ -107,6 +121,24 @@ create table if not exists public.recommendation_events (
 create index if not exists idx_recommendation_events_user
   on public.recommendation_events (user_id, created_at desc);
 
+-- ── Resilience: ensure user_id exists on the owner-scoped tables, in case a
+--    previous partial run left any of them behind without the column. ───────
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='user_likes' and column_name='user_id') then
+    alter table public.user_likes add column user_id uuid references auth.users(id) on delete cascade;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='recently_played' and column_name='user_id') then
+    alter table public.recently_played add column user_id uuid references auth.users(id) on delete cascade;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='user_taste_profile' and column_name='user_id') then
+    alter table public.user_taste_profile add column user_id uuid references auth.users(id) on delete cascade;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_schema='public' and table_name='recommendation_events' and column_name='user_id') then
+    alter table public.recommendation_events add column user_id uuid references auth.users(id) on delete cascade;
+  end if;
+end $$;
+
 -- ── RLS: enable on all new tables ─────────────────────────────────────────
 alter table public.artists enable row level security;
 alter table public.tracks enable row level security;
@@ -125,35 +157,35 @@ create policy "public read artists" on public.artists for select using (true);
 drop policy if exists "public read tracks" on public.tracks;
 create policy "public read tracks" on public.tracks for select using (true);
 
--- playlists: users manage their own playlists.
+-- playlists: users manage their own playlists (owner_id column).
 drop policy if exists "users read own playlists" on public.playlists;
 create policy "users read own playlists" on public.playlists
-  for select using (auth.uid() = user_id);
+  for select using (auth.uid() = owner_id);
 drop policy if exists "users insert own playlists" on public.playlists;
 create policy "users insert own playlists" on public.playlists
-  for insert with check (auth.uid() = user_id);
+  for insert with check (auth.uid() = owner_id);
 drop policy if exists "users update own playlists" on public.playlists;
 create policy "users update own playlists" on public.playlists
-  for update using (auth.uid() = user_id);
+  for update using (auth.uid() = owner_id);
 drop policy if exists "users delete own playlists" on public.playlists;
 create policy "users delete own playlists" on public.playlists
-  for delete using (auth.uid() = user_id);
+  for delete using (auth.uid() = owner_id);
 
--- playlist_tracks: owner through their playlist.
+-- playlist_tracks: owner through their playlist (owner_id).
 drop policy if exists "owner read playlist_tracks" on public.playlist_tracks;
 create policy "owner read playlist_tracks" on public.playlist_tracks
   for select using (exists (
-    select 1 from public.playlists p where p.id = playlist_tracks.playlist_id and p.user_id = auth.uid()
+    select 1 from public.playlists p where p.id = playlist_tracks.playlist_id and p.owner_id = auth.uid()
   ));
 drop policy if exists "owner insert playlist_tracks" on public.playlist_tracks;
 create policy "owner insert playlist_tracks" on public.playlist_tracks
   for insert with check (exists (
-    select 1 from public.playlists p where p.id = playlist_tracks.playlist_id and p.user_id = auth.uid()
+    select 1 from public.playlists p where p.id = playlist_tracks.playlist_id and p.owner_id = auth.uid()
   ));
 drop policy if exists "owner delete playlist_tracks" on public.playlist_tracks;
 create policy "owner delete playlist_tracks" on public.playlist_tracks
   for delete using (exists (
-    select 1 from public.playlists p where p.id = playlist_tracks.playlist_id and p.user_id = auth.uid()
+    select 1 from public.playlists p where p.id = playlist_tracks.playlist_id and p.owner_id = auth.uid()
   ));
 
 -- user_likes: owner-only.
