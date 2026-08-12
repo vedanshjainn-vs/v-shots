@@ -12,6 +12,8 @@ import 'package:flutter/foundation.dart';
 import '../preferences/user_preferences.dart';
 import '../providers/adapters/youtube/youtube_data_api_client.dart';
 import '../providers/adapters/youtube/youtube_repository.dart';
+import '../providers/provider_models.dart';
+import '../recommendation/candidate_pool.dart';
 import 'live_music_discovery_service.dart';
 
 /// Normalizes a song key from artist + title so "Kesariya", "Kesariya Official
@@ -72,6 +74,7 @@ class HomeContentCoordinator {
 
   final LiveMusicDiscoveryService _live;
   final YouTubeRepository _repo;
+  final CandidatePool _pool = CandidatePool();
 
   // Per-section cache keyed by section title.
   final Map<String, _SectionCache> _cache = {};
@@ -185,17 +188,27 @@ class HomeContentCoordinator {
       }
     }
 
-    // Dedup within section (song-key level).
+    // Dedup within section (song-key level) into a larger candidate pool.
     final songKeys = <String>{};
     final deduped = <YouTubeVideoItem>[];
     for (final v in all) {
       final key = normalizeSongKey(v.channelTitle, v.title);
       if (!songKeys.add(key)) continue;
       deduped.add(v);
-      if (deduped.length >= limit) break;
+      if (deduped.length >= limit * 4) break; // keep a large pool to rank from
     }
 
-    final tracks = deduped.map(_toTrack).toList();
+    // Phase 16/17: raw live results are NEVER treated as final — rank the pool
+    // through the hybrid scorer (taste, similarity, behavior, freshness,
+    // language, penalties + artist diversity) then take the top `limit`.
+    final seed = _poolSeedFor(intent);
+    final ranked = _pool.process(
+      raw: deduped.map(_toProviderTrack).toList(),
+      seed: seed,
+      limit: limit,
+      preferredLanguage: _langCodeFor(prefs),
+    );
+    final tracks = ranked.map((s) => s.track.toTrackMap()).toList();
     _registerUsed(tracks, allowOverlap);
     return HomeSectionResult(
       title: title,
@@ -255,6 +268,43 @@ class HomeContentCoordinator {
 
   void _store(String title, HomeSectionResult result) {
     _cache[title] = _SectionCache(result, DateTime.now().add(ttlFor(title)));
+  }
+
+  ProviderTrack _toProviderTrack(YouTubeVideoItem v) => ProviderTrack(
+        id: v.id,
+        title: v.title,
+        artist: v.channelTitle,
+        artworkUrl: v.thumbnailUrl,
+        durationSeconds: v.durationSeconds,
+      );
+
+  /// A seed song for similarity ranking (derived from the section intent), or
+  /// null for sections where similarity is less relevant.
+  ProviderTrack? _poolSeedFor(String intent) {
+    final l = intent.toLowerCase();
+    if (l.contains('because') ||
+        l.contains('listened') ||
+        l.contains('similar')) {
+      // No concrete seed available here; the Discover/similar paths provide one.
+      return null;
+    }
+    return null;
+  }
+
+  /// Maps a preferred language name to a 2-letter code for the pool's language
+  /// relevance check.
+  String _langCodeFor(UserPreferences prefs) {
+    const map = {
+      'Hindi': 'hi',
+      'Punjabi': 'pa',
+      'English': 'en',
+      'Tamil': 'ta',
+      'Telugu': 'te',
+    };
+    final langs = prefs.languages.isNotEmpty
+        ? prefs.languages
+        : const <String>['English'];
+    return map[langs.first] ?? 'en';
   }
 
   Map<String, dynamic> _toTrack(YouTubeVideoItem v) => {
