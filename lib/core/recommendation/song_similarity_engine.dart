@@ -92,17 +92,23 @@ class SongSimilarityEngine {
 
   String _detectLang(String s) {
     final l = s.toLowerCase();
-    if (['hindi', 'bollywood', 'arijit'].any(l.contains)) return 'hindi';
-    if (['punjabi', 'diljit', 'aujla', 'shubh'].any(l.contains))
+    if (['hindi', 'bollywood', 'arijit'].any(l.contains)) {
+      return 'hindi';
+    }
+    if (['punjabi', 'diljit', 'aujla', 'shubh'].any(l.contains)) {
       return 'punjabi';
-    if (['english', 'pop', 'weeknd', 'sheeran'].any(l.contains))
+    }
+    if (['english', 'pop', 'weeknd', 'sheeran'].any(l.contains)) {
       return 'english';
+    }
     return '';
   }
 
   double energySim(ProviderTrack a, ProviderTrack b) {
     // Metadata proxy: shorter tracks are often higher energy. 0 if no duration.
-    if (a.durationSeconds == 0 || b.durationSeconds == 0) return 0.5;
+    if (a.durationSeconds == 0 || b.durationSeconds == 0) {
+      return 0.5;
+    }
     final diff = (a.durationSeconds - b.durationSeconds).abs();
     return (1 - (diff / 300)).clamp(0.0, 1.0);
   }
@@ -116,9 +122,12 @@ class SongSimilarityEngine {
 
   String _era(String t) {
     final l = t.toLowerCase();
-    if (['90s', 'retro', 'classic', 'evergreen'].any(l.contains))
+    if (['90s', 'retro', 'classic', 'evergreen'].any(l.contains)) {
       return 'retro';
-    if (['2026', 'new', 'latest', 'fresh'].any(l.contains)) return 'new';
+    }
+    if (['2026', 'new', 'latest', 'fresh'].any(l.contains)) {
+      return 'new';
+    }
     return 'current';
   }
 
