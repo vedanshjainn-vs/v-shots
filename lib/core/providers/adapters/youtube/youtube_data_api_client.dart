@@ -372,6 +372,12 @@ class YouTubeDataApiClient {
     int maxResults = 20,
     Set<String> excludeIds = const {},
     String? pageToken,
+    String? regionCode,
+    String? relevanceLanguage,
+    String? publishedAfter,
+    bool videoEmbeddable = false,
+    String videoDuration = 'any', // any | short | medium | long
+    bool videoSyndicated = false,
   }) async {
     final key = apiKey;
     if (key.isEmpty) {
@@ -395,6 +401,18 @@ class YouTubeDataApiClient {
         'maxResults': maxResults.clamp(1, 50).toString(),
         'key': key,
       };
+      if (regionCode != null && regionCode.isNotEmpty) {
+        params['regionCode'] = regionCode;
+      }
+      if (relevanceLanguage != null && relevanceLanguage.isNotEmpty) {
+        params['relevanceLanguage'] = relevanceLanguage;
+      }
+      if (publishedAfter != null && publishedAfter.isNotEmpty) {
+        params['publishedAfter'] = publishedAfter;
+      }
+      if (videoEmbeddable) params['videoEmbeddable'] = 'true';
+      if (videoDuration != 'any') params['videoDuration'] = videoDuration;
+      if (videoSyndicated) params['videoSyndicated'] = 'true';
       if (pageToken != null && pageToken.isNotEmpty) {
         params['pageToken'] = pageToken;
       }

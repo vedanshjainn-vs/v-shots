@@ -91,7 +91,13 @@ class _ContentPreferencesOnboardingState
   List<String> get _languagesForCountry =>
       _languagesByCountry[_country] ?? ['English', 'Other'];
 
-  void _finish() {
+  bool _saving = false;
+
+  Future<void> _finish() async {
+    // Guard against double-taps causing the "Finish does nothing" bug.
+    if (_saving) return;
+    _saving = true;
+
     final prefs = UserPreferences(
       country: _country,
       languages: _languages.isEmpty ? ['English'] : _languages.toList(),
@@ -99,8 +105,10 @@ class _ContentPreferencesOnboardingState
       vibes: _genres.toList(),
       onboardingCompleted: true,
     );
-    PreferencesStore.instance.save(prefs);
-    // Phase 18: background sync when signed in (non-blocking).
+    // Await the local save so navigation only happens after persistence.
+    await PreferencesStore.instance.save(prefs);
+
+    // Phase 18: background sync when signed in (non-blocking, never blocks nav).
     unawaited(
       SupabaseSyncService.instance.syncPreferences(
         country: prefs.country,
@@ -110,6 +118,9 @@ class _ContentPreferencesOnboardingState
         onboardingCompleted: prefs.onboardingCompleted,
       ),
     );
+
+    // Always navigate regardless of Supabase/API availability.
+    if (!mounted) return;
     widget.onComplete();
   }
 
@@ -177,7 +188,7 @@ class _ContentPreferencesOnboardingState
                         if (_step < 2) {
                           setState(() => _step++);
                         } else {
-                          _finish();
+                          unawaited(_finish());
                         }
                       },
                     ),

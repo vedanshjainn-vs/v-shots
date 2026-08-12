@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
@@ -19,6 +20,7 @@ import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_sync_service.dart';
+import 'core/discovery/home_content_coordinator.dart';
 import 'core/preferences/content_personalization_service.dart';
 import 'core/preferences/user_preferences.dart';
 import 'core/recommendation/recommendation_event_service.dart';
@@ -228,6 +230,9 @@ List<int> shuffleOrder = [];
 final YouTubeDataApiClient sharedYtApiClient = YouTubeDataApiClient();
 final musicRepository = buildMusicRepository(apiClient: sharedYtApiClient);
 final forYouFeedService = ForYouFeedService(apiClient: sharedYtApiClient);
+final homeContentCoordinator = HomeContentCoordinator(
+  repository: YouTubeRepository(client: sharedYtApiClient),
+);
 final YouTubeRepository youTubeRepository = YouTubeRepository(
   client: sharedYtApiClient,
 );
@@ -236,6 +241,15 @@ final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
 
 void _log(String message) {
   debugPrint('[VShots] $message');
+}
+
+/// Resets Home/Discover content caches when preferences change (Phase 19/20)
+/// so the next Home load regenerates live, personalized content — no app
+/// restart needed.
+void resetHomeContentForPreferenceChange() {
+  homeContentCoordinator.reset();
+  SearchCache.instance.clear();
+  _log('[Content] Preference change — Home cache + coordinator reset.');
 }
 
 /// Plays the next/previous track in the current global queue.
@@ -660,168 +674,12 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
     final bottomPadding = mediaQuery.padding.bottom;
 
     if (!widget.isExpanded) {
-      // ── COMPACT PLAYER (COMPLIANT ≥200x200) ────────────────────────────
-      //
-      // YouTube's embedded-player policy requires a minimum 200x200 player
-      // viewport. The previous 96x54 mini-dock iframe VIOLATED that, so it is
-      // replaced here with a compliant compact player: the single global IFrame
-      // is kept mounted at a fixed 200x200 viewport (the minimum legal size),
-      // so audio keeps playing while minimized, WITHOUT a hidden-webview trick
-      // and WITHOUT any sub-200px iframe. Metadata + controls sit beside it,
-      // outside the player viewport.
-      return ValueListenableBuilder<bool>(
-        valueListenable: globalPlaybackStateNotifier,
-        builder: (context, playing, _) {
-          return Positioned(
-            left: 8,
-            right: 8,
-            bottom: 64,
-            child: GestureDetector(
-              onTap: () => widget.onToggleExpand(true),
-              child: Container(
-                height: 212,
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: 0.98),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.border, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    // Compliant 200x200 YouTube player viewport (the single
-                    // global engine, never a duplicate). Video is letterboxed
-                    // inside the square viewport; controls remain YouTube's own.
-                    if (globalYtController != null)
-                      Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
-                            width: 200,
-                            height: 200,
-                            child: YoutubePlayer(
-                              controller: globalYtController!,
-                              aspectRatio: 1,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: SizedBox(
-                          width: 200,
-                          height: 200,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: AppImage(
-                              widget.track['artwork'] as String?,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    // Metadata + controls OUTSIDE the player viewport.
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: AppColors.textMain,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Powered by YouTube',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  playing
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  color: AppColors.accent,
-                                  size: 30,
-                                ),
-                                tooltip: playing ? 'Pause' : 'Play',
-                                onPressed: () {
-                                  final id =
-                                      widget.track['id'] as String? ?? '';
-                                  if (playing) {
-                                    globalYtController?.pauseVideo();
-                                    globalPlaybackStateNotifier.value = false;
-                                  } else {
-                                    ensureGlobalPlayer(
-                                      videoId: id,
-                                      autoPlay: true,
-                                    );
-                                  }
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.skip_next_rounded,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () =>
-                                    _playAdjacentInQueue(context, 1),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.open_in_full_rounded,
-                                  color: AppColors.accent,
-                                  size: 22,
-                                ),
-                                tooltip: 'Full Player',
-                                onPressed: () => widget.onToggleExpand(true),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
+      // Mini-player UI is intentionally HIDDEN for this build (Phase 22).
+      // PlaybackManager, the global controller, currentTrack state and the full
+      // player remain intact; only the visible mini dock is removed. The
+      // mini-player will be reintroduced in a separate verified task.
+      return const SizedBox.shrink();
     }
-
     // ── FULLSCREEN EXPANDED PLAYER VIEW ─────────────────────────────────
     return Positioned.fill(
       child: Material(
@@ -1632,6 +1490,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _activeFetches.add(section.query);
 
     final queryKey = _personalizedQueryFor(section);
+    final prefs = PreferencesStore.instance.preferences;
+
+    // LIVE path (Phase: live content priority) when onboarding is complete and
+    // a live key is available. Uses HomeContentCoordinator for per-section TTL
+    // cache + cross-section dedup + source tracking.
+    if (prefs.hasCompletedOnboarding) {
+      await _loadSectionLive(section, prefs);
+      _activeFetches.remove(section.query);
+      return;
+    }
 
     final cached = forceRefresh ? null : SearchCache.instance.get(queryKey);
     if (cached != null) {
@@ -1682,6 +1550,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     } finally {
       _activeFetches.remove(section.query);
     }
+  }
+
+  /// Loads a Home section from the LIVE coordinator (country/language-aware,
+  /// freshness + global dedup). Records shown IDs for freshness rotation.
+  Future<void> _loadSectionLive(
+    _HomeSectionState section,
+    UserPreferences prefs,
+  ) async {
+    if (mounted) setState(() => section.status = _SectionStatus.loading);
+    final result = await homeContentCoordinator.fetchSection(
+      section.title,
+      intent: section.query,
+      prefs: prefs,
+      limit: section.maxItems,
+    );
+    if (!mounted) return;
+    for (final t in result.tracks) {
+      final id = t['id'] as String?;
+      if (id != null) LocalLibrary.instance.recordShownSong(id);
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[HOME] Section: ${result.title} | Source: ${result.source} | '
+        'Fetched: ${result.candidateCount} Valid: ${result.validCount} '
+        'Final: ${result.tracks.length} | Query: ${result.query}',
+      );
+    }
+    setState(() {
+      section.tracks = result.tracks;
+      section.status =
+          result.tracks.isEmpty ? _SectionStatus.error : _SectionStatus.loaded;
+    });
   }
 
   void _playArtistSpotlight(Map<String, String> artist) {

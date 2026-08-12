@@ -94,12 +94,24 @@ class YouTubeRepository {
     int limit = 20,
     String order = 'relevance',
     String? pageToken,
+    String? regionCode,
+    String? relevanceLanguage,
+    String? publishedAfter,
+    bool videoEmbeddable = false,
+    String videoDuration = 'any',
+    bool videoSyndicated = false,
   }) {
     return _client.searchMusicVideosPaginated(
       query,
       maxResults: limit,
       pageToken: pageToken,
       order: order,
+      regionCode: regionCode,
+      relevanceLanguage: relevanceLanguage,
+      publishedAfter: publishedAfter,
+      videoEmbeddable: videoEmbeddable,
+      videoDuration: videoDuration,
+      videoSyndicated: videoSyndicated,
     );
   }
 

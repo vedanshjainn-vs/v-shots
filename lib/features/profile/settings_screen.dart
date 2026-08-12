@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/backend/auth_service.dart';
 import '../../core/backend/supabase_service.dart';
 import '../onboarding/content_preferences_onboarding.dart';
+import '../../main.dart' show resetHomeContentForPreferenceChange;
 import '../../core/cache/search_cache.dart';
 import '../../core/motion/motion.dart';
 import '../../core/player/sleep_timer.dart';
@@ -225,7 +226,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => ContentPreferencesOnboarding(
-                      onComplete: () => Navigator.pop(context),
+                      onComplete: () {
+                        // Phase 19/20: clear Home/Discover caches so the next
+                        // load regenerates live, personalized content.
+                        resetHomeContentForPreferenceChange();
+                        Navigator.pop(context);
+                      },
                     ),
                   ),
                 );
