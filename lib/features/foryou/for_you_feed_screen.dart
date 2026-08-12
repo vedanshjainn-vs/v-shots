@@ -47,6 +47,37 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   final List<Map<String, dynamic>> _items = [];
   final Set<String> _seenIds = {};
 
+  /// Phase 9 duplicate/artist-repetition prevention: track seen artists and
+  /// enforce a max of 2 consecutive tracks from the same artist.
+  final Set<String> _seenArtists = {};
+  static const int _maxConsecutiveArtist = 2;
+  String? _lastArtist;
+  int _lastArtistRun = 0;
+
+  /// Filters a batch, rejecting duplicate video IDs and enforcing the
+  /// consecutive-artist limit so the feed doesn't repeat the same artist.
+  List<Map<String, dynamic>> _dedupeBatch(List<Map<String, dynamic>> batch) {
+    final out = <Map<String, dynamic>>[];
+    for (final t in batch) {
+      final id = t['id'] as String? ?? '';
+      final artist = t['artist'] as String? ?? '';
+      if (id.isEmpty || _seenIds.contains(id)) continue;
+      if (artist == _lastArtist && _lastArtistRun >= _maxConsecutiveArtist) {
+        continue; // reject repeated artist back-to-back
+      }
+      _seenIds.add(id);
+      if (artist.isNotEmpty) _seenArtists.add(artist);
+      if (artist == _lastArtist) {
+        _lastArtistRun++;
+      } else {
+        _lastArtist = artist;
+        _lastArtistRun = 1;
+      }
+      out.add(t);
+    }
+    return out;
+  }
+
   int _currentIndex = 0;
   bool _isLoadingMore = false;
   bool _initialLoading = true;
@@ -181,13 +212,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   Future<void> _fetchMoreThenJump(int page) async {
     if (_isLoadingMore) return;
     _isLoadingMore = true;
-    final batch = await _fetchDiscoverBatch();
+    final rawBatch = await _fetchDiscoverBatch();
+    final batch = _dedupeBatch(rawBatch);
     _isLoadingMore = false;
     if (!mounted) return;
     if (batch.isNotEmpty) {
       setState(() {
         _items.addAll(batch);
-        _seenIds.addAll(batch.map((t) => t['id'] as String));
       });
       if (page < _pageCount) {
         unawaited(
@@ -202,11 +233,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 
   Future<void> _loadInitialBatch() async {
-    final batch = await _fetchDiscoverBatch();
+    final rawBatch = await _fetchDiscoverBatch();
     if (!mounted) return;
+    final batch = _dedupeBatch(rawBatch);
     setState(() {
       _items.addAll(batch);
-      _seenIds.addAll(batch.map((t) => t['id'] as String));
       _initialLoading = false;
     });
 
@@ -301,11 +332,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_isLoadingMore) return;
     if (_items.length - _currentIndex > 3) return;
     _isLoadingMore = true;
-    final batch = await _fetchDiscoverBatch();
+    final rawBatch = await _fetchDiscoverBatch();
+    final batch = _dedupeBatch(rawBatch);
     if (mounted) {
       setState(() {
         _items.addAll(batch);
-        _seenIds.addAll(batch.map((t) => t['id'] as String));
       });
     }
     _isLoadingMore = false;
@@ -392,6 +423,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             _initialLoading = true;
             _items.clear();
             _seenIds.clear();
+            _seenArtists.clear();
+            _lastArtist = null;
+            _lastArtistRun = 0;
             _currentIndex = 0;
           });
           forYouFeedService.setMood(label, query);

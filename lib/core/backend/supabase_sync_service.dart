@@ -83,6 +83,30 @@ class SupabaseSyncService {
     }
   }
 
+  /// Pushes the user's content preferences to Supabase `user_preferences`.
+  Future<void> syncPreferences({
+    required String country,
+    required List<String> languages,
+    required List<String> genres,
+    required List<String> vibes,
+    required bool onboardingCompleted,
+  }) async {
+    if (!_canSync) return;
+    try {
+      final userId = SupabaseService.currentUser!.id;
+      await SupabaseService.client.from('user_preferences').upsert({
+        'user_id': userId,
+        'country': country,
+        'languages': languages,
+        'genres': genres,
+        'vibes': vibes,
+        'onboarding_completed': onboardingCompleted,
+      }, onConflict: 'user_id');
+    } catch (e) {
+      debugPrint('[Sync] preferences sync failed (non-fatal): $e');
+    }
+  }
+
   /// Pushes the taste profile (jsonb) to Supabase.
   Future<void> syncTasteProfile(Map<String, dynamic> profile) async {
     if (!_canSync) return;

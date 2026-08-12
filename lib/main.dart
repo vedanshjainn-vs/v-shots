@@ -19,6 +19,8 @@ import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_sync_service.dart';
+import 'core/preferences/content_personalization_service.dart';
+import 'core/preferences/user_preferences.dart';
 import 'core/recommendation/recommendation_event_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/backend/supabase_service.dart';
@@ -48,6 +50,7 @@ import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
+import 'features/onboarding/content_preferences_onboarding.dart';
 import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
@@ -60,6 +63,7 @@ void main() async {
     SupabaseService.initialize(),
     LocalLibrary.instance.initialize(),
     SignalStore.instance.initialize(),
+    PreferencesStore.instance.initialize(),
     RemoteConfigService.instance.init(),
   ]);
 
@@ -298,7 +302,19 @@ class _SplashScreenState extends State<SplashScreen>
     );
     _c.forward();
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
+      if (!mounted) return;
+      // Phase 1/2: one-time content-preferences onboarding on first install.
+      if (PreferencesStore.instance.needsOnboarding) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => ContentPreferencesOnboarding(
+              onComplete: () => Navigator.of(context).pushReplacement(
+                MaterialPageRoute<void>(builder: (_) => const MainShell()),
+              ),
+            ),
+          ),
+        );
+      } else {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const MainShell()),
         );
@@ -1589,6 +1605,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Personalizes a Home section's query by country + preferred languages
+  /// (Phase 3/6). Personalized/because-you-listened sections keep their
+  /// behavior-driven queries; everything else is passed through
+  /// ContentPersonalizationService so an Indian Hindi/Punjabi user gets
+  /// language-aware section content instead of a generic global catalog.
+  String _personalizedQueryFor(_HomeSectionState section) {
+    if (section.isPersonalized) {
+      return RecommendationService.instance.getPersonalizedHomeQuery();
+    }
+    if (section.isBecauseListened) {
+      return RecommendationService.instance.getBecauseYouListenedQuery();
+    }
+    final prefs = PreferencesStore.instance.preferences;
+    return ContentPersonalizationService.instance.buildQuery(
+      prefs,
+      categoryIntent: section.query,
+    );
+  }
+
   Future<void> _loadSection(
     _HomeSectionState section, {
     bool forceRefresh = false,
@@ -1596,11 +1631,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_activeFetches.contains(section.query)) return;
     _activeFetches.add(section.query);
 
-    final queryKey = section.isPersonalized
-        ? RecommendationService.instance.getPersonalizedHomeQuery()
-        : section.isBecauseListened
-            ? RecommendationService.instance.getBecauseYouListenedQuery()
-            : section.query;
+    final queryKey = _personalizedQueryFor(section);
 
     final cached = forceRefresh ? null : SearchCache.instance.get(queryKey);
     if (cached != null) {

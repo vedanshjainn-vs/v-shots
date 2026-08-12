@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/backend/auth_service.dart';
 import '../../core/backend/supabase_service.dart';
+import '../onboarding/content_preferences_onboarding.dart';
 import '../../core/cache/search_cache.dart';
 import '../../core/motion/motion.dart';
 import '../../core/player/sleep_timer.dart';
@@ -194,6 +195,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: _handleSignOut,
                   ),
               ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Content Preferences (Phase 19)
+          const _SectionHeader('Content'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(
+                Icons.public_rounded,
+                color: AppColors.accent,
+              ),
+              title: const Text(
+                'Content Preferences',
+                style: TextStyle(color: AppColors.textMain, fontSize: 15),
+              ),
+              subtitle: const Text(
+                'Country, languages, genres & vibes',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppColors.textSubtle,
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => ContentPreferencesOnboarding(
+                      onComplete: () => Navigator.pop(context),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 20),

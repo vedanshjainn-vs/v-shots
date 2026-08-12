@@ -5,6 +5,8 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../../core/config/discovery_categories.dart';
+import '../../core/preferences/content_personalization_service.dart';
+import '../../core/preferences/user_preferences.dart';
 import '../../core/providers/adapters/youtube/youtube_data_api_client.dart';
 import '../../core/recommendation/recommendation_service.dart';
 import '../../core/storage/local_library.dart';
@@ -309,7 +311,17 @@ class ForYouFeedService {
     required Set<String> excludeIds,
     int count = 10,
   }) async {
-    final query = category.query;
+    // Phase 3/8: personalise the vibe query with the user's country + preferred
+    // languages so a Hindi/Punjabi Indian user's Discover feed is language-aware
+    // instead of a generic global catalog. The vibe itself still drives the
+    // category intent; preferences narrow the language.
+    final prefs = PreferencesStore.instance.preferences;
+    final query = prefs.onboardingCompleted
+        ? ContentPersonalizationService.instance.buildVibeQuery(
+            prefs,
+            category.label,
+          )
+        : category.query;
     // Reset pagination when the category changed so we start at page 1.
     if (_tokenQuery != query) {
       _tokenQuery = query;

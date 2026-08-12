@@ -228,3 +228,25 @@ create policy "owner read recommendation_events" on public.recommendation_events
 drop policy if exists "owner insert recommendation_events" on public.recommendation_events;
 create policy "owner insert recommendation_events" on public.recommendation_events
   for insert with check (auth.uid() = user_id);
+
+-- ── 9. user_preferences (Phase 18) ─────────────────────────────────────────
+create table if not exists public.user_preferences (
+  user_id uuid primary key references auth.users(id) on delete cascade not null,
+  country text not null default '',
+  languages text[] not null default '{}',
+  genres text[] not null default '{}',
+  vibes text[] not null default '{}',
+  onboarding_completed boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.user_preferences enable row level security;
+drop policy if exists "owner read user_preferences" on public.user_preferences;
+create policy "owner read user_preferences" on public.user_preferences
+  for select using (auth.uid() = user_id);
+drop policy if exists "owner upsert user_preferences" on public.user_preferences;
+create policy "owner upsert user_preferences" on public.user_preferences
+  for insert with check (auth.uid() = user_id);
+drop policy if exists "owner update user_preferences" on public.user_preferences;
+create policy "owner update user_preferences" on public.user_preferences
+  for update using (auth.uid() = user_id);
