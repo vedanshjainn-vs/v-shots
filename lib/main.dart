@@ -48,6 +48,7 @@ import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
 import 'shared/widgets/bottom_tab_bar.dart';
+import 'shared/widgets/browse_grid.dart';
 import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
@@ -1689,13 +1690,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
             ),
+            // ArchiveTune-style "Browse" category grid — the Home centerpiece.
+            SliverToBoxAdapter(
+              child: BrowseGrid(
+                onCategoryTap: (c) {
+                  HapticFeedback.selectionClick();
+                  Navigator.push(
+                    context,
+                    AppPageRoute<void>(
+                      builder: (_) => _MoodGenreSearchScaffold(
+                        initialQuery: c.query,
+                        title: c.label,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
             _buildArtistsSpotlightSliver(),
             for (final section in _sections) _buildSectionSliver(section),
             // Native ad placement after ~8 organic content sections.
             _buildAdSliver(),
             _buildRecentlyPlayedSliver(),
             _buildPlaylistsSliver(),
-            _buildMoodGenresSliver(),
             const SliverToBoxAdapter(child: SizedBox(height: 160)),
           ],
         ),
@@ -2346,140 +2363,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildMoodGenresSliver() {
-    final moods = <(String, String, Color, String)>[
-      (
-        'Trending Hits',
-        '🔥',
-        Color(0xFFE91E63),
-        'trending hits viral songs official audio'
-      ),
-      (
-        'Romantic',
-        '💖',
-        Color(0xFFEC4899),
-        'romantic love songs official audio hindi'
-      ),
-      (
-        'Party & Dance',
-        '🎉',
-        Color(0xFF7C3AED),
-        'party dance bollywood punjabi hits'
-      ),
-      (
-        'Chill & Sleep',
-        '😌',
-        Color(0xFF22D3EE),
-        'chill lofi sleep beats official audio'
-      ),
-      ('Workout', '💪', Color(0xFFF59E0B), 'workout gym motivation hype songs'),
-      (
-        'Sad & Emotional',
-        '🌧️',
-        Color(0xFF64748B),
-        'sad heartbroken emotional songs'
-      ),
-      (
-        'Devotional',
-        '🙏',
-        Color(0xFFF59E0B),
-        'devotional bhajan aarti official audio'
-      ),
-      ('Hip-Hop', '🎤', Color(0xFF111827), 'hip hop rap desi english songs'),
-      ('EDM', '🎧', Color(0xFF0891B2), 'edm electronic dance music hits'),
-      (
-        'Bollywood',
-        '🎬',
-        Color(0xFFE91E63),
-        'top bollywood hindi songs official'
-      ),
-      (
-        'Punjabi',
-        '🥁',
-        Color(0xFFFF9800),
-        'latest punjabi pop hits official audio'
-      ),
-      (
-        'English Pop',
-        '🌍',
-        Color(0xFF2196F3),
-        'top english pop billboard hits official'
-      ),
-    ];
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
-            child: Row(
-              children: [
-                Icon(Icons.mood_rounded, size: 18, color: AppColors.accent),
-                SizedBox(width: 6),
-                Text('Mood & Genres',
-                    style:
-                        TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 2.8,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10),
-              itemCount: moods.length,
-              itemBuilder: (context, i) {
-                final (label, emoji, color, query) = moods[i];
-                return GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    Navigator.push(
-                        context,
-                        AppPageRoute<void>(
-                            builder: (_) => _MoodGenreSearchScaffold(
-                                initialQuery: query, title: label)));
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        color.withValues(alpha: 0.22),
-                        color.withValues(alpha: 0.08)
-                      ], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: color.withValues(alpha: 0.25)),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(emoji, style: const TextStyle(fontSize: 20)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                            child: Text(label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13))),
-                        const Icon(Icons.arrow_forward_ios_rounded,
-                            size: 12, color: AppColors.textMuted),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }
