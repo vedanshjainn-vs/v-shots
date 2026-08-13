@@ -4,6 +4,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart' hide RepeatMode;
@@ -685,357 +686,397 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
     return Positioned.fill(
       child: Material(
         color: AppColors.background,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                AppColors.accent.withValues(alpha: 0.12),
-                AppColors.background,
-              ],
-            ),
-          ),
-          child: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                // Top Bar with Minimize Action
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Premium blurred artwork backdrop for depth.
+            IgnorePointer(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AppImage(
+                    widget.track['artwork'] as String?,
+                    fit: BoxFit.cover,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 32,
-                        ),
-                        onPressed: () => widget.onToggleExpand(false),
-                      ),
-                      Column(
-                        children: [
-                          Text(
-                            'PLAYING FROM',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const Text(
-                            'Official YouTube Player',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.accent,
-                            ),
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.more_vert_rounded),
-                        onPressed: () =>
-                            showMoreOptionsSheet(context, widget.track),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Large 16:9 Visible YouTube Player
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
+                  BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
                     child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border, width: 1),
-                      ),
-                      child: globalYtController != null
-                          ? YoutubePlayer(
-                              controller: globalYtController!,
-                              aspectRatio: 16 / 9,
-                            )
-                          : const SizedBox(height: 200),
+                      color: AppColors.background.withValues(alpha: 0.55),
                     ),
                   ),
+                ],
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    AppColors.background.withValues(alpha: 0.85),
+                  ],
                 ),
-
-                // Attribution Badge
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.play_circle_filled_rounded,
-                        size: 16,
-                        color: Colors.redAccent,
-                      ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Powered by YouTube',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => launchUrl(
-                          Uri.parse('https://www.youtube.com/t/terms'),
-                          mode: LaunchMode.externalApplication,
-                        ),
-                        child: const Text(
-                          'YouTube Terms',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textSubtle,
-                            decoration: TextDecoration.underline,
+              ),
+            ),
+            SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  // Top Bar with Minimize Action
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 32,
                           ),
+                          onPressed: () => widget.onToggleExpand(false),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-
-                // Track Title & Action Buttons
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        Column(
                           children: [
                             Text(
-                              title,
-                              style: const TextStyle(
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              artist,
+                              'PLAYING FROM',
                               style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontWeight: FontWeight.w500,
+                                fontSize: 10,
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontWeight: FontWeight.w600,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Text(
+                              'Official YouTube Player',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.accent,
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                      IconButton(
-                        icon: LikePop(
-                          liked: _isLiked,
-                          child: Icon(
-                            _isLiked
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            size: 28,
-                            color:
-                                _isLiked ? AppColors.hotPink : Colors.white70,
-                          ),
+                        IconButton(
+                          icon: const Icon(Icons.more_vert_rounded),
+                          onPressed: () =>
+                              showMoreOptionsSheet(context, widget.track),
                         ),
-                        onPressed: _toggleLiked,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.playlist_add_rounded, size: 26),
-                        tooltip: 'Add to playlist',
-                        onPressed: () =>
-                            showAddToPlaylistSheet(context, widget.track),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.lyrics_outlined, size: 24),
-                        tooltip: 'Lyrics',
-                        onPressed: () => Navigator.push(
-                          context,
-                          AppPageRoute<void>(
-                            builder: (_) => LyricsScreen(track: widget.track),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.share_rounded, size: 22),
-                        tooltip: 'Share',
-                        onPressed: () {
-                          SharePlus.instance.share(
-                            ShareParams(
-                              text:
-                                  'Listen to $title on V Shots! https://www.youtube.com/watch?v=$trackId',
+                      ],
+                    ),
+                  ),
+
+                  // Large 16:9 Visible YouTube Player
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppColors.border, width: 1),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.accent.withValues(alpha: 0.18),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
                             ),
-                          );
-                        },
+                          ],
+                        ),
+                        child: globalYtController != null
+                            ? YoutubePlayer(
+                                controller: globalYtController!,
+                                aspectRatio: 16 / 9,
+                              )
+                            : SizedBox(
+                                height: 200,
+                                child: AppImage(
+                                  widget.track['artwork'] as String?,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
 
-                // Controls Row (Prev / Shuffle / Next)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 6,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.skip_previous_rounded, size: 34),
-                        color: Colors.white,
-                        onPressed: () => _playAdjacentInQueue(context, -1),
-                      ),
-                      const SizedBox(width: 24),
-                      IconButton(
-                        icon: Icon(
-                          isShuffleOn
-                              ? Icons.shuffle_on_rounded
-                              : Icons.shuffle_rounded,
-                          size: 22,
-                          color:
-                              isShuffleOn ? AppColors.accent : Colors.white60,
+                  // Attribution Badge
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.play_circle_filled_rounded,
+                          size: 16,
+                          color: Colors.redAccent,
                         ),
-                        onPressed: () {
-                          setState(() {
-                            isShuffleOn = !isShuffleOn;
-                            if (isShuffleOn) {
-                              QueueController.rebuildShuffleOrder(
-                                keepCurrentAt: currentQueueIndex,
-                              );
-                            }
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 24),
-                      IconButton(
-                        icon: const Icon(Icons.skip_next_rounded, size: 34),
-                        color: Colors.white,
-                        onPressed: () => _playAdjacentInQueue(context, 1),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const Divider(color: AppColors.borderSubtle, height: 1),
-
-                // Up Next Queue Header
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Up Next in Queue',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textMain,
-                        ),
-                      ),
-                      Text(
-                        '${currentQueue.length} tracks',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Queue List
-                Expanded(
-                  child: ListView.builder(
-                    padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPadding + 16),
-                    itemCount: currentQueue.length,
-                    itemBuilder: (context, index) {
-                      final item = currentQueue[index];
-                      final isSelected = index == currentQueueIndex;
-                      final itemArtwork = item['artwork'] as String?;
-                      final itemTitle = (item['title'] as String?) ?? '';
-                      final itemArtist = (item['artist'] as String?) ?? '';
-
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        tileColor: isSelected
-                            ? AppColors.primary.withValues(alpha: 0.15)
-                            : Colors.transparent,
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: AppImage(
-                            itemArtwork,
-                            width: 44,
-                            height: 44,
-                            fit: BoxFit.cover,
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Powered by YouTube',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
                           ),
                         ),
-                        title: Text(
-                          itemTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => launchUrl(
+                            Uri.parse('https://www.youtube.com/t/terms'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: const Text(
+                            'YouTube Terms',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSubtle,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Track Title & Action Buttons
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                artist,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withValues(alpha: 0.7),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: LikePop(
+                            liked: _isLiked,
+                            child: Icon(
+                              _isLiked
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 28,
+                              color:
+                                  _isLiked ? AppColors.hotPink : Colors.white70,
+                            ),
+                          ),
+                          onPressed: _toggleLiked,
+                        ),
+                        IconButton(
+                          icon:
+                              const Icon(Icons.playlist_add_rounded, size: 26),
+                          tooltip: 'Add to playlist',
+                          onPressed: () =>
+                              showAddToPlaylistSheet(context, widget.track),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.lyrics_outlined, size: 24),
+                          tooltip: 'Lyrics',
+                          onPressed: () => Navigator.push(
+                            context,
+                            AppPageRoute<void>(
+                              builder: (_) => LyricsScreen(track: widget.track),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.share_rounded, size: 22),
+                          tooltip: 'Share',
+                          onPressed: () {
+                            SharePlus.instance.share(
+                              ShareParams(
+                                text:
+                                    'Listen to $title on V Shots! https://www.youtube.com/watch?v=$trackId',
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Controls Row (Prev / Shuffle / Next)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon:
+                              const Icon(Icons.skip_previous_rounded, size: 34),
+                          color: Colors.white,
+                          onPressed: () => _playAdjacentInQueue(context, -1),
+                        ),
+                        const SizedBox(width: 24),
+                        IconButton(
+                          icon: Icon(
+                            isShuffleOn
+                                ? Icons.shuffle_on_rounded
+                                : Icons.shuffle_rounded,
+                            size: 22,
+                            color:
+                                isShuffleOn ? AppColors.accent : Colors.white60,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              isShuffleOn = !isShuffleOn;
+                              if (isShuffleOn) {
+                                QueueController.rebuildShuffleOrder(
+                                  keepCurrentAt: currentQueueIndex,
+                                );
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 24),
+                        IconButton(
+                          icon: const Icon(Icons.skip_next_rounded, size: 34),
+                          color: Colors.white,
+                          onPressed: () => _playAdjacentInQueue(context, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(color: AppColors.borderSubtle, height: 1),
+
+                  // Up Next Queue Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Up Next in Queue',
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight:
-                                isSelected ? FontWeight.w700 : FontWeight.w500,
-                            color: isSelected
-                                ? AppColors.accent
-                                : AppColors.textMain,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textMain,
                           ),
                         ),
-                        subtitle: Text(
-                          itemArtist,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        Text(
+                          '${currentQueue.length} tracks',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textMuted,
                           ),
                         ),
-                        trailing: isSelected
-                            ? const AnimatedEqualizer(
-                                isPlaying: true,
-                                color: AppColors.accent,
-                                size: 16,
-                              )
-                            : const Icon(
-                                Icons.play_arrow_rounded,
-                                color: AppColors.textSubtle,
-                                size: 20,
-                              ),
-                        onTap: () {
-                          playTrack(context, item, currentQueue, index);
-                        },
-                      );
-                    },
+                      ],
+                    ),
                   ),
-                ),
-              ],
+
+                  // Queue List
+                  Expanded(
+                    child: ListView.builder(
+                      padding:
+                          EdgeInsets.fromLTRB(16, 4, 16, bottomPadding + 16),
+                      itemCount: currentQueue.length,
+                      itemBuilder: (context, index) {
+                        final item = currentQueue[index];
+                        final isSelected = index == currentQueueIndex;
+                        final itemArtwork = item['artwork'] as String?;
+                        final itemTitle = (item['title'] as String?) ?? '';
+                        final itemArtist = (item['artist'] as String?) ?? '';
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          tileColor: isSelected
+                              ? AppColors.primary.withValues(alpha: 0.15)
+                              : Colors.transparent,
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: AppImage(
+                              itemArtwork,
+                              width: 44,
+                              height: 44,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          title: Text(
+                            itemTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: isSelected
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : AppColors.textMain,
+                            ),
+                          ),
+                          subtitle: Text(
+                            itemArtist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                          trailing: isSelected
+                              ? const AnimatedEqualizer(
+                                  isPlaying: true,
+                                  color: AppColors.accent,
+                                  size: 16,
+                                )
+                              : const Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: AppColors.textSubtle,
+                                  size: 20,
+                                ),
+                          onTap: () {
+                            playTrack(context, item, currentQueue, index);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -3017,18 +3058,45 @@ class _SearchScreenState extends State<SearchScreen> {
         // Account for the ad slot offset when indexing results.
         final int resultIndex =
             showAd && i > AdConfig.searchAdEvery ? i - 1 : i;
+
+        // "Songs" section header once, at the first result.
+        if (resultIndex == 0) {
+          return const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(4, 12, 4, 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.music_note_rounded,
+                        color: AppColors.accent, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Songs',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
         final track = _results[resultIndex];
         final title = (track['title'] as String?) ?? '';
         final artist = (track['artist'] as String?) ?? '';
 
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          contentPadding: const EdgeInsets.symmetric(vertical: 6),
           leading: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
             child: AppImage(
               track['artwork'] as String?,
-              width: 50,
-              height: 50,
+              width: 54,
+              height: 54,
               fit: BoxFit.cover,
             ),
           ),
@@ -3036,7 +3104,7 @@ class _SearchScreenState extends State<SearchScreen> {
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           ),
           subtitle: Text(
             artist,
@@ -3044,10 +3112,18 @@ class _SearchScreenState extends State<SearchScreen> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
-          trailing: const Icon(
-            Icons.play_arrow_rounded,
-            color: AppColors.accent,
-            size: 26,
+          trailing: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.play_arrow_rounded,
+              color: Colors.white,
+              size: 22,
+            ),
           ),
           onTap: () => playTrack(context, track, _results, resultIndex),
         );
