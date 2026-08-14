@@ -20,7 +20,7 @@ import '../../shared/widgets/app_button.dart';
 class ContentPreferencesOnboarding extends StatefulWidget {
   const ContentPreferencesOnboarding({super.key, required this.onComplete});
 
-  final VoidCallback onComplete;
+  final void Function(BuildContext) onComplete;
 
   @override
   State<ContentPreferencesOnboarding> createState() =>
@@ -119,9 +119,11 @@ class _ContentPreferencesOnboardingState
       ),
     );
 
-    // Always navigate regardless of Supabase/API availability.
+    // Always navigate regardless of Supabase/API availability. Use the
+    // onboarding screen's OWN context (not a captured parent context, which may
+    // already be unmounted) so navigation reliably opens Home.
     if (!mounted) return;
-    widget.onComplete();
+    widget.onComplete(context);
   }
 
   @override

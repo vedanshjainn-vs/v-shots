@@ -226,11 +226,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => ContentPreferencesOnboarding(
-                      onComplete: () {
+                      onComplete: (ctx) {
                         // Phase 19/20: clear Home/Discover caches so the next
                         // load regenerates live, personalized content.
                         resetHomeContentForPreferenceChange();
-                        Navigator.pop(context);
+                        if (ctx.mounted) Navigator.pop(ctx);
                       },
                     ),
                   ),

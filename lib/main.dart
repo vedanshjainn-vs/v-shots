@@ -323,8 +323,10 @@ class _SplashScreenState extends State<SplashScreen>
       if (PreferencesStore.instance.needsOnboarding) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(
-            builder: (_) => ContentPreferencesOnboarding(
-              onComplete: () => Navigator.of(context).pushReplacement(
+            builder: (onboardCtx) => ContentPreferencesOnboarding(
+              // Use the onboarding route's OWN context so navigation to Home
+              // works even after the Splash route has been removed.
+              onComplete: (ctx) => Navigator.of(ctx).pushReplacement(
                 MaterialPageRoute<void>(builder: (_) => const MainShell()),
               ),
             ),
