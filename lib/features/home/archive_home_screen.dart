@@ -1,13 +1,13 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V SHOTS — ArchiveTune-style Home
+// V SHOTS — ArchiveTune-style Personalized Home
 //
-// A dynamic music discovery Home feed. Data comes from YouTube Music's
-// InnerTube browse endpoint via the shared InnerTubeMusicService (real shelves
-// such as Quick Picks / Trending / New Music / regional shelves). Playback
-// routes through the existing V Shots official player via [onPlayTrack].
+// Combines LOCAL listening intelligence (Quick Picks, Continue Listening,
+// Because You Liked X, Forgotten Favorites) with REMOTE YouTube Music
+// discovery shelves (Trending, Hindi, Punjabi, ...) into one adaptive feed.
 //
-// No RDCLAK/OLAK/OLZy playlist ids, no playlistItems fallback, no fake content,
-// no "Couldn't load X" boxes. A failing shelf is simply skipped.
+// Data: real InnerTube search results via PersonalizedHomeService. No mock
+// songs. Playback routes through the existing official player via onPlayTrack.
+// A failing shelf is skipped, never breaking the page.
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/discovery/innertube_music_service.dart';
+import '../../core/discovery/personalized_home_service.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
@@ -42,21 +43,11 @@ class ArchiveHomeScreen extends StatefulWidget {
 
 class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
     with AutomaticKeepAliveClientMixin {
+  late final PersonalizedHomeService _home;
   final ScrollController _scrollController = ScrollController();
-  List<MusicShelf> _shelves = const [];
+  List<HomeShelf> _shelves = const [];
   bool _loading = true;
   bool _refreshing = false;
-
-  static const _chips = <String>[
-    'Relax',
-    'Workout',
-    'Energize',
-    'Romance',
-    'Bollywood',
-    'Punjabi',
-    'Hindi',
-    'English',
-  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -64,24 +55,35 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
   @override
   void initState() {
     super.initState();
+    _home = PersonalizedHomeService(discovery: widget.service);
     unawaited(_load());
+    // Recompute when the library changes (a new play/like affects Home).
+    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChange);
+    LocalLibrary.instance.likedSongs.addListener(_onLibraryChange);
   }
 
   @override
   void dispose() {
+    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChange);
+    LocalLibrary.instance.likedSongs.removeListener(_onLibraryChange);
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _load({bool force = false}) async {
+  void _onLibraryChange() {
+    if (mounted) unawaited(_load(force: true, silent: true));
+  }
+
+  Future<void> _load({bool force = false, bool silent = false}) async {
+    if (_refreshing) return;
     if (force) {
-      setState(() => _refreshing = true);
+      _refreshing = true;
+      if (!silent && mounted) setState(() {});
     } else if (_shelves.isEmpty) {
-      setState(() => _loading = true);
+      if (mounted) setState(() => _loading = true);
     }
     try {
-      final recent = LocalLibrary.instance.recentlyPlayed.value;
-      final shelves = await widget.service.homeFeed(recentlyPlayed: recent);
+      final shelves = await _home.buildHome();
       if (!mounted) return;
       setState(() {
         _shelves = shelves;
@@ -94,37 +96,13 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
         }
       }
     } catch (e) {
-      debugPrint('[Home] feed failed: $e');
+      debugPrint('[Home] personalized feed failed: $e');
       if (!mounted) return;
       setState(() {
         _loading = false;
         _refreshing = false;
       });
     }
-  }
-
-  Future<void> _openChip(String chip) async {
-    final query = switch (chip) {
-      'Relax' => 'relax chill music',
-      'Workout' => 'workout music',
-      'Energize' => 'energetic music',
-      'Romance' => 'romantic songs',
-      'Bollywood' => 'bollywood hindi hits',
-      'Punjabi' => 'punjabi hits',
-      'Hindi' => 'hindi hits',
-      _ => 'english pop hits',
-    };
-    final results = await widget.service.search(query);
-    if (!mounted) return;
-    unawaited(Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => _ShelfResultsScreen(
-          title: chip,
-          tracks: results,
-          onPlayTrack: widget.onPlayTrack,
-        ),
-      ),
-    ));
   }
 
   Future<void> _play(DiscoveryTrack track, List<DiscoveryTrack> shelf) async {
@@ -134,6 +112,13 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
         .toList();
     final idx = queue.indexWhere((m) => m['id'] == track.id);
     await widget.onPlayTrack(track.toTrackMap(), queue, idx < 0 ? 0 : idx);
+  }
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
   }
 
   @override
@@ -152,7 +137,7 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
           ),
           slivers: [
             _buildAppBar(),
-            SliverToBoxAdapter(child: _buildChips()),
+            SliverToBoxAdapter(child: _buildGreeting()),
             if (_loading && _shelves.isEmpty)
               SliverToBoxAdapter(child: _buildSkeleton())
             else if (_shelves.isEmpty)
@@ -195,32 +180,79 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
     );
   }
 
-  Widget _buildChips() {
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-        scrollDirection: Axis.horizontal,
-        itemCount: _chips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, index) {
-          final chip = _chips[index];
-          return ActionChip(
-            label: Text(chip),
-            onPressed: () => _openChip(chip),
-            backgroundColor: AppColors.surface,
-            side: BorderSide(color: AppColors.border.withValues(alpha: 0.75)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(22),
+  Widget _buildGreeting() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$_greeting 👋',
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Made for you, from what you listen to',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.6),
+              fontSize: 13,
             ),
-            labelStyle: const TextStyle(
-              color: AppColors.textMain,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShelf(HomeShelf shelf) {
+    final tracks = shelf.tracks;
+    if (tracks.isEmpty) return const SliverToBoxAdapter();
+
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
+              child: Row(
+                children: [
+                  if (shelf.emoji.isNotEmpty) ...[
+                    Text(shelf.emoji, style: const TextStyle(fontSize: 16)),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: Text(
+                      shelf.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-          );
-        },
+            SizedBox(
+              height: 210,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                scrollDirection: Axis.horizontal,
+                itemCount: tracks.length,
+                itemBuilder: (context, index) {
+                  final track = tracks[index];
+                  return _TrackCard(
+                    track: track,
+                    onTap: () => _play(track, tracks),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -278,50 +310,6 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
             style: TextStyle(color: AppColors.textMuted),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildShelf(MusicShelf shelf) {
-    final tracks = shelf.tracks;
-    if (tracks.isEmpty) return const SliverToBoxAdapter();
-
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 22),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
-              child: Text(
-                shelf.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.4,
-                ),
-              ),
-            ),
-            SizedBox(
-              height: 210,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                scrollDirection: Axis.horizontal,
-                itemCount: tracks.length,
-                itemBuilder: (context, index) {
-                  final track = tracks[index];
-                  return _TrackCard(
-                    track: track,
-                    onTap: () => _play(track, tracks),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -410,94 +398,6 @@ class _TrackCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Push screen showing a full list of results (from a Home chip or shelf).
-class _ShelfResultsScreen extends StatelessWidget {
-  const _ShelfResultsScreen({
-    required this.title,
-    required this.tracks,
-    required this.onPlayTrack,
-  });
-
-  final String title;
-  final List<DiscoveryTrack> tracks;
-  final OnPlayTrack onPlayTrack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        backgroundColor: AppColors.background,
-        surfaceTintColor: Colors.transparent,
-      ),
-      body: tracks.isEmpty
-          ? const Center(
-              child: Text(
-                'No results',
-                style: TextStyle(color: AppColors.textMuted),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
-              itemCount: tracks.length,
-              separatorBuilder: (_, __) =>
-                  const Divider(height: 1, color: AppColors.borderSubtle),
-              itemBuilder: (context, index) {
-                final track = tracks[index];
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 3,
-                  ),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: AppImage(
-                      track.artwork,
-                      width: 56,
-                      height: 56,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  title: Text(
-                    track.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(
-                    track.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-                  trailing: const Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: AppColors.accent,
-                    size: 30,
-                  ),
-                  onTap: () {
-                    final queue = tracks
-                        .where((t) => t.id.isNotEmpty)
-                        .map((t) => t.toTrackMap())
-                        .toList();
-                    final idx = queue.indexWhere((m) => m['id'] == track.id);
-                    onPlayTrack(
-                      track.toTrackMap(),
-                      queue,
-                      idx < 0 ? 0 : idx,
-                    );
-                  },
-                );
-              },
-            ),
     );
   }
 }
