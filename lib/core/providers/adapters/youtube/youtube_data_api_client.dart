@@ -146,6 +146,101 @@ class YouTubeChannelItem {
   }
 }
 
+/// A YouTube playlist (from a channel's playlists.list).
+class YouTubePlaylist {
+  const YouTubePlaylist({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.thumbnailUrl,
+    required this.itemCount,
+    required this.channelId,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String thumbnailUrl;
+  final int itemCount;
+  final String channelId;
+
+  factory YouTubePlaylist.fromJson(Map<String, dynamic> json) {
+    final snippet = (json['snippet'] as Map<String, dynamic>?) ?? {};
+    final thumbnails = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+    final url = (thumbnails['maxres']?['url'] ??
+        thumbnails['high']?['url'] ??
+        thumbnails['medium']?['url'] ??
+        thumbnails['default']?['url']) as String?;
+    final contentDetails =
+        (json['contentDetails'] as Map<String, dynamic>?) ?? {};
+    return YouTubePlaylist(
+      id: json['id'] as String? ?? '',
+      title: (snippet['title'] as String?) ?? '',
+      description: (snippet['description'] as String?) ?? '',
+      thumbnailUrl: url ?? '',
+      itemCount: (contentDetails['itemCount'] as int?) ?? 0,
+      channelId: (snippet['channelId'] as String?) ?? '',
+    );
+  }
+}
+
+/// A page of playlists plus the next page token.
+class PlaylistPage {
+  const PlaylistPage({required this.playlists, this.nextPageToken});
+  final List<YouTubePlaylist> playlists;
+  final String? nextPageToken;
+}
+
+/// A single item within a playlist (playlistItems.list).
+class YouTubePlaylistItem {
+  const YouTubePlaylistItem({
+    required this.videoId,
+    required this.title,
+    required this.channelTitle,
+    required this.thumbnailUrl,
+    required this.position,
+    this.publishedAt,
+  });
+
+  final String videoId;
+  final String title;
+  final String channelTitle;
+  final String thumbnailUrl;
+  final int position;
+  final DateTime? publishedAt;
+
+  factory YouTubePlaylistItem.fromJson(Map<String, dynamic> json) {
+    final snippet = (json['snippet'] as Map<String, dynamic>?) ?? {};
+    final resourceId = (snippet['resourceId'] as Map<String, dynamic>?) ?? {};
+    final thumbnails = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+    final url = (thumbnails['maxres']?['url'] ??
+        thumbnails['high']?['url'] ??
+        thumbnails['medium']?['url'] ??
+        thumbnails['default']?['url']) as String?;
+    DateTime? published;
+    if (snippet['publishedAt'] is String) {
+      published = DateTime.tryParse(snippet['publishedAt'] as String);
+    }
+    return YouTubePlaylistItem(
+      videoId: (resourceId['videoId'] as String?) ?? '',
+      title: (snippet['title'] as String?) ?? '',
+      channelTitle: (snippet['videoOwnerChannelTitle'] as String?) ??
+          (snippet['channelTitle'] as String?) ??
+          '',
+      thumbnailUrl: url ?? '',
+      position: (json['snippet']?['position'] as int?) ?? 0,
+      publishedAt: published,
+    );
+  }
+}
+
+/// A page of playlist items plus the next page token.
+class PlaylistItemsPage {
+  const PlaylistItemsPage({required this.items, this.nextPageToken});
+  final List<YouTubePlaylistItem> items;
+  final String? nextPageToken;
+}
+
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
@@ -359,6 +454,96 @@ class YouTubeDataApiClient {
     } catch (e) {
       debugPrint('[YouTubeDataApiClient] getChannelDetails error: $e');
       return null;
+    }
+  }
+
+  /// Lists the playlists owned by [channelId] (playlists.list), paginated.
+  Future<PlaylistPage> listChannelPlaylists(
+    String channelId, {
+    int maxResults = 50,
+    String? pageToken,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty || channelId.isEmpty) {
+      return const PlaylistPage(playlists: [], nextPageToken: null);
+    }
+    try {
+      final params = <String, String>{
+        'part': 'snippet,contentDetails',
+        'channelId': channelId,
+        'maxResults': maxResults.clamp(1, 50).toString(),
+        'key': key,
+      };
+      if (pageToken != null && pageToken.isNotEmpty) {
+        params['pageToken'] = pageToken;
+      }
+      final uri =
+          Uri.parse('$_baseUrl/playlists').replace(queryParameters: params);
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+            '[YouTubeDataApiClient] playlists HTTP ${response.statusCode}');
+        return const PlaylistPage(playlists: [], nextPageToken: null);
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final playlists = items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubePlaylist.fromJson)
+          .where((p) => p.id.isNotEmpty && p.title.isNotEmpty)
+          .toList();
+      return PlaylistPage(
+        playlists: playlists,
+        nextPageToken: data['nextPageToken'] as String?,
+      );
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] listChannelPlaylists error: $e');
+      return const PlaylistPage(playlists: [], nextPageToken: null);
+    }
+  }
+
+  /// Lists the items of [playlistId] (playlistItems.list), paginated.
+  Future<PlaylistItemsPage> listPlaylistItems(
+    String playlistId, {
+    int maxResults = 50,
+    String? pageToken,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty || playlistId.isEmpty) {
+      return const PlaylistItemsPage(items: [], nextPageToken: null);
+    }
+    try {
+      final params = <String, String>{
+        'part': 'snippet,contentDetails',
+        'playlistId': playlistId,
+        'maxResults': maxResults.clamp(1, 50).toString(),
+        'key': key,
+      };
+      if (pageToken != null && pageToken.isNotEmpty) {
+        params['pageToken'] = pageToken;
+      }
+      final uri =
+          Uri.parse('$_baseUrl/playlistItems').replace(queryParameters: params);
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+            '[YouTubeDataApiClient] playlistItems HTTP ${response.statusCode}');
+        return const PlaylistItemsPage(items: [], nextPageToken: null);
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final mapped = items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubePlaylistItem.fromJson)
+          .where((i) => i.videoId.isNotEmpty)
+          .toList();
+      return PlaylistItemsPage(
+        items: mapped,
+        nextPageToken: data['nextPageToken'] as String?,
+      );
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] listPlaylistItems error: $e');
+      return const PlaylistItemsPage(items: [], nextPageToken: null);
     }
   }
 

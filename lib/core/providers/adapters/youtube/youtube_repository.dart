@@ -141,16 +141,29 @@ class YouTubeRepository {
     return null;
   }
 
-  /// Placeholder for playlist items (YouTube Data API playlists). Returns an
-  /// empty page when not implemented / no key — never throws.
-  Future<PaginatedSearchResult> getPlaylistItems(
-    String playlistId, {
+  /// Lists the playlists owned by [channelId], paginated (live).
+  Future<PlaylistPage> listChannelPlaylists(
+    String channelId, {
+    int maxResults = 50,
     String? pageToken,
   }) {
-    return _client.searchMusicVideosPaginated(
-      '',
-      maxResults: 0,
-      pageToken: null,
+    return _client.listChannelPlaylists(
+      channelId,
+      maxResults: maxResults,
+      pageToken: pageToken,
+    );
+  }
+
+  /// Lists the items of [playlistId], paginated (live).
+  Future<PlaylistItemsPage> listPlaylistItems(
+    String playlistId, {
+    int maxResults = 50,
+    String? pageToken,
+  }) {
+    return _client.listPlaylistItems(
+      playlistId,
+      maxResults: maxResults,
+      pageToken: pageToken,
     );
   }
 

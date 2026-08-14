@@ -15,6 +15,7 @@ import '../providers/adapters/youtube/youtube_repository.dart';
 import '../providers/provider_models.dart';
 import '../recommendation/candidate_pool.dart';
 import 'live_music_discovery_service.dart';
+import 'playlist_content_service.dart';
 
 /// Normalizes a song key from artist + title so "Kesariya", "Kesariya Official
 /// Video", etc. collapse to one key.
@@ -75,6 +76,7 @@ class HomeContentCoordinator {
   final LiveMusicDiscoveryService _live;
   final YouTubeRepository _repo;
   final CandidatePool _pool = CandidatePool();
+  final PlaylistContentService _playlists = PlaylistContentService();
 
   // Per-section cache keyed by section title.
   final Map<String, _SectionCache> _cache = {};
@@ -146,6 +148,68 @@ class HomeContentCoordinator {
     final fb = await _fetchFallback(title, intent, prefs, limit, allowOverlap);
     _store(title, fb);
     return fb;
+  }
+
+  /// Discovers relevant playlists for the user (the PRIMARY Home content
+  /// source). Returns scored playlists sorted by relevance.
+  Future<List<ScoredPlaylist>> discoverRelevantPlaylists(
+      UserPreferences prefs) {
+    return _playlists.relevantPlaylists(prefs);
+  }
+
+  /// Fetches a Home section from a specific playlist's live items.
+  Future<HomeSectionResult> fetchPlaylistSection({
+    required String title,
+    required String playlistId,
+    required UserPreferences prefs,
+    int limit = 12,
+    bool allowOverlap = false,
+  }) async {
+    final cached = this.cached(title);
+    if (cached != null) return cached;
+
+    final items = await _playlists.playlistItems(playlistId, maxResults: 50);
+    if (items.isNotEmpty) {
+      final result = HomeSectionResult(
+        title: title,
+        tracks: _dedupeGlobal(items, allowOverlap, prefs, limit),
+        source: ContentSource.live,
+        fetchedAt: DateTime.now(),
+        candidateCount: items.length,
+        validCount: items.length,
+        dedupedCount: items.length,
+      );
+      _store(title, result);
+      return result;
+    }
+    final fb = HomeSectionResult(
+        title: title, tracks: const [], source: ContentSource.fallback);
+    _store(title, fb);
+    return fb;
+  }
+
+  List<Map<String, dynamic>> _dedupeGlobal(
+    List<Map<String, dynamic>> items,
+    bool allowOverlap,
+    UserPreferences prefs,
+    int limit,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final t in items) {
+      final id = t['id'] as String? ?? '';
+      final artist = t['artist'] as String? ?? '';
+      final title = t['title'] as String? ?? '';
+      if (id.isEmpty) continue;
+      if (!allowOverlap && _usedVideoIds.contains(id)) continue;
+      final key = normalizeSongKey(artist, title);
+      if (!allowOverlap && _usedSongKeys.contains(key)) continue;
+      out.add(t);
+      _usedVideoIds.add(id);
+      if (artist.isNotEmpty) _usedArtistKeys.add(artist.toLowerCase());
+      if (artist.isNotEmpty || title.isNotEmpty) _usedSongKeys.add(key);
+      if (out.length >= limit) break;
+    }
+    return out;
   }
 
   Future<HomeSectionResult> _fetchLive(

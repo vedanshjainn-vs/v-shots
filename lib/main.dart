@@ -1462,9 +1462,67 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     for (final section in _sections) {
       unawaited(_loadSection(section));
     }
+    // Primary live source: discover the YouTube Music channel's relevant
+    // playlists and add them as Home sections (staged, after base sections).
+    unawaited(_loadPlaylistSections());
     // Auto-refresh periodically (every 20 minutes in foreground)
     _autoRefreshTimer = Timer.periodic(const Duration(minutes: 20), (_) {
       unawaited(_refreshAll());
+    });
+  }
+
+  /// Discovers relevant playlists from the YouTube Music channel and appends
+  /// each as a Home section (playlist title = section title). Runs after the
+  /// base sections so the page is not blocked. One failing playlist is skipped.
+  Future<void> _loadPlaylistSections() async {
+    final prefs = PreferencesStore.instance.preferences;
+    if (!prefs.hasCompletedOnboarding) return;
+    final scored =
+        await homeContentCoordinator.discoverRelevantPlaylists(prefs);
+    if (!mounted || scored.isEmpty) return;
+
+    // Cap the number of playlist sections to avoid 20 near-identical rows.
+    final top = scored.take(8).toList();
+    for (final s in top) {
+      if (!mounted) return;
+      // Skip if a section with this title already exists.
+      if (_sections.any((x) => x.title == s.playlist.title)) continue;
+      final sec = _HomeSectionState(
+        query: '__playlist__',
+        title: s.playlist.title,
+      );
+      setState(() => _sections.add(sec));
+      unawaited(_loadPlaylistSection(sec, s.playlist.id, prefs));
+    }
+  }
+
+  Future<void> _loadPlaylistSection(
+    _HomeSectionState section,
+    String playlistId,
+    UserPreferences prefs,
+  ) async {
+    if (mounted) setState(() => section.status = _SectionStatus.loading);
+    final result = await homeContentCoordinator.fetchPlaylistSection(
+      title: section.title,
+      playlistId: playlistId,
+      prefs: prefs,
+      limit: section.maxItems,
+    );
+    if (!mounted) return;
+    for (final t in result.tracks) {
+      final id = t['id'] as String?;
+      if (id != null) LocalLibrary.instance.recordShownSong(id);
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[HOME] Playlist section: ${result.title} | Source: ${result.source} | '
+        'Final: ${result.tracks.length}',
+      );
+    }
+    setState(() {
+      section.tracks = result.tracks;
+      section.status =
+          result.tracks.isEmpty ? _SectionStatus.error : _SectionStatus.loaded;
     });
   }
 
