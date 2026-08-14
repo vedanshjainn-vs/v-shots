@@ -1220,94 +1220,96 @@ class _ForYouCardState extends State<_ForYouCard>
         ),
 
         // Right Side Action Buttons (Like, Comments, Playlist, More).
+        // Vertically centered on the right edge (classic reels layout) so they
+        // no longer collide with the bottom metadata/play-controls block.
         // Sits ABOVE the player (last Stack child = highest z-index) inside a
         // translucent pill so the icons stay visible regardless of video
-        // brightness/color (Section 5). Never overlaid on the YouTube player
-        // itself — it sits beside/below the video frame.
-        Positioned(
-          right: 16,
-          bottom: 150,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                StatefulBuilder(
-                  builder: (context, setLikeState) {
-                    final isLiked = LocalLibrary.instance.isLiked(trackId);
-                    return IconButton(
-                      icon: LikePop(
-                        liked: isLiked,
-                        child: Icon(
-                          isLiked
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          color: isLiked ? AppColors.hotPink : Colors.white,
-                          size: 32,
+        // brightness/color.
+        Positioned.fill(
+          child: Align(
+            alignment: const Alignment(1.0, -0.15),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  StatefulBuilder(
+                    builder: (context, setLikeState) {
+                      final isLiked = LocalLibrary.instance.isLiked(trackId);
+                      return IconButton(
+                        icon: LikePop(
+                          liked: isLiked,
+                          child: Icon(
+                            isLiked
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: isLiked ? AppColors.hotPink : Colors.white,
+                            size: 32,
+                          ),
                         ),
-                      ),
-                      onPressed: () {
-                        unawaited(HapticFeedback.lightImpact());
-                        final wasLiked = isLiked;
-                        LocalLibrary.instance.toggleLiked(track).then((_) {
-                          if (wasLiked) {
-                            playbackSignalTracker.onUnliked(track);
-                          } else {
-                            playbackSignalTracker.onLiked(track);
-                          }
-                          setLikeState(() {});
-                        });
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: Colors.white,
-                    size: 28,
+                        onPressed: () {
+                          unawaited(HapticFeedback.lightImpact());
+                          final wasLiked = isLiked;
+                          LocalLibrary.instance.toggleLiked(track).then((_) {
+                            if (wasLiked) {
+                              playbackSignalTracker.onUnliked(track);
+                            } else {
+                              playbackSignalTracker.onLiked(track);
+                            }
+                            setLikeState(() {});
+                          });
+                        },
+                      );
+                    },
                   ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    CommentSheet.show(context,
-                        shotId: trackId, commentCount: 18);
-                  },
-                ),
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.playlist_add_rounded,
-                    color: Colors.white,
-                    size: 30,
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    onPressed: () {
+                      unawaited(HapticFeedback.lightImpact());
+                      CommentSheet.show(context,
+                          shotId: trackId, commentCount: 18);
+                    },
                   ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    showAddToPlaylistSheet(context, track);
-                  },
-                ),
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.more_horiz_rounded,
-                    color: Colors.white,
-                    size: 30,
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.playlist_add_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      unawaited(HapticFeedback.lightImpact());
+                      showAddToPlaylistSheet(context, track);
+                    },
                   ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    showMoreOptionsSheet(
-                      context,
-                      track,
-                      onNotInterested: onNotInterested,
-                    );
-                  },
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.more_horiz_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      unawaited(HapticFeedback.lightImpact());
+                      showMoreOptionsSheet(
+                        context,
+                        track,
+                        onNotInterested: onNotInterested,
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),

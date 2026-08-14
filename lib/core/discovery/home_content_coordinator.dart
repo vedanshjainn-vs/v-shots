@@ -168,6 +168,7 @@ class HomeContentCoordinator {
     final cached = this.cached(title);
     if (cached != null) return cached;
 
+    // Try real playlist items first (source-of-truth content).
     final items = await _playlists.playlistItems(playlistId, maxResults: 50);
     if (items.isNotEmpty) {
       final result = HomeSectionResult(
@@ -182,10 +183,27 @@ class HomeContentCoordinator {
       _store(title, result);
       return result;
     }
-    final fb = HomeSectionResult(
+
+    // Some auto-generated / radio playlist ids (RDCL…, OLAK…, OLZy…) are not
+    // queryable via the public playlistItems.list, so we fall back to a LIVE
+    // search on the playlist's vibe/title. This keeps the section visibly
+    // populated with real, relevant music instead of rendering blank/error.
+    debugPrint('[Home] playlist "$title" had no items — live search fallback');
+    final fb = await _fetchLive(
+      title,
+      title, // intent = playlist title → drives the search query
+      prefs,
+      limit,
+      allowOverlap,
+    );
+    if (fb.tracks.isNotEmpty) {
+      _store(title, fb);
+      return fb;
+    }
+    final empty = HomeSectionResult(
         title: title, tracks: const [], source: ContentSource.fallback);
-    _store(title, fb);
-    return fb;
+    _store(title, empty);
+    return empty;
   }
 
   List<Map<String, dynamic>> _dedupeGlobal(
