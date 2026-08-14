@@ -36,6 +36,8 @@ class LocalLibrary {
   static const _kPlaylists = 'v_shots.playlists.v1';
   static const _kArtistPlayCounts = 'v_shots.artist_play_counts.v1';
   static const _kSongPlayCounts = 'v_shots.song_play_counts.v1';
+  static const _kBlockedArtists = 'v_shots.blocked_artists.v1';
+  static const _kNotInterested = 'v_shots.not_interested.v1';
   static const _kDownloadedTracks = 'v_shots.downloaded_tracks.v1';
   static const _kRecentSearches = 'v_shots.recent_searches.v1';
   static const _kShownSongs = 'v_shots.shown_songs.v1';
@@ -61,6 +63,12 @@ class LocalLibrary {
   /// Per-song play counts — the "strong songs / play-time" signal used by the
   /// personalized Quick Picks. Keyed by video id.
   Map<String, int> songPlayCounts = {};
+
+  /// Artists the user blocked ("Don't recommend this artist"). Persisted.
+  Set<String> blockedArtists = {};
+
+  /// Track ids the user marked "Not interested". Persisted.
+  Set<String> notInterestedIds = {};
 
   /// Recently-shown song video IDs (Section 2). Capped and time-stamped so
   /// Home/Discover can exclude songs shown recently (e.g. within the last 24h)
@@ -140,6 +148,19 @@ class LocalLibrary {
       if (rawSong != null) {
         final decoded = jsonDecode(rawSong) as Map<String, dynamic>;
         songPlayCounts = decoded.map((k, v) => MapEntry(k, v as int));
+      }
+      final rawBlocked = _prefs!.getString(_kBlockedArtists);
+      if (rawBlocked != null) {
+        try {
+          blockedArtists =
+              (jsonDecode(rawBlocked) as List).cast<String>().toSet();
+        } catch (_) {}
+      }
+      final rawNI = _prefs!.getString(_kNotInterested);
+      if (rawNI != null) {
+        try {
+          notInterestedIds = (jsonDecode(rawNI) as List).cast<String>().toSet();
+        } catch (_) {}
       }
       _loadShown();
       _ready = true;
@@ -318,5 +339,22 @@ class LocalLibrary {
   Future<void> clearRecentSearches() async {
     recentSearches.value = [];
     await _writeList(_kRecentSearches, []);
+  }
+
+  // ── Recommendation feedback (blocked artists / not interested) ───
+  /// Blocks an artist so Discovery/Search stop recommending them.
+  Future<void> blockArtist(String artist) async {
+    if (artist.isEmpty) return;
+    blockedArtists.add(artist);
+    await _prefs?.setString(
+        _kBlockedArtists, jsonEncode(blockedArtists.toList()));
+  }
+
+  /// Marks a track "not interested" (strong negative signal).
+  Future<void> markNotInterested(String trackId) async {
+    if (trackId.isEmpty) return;
+    notInterestedIds.add(trackId);
+    await _prefs?.setString(
+        _kNotInterested, jsonEncode(notInterestedIds.toList()));
   }
 }

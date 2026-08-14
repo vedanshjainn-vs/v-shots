@@ -231,6 +231,8 @@ class InnerTubeMusicService {
     String? mood,
     int target = 30,
     Set<String> excludeIds = const {},
+    Set<String> blockedArtists = const {},
+    Set<String> notInterestedIds = const {},
   }) async {
     final queries = mood != null && kMoodQueries.containsKey(mood)
         ? kMoodQueries[mood]!
@@ -257,6 +259,8 @@ class InnerTubeMusicService {
         for (final t in batch) {
           if (tracks.length >= target) break;
           if (excludeIds.contains(t.id)) continue;
+          if (notInterestedIds.contains(t.id)) continue;
+          if (blockedArtists.contains(t.artist)) continue;
           if (seen.add(t.id)) tracks.add(t);
         }
       } catch (e) {
@@ -265,6 +269,24 @@ class InnerTubeMusicService {
     }
     debugPrint('[MusicDiscovery] discovery feed: ${tracks.length} tracks');
     return tracks;
+  }
+
+  /// Genre discovery: uses the matching mood query strategies (Bollywood,
+  /// Punjabi, Hindi, English, EDM, Hip-Hop, Lo-fi, Global).
+  Future<List<DiscoveryTrack>> genreFeed(
+    String genre, {
+    int target = 30,
+    Set<String> excludeIds = const {},
+    Set<String> blockedArtists = const {},
+    Set<String> notInterestedIds = const {},
+  }) {
+    return discoveryFeed(
+      mood: genre,
+      target: target,
+      excludeIds: excludeIds,
+      blockedArtists: blockedArtists,
+      notInterestedIds: notInterestedIds,
+    );
   }
 
   /// Extracts playable tracks from a search/browse JSON tree.

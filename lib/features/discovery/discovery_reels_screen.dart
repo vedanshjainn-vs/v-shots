@@ -1,22 +1,32 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V SHOTS — Discovery Reels (TikTok/Reels-style vertical music feed)
+// V SHOTS — Discovery Reels (TikTok/Reels-style vertical music discovery)
 //
-// Full-screen vertical music discovery feed. Real tracks from the shared
-// InnerTubeMusicService. Swipe up -> next track, swipe down -> previous.
-// Lazy PageView with prefetch. Playback uses the existing official player via
-// [onPlayTrack] (no second engine, no audio extraction).
+// Full-screen vertical discovery feed. Default landing is "For You" (immediate
+// music). Top control chips: For You | Moods | Genres | Trending | New.
+// Mood/Genre open visual picker screens that transform into a mood/genre feed.
+//
+// Interaction: swipe up -> next, swipe down -> previous, tap Play -> existing
+// official player, double-tap -> like, long-press -> quick actions. Right rail:
+// Like, Add, Share, More. Not-interested / blocked artists feed the
+// recommendation learning loop.
+//
+// Real data via shared InnerTubeMusicService. Playback via existing official
+// player (no second engine, no audio extraction).
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/discovery/innertube_music_service.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 import '../home/archive_home_screen.dart' show OnPlayTrack;
+
+enum _FeedKind { forYou, mood, genre, trending, newMusic }
 
 class DiscoveryReelsScreen extends StatefulWidget {
   const DiscoveryReelsScreen({
@@ -40,19 +50,16 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
   bool _loading = true;
   bool _loadingMore = false;
   int _currentIndex = 0;
-  String? _activeMood;
 
-  static const _moods = <String>[
+  _FeedKind _kind = _FeedKind.forYou;
+  String? _activeMood; // e.g. Romantic
+
+  static const _modeChips = <String>[
     'For You',
+    'Moods',
+    'Genres',
     'Trending',
-    'Workout',
-    'Romance',
-    'Sad',
-    'Party',
-    'Chill',
-    'Devotional',
-    'Punjabi',
-    'Bollywood',
+    'New'
   ];
 
   @override
@@ -70,17 +77,56 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
     super.dispose();
   }
 
-  Future<void> _loadInitial({String? mood}) async {
+  String? get _moodArg {
+    if (_kind == _FeedKind.mood) return _activeMood;
+    if (_kind == _FeedKind.genre) return _activeMood;
+    return null;
+  }
+
+  Future<void> _loadInitial({_FeedKind? kind, String? mood}) async {
     setState(() {
       _loading = true;
-      _activeMood = mood;
+      if (kind != null) _kind = kind;
+      if (mood != null) _activeMood = mood;
     });
+    final lib = LocalLibrary.instance;
+    final exclude = {..._seenIds};
     try {
-      final moodArg = (mood == null || mood == 'For You') ? null : mood;
-      final feed = await widget.service.discoveryFeed(
-        mood: moodArg,
-        target: 30,
-      );
+      final String? moodArg = _moodArg;
+      List<DiscoveryTrack> feed;
+      switch (_kind) {
+        case _FeedKind.forYou:
+          feed = await widget.service.discoveryFeed(
+            target: 30,
+            excludeIds: exclude,
+            blockedArtists: lib.blockedArtists,
+            notInterestedIds: lib.notInterestedIds,
+          );
+          break;
+        case _FeedKind.mood:
+        case _FeedKind.genre:
+          feed = await widget.service.genreFeed(
+            moodArg ?? 'Trending',
+            target: 30,
+            excludeIds: exclude,
+            blockedArtists: lib.blockedArtists,
+            notInterestedIds: lib.notInterestedIds,
+          );
+          break;
+        case _FeedKind.trending:
+          feed = await widget.service.discoveryFeed(
+            mood: 'Trending',
+            target: 30,
+            excludeIds: exclude,
+            blockedArtists: lib.blockedArtists,
+            notInterestedIds: lib.notInterestedIds,
+          );
+          break;
+        case _FeedKind.newMusic:
+          feed =
+              await widget.service.search('new music 2026 releases', count: 30);
+          break;
+      }
       if (!mounted) return;
       setState(() {
         _tracks.clear();
@@ -89,9 +135,7 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
         _currentIndex = 0;
         _loading = false;
       });
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(0);
-      }
+      if (_pageController.hasClients) _pageController.jumpToPage(0);
       for (final t in feed) {
         LocalLibrary.instance.recordShownSong(t.id);
       }
@@ -104,15 +148,20 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
   Future<void> _loadMore() async {
     if (_loadingMore) return;
     _loadingMore = true;
+    final lib = LocalLibrary.instance;
     try {
-      final moodArg = (_activeMood == null || _activeMood == 'For You')
-          ? null
-          : _activeMood;
-      final feed = await widget.service.discoveryFeed(
-        mood: moodArg,
-        target: 20,
-        excludeIds: _seenIds,
-      );
+      List<DiscoveryTrack> feed;
+      if (_kind == _FeedKind.newMusic) {
+        feed = await widget.service.search('new music 2026', count: 20);
+      } else {
+        feed = await widget.service.discoveryFeed(
+          mood: _moodArg,
+          target: 20,
+          excludeIds: _seenIds,
+          blockedArtists: lib.blockedArtists,
+          notInterestedIds: lib.notInterestedIds,
+        );
+      }
       if (!mounted) return;
       final fresh = feed.where((t) => _seenIds.add(t.id)).toList();
       setState(() => _tracks.addAll(fresh));
@@ -134,9 +183,44 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
 
   void _onPageChanged(int index) {
     setState(() => _currentIndex = index);
-    // Prefetch more when near the end.
-    if (_tracks.length - index < 5) {
-      unawaited(_loadMore());
+    if (_tracks.length - index < 5) unawaited(_loadMore());
+  }
+
+  void _openMoodPicker() async {
+    final chosen = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _MoodPickerScreen()),
+    );
+    if (chosen != null && mounted) {
+      _loadInitial(kind: _FeedKind.mood, mood: chosen);
+    }
+  }
+
+  void _openGenrePicker() async {
+    final chosen = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _GenrePickerScreen()),
+    );
+    if (chosen != null && mounted) {
+      _loadInitial(kind: _FeedKind.genre, mood: chosen);
+    }
+  }
+
+  void _selectChip(String label) {
+    switch (label) {
+      case 'For You':
+        _loadInitial(kind: _FeedKind.forYou);
+        break;
+      case 'Moods':
+        _openMoodPicker();
+        break;
+      case 'Genres':
+        _openGenrePicker();
+        break;
+      case 'Trending':
+        _loadInitial(kind: _FeedKind.trending);
+        break;
+      case 'New':
+        _loadInitial(kind: _FeedKind.newMusic);
+        break;
     }
   }
 
@@ -156,13 +240,18 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.music_off_rounded,
-                  size: 48, color: AppColors.textMuted),
+              const Icon(Icons.headphones_rounded,
+                  size: 52, color: AppColors.textMuted),
               const SizedBox(height: 12),
-              const Text('No music found',
-                  style: TextStyle(color: AppColors.textMuted)),
+              const Text('Discovery is taking a break',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              const Text("We couldn't load recommendations right now.",
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _loadInitial, child: const Text('Retry')),
+              FilledButton(
+                  onPressed: () => _loadInitial(kind: _FeedKind.forYou),
+                  child: const Text('Try Again')),
             ],
           ),
         ),
@@ -180,17 +269,22 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
             itemCount: _tracks.length,
             onPageChanged: _onPageChanged,
             itemBuilder: (context, index) {
+              final track = _tracks[index];
               return _ReelsCard(
-                track: _tracks[index],
+                track: track,
                 isActive: index == _currentIndex,
+                contextLabel: _contextLabel(),
                 onPlayPause: () => _play(index),
-                onLike: () => _toggleLike(_tracks[index]),
-                onAdd: () => _addToPlaylist(_tracks[index]),
-                onShare: () => _share(_tracks[index]),
+                onLike: () => _toggleLike(track),
+                onAdd: () => _showAddSheet(track),
+                onShare: () => _share(track),
+                onMore: () => _showMoreSheet(track),
+                onNotInterested: () => _markNotInterested(track),
+                onBlockArtist: () => _blockArtist(track),
               );
             },
           ),
-          // Top mood chips (Discovery context filter).
+          // Top control chips (minimal glass pills).
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
@@ -201,15 +295,15 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    itemCount: _moods.length,
+                    itemCount: _modeChips.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 8),
                     itemBuilder: (_, i) {
-                      final mood = _moods[i];
-                      final selected = mood == (_activeMood ?? 'For You');
+                      final label = _modeChips[i];
+                      final selected = _isChipSelected(label);
                       return ChoiceChip(
-                        label: Text(mood),
+                        label: Text(label),
                         selected: selected,
-                        onSelected: (_) => _loadInitial(mood: mood),
+                        onSelected: (_) => _selectChip(label),
                         labelStyle: TextStyle(
                           color: selected ? Colors.black : Colors.white70,
                           fontWeight: FontWeight.w700,
@@ -230,184 +324,651 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
     );
   }
 
+  bool _isChipSelected(String label) {
+    switch (label) {
+      case 'For You':
+        return _kind == _FeedKind.forYou;
+      case 'Moods':
+        return _kind == _FeedKind.mood;
+      case 'Genres':
+        return _kind == _FeedKind.genre;
+      case 'Trending':
+        return _kind == _FeedKind.trending;
+      case 'New':
+        return _kind == _FeedKind.newMusic;
+    }
+    return false;
+  }
+
+  String _contextLabel() {
+    switch (_kind) {
+      case _FeedKind.forYou:
+        return 'For You';
+      case _FeedKind.mood:
+        return _activeMood ?? 'Mood';
+      case _FeedKind.genre:
+        return _activeMood ?? 'Genre';
+      case _FeedKind.trending:
+        return 'Trending';
+      case _FeedKind.newMusic:
+        return 'New Music';
+    }
+  }
+
   void _toggleLike(DiscoveryTrack track) {
     HapticFeedback.lightImpact();
     LocalLibrary.instance.toggleLiked(track.toTrackMap());
     setState(() {});
   }
 
-  void _addToPlaylist(DiscoveryTrack track) {
+  void _showAddSheet(DiscoveryTrack track) {
     HapticFeedback.lightImpact();
-    LocalLibrary.instance.recordRecentlyPlayed(track.toTrackMap());
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Added ${track.title}'),
-        duration: const Duration(seconds: 1),
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Add to',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.favorite_rounded, color: AppColors.hotPink),
+              title: const Text('Liked Songs'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _toggleLike(track);
+              },
+            ),
+            for (final p in LocalLibrary.instance.playlists.value.take(6))
+              ListTile(
+                leading: const Icon(Icons.queue_music_rounded,
+                    color: AppColors.accent),
+                title: Text(p['name'] as String? ?? 'Playlist'),
+                onTap: () {
+                  LocalLibrary.instance.addTrackToPlaylist(
+                      p['id'] as String, track.toTrackMap());
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Added to playlist'),
+                      duration: Duration(seconds: 1)));
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline_rounded),
+              title: const Text('Create playlist'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _createPlaylist(track);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  Future<void> _createPlaylist(DiscoveryTrack track) async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('New Playlist'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Playlist Name'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (name != null && name.isNotEmpty) {
+      await LocalLibrary.instance.createPlaylist(name);
+      await LocalLibrary.instance.addTrackToPlaylist(
+          LocalLibrary.instance.playlists.value.first['id'] as String,
+          track.toTrackMap());
+    }
+  }
+
   void _share(DiscoveryTrack track) {
     HapticFeedback.lightImpact();
-    // Minimal share: copy watch link to clipboard (official player plays it).
-    Clipboard.setData(ClipboardData(
-      text: 'Watch "${track.title}" on V Shots: '
-          'https://www.youtube.com/watch?v=${track.id}',
-    ));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Link copied to clipboard'),
-        duration: Duration(seconds: 1),
+    SharePlus.instance.share(
+      ShareParams(
+        text: 'Listen to "${track.title}" by ${track.artist} on V Shots: '
+            'https://www.youtube.com/watch?v=${track.id}',
+      ),
+    );
+  }
+
+  void _showMoreSheet(DiscoveryTrack track) {
+    HapticFeedback.lightImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.playlist_play_rounded),
+              title: const Text('Play next'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_to_queue_rounded),
+              title: const Text('Add to queue'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_in_new_rounded),
+              title: const Text('Open on YouTube'),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(
+                    text: 'https://www.youtube.com/watch?v=${track.id}'));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('YouTube link copied'),
+                    duration: Duration(seconds: 1)));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.thumb_down_alt_outlined),
+              title: const Text('Not interested'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _markNotInterested(track);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block_rounded),
+              title: const Text("Don't recommend this artist"),
+              onTap: () {
+                Navigator.pop(ctx);
+                _blockArtist(track);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _markNotInterested(DiscoveryTrack track) {
+    LocalLibrary.instance.markNotInterested(track.id);
+    setState(() {
+      _tracks.removeWhere((t) => t.id == track.id);
+      _seenIds.add(track.id);
+    });
+    _loadMore();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Noted — we\'ll show less of this'),
+        duration: Duration(seconds: 1)));
+  }
+
+  void _blockArtist(DiscoveryTrack track) {
+    LocalLibrary.instance.blockArtist(track.artist);
+    setState(() {
+      _tracks.removeWhere((t) => t.artist == track.artist);
+    });
+    _loadMore();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Artist blocked — we\'ll stop recommending them'),
+        duration: Duration(seconds: 1)));
+  }
+}
+
+/// Mood selection with large visual cards.
+class _MoodPickerScreen extends StatelessWidget {
+  const _MoodPickerScreen();
+
+  static const _moods = <(String, String, String)>[
+    ('Romantic', '❤️', 'Love & feelings'),
+    ('Sad', '😢', 'Songs that hurt'),
+    ('Energetic', '🔥', 'High energy'),
+    ('Chill', '😌', 'Calm & relaxed'),
+    ('Party', '🥳', 'Dance & celebrate'),
+    ('Workout', '💪', 'Push yourself'),
+    ('Focus', '🎧', 'Deep concentration'),
+    ('Late Night', '🌙', 'After hours'),
+    ('Heartbreak', '💔', 'Moving on'),
+    ('Peaceful', '🧘', 'Inner calm'),
+    ('Road Trip', '🚗', 'Hit the highway'),
+    ('Happy', '☀️', 'Feel-good'),
+    ('Attitude', '😈', 'Confident'),
+    ('Rainy', '🌧️', 'Rainy days'),
+    ('Nostalgic', '✨', 'Back in time'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('What are you feeling?',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        backgroundColor: AppColors.background,
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 220,
+          mainAxisExtent: 130,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: _moods.length,
+        itemBuilder: (context, i) {
+          final (name, emoji, desc) = _moods[i];
+          return InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: () => Navigator.pop(context, name),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _colorFor(name).withValues(alpha: 0.7),
+                    AppColors.surface,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 34)),
+                  const SizedBox(height: 8),
+                  Text(name,
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text(desc,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  static Color _colorFor(String name) {
+    const map = <String, Color>{
+      'Romantic': Color(0xFFE91E63),
+      'Sad': Color(0xFF3F51B5),
+      'Energetic': Color(0xFFFF5722),
+      'Chill': Color(0xFF4CAF50),
+      'Party': Color(0xFFFF9800),
+      'Workout': Color(0xFFF44336),
+      'Focus': Color(0xFF00BCD4),
+      'Late Night': Color(0xFF37474F),
+      'Heartbreak': Color(0xFF7B1FA2),
+      'Peaceful': Color(0xFF009688),
+      'Road Trip': Color(0xFF795548),
+      'Happy': Color(0xFFFFC107),
+      'Attitude': Color(0xFF212121),
+      'Rainy': Color(0xFF607D8B),
+      'Nostalgic': Color(0xFF8D6E63),
+    };
+    return map[name] ?? AppColors.accent;
+  }
+}
+
+/// Genre selection.
+class _GenrePickerScreen extends StatelessWidget {
+  const _GenrePickerScreen();
+
+  static const _genres = <(String, String)>[
+    ('Bollywood', '🎬'),
+    ('Hindi', '🎵'),
+    ('Punjabi', '🥁'),
+    ('English', '🎸'),
+    ('Pop', '🌟'),
+    ('Hip-Hop', '🎤'),
+    ('EDM', '🎧'),
+    ('Lo-fi', '🎹'),
+    ('Global', '🌍'),
+    ('Devotional', '🙏'),
+    ('Rock', '🎸'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Choose a Genre',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        backgroundColor: AppColors.background,
+      ),
+      body: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 200,
+          mainAxisExtent: 80,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+        ),
+        itemCount: _genres.length,
+        itemBuilder: (context, i) {
+          final (name, emoji) = _genres[i];
+          return InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => Navigator.pop(context, name),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              alignment: Alignment.center,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 24)),
+                  const SizedBox(width: 8),
+                  Text(name,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 15)),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-class _ReelsCard extends StatelessWidget {
+class _ReelsCard extends StatefulWidget {
   const _ReelsCard({
     required this.track,
     required this.isActive,
+    required this.contextLabel,
     required this.onPlayPause,
     required this.onLike,
     required this.onAdd,
     required this.onShare,
+    required this.onMore,
+    required this.onNotInterested,
+    required this.onBlockArtist,
   });
 
   final DiscoveryTrack track;
   final bool isActive;
+  final String contextLabel;
   final VoidCallback onPlayPause;
   final VoidCallback onLike;
   final VoidCallback onAdd;
   final VoidCallback onShare;
+  final VoidCallback onMore;
+  final VoidCallback onNotInterested;
+  final VoidCallback onBlockArtist;
+
+  @override
+  State<_ReelsCard> createState() => _ReelsCardState();
+}
+
+class _ReelsCardState extends State<_ReelsCard> {
+  AnimationController? _heartCtl;
+  Animation<double>? _heartScale;
+  Animation<double>? _heartOpacity;
+
+  @override
+  void dispose() {
+    _heartCtl?.dispose();
+    super.dispose();
+  }
+
+  void _doubleTapLike() {
+    final ctl = _heartCtl ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _heartScale = CurvedAnimation(parent: ctl, curve: Curves.easeOutBack);
+    _heartOpacity = Tween<double>(begin: 1, end: 0).animate(CurvedAnimation(
+      parent: ctl,
+      curve: const Interval(0.4, 1.0),
+    ));
+    ctl.forward(from: 0);
+    widget.onLike();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final track = widget.track;
     final isLiked = LocalLibrary.instance.isLiked(track.id);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Artwork background.
-        AppImage(track.artwork, fit: BoxFit.cover),
-        // Gradient overlays for readability.
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.2),
-                Colors.transparent,
-                Colors.black.withValues(alpha: 0.75),
-              ],
-              stops: const [0.0, 0.4, 1.0],
-            ),
-          ),
-        ),
-        // Right action rail.
-        Positioned(
-          right: 14,
-          bottom: 160,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ActionButton(
-                icon: isLiked
-                    ? Icons.favorite_rounded
-                    : Icons.favorite_border_rounded,
-                color: isLiked ? AppColors.hotPink : Colors.white,
-                label: 'Like',
-                onTap: onLike,
-              ),
-              const SizedBox(height: 22),
-              _ActionButton(
-                icon: Icons.playlist_add_rounded,
-                color: Colors.white,
-                label: 'Add',
-                onTap: onAdd,
-              ),
-              const SizedBox(height: 22),
-              _ActionButton(
-                icon: Icons.share_rounded,
-                color: Colors.white,
-                label: 'Share',
-                onTap: onShare,
-              ),
-            ],
-          ),
-        ),
-        // Bottom metadata.
-        SafeArea(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 110),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    track.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    track.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.play_arrow_rounded,
-                            color: Colors.white, size: 20),
-                        SizedBox(width: 4),
-                        Text(
-                          'Play',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+
+    return GestureDetector(
+      onDoubleTap: _doubleTapLike,
+      onLongPress: widget.onMore,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Immersive artwork background.
+          AppImage(track.artwork, fit: BoxFit.cover),
+          // Dark gradient overlay for readability.
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.3),
+                  Colors.black.withValues(alpha: 0.05),
+                  Colors.black.withValues(alpha: 0.8),
                 ],
+                stops: const [0.0, 0.45, 1.0],
               ),
             ),
           ),
-        ),
-        // Tap anywhere to play/pause (when active).
-        if (isActive)
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: onPlayPause,
-              behavior: HitTestBehavior.opaque,
+          // Right action rail.
+          Positioned(
+            right: 14,
+            bottom: 170,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ActionButton(
+                  icon: isLiked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  color: isLiked ? AppColors.hotPink : Colors.white,
+                  label: 'Like',
+                  onTap: widget.onLike,
+                ),
+                const SizedBox(height: 20),
+                _ActionButton(
+                  icon: Icons.playlist_add_rounded,
+                  color: Colors.white,
+                  label: 'Add',
+                  onTap: widget.onAdd,
+                ),
+                const SizedBox(height: 20),
+                _ActionButton(
+                  icon: Icons.share_rounded,
+                  color: Colors.white,
+                  label: 'Share',
+                  onTap: widget.onShare,
+                ),
+                const SizedBox(height: 20),
+                _ActionButton(
+                  icon: Icons.more_horiz_rounded,
+                  color: Colors.white,
+                  label: 'More',
+                  onTap: widget.onMore,
+                ),
+              ],
             ),
           ),
-      ],
+          // Double-tap heart burst.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _heartCtl ?? const AlwaysStoppedAnimation(1.0),
+                builder: (context, _) {
+                  final ctl = _heartCtl;
+                  if (ctl == null || !ctl.isAnimating) {
+                    return const SizedBox.shrink();
+                  }
+                  return Center(
+                    child: Transform.scale(
+                      scale: _heartScale?.value ?? 1,
+                      child: Opacity(
+                        opacity: _heartOpacity?.value ?? 0,
+                        child: Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.black.withValues(alpha: 0.35),
+                          ),
+                          child: const Icon(Icons.favorite_rounded,
+                              color: AppColors.hotPink, size: 50),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          // Bottom metadata.
+          SafeArea(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.contextLabel,
+                      style: TextStyle(
+                        color: AppColors.accent.withValues(alpha: 0.9),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _cleanTitle(track.title),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _cleanArtist(track.title, track.artist),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: widget.onPlayPause,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 28, vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.4),
+                              blurRadius: 16,
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.play_arrow_rounded,
+                                color: Colors.white, size: 24),
+                            SizedBox(width: 6),
+                            Text(
+                              'Play',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Tap anywhere to play/pause when active (but not on buttons).
+          if (widget.isActive)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: widget.onPlayPause,
+                behavior: HitTestBehavior.translucent,
+              ),
+            ),
+        ],
+      ),
     );
+  }
+
+  /// Normalizes messy YouTube titles: strips bracket/suffix annotations.
+  String _cleanTitle(String raw) {
+    var t = raw;
+    // "Title (Official Video)" -> "Title"
+    t = t.replaceAll(
+        RegExp(
+            r'\s*[\(\[]\s*(official|lyric|lyrics|video|audio|full|hd|4k|slowed|reverb)\s*[\)\]]',
+            caseSensitive: false),
+        '');
+    // "Title - Artist" -> "Title"
+    final dash = t.indexOf(' - ');
+    if (dash > 0) t = t.substring(0, dash);
+    // "Title | Album | ..." -> "Title"
+    final bar = t.indexOf(' | ');
+    if (bar > 0) t = t.substring(0, bar);
+    return t.trim().isEmpty ? raw : t.trim();
+  }
+
+  String _cleanArtist(String title, String artist) {
+    // If artist looks like the full YouTube title tail, prefer the simple artist.
+    final a = artist.trim();
+    if (a.isNotEmpty && a.length < 40) return a;
+    return 'Unknown Artist';
   }
 }
 
@@ -431,8 +992,8 @@ class _ActionButton extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            width: 46,
-            height: 46,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.4),
               shape: BoxShape.circle,
@@ -441,10 +1002,8 @@ class _ActionButton extends StatelessWidget {
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 11),
-          ),
+          Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 11)),
         ],
       ),
     );
