@@ -297,15 +297,15 @@ class _DiscoveryEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.search_off, size: 48, color: AppColors.textMuted),
-          const SizedBox(height: 12),
-          const Text(
+          Icon(Icons.search_off, size: 48, color: AppColors.textMuted),
+          SizedBox(height: 12),
+          Text(
             'No music found',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
               color: AppColors.textMain,
