@@ -58,13 +58,6 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
     super.dispose();
   }
 
-  MusicCategory get _activeCategory {
-    for (final c in kMusicCategories) {
-      if (c.id == _activeCategoryId) return c;
-    }
-    return kMusicCategories.first;
-  }
-
   Future<void> _loadCategory(String id) async {
     setState(() {
       _activeCategoryId = id;
@@ -223,7 +216,7 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
             },
             selectedColor: AppColors.accent,
             backgroundColor: AppColors.surface,
-            side: BorderSide(color: AppColors.border),
+            side: const BorderSide(color: AppColors.border),
             labelStyle: TextStyle(
               color: selected ? Colors.white : AppColors.textMain,
               fontWeight: FontWeight.w700,
@@ -312,7 +305,11 @@ class _DiscoveryEmpty extends StatelessWidget {
           const SizedBox(height: 12),
           const Text(
             'No music found',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMain,
+            ),
           ),
         ],
       ),

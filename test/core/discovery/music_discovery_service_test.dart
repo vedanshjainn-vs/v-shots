@@ -17,7 +17,7 @@ import 'package:v_shots/core/providers/adapters/youtube/youtube_data_api_client.
 void main() {
   group('MusicTrack', () {
     test('fromVideoItem normalizes YouTubeVideoItem metadata', () {
-      final v = YouTubeVideoItem(
+      const v = YouTubeVideoItem(
         id: 'abc123',
         title: 'Kesariya',
         channelTitle: 'Arijit Singh',
