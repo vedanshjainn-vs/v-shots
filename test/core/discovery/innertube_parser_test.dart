@@ -108,6 +108,24 @@ Map<String, dynamic> sampleSearchResponse() {
   };
 }
 
+/// Returns the FIRST musicResponsiveListItemRenderer found in the tree.
+Map<String, dynamic>? _firstResponsiveItem(dynamic node) {
+  if (node is Map<String, dynamic>) {
+    final rlr = node['musicResponsiveListItemRenderer'];
+    if (rlr is Map<String, dynamic>) return rlr;
+    for (final v in node.values) {
+      final r = _firstResponsiveItem(v);
+      if (r != null) return r;
+    }
+  } else if (node is List) {
+    for (final v in node) {
+      final r = _firstResponsiveItem(v);
+      if (r != null) return r;
+    }
+  }
+  return null;
+}
+
 void main() {
   // Expose parser through a lightweight subclass-independent helper by
   // testing the public search path with a mocked http? Not needed — instead
@@ -118,23 +136,7 @@ void main() {
   group('response shape assumptions (matches parser)', () {
     test('videoId is nested in watchEndpoint, not top-level', () {
       final root = sampleSearchResponse();
-      Map<String, dynamic>? rlr;
-      void walk(dynamic n) {
-        if (n is Map<String, dynamic>) {
-          if (n['musicResponsiveListItemRenderer'] is Map<String, dynamic>) {
-            rlr = n['musicResponsiveListItemRenderer'] as Map<String, dynamic>;
-          }
-          for (final v in n.values) {
-            if (v is Map || v is List) walk(v);
-          }
-        } else if (n is List) {
-          for (final v in n) {
-            if (v is Map || v is List) walk(v);
-          }
-        }
-      }
-
-      walk(root);
+      final rlr = _firstResponsiveItem(root);
       expect(rlr, isNotNull);
       // top-level videoId is absent (the real bug that caused empty feed)
       expect(rlr!['videoId'], isNull);
@@ -146,23 +148,7 @@ void main() {
     test('thumbnail is under musicThumbnailRenderer.thumbnail.thumbnails[]',
         () {
       final root = sampleSearchResponse();
-      Map<String, dynamic>? rlr;
-      void walk(dynamic n) {
-        if (n is Map<String, dynamic>) {
-          if (n['musicResponsiveListItemRenderer'] is Map<String, dynamic>) {
-            rlr = n['musicResponsiveListItemRenderer'] as Map<String, dynamic>;
-          }
-          for (final v in n.values) {
-            if (v is Map || v is List) walk(v);
-          }
-        } else if (n is List) {
-          for (final v in n) {
-            if (v is Map || v is List) walk(v);
-          }
-        }
-      }
-
-      walk(root);
+      final rlr = _firstResponsiveItem(root);
       final th = rlr!['thumbnail'] as Map<String, dynamic>;
       final mt = th['musicThumbnailRenderer'] as Map<String, dynamic>;
       final tt = mt['thumbnail'] as Map<String, dynamic>;
@@ -173,23 +159,7 @@ void main() {
 
     test('flexColumns carry title and artist', () {
       final root = sampleSearchResponse();
-      Map<String, dynamic>? rlr;
-      void walk(dynamic n) {
-        if (n is Map<String, dynamic>) {
-          if (n['musicResponsiveListItemRenderer'] is Map<String, dynamic>) {
-            rlr = n['musicResponsiveListItemRenderer'] as Map<String, dynamic>;
-          }
-          for (final v in n.values) {
-            if (v is Map || v is List) walk(v);
-          }
-        } else if (n is List) {
-          for (final v in n) {
-            if (v is Map || v is List) walk(v);
-          }
-        }
-      }
-
-      walk(root);
+      final rlr = _firstResponsiveItem(root);
       final cols = rlr!['flexColumns'] as List;
       final col = cols.first as Map<String, dynamic>;
       final ren = col['musicResponsiveListItemFlexColumnRenderer']
