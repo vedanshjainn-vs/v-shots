@@ -3,6 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -81,6 +82,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   int _currentIndex = 0;
   bool _isLoadingMore = false;
   bool _initialLoading = true;
+
+  /// True when the Discover tab was the active tab on the last tab change.
+  /// Used to detect re-entry so every fresh Discovery session starts from a
+  /// video the user has NOT recently seen (new-video-every-open requirement).
+  bool _wasOnDiscoverTab = false;
 
   // ── Discovery ad page mapping (Section 7) ──────────────────────────────
   // The feed is a vertical PageView. Every [AdConfig.discoveryAdEvery] organic
@@ -171,9 +177,16 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   void _onTabChanged() {
     if (!mounted) return;
     setState(() {});
+    final toDiscover = _onDiscoverTab;
+    // Re-entering Discover from another tab → start a FRESH session so the
+    // user does not see the same first video every time they open Discovery.
+    if (toDiscover && !_wasOnDiscoverTab && _items.isNotEmpty) {
+      unawaited(_refreshOrderForReentry());
+    }
+    _wasOnDiscoverTab = toDiscover;
     // When the user returns to the Discover tab, if the current video is cued
     // but not playing, start it (gesture-initiated, so permitted to autoplay).
-    if (_onDiscoverTab && !_isPlaying && _items.isNotEmpty) {
+    if (toDiscover && !_isPlaying && _items.isNotEmpty) {
       final videoId =
           _activeVideoId ?? (_items[_currentIndex]['id'] as String? ?? '');
       if (videoId.isNotEmpty) {
@@ -181,6 +194,54 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         _isPlaying = true;
       }
     }
+  }
+
+  /// Rotates the feed so a not-recently-seen video leads the next Discovery
+  /// session. If everything in the feed was recently shown, pulls a brand-new
+  /// batch (excluding recently-shown ids) and prepends it.
+  Future<void> _refreshOrderForReentry() async {
+    if (!mounted) return;
+    final recently = LocalLibrary.instance.recentlyShownIds;
+    // Prefer rotating within the existing pool (fast, no network).
+    final freshIdx = _items.indexWhere((t) => !recently.contains(t['id']));
+    if (freshIdx > 0) {
+      if (!mounted) return;
+      setState(() {
+        final head = _items.sublist(0, freshIdx);
+        final rest = _items.sublist(freshIdx);
+        _items
+          ..clear()
+          ..addAll(rest)
+          ..addAll(head);
+        _currentIndex = 0;
+      });
+      _replayFirst();
+      return;
+    }
+    // Everything is recently seen → fetch genuinely new videos.
+    final raw = await _fetchDiscoverBatch(extraExclude: recently);
+    if (!mounted) return;
+    final batch = _dedupeBatch(raw);
+    if (batch.isNotEmpty) {
+      setState(() {
+        final old = List<Map<String, dynamic>>.from(_items);
+        _items
+          ..clear()
+          ..addAll(batch)
+          ..addAll(old);
+        _currentIndex = 0;
+      });
+      _replayFirst();
+    } else {
+      _replayFirst(); // keep current pool; just restart at top
+    }
+  }
+
+  void _replayFirst() {
+    if (!mounted || _items.isEmpty) return;
+    final firstId = _items[0]['id'] as String? ?? 'kJQP7kiw5Fk';
+    _pageController.jumpToPage(0);
+    _initOrLoadVideo(firstId);
   }
 
   @override
@@ -291,13 +352,17 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     setState(() {});
   }
 
-  Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
+  Future<List<Map<String, dynamic>>> _fetchDiscoverBatch({
+    Set<String> extraExclude = const {},
+  }) async {
     // The selected category is the single source of truth for the query.
     final cat = _activeCategory ?? _defaultCategory;
+    final excluded = {..._seenIds, ...extraExclude};
     // Section 1 point 6 (verification): log the exact outgoing query so we can
     // confirm each category selection hits a DIFFERENT query.
     debugPrint(
-      '[Discover] Fetching category="${cat.label}" query="${cat.query}"',
+      '[Discover] Fetching category="${cat.label}" query="${cat.query}" '
+      '(exclude ${excluded.length})',
     );
     try {
       // Prefer the category's own query (via the feed service, which handles
@@ -306,7 +371,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       if (cat.query.isNotEmpty) {
         return forYouFeedService.fetchForCategory(
           cat,
-          excludeIds: _seenIds,
+          excludeIds: excluded,
           count: 12,
         );
       }
@@ -316,7 +381,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     try {
       final scored = await recommendationEngine.generateFeed(
         intent: FeedIntent.discoverSomethingNew,
-        excludeIds: _seenIds,
+        excludeIds: excluded,
         count: 12,
       );
       if (scored.isNotEmpty) {
@@ -325,7 +390,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     } catch (e) {
       debugPrint('[ForYouFeed] Engine discover batch failed, falling back: $e');
     }
-    return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
+    return forYouFeedService.fetchNextBatch(
+      excludeIds: excluded,
+      count: 12,
+    );
   }
 
   Future<void> _maybeLoadMore() async {
@@ -375,34 +443,52 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// inside any PageView card) so the WebView is never torn down on swipe;
   /// swiping simply loads the next video into this same controller.
   Widget _buildBackgroundPlayer() {
-    final controller = globalYtController;
-    if (controller == null) {
-      // No controller yet — fall back to the current track's artwork until the
-      // first video is created.
-      final artwork = (_items.isNotEmpty
-          ? (_items[_currentIndex]['artwork'] as String?)
-          : null);
-      return Container(
-        color: Colors.black,
-        child: artwork != null ? AppImage(artwork, fit: BoxFit.cover) : null,
-      );
-    }
-    return Container(
-      color: Colors.black,
-      alignment: Alignment.center,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: YoutubePlayer(
-              controller: controller,
-              aspectRatio: 16 / 9,
+    final artwork = _items.isNotEmpty
+        ? (_items[_currentIndex]['artwork'] as String?)
+        : null;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Moving, heavily-blurred, darkened artwork background — removes the
+        // black-empty-screen look and gives a premium music-app aesthetic.
+        _AnimatedBlurredBackground(
+          url: artwork,
+          key: ValueKey<String?>('blur-$artwork'),
+        ),
+        // Vertical scrim so on-screen text stays readable over bright frames.
+        const IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black54, Colors.transparent, Colors.black87],
+                stops: [0.0, 0.42, 1.0],
+              ),
             ),
           ),
         ),
-      ),
+        // The SINGLE global YouTube IFrame, centered 16:9 on top of the blur.
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: globalYtController != null
+                    ? YoutubePlayer(
+                        controller: globalYtController!,
+                        aspectRatio: 16 / 9,
+                      )
+                    : (artwork != null
+                        ? AppImage(artwork, fit: BoxFit.cover)
+                        : const SizedBox.shrink()),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1226,6 +1312,85 @@ class _ForYouCardState extends State<_ForYouCard>
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A full-screen, slowly-panning, heavily-blurred version of the current
+/// track's artwork used as the Discovery background. This replaces the flat
+/// black empty areas with a premium, "moving" blurred backdrop while keeping
+/// on-screen text readable via a dark overlay. The actual video still plays in
+/// the single global YouTube IFrame rendered on top (in [_buildBackgroundPlayer]).
+class _AnimatedBlurredBackground extends StatefulWidget {
+  const _AnimatedBlurredBackground({super.key, this.url});
+
+  final String? url;
+
+  @override
+  State<_AnimatedBlurredBackground> createState() =>
+      _AnimatedBlurredBackgroundState();
+}
+
+class _AnimatedBlurredBackgroundState extends State<_AnimatedBlurredBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctl;
+  late final Animation<double> _pan;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 26),
+    );
+    // Slow vertical drift + gentle zoom for a subtle "moving" effect.
+    _pan = Tween<double>(begin: -1.0, end: 1.0).animate(
+      CurvedAnimation(parent: _ctl, curve: Curves.easeInOut),
+    );
+    _ctl.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.url;
+    if (url == null || url.isEmpty) {
+      return Container(color: Colors.black);
+    }
+    return AnimatedBuilder(
+      animation: _ctl,
+      builder: (context, _) {
+        return ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Oversized blurred artwork that slowly pans for a moving feel.
+              FractionalTranslation(
+                translation: Offset(0, _pan.value * 0.05),
+                child: Transform.scale(
+                  scale: 1.25,
+                  child: ImageFiltered(
+                    imageFilter: const ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+                    child: AppImage(
+                      url,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                    ),
+                  ),
+                ),
+              ),
+              // Darken heavily for readability of metadata/controls.
+              Container(color: Colors.black.withValues(alpha: 0.45)),
+            ],
+          ),
+        );
+      },
     );
   }
 }

@@ -141,13 +141,6 @@ class YouTubeRepository {
     return null;
   }
 
-  /// Lists the channel's sections (channelSections.list) to discover
-  /// auto-generated playlists (which playlists.list often hides).
-  Future<({List<String> playlistIds, List<String> titles, String error})>
-      listChannelSections(String channelId) {
-    return _client.listChannelSections(channelId);
-  }
-
   /// Lists the playlists owned by [channelId], paginated (live).
   Future<PlaylistPage> listChannelPlaylists(
     String channelId, {
@@ -172,6 +165,25 @@ class YouTubeRepository {
       maxResults: maxResults,
       pageToken: pageToken,
     );
+  }
+
+  /// Lists the channel sections of [channelId] (`channelSections.list`).
+  ///
+  /// This is the PRIMARY playlist-discovery path for the official YouTube
+  /// Music channel, whose auto-generated playlists are NOT returned by
+  /// `playlists.list?channelId=...`. Returns playlist refs per section.
+  Future<List<YouTubeChannelSection>> listChannelSections(
+    String channelId, {
+    int maxResults = 50,
+  }) {
+    return _client.listChannelSections(channelId, maxResults: maxResults);
+  }
+
+  /// Resolves metadata for a list of playlist ids (`playlists.list?id=`).
+  Future<List<YouTubePlaylist>> listPlaylistsByIds(
+    List<String> playlistIds,
+  ) {
+    return _client.listPlaylistsByIds(playlistIds);
   }
 
   // ── fallback artist search (from verified catalog artists) ──────────────

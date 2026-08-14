@@ -10,13 +10,18 @@
 // No mocking, no scraping, no hardcoded songs.
 // ═════════════════════════════════════════════════════════════════════════
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../preferences/user_preferences.dart';
 import '../providers/adapters/youtube/youtube_data_api_client.dart';
 import '../providers/adapters/youtube/youtube_repository.dart';
+import 'configured_playlists.dart';
 
 /// The official YouTube Music channel whose playlists feed Home/Discovery.
 const String kYouTubeMusicChannelId = 'UC-9-kyTW8ZkZNDHQJ6FgpwQ';
+
+/// Category shown for playlists that do not map to a known genre/mood bucket.
+const String kUnknownPlaylistCategory = 'More From YouTube Music';
 
 /// A discovered playlist plus its computed relevance to the user.
 class ScoredPlaylist {
@@ -26,6 +31,7 @@ class ScoredPlaylist {
     this.countryScore = 0,
     this.languageScore = 0,
     this.genreScore = 0,
+    this.category = kUnknownPlaylistCategory,
   });
 
   final YouTubePlaylist playlist;
@@ -33,6 +39,53 @@ class ScoredPlaylist {
   final double countryScore;
   final double languageScore;
   final double genreScore;
+  final String category;
+}
+
+/// Maps a playlist title to a display category. Unknown playlists keep
+/// [kUnknownPlaylistCategory] so no real content is ever dropped.
+String classifyPlaylistTitle(String title) {
+  final t = title.toLowerCase();
+  if (t.contains('trending') || t.contains('popular') || t.contains('top 50')) {
+    return 'Trending';
+  }
+  if (t.contains('new release') ||
+      t.contains('new music') ||
+      t.contains('fresh')) {
+    return 'New Releases';
+  }
+  if (t.contains('punjabi')) return 'Punjabi';
+  if (t.contains('tamil')) return 'Tamil';
+  if (t.contains('telugu')) return 'Telugu';
+  if (t.contains('hindi') || t.contains('bollywood') || t.contains('i-pop')) {
+    return 'Hindi';
+  }
+  if (t.contains('english') ||
+      t.contains('global') ||
+      t.contains('international') ||
+      t.contains('pop')) {
+    return 'English';
+  }
+  if (t.contains('hip hop') || t.contains('rap')) return 'Hip-Hop';
+  if (t.contains('edm') || t.contains('dance') || t.contains('electronic')) {
+    return 'EDM';
+  }
+  if (t.contains('romantic') || t.contains('love')) return 'Romantic';
+  if (t.contains('chill') || t.contains('lofi') || t.contains('lo-fi')) {
+    return 'Chill';
+  }
+  if (t.contains('devotional') ||
+      t.contains('bhajan') ||
+      t.contains('bhakti')) {
+    return 'Devotional';
+  }
+  if (t.contains('workout') || t.contains('gym') || t.contains('hype')) {
+    return 'Workout';
+  }
+  if (t.contains('party') || t.contains('celebration')) return 'Party';
+  if (t.contains('sad') || t.contains('heartbroken')) return 'Sad';
+  if (t.contains('indie') || t.contains('acoustic')) return 'Indie';
+  return kUnknownPlaylistCategory;
 }
 
 /// Country -> language keywords that appear in playlist titles.
@@ -69,51 +122,72 @@ class PlaylistContentService {
   /// Whether a live API key is available (playlists require the real API).
   bool get isLive => _repo.isLive;
 
-  /// Discovers playlists from the YouTube Music channel.
+  /// Discovers all playlists that feed Home/Discovery, sorted by title.
   ///
-  /// Primary: channelSections.list (auto-generated Music playlists that
-  /// playlists.list often hides). Fallback: playlists.list (paginated).
-  /// Never guesses playlist IDs. Returns [] if not live / API error.
+  /// Source priority (all real, none guessed):
+  ///   1. channelSections.list on the YouTube Music channel → playlist refs
+  ///      (the ONLY path that surfaces the channel's auto-generated playlists,
+  ///      since playlists.list?channelId=... returns 0 for it).
+  ///   2. playlists.list?channelId=... (paginated) as a fallback.
+  ///   3. [kConfiguredPlaylists] — real, user-verified playlist ids.
+  ///
+  /// Returns empty only if the API is not live / every path fails.
   Future<List<YouTubePlaylist>> discoverPlaylists({
     int maxPages = 5,
   }) async {
-    if (!isLive) return const [];
-    final all = <YouTubePlaylist>[];
+    final unique = <YouTubePlaylist>[];
     final seen = <String>{};
 
-    // 1) channelSections.list → playlist IDs + section titles.
-    final sections = await _repo.listChannelSections(kYouTubeMusicChannelId);
-    if (sections.playlistIds.isNotEmpty) {
-      for (var i = 0; i < sections.playlistIds.length; i++) {
-        final pid = sections.playlistIds[i];
-        if (pid.isEmpty || !seen.add(pid)) continue;
-        final title =
-            i < sections.titles.length ? sections.titles[i] : 'Playlist';
-        all.add(
-          YouTubePlaylist(
-            id: pid,
-            title: title.isEmpty ? 'Playlist' : title,
-            description: '',
-            thumbnailUrl: '',
-            itemCount: 0,
-            channelId: kYouTubeMusicChannelId,
-          ),
-        );
-      }
-      if (kDebugMode) {
-        debugPrint(
-          '[PLAYLIST] channelSections: ${sections.playlistIds.length} playlist refs'
-          ' (err=${sections.error})',
-        );
-      }
-      if (all.isNotEmpty) {
-        all.sort(
-            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-        return all;
+    void addAll(List<YouTubePlaylist> list) {
+      for (final p in list) {
+        if (seen.add(p.id)) unique.add(p);
       }
     }
 
-    // 2) Fallback: playlists.list paginated.
+    // 1. Primary: channelSections → real playlist refs.
+    if (isLive) {
+      try {
+        final sections =
+            await _repo.listChannelSections(kYouTubeMusicChannelId);
+        final refs = sections.expand((s) => s.playlistIds).toSet().toList();
+        debugPrint('[PLAYLIST] channelSections: ${refs.length} playlist refs');
+        if (refs.isNotEmpty) {
+          addAll(await _repo.listPlaylistsByIds(refs));
+        }
+      } catch (e) {
+        debugPrint('[PLAYLIST] channelSections error: $e');
+      }
+    }
+
+    // 2. Fallback: playlists.list by channel (may be 0 for the Music channel).
+    if (unique.isEmpty && isLive) {
+      addAll(await _discoverViaChannelPlaylists(maxPages: maxPages));
+    }
+
+    // 3. Configured, user-verified real playlists.
+    for (final c in kConfiguredPlaylists) {
+      if (c.id.isEmpty) continue;
+      final playlist = YouTubePlaylist(
+        id: c.id,
+        title: c.title,
+        description: '',
+        thumbnailUrl: '',
+        itemCount: 0,
+        channelId: kYouTubeMusicChannelId,
+      );
+      if (seen.add(c.id)) unique.add(playlist);
+    }
+
+    unique
+        .sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    return unique;
+  }
+
+  /// Paginated `playlists.list?channelId=...` (fallback discovery path).
+  Future<List<YouTubePlaylist>> _discoverViaChannelPlaylists({
+    int maxPages = 5,
+  }) async {
+    final all = <YouTubePlaylist>[];
     String? token;
     for (var i = 0; i < maxPages; i++) {
       final page = await _repo.listChannelPlaylists(
@@ -121,17 +195,17 @@ class PlaylistContentService {
         maxResults: 50,
         pageToken: token,
       );
-      for (final p in page.playlists) {
-        if (seen.add(p.id)) all.add(p);
-      }
+      all.addAll(page.playlists);
       token = page.nextPageToken;
       if (token == null) break;
     }
-    all.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-    if (kDebugMode) {
-      debugPrint('[PLAYLIST] playlists.list: ${all.length} playlists');
+    final seen = <String>{};
+    final unique = <YouTubePlaylist>[];
+    for (final p in all) {
+      if (seen.add(p.id)) unique.add(p);
     }
-    return all;
+    debugPrint('[PLAYLIST] playlists.list: ${unique.length} playlists');
+    return unique;
   }
 
   /// Scores a playlist's relevance to the user (deterministic).
@@ -180,19 +254,21 @@ class PlaylistContentService {
       countryScore: countryScore,
       languageScore: languageScore,
       genreScore: genreScore,
+      category: classifyPlaylistTitle(playlist.title),
     );
   }
 
-  /// Returns playlists relevant to the user, sorted by relevance desc.
+  /// Returns playlists for the user, sorted by relevance desc.
+  ///
+  /// Unlike a strict cutoff, this keeps EVERY discovered playlist so no real
+  /// content is lost — unknown playlists are categorized as
+  /// [kUnknownPlaylistCategory] and shown under "More From YouTube Music".
   Future<List<ScoredPlaylist>> relevantPlaylists(
     UserPreferences prefs, {
     int maxPages = 5,
   }) async {
     final playlists = await discoverPlaylists(maxPages: maxPages);
-    final scored = playlists
-        .map((p) => scorePlaylist(p, prefs))
-        .where((s) => s.relevance >= 0.4) // only reasonably relevant
-        .toList()
+    final scored = playlists.map((p) => scorePlaylist(p, prefs)).toList()
       ..sort((a, b) => b.relevance.compareTo(a.relevance));
     return scored;
   }
