@@ -250,7 +250,7 @@ class InnerTubeMusicService {
         id = we['videoId'] as String;
       }
     }
-    if (id == null) id = _findVideoId(rlr);
+    id ??= _findVideoId(rlr);
     if (id == null || id.isEmpty) return null;
 
     // Title + artist from flexColumns.
