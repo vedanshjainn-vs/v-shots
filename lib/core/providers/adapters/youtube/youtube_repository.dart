@@ -141,6 +141,13 @@ class YouTubeRepository {
     return null;
   }
 
+  /// Lists the channel's sections (channelSections.list) to discover
+  /// auto-generated playlists (which playlists.list often hides).
+  Future<({List<String> playlistIds, List<String> titles, String error})>
+      listChannelSections(String channelId) {
+    return _client.listChannelSections(channelId);
+  }
+
   /// Lists the playlists owned by [channelId], paginated (live).
   Future<PlaylistPage> listChannelPlaylists(
     String channelId, {

@@ -10,6 +10,7 @@
 // No mocking, no scraping, no hardcoded songs.
 // ═════════════════════════════════════════════════════════════════════════
 
+import 'package:flutter/foundation.dart';
 import '../preferences/user_preferences.dart';
 import '../providers/adapters/youtube/youtube_data_api_client.dart';
 import '../providers/adapters/youtube/youtube_repository.dart';
@@ -68,13 +69,51 @@ class PlaylistContentService {
   /// Whether a live API key is available (playlists require the real API).
   bool get isLive => _repo.isLive;
 
-  /// Discovers all playlists from the YouTube Music channel (paginated),
-  /// sorted by title. Returns empty if not live / API error.
+  /// Discovers playlists from the YouTube Music channel.
+  ///
+  /// Primary: channelSections.list (auto-generated Music playlists that
+  /// playlists.list often hides). Fallback: playlists.list (paginated).
+  /// Never guesses playlist IDs. Returns [] if not live / API error.
   Future<List<YouTubePlaylist>> discoverPlaylists({
     int maxPages = 5,
   }) async {
     if (!isLive) return const [];
     final all = <YouTubePlaylist>[];
+    final seen = <String>{};
+
+    // 1) channelSections.list → playlist IDs + section titles.
+    final sections = await _repo.listChannelSections(kYouTubeMusicChannelId);
+    if (sections.playlistIds.isNotEmpty) {
+      for (var i = 0; i < sections.playlistIds.length; i++) {
+        final pid = sections.playlistIds[i];
+        if (pid.isEmpty || !seen.add(pid)) continue;
+        final title =
+            i < sections.titles.length ? sections.titles[i] : 'Playlist';
+        all.add(
+          YouTubePlaylist(
+            id: pid,
+            title: title.isEmpty ? 'Playlist' : title,
+            description: '',
+            thumbnailUrl: '',
+            itemCount: 0,
+            channelId: kYouTubeMusicChannelId,
+          ),
+        );
+      }
+      if (kDebugMode) {
+        debugPrint(
+          '[PLAYLIST] channelSections: ${sections.playlistIds.length} playlist refs'
+          ' (err=${sections.error})',
+        );
+      }
+      if (all.isNotEmpty) {
+        all.sort(
+            (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        return all;
+      }
+    }
+
+    // 2) Fallback: playlists.list paginated.
     String? token;
     for (var i = 0; i < maxPages; i++) {
       final page = await _repo.listChannelPlaylists(
@@ -82,19 +121,17 @@ class PlaylistContentService {
         maxResults: 50,
         pageToken: token,
       );
-      all.addAll(page.playlists);
+      for (final p in page.playlists) {
+        if (seen.add(p.id)) all.add(p);
+      }
       token = page.nextPageToken;
       if (token == null) break;
     }
-    // Deduplicate by id, keep order.
-    final seen = <String>{};
-    final unique = <YouTubePlaylist>[];
-    for (final p in all) {
-      if (seen.add(p.id)) unique.add(p);
+    all.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    if (kDebugMode) {
+      debugPrint('[PLAYLIST] playlists.list: ${all.length} playlists');
     }
-    unique
-        .sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-    return unique;
+    return all;
   }
 
   /// Scores a playlist's relevance to the user (deterministic).

@@ -457,6 +457,52 @@ class YouTubeDataApiClient {
     }
   }
 
+  /// Lists the channel's sections (channelSections.list). Auto-generated Music
+  /// channels expose their playlists via sections even when playlists.list
+  /// returns empty. Returns playlist IDs + section titles found.
+  Future<({List<String> playlistIds, List<String> titles, String error})>
+      listChannelSections(String channelId) async {
+    final key = apiKey;
+    if (key.isEmpty || channelId.isEmpty) {
+      return (playlistIds: <String>[], titles: <String>[], error: 'no key');
+    }
+    try {
+      final uri = Uri.parse('$_baseUrl/channelSections').replace(
+        queryParameters: {
+          'part': 'snippet,contentDetails',
+          'channelId': channelId,
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        return (
+          playlistIds: <String>[],
+          titles: <String>[],
+          error: 'HTTP ${response.statusCode}',
+        );
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final ids = <String>[];
+      final titles = <String>[];
+      for (final it in items) {
+        if (it is! Map<String, dynamic>) continue;
+        final cd = (it['contentDetails'] as Map<String, dynamic>?) ?? {};
+        final pl = (cd['playlists'] as List?) ?? const [];
+        for (final pid in pl) {
+          if (pid is String && pid.isNotEmpty) ids.add(pid);
+        }
+        final sn = (it['snippet'] as Map<String, dynamic>?) ?? {};
+        final t = (sn['title'] as String?) ?? '';
+        if (t.isNotEmpty) titles.add(t);
+      }
+      return (playlistIds: ids, titles: titles, error: '');
+    } catch (e) {
+      return (playlistIds: <String>[], titles: <String>[], error: '$e');
+    }
+  }
+
   /// Lists the playlists owned by [channelId] (playlists.list), paginated.
   Future<PlaylistPage> listChannelPlaylists(
     String channelId, {
