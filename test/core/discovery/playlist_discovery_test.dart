@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:v_shots/core/discovery/playlist_content_service.dart';
+import 'package:v_shots/core/preferences/user_preferences.dart';
 import 'package:v_shots/core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'package:v_shots/core/providers/adapters/youtube/youtube_repository.dart';
 

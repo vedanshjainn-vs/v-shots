@@ -1375,7 +1375,7 @@ class _AnimatedBlurredBackgroundState extends State<_AnimatedBlurredBackground>
                 child: Transform.scale(
                   scale: 1.25,
                   child: ImageFiltered(
-                    imageFilter: const ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+                    imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
                     child: AppImage(
                       url,
                       fit: BoxFit.cover,
