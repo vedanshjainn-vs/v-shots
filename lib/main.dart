@@ -6,7 +6,6 @@
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;

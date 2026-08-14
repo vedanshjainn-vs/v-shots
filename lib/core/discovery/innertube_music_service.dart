@@ -135,8 +135,9 @@ class InnerTubeMusicService {
           ));
         }
         for (final value in node.values) {
-          if (value is Map || value is List)
+          if (value is Map || value is List) {
             walk(value, inheritedTitle: shelfTitle);
+          }
         }
       } else if (node is List) {
         for (final item in node) {
