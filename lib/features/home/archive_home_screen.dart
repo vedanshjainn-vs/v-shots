@@ -80,7 +80,8 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
       setState(() => _loading = true);
     }
     try {
-      final shelves = await widget.service.homeFeed();
+      final recent = LocalLibrary.instance.recentlyPlayed.value;
+      final shelves = await widget.service.homeFeed(recentlyPlayed: recent);
       if (!mounted) return;
       setState(() {
         _shelves = shelves;

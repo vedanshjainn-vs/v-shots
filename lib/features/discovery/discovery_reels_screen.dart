@@ -40,6 +40,20 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
   bool _loading = true;
   bool _loadingMore = false;
   int _currentIndex = 0;
+  String? _activeMood;
+
+  static const _moods = <String>[
+    'For You',
+    'Trending',
+    'Workout',
+    'Romance',
+    'Sad',
+    'Party',
+    'Chill',
+    'Devotional',
+    'Punjabi',
+    'Bollywood',
+  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -56,17 +70,28 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
     super.dispose();
   }
 
-  Future<void> _loadInitial() async {
-    setState(() => _loading = true);
+  Future<void> _loadInitial({String? mood}) async {
+    setState(() {
+      _loading = true;
+      _activeMood = mood;
+    });
     try {
-      final feed = await widget.service.discoveryFeed(target: 30);
+      final moodArg = (mood == null || mood == 'For You') ? null : mood;
+      final feed = await widget.service.discoveryFeed(
+        mood: moodArg,
+        target: 30,
+      );
       if (!mounted) return;
       setState(() {
         _tracks.clear();
         _tracks.addAll(feed);
         _seenIds.addAll(feed.map((t) => t.id));
+        _currentIndex = 0;
         _loading = false;
       });
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(0);
+      }
       for (final t in feed) {
         LocalLibrary.instance.recordShownSong(t.id);
       }
@@ -80,7 +105,14 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
     if (_loadingMore) return;
     _loadingMore = true;
     try {
-      final feed = await widget.service.discoveryFeed(target: 20);
+      final moodArg = (_activeMood == null || _activeMood == 'For You')
+          ? null
+          : _activeMood;
+      final feed = await widget.service.discoveryFeed(
+        mood: moodArg,
+        target: 20,
+        excludeIds: _seenIds,
+      );
       if (!mounted) return;
       final fresh = feed.where((t) => _seenIds.add(t.id)).toList();
       setState(() => _tracks.addAll(fresh));
@@ -139,22 +171,61 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        physics: const BouncingScrollPhysics(),
-        itemCount: _tracks.length,
-        onPageChanged: _onPageChanged,
-        itemBuilder: (context, index) {
-          return _ReelsCard(
-            track: _tracks[index],
-            isActive: index == _currentIndex,
-            onPlayPause: () => _play(index),
-            onLike: () => _toggleLike(_tracks[index]),
-            onAdd: () => _addToPlaylist(_tracks[index]),
-            onShare: () => _share(_tracks[index]),
-          );
-        },
+      body: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            physics: const BouncingScrollPhysics(),
+            itemCount: _tracks.length,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, index) {
+              return _ReelsCard(
+                track: _tracks[index],
+                isActive: index == _currentIndex,
+                onPlayPause: () => _play(index),
+                onLike: () => _toggleLike(_tracks[index]),
+                onAdd: () => _addToPlaylist(_tracks[index]),
+                onShare: () => _share(_tracks[index]),
+              );
+            },
+          ),
+          // Top mood chips (Discovery context filter).
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _moods.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) {
+                      final mood = _moods[i];
+                      final selected = mood == (_activeMood ?? 'For You');
+                      return ChoiceChip(
+                        label: Text(mood),
+                        selected: selected,
+                        onSelected: (_) => _loadInitial(mood: mood),
+                        labelStyle: TextStyle(
+                          color: selected ? Colors.black : Colors.white70,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                        selectedColor: AppColors.accent,
+                        backgroundColor: Colors.black.withValues(alpha: 0.5),
+                        side: BorderSide.none,
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

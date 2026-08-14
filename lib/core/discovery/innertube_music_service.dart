@@ -81,6 +81,29 @@ const List<Map<String, String>> kHomeShelfQueries = [
   {'title': 'Workout', 'query': 'workout gym music'},
 ];
 
+/// Mood/context -> search queries used to build a Discovery reel feed.
+const Map<String, List<String>> kMoodQueries = {
+  'Trending': ['trending songs', 'viral hits', 'top 50 songs'],
+  'Workout': ['workout gym music', 'high energy workout', 'cardio music'],
+  'Energize': ['energetic dance music', 'upbeat party hits'],
+  'Romance': ['romantic love songs', 'romantic hindi songs'],
+  'Sad': ['sad heartbreak songs', 'emotional songs'],
+  'Party': ['party dance songs', 'party remix hits'],
+  'Focus': ['lofi focus music', 'study beats instrumental'],
+  'Chill': ['chill lofi music', 'relaxing calm songs'],
+  'Sleep': ['sleep ambient music', 'calm relaxation music'],
+  'Devotional': ['devotional bhajan', 'spiritual bhajan aarti'],
+  'Relax': ['relax acoustic music', 'soft chill songs'],
+  'Bollywood': ['bollywood hindi hits', 'bollywood songs'],
+  'Hindi': ['hindi songs hits', 'hindi romantic songs'],
+  'Punjabi': ['punjabi hits songs', 'punjabi party songs'],
+  'English': ['english pop hits', 'english songs'],
+  'EDM': ['edm electronic dance', 'house dance music'],
+  'Hip-Hop': ['hip hop rap songs', 'rap hits'],
+  'Lo-fi': ['lofi beats', 'lofi hip hop'],
+  'Global': ['global pop hits', 'international hits'],
+};
+
 /// Shared InnerTube discovery client (browse + search). Metadata only.
 class InnerTubeMusicService {
   InnerTubeMusicService();
@@ -133,9 +156,34 @@ class InnerTubeMusicService {
     return decoded;
   }
 
-  /// Builds Home shelves from real InnerTube search queries.
-  Future<List<MusicShelf>> homeFeed() async {
+  /// Builds Home shelves from real InnerTube search queries. If [recentlyPlayed]
+  /// tracks are provided, prepends a personalized "More like X / Because you
+  /// listened to X" shelf derived from the most recent track's artist.
+  Future<List<MusicShelf>> homeFeed({
+    List<Map<String, dynamic>> recentlyPlayed = const [],
+  }) async {
     final shelves = <MusicShelf>[];
+
+    // Personalized: derive a query from the most recent played artist.
+    for (final recent in recentlyPlayed.take(2)) {
+      final artist = (recent['artist'] as String?)?.trim() ?? '';
+      final title = (recent['title'] as String?)?.trim() ?? '';
+      if (artist.isEmpty && title.isEmpty) continue;
+      final artistQuery = artist.isNotEmpty ? artist : title.split(' ').first;
+      try {
+        final tracks = await search('$artistQuery songs', count: 12);
+        if (tracks.isNotEmpty) {
+          shelves.add(MusicShelf(
+            title:
+                artist.isNotEmpty ? 'More like $artist' : 'Because you played',
+            tracks: tracks.take(10).toList(),
+          ));
+        }
+      } catch (e) {
+        debugPrint('[MusicDiscovery] error personal shelf: $e');
+      }
+    }
+
     for (final cfg in kHomeShelfQueries) {
       try {
         final tracks = await search(cfg['query']!, count: 14);
@@ -175,21 +223,31 @@ class InnerTubeMusicService {
 
   /// Builds a Discovery reel feed by running several real searches and
   /// de-duplicating by videoId. Returns as many unique tracks as possible.
-  Future<List<DiscoveryTrack>> discoveryFeed({int target = 30}) async {
-    const queries = <String>[
-      'trending songs',
-      'bollywood hits',
-      'punjabi hits',
-      'hindi songs',
-      'english pop',
-      'romantic songs',
-      'chill lofi',
-      'workout music',
-      'new music',
-      'sad songs',
-      'devotional songs',
-      'party songs',
-    ];
+  ///
+  /// If [mood] is provided, its query strategies drive the feed. Otherwise a
+  /// trending-first mix is used. [excludeIds] avoids returning already-shown
+  /// tracks (session-level seen set).
+  Future<List<DiscoveryTrack>> discoveryFeed({
+    String? mood,
+    int target = 30,
+    Set<String> excludeIds = const {},
+  }) async {
+    final queries = mood != null && kMoodQueries.containsKey(mood)
+        ? kMoodQueries[mood]!
+        : const <String>[
+            'trending songs',
+            'bollywood hits',
+            'punjabi hits',
+            'hindi songs',
+            'english pop',
+            'romantic songs',
+            'chill lofi',
+            'workout music',
+            'new music',
+            'sad songs',
+            'devotional songs',
+            'party songs',
+          ];
     final seen = <String>{};
     final tracks = <DiscoveryTrack>[];
     for (final q in queries) {
@@ -198,6 +256,7 @@ class InnerTubeMusicService {
         final batch = await search(q, count: 20);
         for (final t in batch) {
           if (tracks.length >= target) break;
+          if (excludeIds.contains(t.id)) continue;
           if (seen.add(t.id)) tracks.add(t);
         }
       } catch (e) {
