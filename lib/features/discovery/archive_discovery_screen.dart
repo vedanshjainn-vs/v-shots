@@ -158,7 +158,7 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
         child: RefreshIndicator(
           color: AppColors.accent,
           backgroundColor: AppColors.surface,
-          onRefresh: () => _loadHome(),
+          onRefresh: _loadHome,
           child: CustomScrollView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(
@@ -330,7 +330,7 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
           ),
           const SizedBox(height: 14),
           FilledButton(
-            onPressed: () => _loadHome(),
+            onPressed: _loadHome,
             child: const Text('Retry'),
           ),
         ],

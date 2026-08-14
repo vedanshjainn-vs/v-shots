@@ -135,11 +135,12 @@ class InnerTubeMusicService {
           ));
         }
         for (final value in node.values) {
-          if (value is Map || value is List) walk(value, title: shelfTitle);
+          if (value is Map || value is List)
+            walk(value, inheritedTitle: shelfTitle);
         }
       } else if (node is List) {
         for (final item in node) {
-          walk(item, title: inheritedTitle);
+          walk(item, inheritedTitle: inheritedTitle);
         }
       }
     }
@@ -183,7 +184,9 @@ class InnerTubeMusicService {
           if (value is Map || value is List) walk(value);
         }
       } else if (node is List) {
-        for (final value in node) walk(value);
+        for (final value in node) {
+          walk(value);
+        }
       }
     }
 
@@ -237,7 +240,9 @@ class InnerTubeMusicService {
           if (child is Map || child is List) walk(child);
         }
       } else if (value is List) {
-        for (final child in value) walk(child);
+        for (final child in value) {
+          walk(child);
+        }
       }
     }
 
@@ -254,7 +259,7 @@ class InnerTubeMusicService {
       final runs = value['runs'];
       if (runs is List) {
         final joined = runs
-            .whereType<Map>()
+            .whereType<Map<String, dynamic>>()
             .map((e) => e['text'])
             .whereType<String>()
             .join();
@@ -277,7 +282,9 @@ class InnerTubeMusicService {
           if (child is Map || child is List) walk(child);
         }
       } else if (node is List) {
-        for (final child in node) walk(child);
+        for (final child in node) {
+          walk(child);
+        }
       }
     }
 
@@ -296,7 +303,9 @@ class InnerTubeMusicService {
           if (child is Map || child is List) walk(child);
         }
       } else if (node is List) {
-        for (final child in node) walk(child);
+        for (final child in node) {
+          walk(child);
+        }
       }
     }
 

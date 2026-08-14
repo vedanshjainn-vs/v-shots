@@ -115,7 +115,7 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
     };
     final results = await widget.service.search(query);
     if (!mounted) return;
-    Navigator.of(context).push(
+    unawaited(Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => _ShelfResultsScreen(
           title: chip,
@@ -123,7 +123,7 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
           onPlayTrack: widget.onPlayTrack,
         ),
       ),
-    );
+    ));
   }
 
   Future<void> _play(DiscoveryTrack track, List<DiscoveryTrack> shelf) async {
