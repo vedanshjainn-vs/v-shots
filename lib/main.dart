@@ -49,7 +49,7 @@ import 'shared/widgets/app_image.dart';
 import 'shared/widgets/bottom_tab_bar.dart';
 import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
-import 'features/discovery/archive_discovery_screen.dart';
+import 'features/discovery/discovery_reels_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/home/archive_home_screen.dart';
 import 'features/onboarding/content_preferences_onboarding.dart';
@@ -523,7 +523,7 @@ class _MainShellState extends State<MainShell> {
                   onPlayTrack: (track, queue, index) =>
                       playTrack(context, track, queue, index),
                 ),
-                ArchiveDiscoveryScreen(
+                DiscoveryReelsScreen(
                   service: musicDiscoveryService,
                   onPlayTrack: (track, queue, index) =>
                       playTrack(context, track, queue, index),
