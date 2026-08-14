@@ -139,8 +139,8 @@ void main() {
       final rlr = _firstResponsiveItem(root);
       expect(rlr, isNotNull);
       // top-level videoId is absent (the real bug that caused empty feed)
-      expect(rlr!['videoId'], isNull);
-      final nav = rlr!['navigationEndpoint'] as Map<String, dynamic>;
+      expect(rlr?['videoId'], isNull);
+      final nav = rlr?['navigationEndpoint'] as Map<String, dynamic>;
       final we = nav['watchEndpoint'] as Map<String, dynamic>;
       expect(we['videoId'], '68RLvhxk_4g');
     });
