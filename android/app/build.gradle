@@ -32,8 +32,8 @@ android {
         applicationId "com.vshots.live"
         minSdk 24
         targetSdk 36
-        versionCode 32
-        versionName "5.20.0"
+        versionCode 33
+        versionName "5.21.0"
         multiDexEnabled true
     }
 

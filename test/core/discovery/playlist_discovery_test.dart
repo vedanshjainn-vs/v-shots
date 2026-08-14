@@ -125,11 +125,22 @@ void main() {
       expect(found.any((p) => p.title == 'Trending Hits'), isTrue);
     });
 
-    test('discoverPlaylists stays empty when not live (no key)', () async {
-      // Real client with no API key -> all live paths return empty, and the
-      // configured list is empty too, so discovery is graceful + no crash.
+    test('discoverPlaylists returns configured playlists when not live',
+        () async {
+      // Real client with no API key -> live paths skipped, but user-verified
+      // configured playlists are still returned (graceful, no crash).
       final svc = PlaylistContentService();
-      expect(await svc.discoverPlaylists(), isEmpty);
+      final found = await svc.discoverPlaylists();
+      expect(found, isNotEmpty);
+      expect(found.every((p) => p.id.isNotEmpty), isTrue);
+    });
+
+    test('discoverPlaylists includes configured playlist ids', () async {
+      final svc = PlaylistContentService(repository: repoWithSections());
+      final found = await svc.discoverPlaylists();
+      // Configured real playlist ids (from the offline/runtime list) appear.
+      expect(found.any((p) => p.id == 'PL4fGSI1pDJn4tiNLMZVGGt2Kghgw__2u0'),
+          isTrue);
     });
   });
 }

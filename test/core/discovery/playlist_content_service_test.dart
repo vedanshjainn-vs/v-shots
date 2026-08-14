@@ -64,11 +64,16 @@ void main() {
       expect(global.relevance, greaterThan(hindi.relevance));
     });
 
-    test('discoverPlaylists returns empty when not live (no API key)',
+    test('discoverPlaylists returns configured playlists when not live',
         () async {
-      // In the test env there is no API key -> gracefully empty, no crash.
+      // No API key -> live paths are skipped, but the user-verified configured
+      // playlists are still returned (offline fallback). No crash.
       final found = await svc.discoverPlaylists();
-      expect(found, isEmpty);
+      expect(found, isNotEmpty);
+      expect(
+        found.every((p) => p.id.isNotEmpty && p.title.isNotEmpty),
+        isTrue,
+      );
     });
   });
 }

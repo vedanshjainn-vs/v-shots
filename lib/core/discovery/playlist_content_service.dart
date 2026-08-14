@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../preferences/user_preferences.dart';
 import '../providers/adapters/youtube/youtube_data_api_client.dart';
 import '../providers/adapters/youtube/youtube_repository.dart';
+import '../remote_config/remote_config_service.dart';
 import 'configured_playlists.dart';
 
 /// The official YouTube Music channel whose playlists feed Home/Discovery.
@@ -164,18 +165,45 @@ class PlaylistContentService {
       addAll(await _discoverViaChannelPlaylists(maxPages: maxPages));
     }
 
-    // 3. Configured, user-verified real playlists.
+    // 3. Configured, user-verified real playlists. Source order:
+    //    runtime Supabase `configured_playlists` (edit without app update),
+    //    then the offline file fallback. Real titles/artwork are resolved from
+    //    YouTube when a live key is present.
+    final configured = <ConfiguredPlaylist>[];
+    for (final c in RemoteConfigService.instance.configuredPlaylists) {
+      if (c.id.isNotEmpty) configured.add(c);
+    }
     for (final c in kConfiguredPlaylists) {
-      if (c.id.isEmpty) continue;
-      final playlist = YouTubePlaylist(
-        id: c.id,
-        title: c.title,
-        description: '',
-        thumbnailUrl: '',
-        itemCount: 0,
-        channelId: kYouTubeMusicChannelId,
-      );
-      if (seen.add(c.id)) unique.add(playlist);
+      if (c.id.isNotEmpty && !configured.any((x) => x.id == c.id)) {
+        configured.add(c);
+      }
+    }
+    if (configured.isNotEmpty) {
+      final configIds = configured.map((c) => c.id).toSet().toList();
+      var resolved = <YouTubePlaylist>[];
+      if (isLive) {
+        try {
+          resolved = await _repo.listPlaylistsByIds(configIds);
+        } catch (e) {
+          debugPrint('[PLAYLIST] resolve configured titles error: $e');
+        }
+      }
+      final byId = {for (final p in resolved) p.id: p};
+      for (final c in configured) {
+        final real = byId[c.id];
+        if (real != null) {
+          if (seen.add(real.id)) unique.add(real); // real YouTube metadata
+        } else if (seen.add(c.id)) {
+          unique.add(YouTubePlaylist(
+            id: c.id,
+            title: c.title,
+            description: '',
+            thumbnailUrl: '',
+            itemCount: 0,
+            channelId: kYouTubeMusicChannelId,
+          ));
+        }
+      }
     }
 
     unique
