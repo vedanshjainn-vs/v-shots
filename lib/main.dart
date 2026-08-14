@@ -22,6 +22,7 @@ import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_sync_service.dart';
 import 'core/discovery/home_content_coordinator.dart';
+import 'core/discovery/music_discovery_service.dart';
 import 'core/preferences/content_personalization_service.dart';
 import 'core/preferences/user_preferences.dart';
 import 'core/recommendation/recommendation_event_service.dart';
@@ -52,8 +53,10 @@ import 'shared/widgets/bottom_tab_bar.dart';
 import 'shared/widgets/browse_grid.dart';
 import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
+import 'features/discovery/archive_discovery_screen.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
+import 'features/home/archive_home_screen.dart';
 import 'features/onboarding/content_preferences_onboarding.dart';
 import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
@@ -235,6 +238,10 @@ final forYouFeedService = ForYouFeedService(apiClient: sharedYtApiClient);
 final homeContentCoordinator = HomeContentCoordinator(
   repository: YouTubeRepository(client: sharedYtApiClient),
 );
+
+/// Shared, official-API discovery service used by the ArchiveTune-style
+/// Home and Discovery screens (single discovery implementation).
+final musicDiscoveryService = MusicDiscoveryService(client: sharedYtApiClient);
 final YouTubeRepository youTubeRepository = YouTubeRepository(
   client: sharedYtApiClient,
 );
@@ -515,11 +522,19 @@ class _MainShellState extends State<MainShell> {
             // 4 Clean Tabs (Home, Discover, Search, Profile)
             IndexedStack(
               index: _index.clamp(0, 3),
-              children: const [
-                HomeScreen(),
-                ForYouFeedScreen(),
-                SearchScreen(),
-                ProfileScreen(),
+              children: [
+                ArchiveHomeScreen(
+                  service: musicDiscoveryService,
+                  onPlayTrack: (track, queue, index) =>
+                      playTrack(context, track, queue, index),
+                ),
+                ArchiveDiscoveryScreen(
+                  service: musicDiscoveryService,
+                  onPlayTrack: (track, queue, index) =>
+                      playTrack(context, track, queue, index),
+                ),
+                const SearchScreen(),
+                const ProfileScreen(),
               ],
             ),
 
