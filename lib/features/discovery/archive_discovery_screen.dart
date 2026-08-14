@@ -1,10 +1,10 @@
 // ═════════════════════════════════════════════════════════════════════════
 // V SHOTS — ArchiveTune-style Discovery
 //
-// A clean music discovery tab with search + category chips + dynamic shelves.
-// Data comes from the OFFICIAL YouTube Data API via MusicDiscoveryService
-// (shared with Home). Playback routes through the existing official player.
-// No fake content, no InnerTube, no second player.
+// Music discovery with real InnerTube data (category shelves + search),
+// routed through the shared InnerTubeMusicService. Playback uses the existing
+// V Shots official player via [onPlayTrack]. No fake content, no playlist IDs,
+// no InnerTube audio extraction.
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -12,7 +12,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/discovery/music_discovery_service.dart';
+import '../../core/discovery/innertube_music_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 import '../home/archive_home_screen.dart' show OnPlayTrack;
@@ -24,7 +24,7 @@ class ArchiveDiscoveryScreen extends StatefulWidget {
     required this.onPlayTrack,
   });
 
-  final MusicDiscoveryService service;
+  final InnerTubeMusicService service;
   final OnPlayTrack onPlayTrack;
 
   @override
@@ -34,14 +34,30 @@ class ArchiveDiscoveryScreen extends StatefulWidget {
 class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchCtrl = TextEditingController();
-  String? _activeCategoryId = 'trending';
-  List<MusicShelf> _shelves = const [];
-  bool _loading = true;
+  final ScrollController _scrollController = ScrollController();
 
-  // Search state.
+  final List<MusicShelf> _shelves = [];
+  final List<DiscoveryTrack> _searchResults = [];
+  bool _loading = true;
   bool _searching = false;
-  List<MusicTrack> _searchResults = const [];
-  String _lastQuery = '';
+  String? _error;
+  String _selectedChip = 'For You';
+
+  static const _chips = <String>[
+    'For You',
+    'Trending',
+    'Hindi',
+    'Bollywood',
+    'Punjabi',
+    'English',
+    'Romantic',
+    'Sad',
+    'Party',
+    'Lo-fi',
+    'Workout',
+    'Devotional',
+    'Global',
+  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -49,85 +65,88 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
   @override
   void initState() {
     super.initState();
-    unawaited(_loadCategory('trending'));
+    _loadHome();
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadCategory(String id) async {
+  Future<void> _loadHome({String? chip}) async {
+    final isForYou = chip == null || chip == 'For You';
+
     setState(() {
-      _activeCategoryId = id;
       _loading = true;
-      _searching = false;
+      _error = null;
+      _selectedChip = chip ?? _selectedChip;
     });
-    final cat = kMusicCategories.firstWhere((c) => c.id == id,
-        orElse: () => kMusicCategories.first);
+
     try {
-      final tracks = await widget.service.search(cat.query, count: 20);
+      List<MusicShelf> shelves;
+      if (isForYou) {
+        shelves = await widget.service.homeFeed();
+      } else {
+        final tracks = await widget.service.search(chip, count: 24);
+        shelves = tracks.isEmpty
+            ? const []
+            : [MusicShelf(title: chip, tracks: tracks)];
+      }
       if (!mounted) return;
       setState(() {
-        _shelves = tracks.isEmpty
-            ? const []
-            : [
-                MusicShelf(title: cat.label, tracks: tracks, query: cat.query),
-              ];
+        _shelves
+          ..clear()
+          ..addAll(shelves);
+        _searchResults.clear();
         _loading = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _shelves = const [];
         _loading = false;
+        _error = 'Couldn’t load Discovery. Pull to retry.';
       });
     }
   }
 
-  Future<void> _doSearch(String q) async {
-    final query = q.trim();
-    if (query.isEmpty) {
-      setState(() {
-        _searching = false;
-        _searchResults = const [];
-      });
-      unawaited(_loadCategory(_activeCategoryId ?? 'trending'));
-      return;
-    }
+  Future<void> _search() async {
+    final query = _searchCtrl.text.trim();
+    if (query.isEmpty) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+
     setState(() {
       _searching = true;
-      _lastQuery = query;
+      _error = null;
     });
+
     try {
       final results = await widget.service.search(query, count: 30);
       if (!mounted) return;
       setState(() {
-        _searchResults = results;
+        _searchResults
+          ..clear()
+          ..addAll(results);
         _searching = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _searchResults = const [];
         _searching = false;
+        _error = 'Search failed. Try again.';
       });
     }
   }
 
-  void _clearSearch() {
-    _searchCtrl.clear();
-    _doSearch('');
-  }
-
-  Future<void> _play(MusicTrack track, List<MusicTrack> queue) async {
+  Future<void> _play(DiscoveryTrack track, List<DiscoveryTrack> queue) async {
     final q = queue
         .map((t) => t.toTrackMap())
         .where((m) => ((m['id'] as String?)?.isNotEmpty ?? false))
         .toList();
     final idx = q.indexWhere((m) => m['id'] == track.id);
-    await widget.onPlayTrack(track.toTrackMap(), q, idx < 0 ? 0 : idx);
+    if (idx < 0) return;
+    await widget.onPlayTrack(track.toTrackMap(), q, idx);
   }
 
   @override
@@ -136,11 +155,40 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(child: _buildBody()),
-          ],
+        child: RefreshIndicator(
+          color: AppColors.accent,
+          backgroundColor: AppColors.surface,
+          onRefresh: () => _loadHome(),
+          child: CustomScrollView(
+            controller: _scrollController,
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            slivers: [
+              SliverToBoxAdapter(child: _buildHeader()),
+              SliverToBoxAdapter(child: _buildSearch()),
+              SliverToBoxAdapter(child: _buildChips()),
+              if (_error != null)
+                SliverToBoxAdapter(child: _buildError())
+              else if (_searchResults.isNotEmpty)
+                SliverToBoxAdapter(child: _buildSearchResults())
+              else if (_loading)
+                SliverToBoxAdapter(child: _buildLoading())
+              else if (_shelves.isEmpty)
+                SliverToBoxAdapter(child: _buildEmpty())
+              else
+                SliverList.builder(
+                  itemCount: _shelves.length,
+                  itemBuilder: (context, index) {
+                    return _ShelfView(
+                      shelf: _shelves[index],
+                      onPlay: _play,
+                    );
+                  },
+                ),
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ],
+          ),
         ),
       ),
     );
@@ -148,170 +196,307 @@ class _ArchiveDiscoveryScreenState extends State<ArchiveDiscoveryScreen>
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+      child: Row(
         children: [
-          const Text(
-            'Discover',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Discovery',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Find something worth listening to.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .55),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          _buildSearchBar(),
-          const SizedBox(height: 10),
-          _buildCategoryChips(),
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: .07),
+            ),
+            child:
+                const Icon(Icons.tune_rounded, color: Colors.white, size: 21),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildSearchBar() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
+  Widget _buildSearch() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
       child: TextField(
         controller: _searchCtrl,
-        onSubmitted: _doSearch,
+        onSubmitted: (_) => _search(),
+        style: const TextStyle(color: Colors.white),
         textInputAction: TextInputAction.search,
-        style: const TextStyle(color: AppColors.textMain),
         decoration: InputDecoration(
-          hintText: 'Search songs, artists, hits...',
-          hintStyle: const TextStyle(color: AppColors.textMuted),
-          prefixIcon: const Icon(Icons.search, color: AppColors.textMuted),
-          suffixIcon: _searchCtrl.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear, color: AppColors.textMuted),
-                  onPressed: _clearSearch,
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          hintText: 'Search songs, artists, albums...',
+          hintStyle: TextStyle(color: Colors.white.withValues(alpha: .4)),
+          prefixIcon: const Icon(Icons.search_rounded, color: Colors.white54),
+          suffixIcon: IconButton(
+            onPressed: _search,
+            icon: const Icon(Icons.arrow_forward_rounded),
+            color: AppColors.accent,
+          ),
+          filled: true,
+          fillColor: AppColors.surface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildCategoryChips() {
+  Widget _buildChips() {
     return SizedBox(
-      height: 44,
+      height: 46,
       child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         scrollDirection: Axis.horizontal,
-        itemCount: kMusicCategories.length,
+        itemCount: _chips.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (_, index) {
-          final cat = kMusicCategories[index];
-          final selected = cat.id == _activeCategoryId && !_searching;
+          final chip = _chips[index];
+          final selected = chip == _selectedChip;
           return ChoiceChip(
-            label: Text('${cat.icon} ${cat.label}'),
+            label: Text(chip),
             selected: selected,
             onSelected: (_) {
               unawaited(HapticFeedback.selectionClick());
-              _searchCtrl.clear();
-              unawaited(_loadCategory(cat.id));
+              _loadHome(chip: chip);
             },
+            labelStyle: TextStyle(
+              color: selected ? Colors.black : Colors.white70,
+              fontWeight: FontWeight.w700,
+            ),
             selectedColor: AppColors.accent,
             backgroundColor: AppColors.surface,
-            side: const BorderSide(color: AppColors.border),
-            labelStyle: TextStyle(
-              color: selected ? Colors.white : AppColors.textMain,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-            ),
+            side: BorderSide.none,
           );
         },
       ),
     );
   }
 
-  Widget _buildBody() {
-    if (_searching) {
-      return _searchResults.isEmpty
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
-          : _buildTrackList(_searchResults);
-    }
-    if (_lastQuery.isNotEmpty) {
-      return _searchResults.isEmpty
-          ? const _DiscoveryEmpty()
-          : _buildTrackList(_searchResults);
-    }
-    if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: AppColors.accent));
-    }
-    if (_shelves.isEmpty) {
-      return const _DiscoveryEmpty();
-    }
-    return _buildTrackList(_shelves.first.tracks);
-  }
-
-  Widget _buildTrackList(List<MusicTrack> tracks) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 130),
-      itemCount: tracks.length,
-      itemBuilder: (context, index) {
-        final track = tracks[index];
-        return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: AppImage(
-              track.artwork,
-              width: 56,
-              height: 56,
-              fit: BoxFit.cover,
+  Widget _buildLoading() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: List.generate(
+          5,
+          (_) => Container(
+            height: 105,
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
             ),
           ),
-          title: Text(
-            track.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildError() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 35, 20, 0),
+      child: Column(
+        children: [
+          const Icon(Icons.cloud_off_rounded, color: Colors.white38, size: 42),
+          const SizedBox(height: 12),
+          Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70),
           ),
-          subtitle: Text(
-            track.artist,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => _loadHome(),
+            child: const Text('Retry'),
           ),
-          trailing: const Icon(
-            Icons.play_circle_fill_rounded,
-            color: AppColors.accent,
-            size: 30,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmpty() {
+    return const Padding(
+      padding: EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.music_off_rounded, size: 48, color: Colors.white24),
+          SizedBox(height: 12),
+          Text(
+            'No music found',
+            style: TextStyle(color: Colors.white70),
           ),
-          onTap: () => _play(track, tracks),
-        );
-      },
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    return _searching
+        ? _buildLoading()
+        : _ShelfView(
+            shelf: MusicShelf(title: 'Search results', tracks: _searchResults),
+            onPlay: _play,
+          );
+  }
+}
+
+class _ShelfView extends StatelessWidget {
+  const _ShelfView({required this.shelf, required this.onPlay});
+
+  final MusicShelf shelf;
+  final Future<void> Function(DiscoveryTrack, List<DiscoveryTrack>) onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    if (shelf.tracks.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              shelf.title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          if (shelf.subtitle != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Text(
+                shelf.subtitle!,
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 235,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: shelf.tracks.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, index) {
+                final track = shelf.tracks[index];
+                return _DiscoveryCard(
+                  track: track,
+                  onTap: () => onPlay(track, shelf.tracks),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _DiscoveryEmpty extends StatelessWidget {
-  const _DiscoveryEmpty();
+class _DiscoveryCard extends StatelessWidget {
+  const _DiscoveryCard({required this.track, required this.onTap});
+
+  final DiscoveryTrack track;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.search_off, size: 48, color: AppColors.textMuted),
-          SizedBox(height: 12),
-          Text(
-            'No music found',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textMain,
+    return SizedBox(
+      width: 160,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: track.artwork.isEmpty
+                        ? Container(
+                            color: AppColors.surface,
+                            child: const Icon(
+                              Icons.music_note_rounded,
+                              color: Colors.white24,
+                              size: 38,
+                            ),
+                          )
+                        : AppImage(track.artwork, fit: BoxFit.cover),
+                  ),
+                  Positioned(
+                    right: 9,
+                    bottom: 9,
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.accent,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.black,
+                        size: 25,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 9),
+            Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              track.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white38, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }

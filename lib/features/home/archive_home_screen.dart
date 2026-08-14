@@ -1,21 +1,20 @@
 // ═════════════════════════════════════════════════════════════════════════
 // V SHOTS — ArchiveTune-style Home
 //
-// A clean, modern music discovery Home feed. Replaces the old playlist-based
-// Home (no RDCLAK/OLAK/OLZy, no playlistItems fallback, no "Couldn't load X"
-// boxes, no fake content). Data comes from the OFFICIAL YouTube Data API via
-// MusicDiscoveryService. Playback routes through the existing official player.
+// A dynamic music discovery Home feed. Data comes from YouTube Music's
+// InnerTube browse endpoint via the shared InnerTubeMusicService (real shelves
+// such as Quick Picks / Trending / New Music / regional shelves). Playback
+// routes through the existing V Shots official player via [onPlayTrack].
 //
-// Design: large clean section headings, horizontal music shelves, square
-// artwork, rounded cards, play button, skeleton loading, pull-to-refresh,
-// graceful per-shelf skipping.
+// No RDCLAK/OLAK/OLZy playlist ids, no playlistItems fallback, no fake content,
+// no "Couldn't load X" boxes. A failing shelf is simply skipped.
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/discovery/music_discovery_service.dart';
+import '../../core/discovery/innertube_music_service.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
@@ -34,7 +33,7 @@ class ArchiveHomeScreen extends StatefulWidget {
     required this.onPlayTrack,
   });
 
-  final MusicDiscoveryService service;
+  final InnerTubeMusicService service;
   final OnPlayTrack onPlayTrack;
 
   @override
@@ -43,9 +42,21 @@ class ArchiveHomeScreen extends StatefulWidget {
 
 class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
     with AutomaticKeepAliveClientMixin {
+  final ScrollController _scrollController = ScrollController();
   List<MusicShelf> _shelves = const [];
   bool _loading = true;
   bool _refreshing = false;
+
+  static const _chips = <String>[
+    'Relax',
+    'Workout',
+    'Energize',
+    'Romance',
+    'Bollywood',
+    'Punjabi',
+    'Hindi',
+    'English',
+  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -56,30 +67,33 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
     unawaited(_load());
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load({bool force = false}) async {
     if (force) {
       setState(() => _refreshing = true);
     } else if (_shelves.isEmpty) {
       setState(() => _loading = true);
     }
-    final exclude = LocalLibrary.instance.recentlyShownIds;
     try {
-      final shelves = await widget.service.fetchHomeShelves(
-        excludeIds: exclude,
-      );
+      final shelves = await widget.service.homeFeed();
       if (!mounted) return;
       setState(() {
         _shelves = shelves;
         _loading = false;
         _refreshing = false;
       });
-      // Record shown ids for next-session freshness.
       for (final s in shelves) {
         for (final t in s.tracks) {
           LocalLibrary.instance.recordShownSong(t.id);
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Home] feed failed: $e');
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -88,7 +102,31 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
     }
   }
 
-  Future<void> _play(MusicTrack track, List<MusicTrack> shelf) async {
+  Future<void> _openChip(String chip) async {
+    final query = switch (chip) {
+      'Relax' => 'relax chill music',
+      'Workout' => 'workout music',
+      'Energize' => 'energetic music',
+      'Romance' => 'romantic songs',
+      'Bollywood' => 'bollywood hindi hits',
+      'Punjabi' => 'punjabi hits',
+      'Hindi' => 'hindi hits',
+      _ => 'english pop hits',
+    };
+    final results = await widget.service.search(query);
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _ShelfResultsScreen(
+          title: chip,
+          tracks: results,
+          onPlayTrack: widget.onPlayTrack,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _play(DiscoveryTrack track, List<DiscoveryTrack> shelf) async {
     final queue = shelf
         .map((t) => t.toTrackMap())
         .where((m) => ((m['id'] as String?)?.isNotEmpty ?? false))
@@ -107,16 +145,17 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
         backgroundColor: AppColors.surface,
         onRefresh: () => _load(force: true),
         child: CustomScrollView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics(),
           ),
           slivers: [
             _buildAppBar(),
-            const SliverToBoxAdapter(child: SizedBox(height: 4)),
+            SliverToBoxAdapter(child: _buildChips()),
             if (_loading && _shelves.isEmpty)
-              const SliverToBoxAdapter(child: _HomeSkeleton())
+              SliverToBoxAdapter(child: _buildSkeleton())
             else if (_shelves.isEmpty)
-              const SliverToBoxAdapter(child: _HomeEmpty())
+              SliverToBoxAdapter(child: _buildEmpty())
             else
               for (final shelf in _shelves) _buildShelf(shelf),
             const SliverToBoxAdapter(child: SizedBox(height: 130)),
@@ -152,6 +191,93 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
         ),
         const SizedBox(width: 8),
       ],
+    );
+  }
+
+  Widget _buildChips() {
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        scrollDirection: Axis.horizontal,
+        itemCount: _chips.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, index) {
+          final chip = _chips[index];
+          return ActionChip(
+            label: Text(chip),
+            onPressed: () => _openChip(chip),
+            backgroundColor: AppColors.surface,
+            side: BorderSide(color: AppColors.border.withValues(alpha: 0.75)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            labelStyle: const TextStyle(
+              color: AppColors.textMain,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSkeleton() {
+    return Column(
+      children: [
+        for (var s = 0; s < 4; s++) ...[
+          Container(
+            margin: const EdgeInsets.fromLTRB(20, 22, 20, 12),
+            width: 170,
+            height: 22,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(5),
+            ),
+          ),
+          SizedBox(
+            height: 190,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: 5,
+              itemBuilder: (_, __) => Container(
+                width: 154,
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEmpty() {
+    return const Padding(
+      padding: EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.music_off_rounded, size: 48, color: AppColors.textMuted),
+          SizedBox(height: 16),
+          Text(
+            'Music feed unavailable',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Pull down to refresh and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textMuted),
+          ),
+        ],
+      ),
     );
   }
 
@@ -203,7 +329,7 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
 class _TrackCard extends StatelessWidget {
   const _TrackCard({required this.track, required this.onTap});
 
-  final MusicTrack track;
+  final DiscoveryTrack track;
   final VoidCallback onTap;
 
   @override
@@ -287,73 +413,90 @@ class _TrackCard extends StatelessWidget {
   }
 }
 
-class _HomeSkeleton extends StatelessWidget {
-  const _HomeSkeleton();
+/// Push screen showing a full list of results (from a Home chip or shelf).
+class _ShelfResultsScreen extends StatelessWidget {
+  const _ShelfResultsScreen({
+    required this.title,
+    required this.tracks,
+    required this.onPlayTrack,
+  });
+
+  final String title;
+  final List<DiscoveryTrack> tracks;
+  final OnPlayTrack onPlayTrack;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (var s = 0; s < 4; s++) ...[
-          Container(
-            margin: const EdgeInsets.fromLTRB(20, 22, 20, 12),
-            width: 170,
-            height: 22,
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(5),
-            ),
-          ),
-          SizedBox(
-            height: 190,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: 5,
-              itemBuilder: (_, __) => Container(
-                width: 154,
-                margin: const EdgeInsets.only(right: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _HomeEmpty extends StatelessWidget {
-  const _HomeEmpty();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.music_off_rounded,
-            size: 48,
-            color: AppColors.textMuted,
-          ),
-          SizedBox(height: 16),
-          Text(
-            'Music feed unavailable',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Pull down to refresh and try again.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textMuted),
-          ),
-        ],
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        backgroundColor: AppColors.background,
+        surfaceTintColor: Colors.transparent,
       ),
+      body: tracks.isEmpty
+          ? const Center(
+              child: Text(
+                'No results',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
+              itemCount: tracks.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, color: AppColors.borderSubtle),
+              itemBuilder: (context, index) {
+                final track = tracks[index];
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 3,
+                  ),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: AppImage(
+                      track.artwork,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  title: Text(
+                    track.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    track.artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                  trailing: const Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: AppColors.accent,
+                    size: 30,
+                  ),
+                  onTap: () {
+                    final queue = tracks
+                        .where((t) => t.id.isNotEmpty)
+                        .map((t) => t.toTrackMap())
+                        .toList();
+                    final idx = queue.indexWhere((m) => m['id'] == track.id);
+                    onPlayTrack(
+                      track.toTrackMap(),
+                      queue,
+                      idx < 0 ? 0 : idx,
+                    );
+                  },
+                );
+              },
+            ),
     );
   }
 }
