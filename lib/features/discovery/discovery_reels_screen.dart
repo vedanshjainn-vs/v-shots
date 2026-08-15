@@ -16,6 +16,8 @@
 
 import 'dart:async';
 
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -136,6 +138,7 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
         _loading = false;
       });
       if (_pageController.hasClients) _pageController.jumpToPage(0);
+      if (feed.isNotEmpty) unawaited(_play(0));
       for (final t in feed) {
         LocalLibrary.instance.recordShownSong(t.id);
       }
@@ -183,6 +186,9 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
 
   void _onPageChanged(int index) {
     setState(() => _currentIndex = index);
+    // Discovery is swipe-first: selecting a page immediately hands the track
+    // to the existing global/official player.
+    unawaited(_play(index));
     if (_tracks.length - index < 5) unawaited(_loadMore());
   }
 
@@ -765,8 +771,25 @@ class _ReelsCardState extends State<_ReelsCard>
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Immersive artwork background.
-          AppImage(track.artwork, fit: BoxFit.cover),
+          // Cinematic artwork-derived background. The low-opacity blurred
+          // copy is deliberately separate from the hero art so the artwork
+          // remains crisp and never gets stretched as the main card.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            child: KeyedSubtree(
+              key: ValueKey(track.id),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  AppImage(track.artwork, fit: BoxFit.cover),
+                  BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                    child: Container(color: Colors.black.withValues(alpha: 0.42)),
+                  ),
+                ],
+              ),
+            ),
+          ),
           // Dark gradient overlay for readability.
           Container(
             decoration: BoxDecoration(
@@ -779,6 +802,26 @@ class _ReelsCardState extends State<_ReelsCard>
                   Colors.black.withValues(alpha: 0.8),
                 ],
                 stops: const [0.0, 0.45, 1.0],
+              ),
+            ),
+          ),
+          // Crisp square hero artwork floating above the blurred canvas.
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 72,
+            left: 28,
+            right: 72,
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: RepaintBoundary(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 28, offset: const Offset(0, 14))],
+                    ),
+                    child: AppImage(track.artwork, fit: BoxFit.cover),
+                  ),
+                ),
               ),
             ),
           ),
@@ -896,52 +939,11 @@ class _ReelsCardState extends State<_ReelsCard>
                       ),
                     ),
                     const SizedBox(height: 16),
-                    GestureDetector(
-                      onTap: widget.onPlayPause,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 12),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(28),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.4),
-                              blurRadius: 16,
-                            ),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.play_arrow_rounded,
-                                color: Colors.white, size: 24),
-                            SizedBox(width: 6),
-                            Text(
-                              'Play',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
             ),
           ),
-          // Tap anywhere to play/pause when active (but not on buttons).
-          if (widget.isActive)
-            Positioned.fill(
-              child: GestureDetector(
-                onTap: widget.onPlayPause,
-                behavior: HitTestBehavior.translucent,
-              ),
-            ),
         ],
       ),
     );
