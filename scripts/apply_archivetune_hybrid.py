@@ -32,12 +32,12 @@ for path in [
     source = path.read_text(encoding='utf-8')
     source = re.sub(
         r"RegExp\(r'INNERTUBE_API_KEY.*?\),",
-        'RegExp(r"""INNERTUBE_API_KEY[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),',
+        lambda _: 'RegExp(r"""INNERTUBE_API_KEY[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),',
         source,
     )
     source = re.sub(
         r"RegExp\(r'INNERTUBE_CLIENT_VERSION.*?\),",
-        'RegExp(r"""INNERTUBE_CLIENT_VERSION[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),',
+        lambda _: 'RegExp(r"""INNERTUBE_CLIENT_VERSION[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),',
         source,
     )
     path.write_text(source, encoding='utf-8')
