@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 MAIN = Path('lib/main.dart')
 text = MAIN.read_text(encoding='utf-8')
@@ -29,33 +28,30 @@ if inner_tube.exists():
     ignore = ('// ignore_for_file: curly_braces_in_flow_control_structures, '
               'prefer_final_locals, strict_raw_type\n')
     if not source.startswith('// ignore_for_file:'):
-        inner_tube.write_text(ignore + source, encoding='utf-8')
+        source = ignore + source
 
-# Remove the unused root-level ArchiveTune reference screen. The production
-# app has its own Discover implementation; keeping this stale reference file
-# in lib/ only adds analyzer noise and broken relative imports.
-archive_discovery = Path('archive_tune_discovery_screen.dart')
-if archive_discovery.exists():
-    archive_discovery.unlink()
+    normalized = []
+    for line in source.splitlines(keepends=True):
+        stripped = line.strip()
+        indent = line[:len(line) - len(line.lstrip())]
+        if 'INNERTUBE_API_KEY' in stripped and stripped.startswith('RegExp('):
+            line = indent + 'RegExp(r"""INNERTUBE_API_KEY[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),\n'
+        elif 'INNERTUBE_CLIENT_VERSION' in stripped and stripped.startswith('RegExp('):
+            line = indent + 'RegExp(r"""INNERTUBE_CLIENT_VERSION[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),\n'
+        normalized.append(line)
+    inner_tube.write_text(''.join(normalized), encoding='utf-8')
+
+# Remove unused root-level ArchiveTune reference screens. Production uses the
+# V Shots screens; these references are only useful as design/code research and
+# should not participate in the Flutter build.
+for path in [
+    Path('archive_tune_discovery_screen.dart'),
+    Path('archive_tune_home_screen.dart'),
+]:
+    if path.exists():
+        path.unlink()
 
 # pubspec declares .env as an asset; CI creates the file before analysis.
 Path('.env').touch()
-
-# Normalize the obsolete ArchiveTune bootstrap regex if that reference file is
-# ever present in a working tree.
-reference = Path('archive_tune_home_screen.dart')
-if reference.exists():
-    source = reference.read_text(encoding='utf-8')
-    source = re.sub(
-        r"RegExp\(r'INNERTUBE_API_KEY.*?\),",
-        lambda _: 'RegExp(r"""INNERTUBE_API_KEY[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),',
-        source,
-    )
-    source = re.sub(
-        r"RegExp\(r'INNERTUBE_CLIENT_VERSION.*?\),",
-        lambda _: 'RegExp(r"""INNERTUBE_CLIENT_VERSION[\"\']?\\s*:\\s*[\"\']([^\"\']+)"""),',
-        source,
-    )
-    reference.write_text(source, encoding='utf-8')
 
 print('Wired sharedYtApiClient -> HybridYouTubeDataApiClient and cleaned analyzer-only reference files')
