@@ -13,6 +13,7 @@ import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'core/ads/ad_manager.dart';
 import 'core/audio/vshots_audio_handler.dart';
@@ -623,6 +624,61 @@ class _MainShellState extends State<MainShell>
 // PERSISTENT PLAYER OVERLAY (FULL & MINI RESIZE)
 // ═══════════════════════════════════════════════
 
+/// One persistent WebView surface for the expanded browser state. It loads
+/// the normal YouTube webpage, not an iframe/controller or extracted stream.
+/// The widget survives track changes and only navigates the existing WebView.
+class _InAppYoutubeBrowser extends StatefulWidget {
+  const _InAppYoutubeBrowser({required this.videoId, this.artwork});
+
+  final String videoId;
+  final String? artwork;
+
+  @override
+  State<_InAppYoutubeBrowser> createState() => _InAppYoutubeBrowserState();
+}
+
+class _InAppYoutubeBrowserState extends State<_InAppYoutubeBrowser>
+    with AutomaticKeepAliveClientMixin {
+  late final WebViewController _controller;
+  String? _loadedId;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onWebResourceError: (error) => debugPrint('[BrowserPlayer] ${error.description}'),
+      ));
+    _load(widget.videoId);
+  }
+
+  @override
+  void didUpdateWidget(covariant _InAppYoutubeBrowser oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoId != widget.videoId) _load(widget.videoId);
+  }
+
+  void _load(String id) {
+    if (id.isEmpty || id == _loadedId) return;
+    _loadedId = id;
+    // Normal YouTube webpage. No direct media URL, scraping, extraction or
+    // custom playback layer is involved.
+    unawaited(_controller.loadRequest(
+      Uri.parse('https://m.youtube.com/watch?v=${Uri.encodeComponent(id)}'),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return WebViewWidget(controller: _controller);
+  }
+}
+
 class _PersistentPlayerOverlay extends StatefulWidget {
   const _PersistentPlayerOverlay({
     required this.track,
@@ -874,18 +930,10 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
                             ),
                           ],
                         ),
-                        child: globalYtController != null
-                            ? YoutubePlayer(
-                                controller: globalYtController!,
-                                aspectRatio: 16 / 9,
-                              )
-                            : SizedBox(
-                                height: 200,
-                                child: AppImage(
-                                  widget.track['artwork'] as String?,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
+                        child: _InAppYoutubeBrowser(
+                          videoId: trackId,
+                          artwork: widget.track['artwork'] as String?,
+                        ),
                       ),
                     ),
                   ),

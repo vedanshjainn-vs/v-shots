@@ -62,6 +62,8 @@ dependencies:
   # this app now calls it directly.
   url_launcher: ^6.3.2
   youtube_player_iframe: ^6.0.2
+  # Official in-app browser surface for normal YouTube webpage playback.
+  webview_flutter: ^4.13.0
   # Google AdMob (native ads) + Google UMP consent. Development uses the
   # official TEST ad unit IDs; production IDs are injected via secure config
   # (see lib/core/ads/ad_config.dart). See docs/legal/privacy_policy.md for
