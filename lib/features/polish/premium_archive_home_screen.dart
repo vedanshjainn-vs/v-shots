@@ -246,7 +246,7 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
               ],
             ),
           ),
-          const const _CircleButton(icon: Icons.notifications_none_rounded),
+          const _CircleButton(icon: Icons.notifications_none_rounded),
           const SizedBox(width: 8),
           const CircleAvatar(
             radius: 21,
