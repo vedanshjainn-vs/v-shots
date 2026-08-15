@@ -1,0 +1,52 @@
+name: Home Final Fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-home:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/home-premium-final-v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Fix Home card overflow and validate
+        run: |
+          set -e
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/features/polish/premium_archive_home_screen.dart')
+          s = p.read_text(encoding='utf-8')
+          old = 'height: 214,\n            child: ListView.separated('
+          new = 'height: 216,\n            child: ListView.separated('
+          if old in s:
+              s = s.replace(old, new, 1)
+              p.write_text(s, encoding='utf-8')
+              print('Fixed Home music shelf height: 214 -> 216')
+          else:
+              print('Overflow fix already present or source layout changed')
+          PY
+          flutter pub get
+          dart format lib/features/polish/premium_archive_home_screen.dart
+          flutter analyze
+          flutter test
+          flutter build apk --debug
+      - name: Commit fixed Home source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/features/polish/premium_archive_home_screen.dart
+          if ! git diff --cached --quiet; then
+            git commit -m "[home-bot] fix(home): prevent premium card overflow"
+            git push origin HEAD:feature/home-premium-final-v1
+          fi
