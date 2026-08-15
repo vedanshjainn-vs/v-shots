@@ -50,6 +50,7 @@ import 'features/shots/upload_shot_screen.dart';
 import 'features/polish/premium_discovery_screen.dart';
 import 'features/polish/browser_player_overlay.dart';
 import 'features/polish/archive_style_screens.dart';
+import 'features/polish/premium_archive_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -469,7 +470,7 @@ class _MainShellState extends State<MainShell> {
             IndexedStack(
               index: _index.clamp(0, 3),
               children: [
-                ArchiveStyleHomeScreen(
+                PremiumArchiveHomeScreen(
                   onPlay: (context, track, queue, index) =>
                       playTrack(context, track, queue, index),
                 ),
