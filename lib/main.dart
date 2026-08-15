@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
@@ -78,9 +79,26 @@ void main() async {
       androidNotificationChannelId: 'com.vshots.live.channel.audio',
       androidNotificationChannelName: 'V Shots playback',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      // Keep the media session available while the app is backgrounded;
+      // the permitted YouTube iframe remains the playback surface.
+      androidStopForegroundOnPause: false,
     ),
   );
+
+  // Native audio focus/session configuration. This controls interruptions and
+  // headset/Bluetooth focus without extracting or replacing YouTube media.
+  final audioSession = await AudioSession.instance;
+  await audioSession.configure(const AudioSessionConfiguration.music());
+  audioSession.interruptionEventStream.listen((event) {
+    if (event.begin) {
+      unawaited(audioPlayer.pause());
+    } else if (event.type == AudioInterruptionType.pause) {
+      unawaited(audioPlayer.play());
+    }
+  });
+  audioSession.becomingNoisyEventStream.listen((_) {
+    unawaited(audioPlayer.pause());
+  });
 
   // Wire the formal PlaybackManager to the existing single global YouTube
   // engine. It does NOT create a second player — it owns the same controller
@@ -414,12 +432,14 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
+class _MainShellState extends State<MainShell>
+    with WidgetsBindingObserver {
   int _index = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     currentTabIndexNotifier.value = 0;
     audioPlayer.playerStateStream.listen((state) {
       isCurrentlyPlaying = state.playing;
@@ -428,6 +448,26 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onSkipNext = () => _playAdjacentInQueue(context, 1);
     audioHandler?.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
     audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Lifecycle changes must not recreate or reload the single iframe.
+    debugPrint('[BrowserPlayer] lifecycle=$state track=$globalPlayingVideoId');
+    if (state == AppLifecycleState.resumed && globalPlayingVideoId != null) {
+      audioHandler?.mediaItem.add(MediaItem(
+        id: globalPlayingVideoId!,
+        title: currentTrack?['title'] as String? ?? 'V Shots',
+        artist: currentTrack?['artist'] as String? ?? 'Unknown Artist',
+        artUri: Uri.tryParse(currentTrack?['artwork'] as String? ?? ''),
+      ));
+    }
   }
 
   Future<bool> _onWillPop() async {
