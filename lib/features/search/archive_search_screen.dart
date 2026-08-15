@@ -118,9 +118,9 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
             SliverToBoxAdapter(child: _header()),
             if (hasResults) ..._resultSlivers()
             else ...[
-              if (_recentSearches.isNotEmpty) SliverToBoxAdapter(child: _recent()),
-              SliverToBoxAdapter(child: _browseAll()),
-              SliverToBoxAdapter(child: _suggested()),
+              if (_recentSearches.isNotEmpty) _recent(),
+              _browseAll(),
+              _suggested(),
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 120)),
           ],
