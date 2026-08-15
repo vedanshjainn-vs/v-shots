@@ -10,13 +10,10 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
-import 'core/ads/ad_config.dart';
 import 'core/ads/ad_manager.dart';
-import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/backend/supabase_sync_service.dart';

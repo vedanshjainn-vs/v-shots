@@ -257,12 +257,14 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
             HapticFeedback.selectionClick();
             final tracks = await widget.service.search(mood, count: 20);
             if (!mounted) return;
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => _MoodResultsScreen(
-                  title: mood,
-                  tracks: tracks,
-                  onPlayTrack: widget.onPlayTrack,
+            unawaited(
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _MoodResultsScreen(
+                    title: mood,
+                    tracks: tracks,
+                    onPlayTrack: widget.onPlayTrack,
+                  ),
                 ),
               ),
             );

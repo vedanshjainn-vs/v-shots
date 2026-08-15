@@ -191,7 +191,7 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
       MaterialPageRoute(builder: (_) => const _MoodPickerScreen()),
     );
     if (chosen != null && mounted) {
-      _loadInitial(kind: _FeedKind.mood, mood: chosen);
+      unawaited(_loadInitial(kind: _FeedKind.mood, mood: chosen));
     }
   }
 
@@ -200,7 +200,7 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
       MaterialPageRoute(builder: (_) => const _GenrePickerScreen()),
     );
     if (chosen != null && mounted) {
-      _loadInitial(kind: _FeedKind.genre, mood: chosen);
+      unawaited(_loadInitial(kind: _FeedKind.genre, mood: chosen));
     }
   }
 
@@ -728,7 +728,8 @@ class _ReelsCard extends StatefulWidget {
   State<_ReelsCard> createState() => _ReelsCardState();
 }
 
-class _ReelsCardState extends State<_ReelsCard> {
+class _ReelsCardState extends State<_ReelsCard>
+    with SingleTickerProviderStateMixin {
   AnimationController? _heartCtl;
   Animation<double>? _heartScale;
   Animation<double>? _heartOpacity;

@@ -15,7 +15,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/discovery/innertube_music_service.dart';
 import '../../core/storage/local_library.dart';
@@ -121,8 +120,9 @@ class _OnlineSearchScreenState extends State<OnlineSearchScreen> {
         _loading = false;
       });
     }
-    if (mounted)
+    if (mounted) {
       setState(() => _history = LocalLibrary.instance.recentSearches.value);
+    }
   }
 
   void _deleteHistory(String q) async {
