@@ -1,0 +1,252 @@
+name: Home Screen — ArchiveTune v2 Validation
+
+on:
+  push:
+    branches: [feature/home-archivetune-v2]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  home:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Configure environment
+        run: |
+          cat <<EOF > .env
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          ADMOB_NATIVE_AD_ID=${{ secrets.ADMOB_NATIVE_AD_ID }}
+          EOF
+      - name: Repair and integrate Home only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          home = Path('lib/features/polish/premium_archive_home_screen.dart')
+          s = home.read_text()
+
+          old = "Map<String, dynamic>? get _hero => _layout.map(_tracks).expand((x) => x).firstOrNull;"
+          new = """Map<String, dynamic>? get _hero {
+            for (final shelf in _layout) {
+              final tracks = _tracks(shelf);
+              if (tracks.isNotEmpty) return tracks.first;
+            }
+            return null;
+          }"""
+          s = s.replace(old, new)
+
+          old = "Widget _play(Map<String, dynamic> t) { final q = _tracks(_layout.first); final i = q.indexWhere((x) => _id(x) == _id(t)); unawaited(widget.onPlay(context, t, q.isEmpty ? [t] : q, i < 0 ? 0 : i)); return const SizedBox.shrink(); }"
+          new = """Future<void> _play(Map<String, dynamic> t) async {
+            final q = _tracks(_layout.first);
+            final i = q.indexWhere((x) => _id(x) == _id(t));
+            await widget.onPlay(context, t, q.isEmpty ? [t] : q, i < 0 ? 0 : i);
+          }"""
+          s = s.replace(old, new)
+          s = s.replace('onTap: () => _play(t)', 'onTap: () => unawaited(_play(t))')
+
+          a = s.index('  Widget _artists() {')
+          b = s.index('  Widget _circle', a)
+          replacement = '''  Widget _artists() {
+            final pool = _layout.expand(_tracks).toList();
+            final seen = <String>{};
+            final artists = pool.where((track) {
+              final artist = track['artist'] as String? ?? '';
+              return artist.trim().isNotEmpty && seen.add(artist.toLowerCase());
+            }).take(10).toList();
+            if (artists.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: Text('Popular Artists', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 130,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: artists.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 17),
+                      itemBuilder: (_, i) => SizedBox(
+                        width: 82,
+                        child: Column(
+                          children: [
+                            ClipOval(child: SizedBox(width: 74, height: 74, child: AppImage(artists[i]['artwork'] as String?, fit: BoxFit.cover))),
+                            const SizedBox(height: 7),
+                            Text(artists[i]['artist'] as String, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          Widget _moods() {
+            const moods = [
+              ('Romantic', Icons.favorite_rounded, Color(0xFFB42368)),
+              ('Chill', Icons.nightlight_round, Color(0xFF2563EB)),
+              ('Party', Icons.celebration_rounded, Color(0xFF7C3AED)),
+              ('Workout', Icons.bolt_rounded, Color(0xFFEA580C)),
+              ('Sad', Icons.cloud_rounded, Color(0xFF475569)),
+              ('Focus', Icons.auto_awesome_rounded, Color(0xFF0F766E)),
+            ];
+            return Padding(
+              padding: const EdgeInsets.only(top: 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 20),
+                    child: Text('Moods & Vibes', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 106,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      scrollDirection: Axis.horizontal,
+                      itemCount: moods.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      itemBuilder: (_, i) => Container(
+                        width: 142,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: moods[i].$3,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [BoxShadow(color: moods[i].$3.withValues(alpha: 0.25), blurRadius: 18, offset: const Offset(0, 7))],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Icon(moods[i].$2, color: Colors.white, size: 24),
+                            Text(moods[i].$1, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+'''
+          s = s[:a] + replacement + s[b:]
+
+          a = s.index('  Future<void> _showAll(_HomeShelf shelf) async {')
+          b = s.index('\n}\n\nclass _HeroSkeleton', a)
+          replacement = '''  Future<void> _showAll(_HomeShelf shelf) async {
+            final q = _tracks(shelf);
+            if (q.isEmpty || !mounted) return;
+            await showModalBottomSheet<void>(
+              context: context,
+              backgroundColor: AppColors.surface,
+              isScrollControlled: true,
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+              builder: (ctx) => SafeArea(
+                child: SizedBox(
+                  height: MediaQuery.sizeOf(ctx).height * .78,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
+                    itemCount: q.length + 1,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      if (i == 0) return Text(shelf.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800));
+                      final t = q[i - 1];
+                      return ListTile(
+                        tileColor: AppColors.surface2,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: SizedBox(width: 54, height: 54, child: AppImage(t['artwork'] as String?, fit: BoxFit.cover))),
+                        title: Text(t['title'] as String? ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(t['artist'] as String? ?? ''),
+                        trailing: const Icon(Icons.play_circle_fill_rounded, color: AppColors.accent),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          unawaited(widget.onPlay(context, t, q, i - 1));
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          }
+'''
+          s = s[:a] + replacement + s[b:]
+          home.write_text(s)
+
+          main = Path('lib/main.dart')
+          m = main.read_text()
+          if "features/polish/premium_archive_home_screen.dart" not in m:
+            m = m.replace("import 'features/polish/archive_style_screens.dart';", "import 'features/polish/archive_style_screens.dart';\nimport 'features/polish/premium_archive_home_screen.dart';")
+          m = m.replace('ArchiveStyleHomeScreen(\n', 'PremiumArchiveHomeScreen(\n', 1)
+          main.write_text(m)
+          PY
+      - name: Format
+        run: dart format lib/features/polish/premium_archive_home_screen.dart lib/main.dart
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/features/polish/premium_archive_home_screen.dart lib/main.dart
+          if ! git diff --cached --quiet; then
+            git commit -m "feat(home): integrate and repair ArchiveTune Home [skip ci]"
+            git push origin HEAD:feature/home-archivetune-v2
+          fi
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+      - name: Build APK and AAB
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6G
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+      - name: Validate artifacts
+        run: |
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          test -f build/app/outputs/bundle/release/app-release.aab
+          echo "APK $(stat -c%s build/app/outputs/flutter-apk/app-release.apk) bytes"
+          echo "AAB $(stat -c%s build/app/outputs/bundle/release/app-release.aab) bytes"
+          sha256sum build/app/outputs/flutter-apk/app-release.apk
+          sha256sum build/app/outputs/bundle/release/app-release.aab
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-home-archivetune-v2
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
