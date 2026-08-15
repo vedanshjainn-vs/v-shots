@@ -53,13 +53,12 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
     unawaited(_loadQuickPicks());
   }
 
-  Future<void> _openSearch([String? query]) async {
+  Future<void> _openSearch() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnlineSearchScreen(
           service: widget.service,
           onPlayTrack: widget.onPlayTrack,
-          initialQuery: query ?? '',
         ),
       ),
     );
@@ -102,7 +101,9 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
     }
   }
 
-  Future<void> _searchFromChip(String query) => _openSearch(query);
+  Future<void> _searchFromChip(String query) async {
+    await _openSearch();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +142,7 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _openSearch(),
+          onTap: _openSearch,
           borderRadius: BorderRadius.circular(18),
           child: Container(
             height: 58,
@@ -224,7 +225,7 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
                 return InputChip(
                   avatar: const Icon(Icons.history_rounded, size: 16),
                   label: Text(query, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onPressed: () => _openSearch(query),
+                  onPressed: _openSearch,
                   onDeleted: () => _removeHistory(query),
                   backgroundColor: AppColors.surface,
                   side: const BorderSide(color: AppColors.border),
