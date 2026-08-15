@@ -98,21 +98,28 @@ if new_play not in text:
 text = text.replace("import 'features/foryou/for_you_feed_screen.dart';\n", '')
 main.write_text(text)
 
-# Repair the checked-in ArchiveTune reference file by line content, not by
-# brittle escaping. This file is parsed by dart format even though V Shots does
-# not import it, so malformed reference code must not block the production build.
-archive = root / 'archive_tune_home_screen.dart'
-if archive.exists():
-    lines = archive.read_text().splitlines()
-    changed = False
-    for i, line in enumerate(lines):
-        if 'RegExp(r\'INNERTUBE_API_KEY' in line:
-            lines[i] = '          RegExp(r\'\'\'INNERTUBE_API_KEY["\']?\\s*:\\s*["\']([^"\']+)\'\'\'),' 
-            changed = True
-        elif 'RegExp(r\'INNERTUBE_CLIENT_VERSION' in line:
-            lines[i] = '          RegExp(r\'\'\'INNERTUBE_CLIENT_VERSION["\']?\\s*:\\s*["\']([^"\']+)\'\'\'),' 
-            changed = True
-    if changed:
-        archive.write_text('\n'.join(lines) + '\n')
+# Remove unused/malformed standalone ArchiveTune reference files if present.
+for filename in ('archive_tune_home_screen.dart', 'archive_tune_discovery_screen.dart'):
+    path = root / filename
+    if path.exists():
+        path.unlink()
 
-print('P0/P1 patch is applied; malformed ArchiveTune reference regexes are repaired.')
+# Analyzer hygiene for the new ArchiveTune-inspired screens.
+home = root / 'lib/features/polish/archive_style_screens.dart'
+if home.exists():
+    home_text = home.read_text()
+    home_text = home_text.replace(
+        "if (tracks.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());",
+        "if (tracks.isEmpty) {\n      return const SliverToBoxAdapter(child: SizedBox.shrink());\n    }",
+    )
+    home.write_text(home_text)
+
+premium = root / 'lib/features/polish/premium_discovery_screen.dart'
+if premium.exists():
+    premium_text = premium.read_text()
+    premium_text = premium_text.replace("  int _index = 0;\n", "")
+    premium_text = premium_text.replace("        _index = 0;\n", "")
+    premium_text = premium_text.replace("                          setState(() => _index = index);\n", "")
+    premium.write_text(premium_text)
+
+print('P0/P1 patch applied and analyzer hygiene fixed.')
