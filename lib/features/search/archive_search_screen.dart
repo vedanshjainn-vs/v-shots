@@ -256,7 +256,7 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
           mood: mood,
           color: _colorFor(mood),
           onTap: () async {
-            HapticFeedback.selectionClick();
+            unawaited(HapticFeedback.selectionClick());
             final nav = Navigator.of(context);
             final tracks = await widget.service.search(mood, count: 20);
             if (!mounted) return;
