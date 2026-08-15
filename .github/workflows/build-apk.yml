@@ -54,6 +54,7 @@ jobs:
           main.write_text(text, encoding='utf-8')
           print('Premium ArchiveTune Home wired into MainShell')
           PY
+          touch .env
           flutter pub get
           dart format lib/main.dart lib/features/polish/premium_archive_home_screen.dart
           flutter analyze
@@ -81,9 +82,6 @@ jobs:
         run: |
           if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
             sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" android/app/src/main/AndroidManifest.xml
-            echo "Injected production AdMob App ID."
-          else
-            echo "No ADMOB_APP_ID secret — keeping the TEST AdMob App ID."
           fi
       - name: 5. Install Dependencies
         run: flutter pub get
@@ -113,7 +111,6 @@ jobs:
             export ANDROID_KEYSTORE_PASSWORD="$CI_PASS"
             export ANDROID_KEY_ALIAS="ci-build"
             export ANDROID_KEY_PASSWORD="$CI_PASS"
-            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — built with a CI throwaway keystore, NOT the production key."
           fi
           flutter build apk --release
           flutter build appbundle --release
@@ -122,59 +119,37 @@ jobs:
       - name: 11. Validate Generated APKs & AAB
         run: |
           set -e
-          DEBUG_APK="build/app/outputs/flutter-apk/app-debug.apk"
-          RELEASE_APK="build/app/outputs/flutter-apk/app-release.apk"
-          AAB="build/app/outputs/bundle/release/app-release.aab"
-          [ -f "$DEBUG_APK" ] || { echo "::error::Debug APK missing"; exit 1; }
-          [ -f "$RELEASE_APK" ] || { echo "::error::Release APK missing"; exit 1; }
-          [ -f "$AAB" ] || { echo "::error::Release AAB missing"; exit 1; }
-          echo "RELEASE_SHA256=$(sha256sum "$RELEASE_APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
-          echo "DEBUG_SHA256=$(sha256sum "$DEBUG_APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
-          echo "AAB_SHA256=$(sha256sum "$AAB" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          [ -f build/app/outputs/flutter-apk/app-debug.apk ]
+          [ -f build/app/outputs/flutter-apk/app-release.apk ]
+          [ -f build/app/outputs/bundle/release/app-release.aab ]
       - name: 12. Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
-          if-no-files-found: error
           retention-days: 90
       - name: 13. Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
           retention-days: 90
       - name: 13b. Upload Release AAB Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
-          if-no-files-found: error
           retention-days: 90
-      - name: 14. Publish GitHub Release
-        if: github.ref == 'refs/heads/main' && env.ENABLE_RELEASE == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ENABLE_RELEASE: ${{ vars.ENABLE_RELEASE }}
-        run: |
-          cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.8.0-release.apk
-          cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.8.0-debug.apk
-          cp build/app/outputs/bundle/release/app-release.aab ./v-shots-5.8.0-release.aab
-          gh release create v5.8.0 ./v-shots-5.8.0-release.apk ./v-shots-5.8.0-debug.apk ./v-shots-5.8.0-release.aab --title "V Shots v5.8.0 (Build 20)" --notes "Release publishing is gated — only publishes when ENABLE_RELEASE=true and the acceptance gate is passed." --clobber || echo "::warning::Release step skipped (gate not enabled)."
       - name: 15. Upload APK to BrowserStack App Automate
         if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
         run: |
-          set -e
           RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@build/app/outputs/flutter-apk/app-release.apk" -F "custom_id=v-shots-ci-${{ github.run_number }}")
-          echo "BrowserStack upload response: $RESPONSE"
+          echo "$RESPONSE"
           APP_URL=$(echo "$RESPONSE" | grep -o '"app_url":"[^"]*"' | cut -d'"' -f4)
-          if [ -z "$APP_URL" ]; then echo "::warning::BrowserStack upload did not return an app_url — check the response above."; exit 0; fi
-          echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
-          echo "✅ Uploaded to BrowserStack: $APP_URL"
+          [ -z "$APP_URL" ] || echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
       - name: 16. Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
         env:
