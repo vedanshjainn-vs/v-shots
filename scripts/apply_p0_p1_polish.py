@@ -4,6 +4,7 @@ root = Path(__file__).resolve().parents[1]
 main = root / 'lib' / 'main.dart'
 text = main.read_text()
 
+# New unified surfaces.
 imports = [
     "import 'features/polish/archive_style_screens.dart';",
     "import 'features/polish/browser_player_overlay.dart';",
@@ -35,9 +36,10 @@ new_tabs = '''children: [
                 ),
                 const ProfileScreen(),
               ],'''
-if old_tabs not in text:
-    raise SystemExit('MainShell tab block not found')
-text = text.replace(old_tabs, new_tabs, 1)
+if new_tabs not in text:
+    if old_tabs not in text:
+        raise SystemExit('MainShell tab block not found in either old or new form')
+    text = text.replace(old_tabs, new_tabs, 1)
 
 old_overlay = '''                    // The Discover feed is a full-screen immersive surface
                     // that renders the single global IFrame itself, so the
@@ -60,9 +62,10 @@ new_overlay = '''                    return BrowserPlayerOverlay(
                       },
                       onTrackEnded: () => _handleTrackCompleted(context),
                     );'''
-if old_overlay not in text:
-    raise SystemExit('Persistent overlay block not found')
-text = text.replace(old_overlay, new_overlay, 1)
+if new_overlay not in text:
+    if old_overlay not in text:
+        raise SystemExit('Persistent overlay block not found in either old or new form')
+    text = text.replace(old_overlay, new_overlay, 1)
 
 old_init = '''    currentTabIndexNotifier.value = 0;
     audioPlayer.playerStateStream.listen((state) {'''
@@ -70,9 +73,10 @@ new_init = '''    currentTabIndexNotifier.value = 0;
     isPlayerExpandedNotifier.value = false;
     currentTrackNotifier.value = null;
     audioPlayer.playerStateStream.listen((state) {'''
-if old_init not in text:
-    raise SystemExit('MainShell init anchor not found')
-text = text.replace(old_init, new_init, 1)
+if new_init not in text:
+    if old_init not in text:
+        raise SystemExit('MainShell init anchor not found in either old or new form')
+    text = text.replace(old_init, new_init, 1)
 
 old_play = '''  final videoId = (track['id'] as String?) ?? 'kJQP7kiw5Fk';
   // Play through the single global YouTube engine (stops/replaces the previous
@@ -87,24 +91,24 @@ new_play = '''  // BrowserPlayerOverlay is the single playback surface. It stays
 
   // A tap selects a track and starts it in the persistent mini-player.
   isPlayerExpandedNotifier.value = false;'''
-if old_play not in text:
-    raise SystemExit('playTrack player block not found')
-text = text.replace(old_play, new_play, 1)
+if new_play not in text:
+    if old_play not in text:
+        raise SystemExit('playTrack player block not found in either old or new form')
+    text = text.replace(old_play, new_play, 1)
 
 text = text.replace("import 'features/foryou/for_you_feed_screen.dart';\n", '')
 main.write_text(text)
 
+# Repair the checked-in ArchiveTune reference file's two malformed raw regexes.
 archive = root / 'archive_tune_home_screen.dart'
 if archive.exists():
     archive_text = archive.read_text()
-    archive_text = archive_text.replace(
-        '''RegExp(r'INNERTUBE_API_KEY["\\']?\\s*:\\s*["\\']([^"\\']+)')''',
-        "RegExp(r'''INNERTUBE_API_KEY[\"']?\\s*:\\s*[\"']([^\"']+)''')",
-    )
-    archive_text = archive_text.replace(
-        '''RegExp(r'INNERTUBE_CLIENT_VERSION["\\']?\\s*:\\s*["\\']([^"\\']+)')''',
-        "RegExp(r'''INNERTUBE_CLIENT_VERSION[\"']?\\s*:\\s*[\"']([^\"']+)''')",
-    )
+    broken_key = '''RegExp(r'INNERTUBE_API_KEY["\\']?\\s*:\\s*["\\']([^"\\']+)')'''
+    fixed_key = "RegExp(r'''INNERTUBE_API_KEY[\"']?\\s*:\\s*[\"']([^\"']+)''')"
+    broken_version = '''RegExp(r'INNERTUBE_CLIENT_VERSION["\\']?\\s*:\\s*["\\']([^"\\']+)')'''
+    fixed_version = "RegExp(r'''INNERTUBE_CLIENT_VERSION[\"']?\\s*:\\s*[\"']([^\"']+)''')"
+    archive_text = archive_text.replace(broken_key, fixed_key)
+    archive_text = archive_text.replace(broken_version, fixed_version)
     archive.write_text(archive_text)
 
-print('Patched main.dart and repaired the malformed ArchiveTune reference regexes.')
+print('P0/P1 patch is applied; malformed ArchiveTune reference regexes are repaired.')
