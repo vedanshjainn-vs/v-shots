@@ -4,7 +4,6 @@ root = Path(__file__).resolve().parents[1]
 main = root / 'lib' / 'main.dart'
 text = main.read_text()
 
-# New unified surfaces.
 imports = [
     "import 'features/polish/archive_style_screens.dart';",
     "import 'features/polish/browser_player_overlay.dart';",
@@ -99,16 +98,21 @@ if new_play not in text:
 text = text.replace("import 'features/foryou/for_you_feed_screen.dart';\n", '')
 main.write_text(text)
 
-# Repair the checked-in ArchiveTune reference file's two malformed raw regexes.
+# Repair the checked-in ArchiveTune reference file by line content, not by
+# brittle escaping. This file is parsed by dart format even though V Shots does
+# not import it, so malformed reference code must not block the production build.
 archive = root / 'archive_tune_home_screen.dart'
 if archive.exists():
-    archive_text = archive.read_text()
-    broken_key = '''RegExp(r'INNERTUBE_API_KEY["\\']?\\s*:\\s*["\\']([^"\\']+)')'''
-    fixed_key = "RegExp(r'''INNERTUBE_API_KEY[\"']?\\s*:\\s*[\"']([^\"']+)''')"
-    broken_version = '''RegExp(r'INNERTUBE_CLIENT_VERSION["\\']?\\s*:\\s*["\\']([^"\\']+)')'''
-    fixed_version = "RegExp(r'''INNERTUBE_CLIENT_VERSION[\"']?\\s*:\\s*[\"']([^\"']+)''')"
-    archive_text = archive_text.replace(broken_key, fixed_key)
-    archive_text = archive_text.replace(broken_version, fixed_version)
-    archive.write_text(archive_text)
+    lines = archive.read_text().splitlines()
+    changed = False
+    for i, line in enumerate(lines):
+        if 'RegExp(r\'INNERTUBE_API_KEY' in line:
+            lines[i] = '          RegExp(r\'\'\'INNERTUBE_API_KEY["\']?\\s*:\\s*["\']([^"\']+)\'\'\'),' 
+            changed = True
+        elif 'RegExp(r\'INNERTUBE_CLIENT_VERSION' in line:
+            lines[i] = '          RegExp(r\'\'\'INNERTUBE_CLIENT_VERSION["\']?\\s*:\\s*["\']([^"\']+)\'\'\'),' 
+            changed = True
+    if changed:
+        archive.write_text('\n'.join(lines) + '\n')
 
 print('P0/P1 patch is applied; malformed ArchiveTune reference regexes are repaired.')
