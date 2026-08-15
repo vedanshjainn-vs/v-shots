@@ -1,0 +1,304 @@
+name: Apply ArchiveTune Home
+
+on:
+  push:
+    branches: [feature/home-archivetune-v1]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-home:
+    if: ${{ !startsWith(github.event.head_commit.message, '[home-bot]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+      - name: Replace Home only
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('lib/main.dart')
+          text = p.read_text(encoding='utf-8')
+          start_marker = '// HOME SCREEN (AUTO-REFRESH & DATA-DRIVEN)'
+          end_marker = '// SEARCH SCREEN'
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          new_home = r'''// HOME SCREEN — ARCHIVETUNE-INSPIRED PREMIUM FEED
+// This block is intentionally isolated: Search, Discover, Profile and the
+// global player are outside this replacement boundary.
+
+class _HomeShelf {
+  _HomeShelf({required this.title, required this.query, this.personalized = false, this.because = false});
+  final String title;
+  final String query;
+  final bool personalized;
+  final bool because;
+  _SectionStatus status = _SectionStatus.loading;
+  List<Map<String, dynamic>> tracks = [];
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  final _scroll = ScrollController();
+  final Set<String> _loading = <String>{};
+  final Set<String> _shown = <String>{};
+  Timer? _timer;
+  late final List<_HomeShelf> _shelves = [
+    _HomeShelf(title: 'Trending Now', query: 'trending songs official music 2026'),
+    _HomeShelf(title: 'New Releases', query: 'new music latest official audio 2026'),
+    _HomeShelf(title: 'Made For You', query: '__made_for_you__', personalized: true),
+    _HomeShelf(title: 'Because You Listened To', query: '__because_you_listened__', because: true),
+    _HomeShelf(title: 'India Hits', query: 'top bollywood hindi songs official'),
+    _HomeShelf(title: 'Punjabi Bangers', query: 'latest punjabi hits official'),
+    _HomeShelf(title: 'Hindi Indie & Acoustic', query: 'hindi indie acoustic songs official'),
+    _HomeShelf(title: 'International Pop', query: 'global pop hits official music'),
+    _HomeShelf(title: 'Chill & Lofi', query: 'chill lofi late night beats official'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    for (final s in _shelves) unawaited(_loadShelf(s));
+    _timer = Timer.periodic(const Duration(minutes: 20), (_) => _refreshAll());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_refreshAll(silent: true));
+  }
+
+  Future<void> _refreshAll({bool silent = false}) async {
+    if (!silent) _shown.clear();
+    await Future.wait(_shelves.map((s) => _loadShelf(s, force: true)));
+  }
+
+  Future<void> _loadShelf(_HomeShelf shelf, {bool force = false}) async {
+    if (_loading.contains(shelf.query)) return;
+    _loading.add(shelf.query);
+    final q = shelf.personalized
+        ? RecommendationService.instance.getPersonalizedHomeQuery()
+        : shelf.because
+            ? RecommendationService.instance.getBecauseYouListenedQuery()
+            : shelf.query;
+    try {
+      final cached = force ? null : SearchCache.instance.get(q);
+      if (cached != null && mounted) {
+        setState(() {
+          shelf.tracks = cached;
+          shelf.status = _SectionStatus.loaded;
+        });
+        if (SearchCache.instance.isFresh(q)) return;
+      }
+      final results = await musicRepository.search(
+        q,
+        order: shelf.title == 'New Releases' ? 'date' : 'relevance',
+        limit: 18,
+        excludeIds: _shown,
+      );
+      final unique = <String, Map<String, dynamic>>{};
+      for (final t in results) {
+        final id = t['id']?.toString() ?? '';
+        if (id.isEmpty || unique.containsKey(id)) continue;
+        unique[id] = t;
+      }
+      if (!mounted) return;
+      if (unique.isNotEmpty) {
+        final list = unique.values.toList();
+        SearchCache.instance.set(q, list);
+        _shown.addAll(list.map((e) => e['id'].toString()));
+        setState(() {
+          shelf.tracks = list;
+          shelf.status = _SectionStatus.loaded;
+        });
+      } else if (shelf.tracks.isEmpty) {
+        setState(() => shelf.status = _SectionStatus.error);
+      }
+    } catch (_) {
+      if (mounted && shelf.tracks.isEmpty) setState(() => shelf.status = _SectionStatus.error);
+    } finally {
+      _loading.remove(shelf.query);
+    }
+  }
+
+  List<Map<String, dynamic>> _items(_HomeShelf shelf) {
+    final out = <Map<String, dynamic>>[];
+    final local = <String>{};
+    for (final t in shelf.tracks) {
+      final id = t['id']?.toString() ?? '';
+      if (id.isEmpty || !local.add(id)) continue;
+      out.add(t);
+    }
+    return out.take(15).toList();
+  }
+
+  Future<void> _play(Map<String, dynamic> track, List<Map<String, dynamic>> queue) async {
+    final index = queue.indexWhere((e) => e['id'] == track['id']);
+    await playTrack(context, track, queue, index < 0 ? 0 : index);
+  }
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = <Map<String, dynamic>>[];
+    for (final s in _shelves) {
+      for (final t in _items(s)) {
+        if (!all.any((x) => x['id'] == t['id'])) all.add(t);
+      }
+    }
+    final hero = all.isEmpty ? null : all.first;
+    final quick = all.skip(hero == null ? 0 : 1).take(8).toList();
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: RefreshIndicator(
+        color: AppColors.accent,
+        backgroundColor: AppColors.surface,
+        onRefresh: () => _refreshAll(),
+        child: CustomScrollView(
+          controller: _scroll,
+          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+          slivers: [
+            SliverAppBar(
+              backgroundColor: AppColors.background,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              floating: true,
+              titleSpacing: 20,
+              title: const Text('V Shots', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900, letterSpacing: -0.8)),
+              actions: [
+                IconButton(onPressed: () => _refreshAll(), icon: const Icon(Icons.refresh_rounded)),
+                const SizedBox(width: 8),
+              ],
+            ),
+            SliverToBoxAdapter(child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(_greeting(), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.7)),
+                const SizedBox(height: 3),
+                const Text('Made for you', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                const SizedBox(height: 13),
+                Container(
+                  height: 46,
+                  decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border.withValues(alpha: .75))),
+                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                  child: const Row(children: [Icon(Icons.search_rounded, color: AppColors.textMuted), SizedBox(width: 10), Text('Search songs, artists, albums...', style: TextStyle(color: AppColors.textMuted, fontSize: 13))]),
+                ),
+              ]),
+            )),
+            SliverToBoxAdapter(child: SizedBox(
+              height: 42,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                scrollDirection: Axis.horizontal,
+                itemCount: 7,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  const labels = ['Quick Picks', 'Made For You', 'Trending', 'New Releases', 'Romance', 'Chill', 'Workout'];
+                  return ActionChip(label: Text(labels[i]), onPressed: () => _refreshAll(), backgroundColor: AppColors.surface, side: BorderSide(color: AppColors.border.withValues(alpha: .7)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)));
+                },
+              ),
+            )),
+            if (hero != null) SliverToBoxAdapter(child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+              child: GestureDetector(
+                onTap: () => _play(hero, all.take(10).toList()),
+                child: Container(
+                  height: 214,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: .22), blurRadius: 28)]),
+                  child: Stack(fit: StackFit.expand, children: [
+                    AppImage(hero['artwork'] as String?, fit: BoxFit.cover, errorIconColor: AppColors.accent),
+                    const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.centerRight, end: Alignment.centerLeft, colors: [Colors.transparent, Color(0xF509090D)]))),
+                    Positioned(left: 20, right: 18, bottom: 18, child: Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(7)), child: const Text('MADE FOR YOU', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: .6))),
+                        const SizedBox(height: 8),
+                        Text(hero['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w900, letterSpacing: -.7)),
+                        const SizedBox(height: 3),
+                        Text(hero['artist']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                      ])),
+                      Container(width: 50, height: 50, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.play_arrow_rounded, color: Colors.black, size: 30)),
+                    ])),
+                  ]),
+                ),
+              ),
+            )),
+            if (quick.isNotEmpty) _musicShelf('Quick Picks', quick),
+            for (final shelf in _shelves)
+              if (_items(shelf).isNotEmpty) _musicShelf(shelf.title, _items(shelf)),
+            if (_shelves.every((s) => s.tracks.isEmpty) && _shelves.any((s) => s.status == _SectionStatus.error)) SliverFillRemaining(hasScrollBody: false, child: Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.music_off_rounded, size: 46, color: AppColors.textMuted), const SizedBox(height: 14), const Text('Music feed unavailable', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)), const SizedBox(height: 8), const Text('Pull down to refresh and try again.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textMuted)), const SizedBox(height: 18), FilledButton(onPressed: () => _refreshAll(), child: const Text('Refresh'))])))),
+            const SliverToBoxAdapter(child: SizedBox(height: 140)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _musicShelf(String title, List<Map<String, dynamic>> tracks) {
+    final unique = <String, Map<String, dynamic>>{};
+    for (final t in tracks) {
+      final id = t['id']?.toString() ?? '';
+      if (id.isNotEmpty) unique[id] = t;
+    }
+    final items = unique.values.take(15).toList();
+    if (items.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    final queue = items;
+    return SliverToBoxAdapter(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(padding: const EdgeInsets.fromLTRB(20, 22, 16, 10), child: Row(children: [Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -.45))), const Icon(Icons.arrow_forward_rounded, size: 20)])),
+      SizedBox(height: 207, child: ListView.builder(padding: const EdgeInsets.symmetric(horizontal: 20), scrollDirection: Axis.horizontal, itemCount: items.length, itemBuilder: (_, i) {
+        final t = items[i];
+        return SizedBox(width: 150, child: Padding(padding: const EdgeInsets.only(right: 12), child: GestureDetector(onTap: () => _play(t, queue), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          AspectRatio(aspectRatio: 1, child: ClipRRect(borderRadius: BorderRadius.circular(15), child: Stack(fit: StackFit.expand, children: [
+            AppImage(t['artwork'] as String?, fit: BoxFit.cover, errorIconColor: AppColors.accent),
+            Positioned(right: 8, bottom: 8, child: Container(width: 38, height: 38, decoration: BoxDecoration(color: Colors.black.withValues(alpha: .74), shape: BoxShape.circle), child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 21))),
+          ]))),
+          const SizedBox(height: 8),
+          Text(t['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, height: 1.15)),
+          const SizedBox(height: 3),
+          Text(t['artist']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+        ]))));
+      })),
+    ]));
+  }
+}
+
+'''
+          p.write_text(text[:start] + new_home + text[end:], encoding='utf-8')
+          print('Home block replaced')
+      - name: Validate Home
+        run: |
+          flutter pub get
+          dart format lib/main.dart
+          flutter analyze
+          flutter test
+      - name: Commit Home implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/main.dart
+          git diff --cached --quiet && exit 0
+          git commit -m "[home-bot] feat(home): ArchiveTune premium Home"
+          git push origin HEAD:${{ github.ref_name }}
