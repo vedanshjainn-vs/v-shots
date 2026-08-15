@@ -466,11 +466,13 @@ class _MoodResultsScreen extends StatefulWidget {
   const _MoodResultsScreen({
     required this.title,
     required this.tracks,
+    required this.service,
     required this.onPlayTrack,
   });
 
   final String title;
   final List<DiscoveryTrack> tracks;
+  final InnerTubeMusicService service;
   final OnPlayTrack onPlayTrack;
 
   @override
