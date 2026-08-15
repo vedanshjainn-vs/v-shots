@@ -57,7 +57,6 @@ class _PremiumDiscoveryScreenState extends State<PremiumDiscoveryScreen> {
 
   final PageController _pageController = PageController();
   List<Map<String, dynamic>> _items = [];
-  int _index = 0;
   int _selectedGenre = 0;
   bool _loading = true;
 
@@ -85,7 +84,6 @@ class _PremiumDiscoveryScreenState extends State<PremiumDiscoveryScreen> {
       if (!mounted) return;
       setState(() {
         _items = clean;
-        _index = 0;
         _loading = false;
       });
       if (clean.isNotEmpty) {
@@ -162,7 +160,6 @@ class _PremiumDiscoveryScreenState extends State<PremiumDiscoveryScreen> {
                         scrollDirection: Axis.vertical,
                         itemCount: _items.length,
                         onPageChanged: (index) {
-                          setState(() => _index = index);
                           widget.onPlay(context, _items[index], _items, index);
                         },
                         itemBuilder: (context, index) {

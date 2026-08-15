@@ -176,7 +176,9 @@ class _ArchiveStyleHomeScreenState extends State<ArchiveStyleHomeScreen> {
         ),
       );
     }
-    if (tracks.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    if (tracks.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.only(top: 16),
