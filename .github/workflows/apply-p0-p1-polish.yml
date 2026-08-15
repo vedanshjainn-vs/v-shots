@@ -1,0 +1,49 @@
+name: Apply V Shots P0-P1 Polish
+
+on:
+  push:
+    branches: [ feature/vshots-final-polish-p0-p1-p2 ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/vshots-final-polish-p0-p1-p2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply deterministic source patch
+        run: python scripts/apply_p0_p1_polish.py
+
+      - name: Commit patched source
+        id: commit
+        run: |
+          git config user.name "v-shots-ci"
+          git config user.email "v-shots-ci@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No source patch changes were needed."
+          else
+            git commit -m "fix: apply P0/P1 ArchiveTune and browser player polish"
+            git push origin HEAD:feature/vshots-final-polish-p0-p1-p2
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch full APK/AAB build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-apk.yml --ref feature/vshots-final-polish-p0-p1-p2

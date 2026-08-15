@@ -42,12 +42,14 @@ import 'shared/widgets/app_image.dart';
 import 'shared/widgets/bottom_tab_bar.dart';
 import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
-import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
+import 'features/polish/premium_discovery_screen.dart';
+import 'features/polish/browser_player_overlay.dart';
+import 'features/polish/archive_style_screens.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -370,6 +372,8 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     currentTabIndexNotifier.value = 0;
+    isPlayerExpandedNotifier.value = false;
+    currentTrackNotifier.value = null;
     audioPlayer.playerStateStream.listen((state) {
       isCurrentlyPlaying = state.playing;
     });
@@ -464,11 +468,20 @@ class _MainShellState extends State<MainShell> {
             // 4 Clean Tabs (Home, Discover, Search, Profile)
             IndexedStack(
               index: _index.clamp(0, 3),
-              children: const [
-                HomeScreen(),
-                ForYouFeedScreen(),
-                SearchScreen(),
-                ProfileScreen(),
+              children: [
+                ArchiveStyleHomeScreen(
+                  onPlay: (context, track, queue, index) =>
+                      playTrack(context, track, queue, index),
+                ),
+                PremiumDiscoveryScreen(
+                  onPlay: (context, track, queue, index) =>
+                      playTrack(context, track, queue, index),
+                ),
+                ArchiveStyleSearchScreen(
+                  onPlay: (context, track, queue, index) =>
+                      playTrack(context, track, queue, index),
+                ),
+                const ProfileScreen(),
               ],
             ),
 
@@ -480,18 +493,13 @@ class _MainShellState extends State<MainShell> {
                 return ValueListenableBuilder<bool>(
                   valueListenable: isPlayerExpandedNotifier,
                   builder: (context, isExpanded, _) {
-                    // The Discover feed is a full-screen immersive surface
-                    // that renders the single global IFrame itself, so the
-                    // persistent overlay (mini/full player) is hidden while
-                    // the Discover tab is active to avoid two `YoutubePlayer`
-                    // widgets sharing the same controller.
-                    if (_index == 1) return const SizedBox.shrink();
-                    return _PersistentPlayerOverlay(
+                    return BrowserPlayerOverlay(
                       track: track,
-                      isExpanded: isExpanded,
+                      expanded: isExpanded,
                       onToggleExpand: (val) {
                         isPlayerExpandedNotifier.value = val;
                       },
+                      onTrackEnded: () => _handleTrackCompleted(context),
                     );
                   },
                 );
@@ -1289,13 +1297,12 @@ Future<void> playTrack(
   currentQueue = queue;
   currentQueueIndex = index;
 
-  final videoId = (track['id'] as String?) ?? 'kJQP7kiw5Fk';
-  // Play through the single global YouTube engine (stops/replaces the previous
-  // video; does not create a second playback engine).
-  ensureGlobalPlayer(videoId: videoId, autoPlay: true);
+  // BrowserPlayerOverlay is the single playback surface. It stays mounted
+  // above the IndexedStack and loads this track into the same WebView instance.
   globalPlaybackStateNotifier.value = true;
 
-  isPlayerExpandedNotifier.value = true;
+  // A tap selects a track and starts it in the persistent mini-player.
+  isPlayerExpandedNotifier.value = false;
   unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
   playbackSignalTracker.onTrackStarted(track);
 }
