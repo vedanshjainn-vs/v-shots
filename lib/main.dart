@@ -88,7 +88,7 @@ void main() async {
   // Native audio focus/session configuration. This controls interruptions and
   // headset/Bluetooth focus without extracting or replacing YouTube media.
   final audioSession = await AudioSession.instance;
-  await audioSession.configure(const AudioSessionConfiguration.music());
+  await audioSession.configure(AudioSessionConfiguration.music());
   audioSession.interruptionEventStream.listen((event) {
     if (event.begin) {
       unawaited(audioPlayer.pause());
