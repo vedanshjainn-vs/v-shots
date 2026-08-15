@@ -266,6 +266,7 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
                   builder: (_) => _MoodResultsScreen(
                     title: mood,
                     tracks: tracks,
+                    service: widget.service,
                     onPlayTrack: widget.onPlayTrack,
                   ),
                 ),
@@ -393,11 +394,13 @@ class _SuggestionSection extends StatelessWidget {
   const _SuggestionSection({
     required this.title,
     required this.tracks,
+    required this.service,
     required this.onPlayTrack,
   });
 
   final String title;
   final List<DiscoveryTrack> tracks;
+  final InnerTubeMusicService service;
   final OnPlayTrack onPlayTrack;
 
   @override
@@ -459,7 +462,7 @@ class _SuggestionSection extends StatelessWidget {
   }
 }
 
-class _MoodResultsScreen extends StatelessWidget {
+class _MoodResultsScreen extends StatefulWidget {
   const _MoodResultsScreen({
     required this.title,
     required this.tracks,
@@ -471,48 +474,128 @@ class _MoodResultsScreen extends StatelessWidget {
   final OnPlayTrack onPlayTrack;
 
   @override
+  State<_MoodResultsScreen> createState() => _MoodResultsScreenState();
+}
+
+class _MoodResultsScreenState extends State<_MoodResultsScreen> {
+  late List<DiscoveryTrack> _tracks;
+  late String _selected;
+  bool _loading = false;
+
+  static const _catalogs = <String, List<Map<String, String>>>{
+    'Romantic': [
+      {'title': 'Bollywood Romance', 'query': 'bollywood romantic songs'},
+      {'title': 'Indian Romance', 'query': 'indian romantic songs'},
+      {'title': 'Sweetheart & Romance', 'query': 'sweetheart love songs'},
+      {'title': '90s Romantic', 'query': '90s bollywood romantic songs'},
+      {'title': 'Romantic Hindi', 'query': 'romantic hindi songs'},
+    ],
+    'Bollywood': [
+      {'title': 'Bollywood Romance', 'query': 'bollywood romantic songs'},
+      {'title': 'Bollywood Classics', 'query': 'bollywood classic hits'},
+      {'title': 'Bollywood Party', 'query': 'bollywood party songs'},
+    ],
+    'Hindi': [
+      {'title': 'Hindi Romance', 'query': 'hindi romantic songs'},
+      {'title': 'Hindi Classics', 'query': 'old hindi classics'},
+      {'title': 'Hindi Trending', 'query': 'latest hindi songs'},
+    ],
+  };
+
+  List<Map<String, String>> get _sections =>
+      _catalogs[widget.title] ?? [
+            {'title': '${widget.title} Mix', 'query': '${widget.title} songs'},
+            {'title': 'Popular ${widget.title}', 'query': 'popular ${widget.title} songs'},
+            {'title': 'New ${widget.title}', 'query': 'new ${widget.title} songs'},
+          ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tracks = widget.tracks;
+    _selected = _sections.first['title']!;
+  }
+
+  Future<void> _openSection(Map<String, String> section) async {
+    setState(() { _selected = section['title']!; _loading = true; });
+    try {
+      final result = await _searchLive(section['query']!);
+      if (mounted) setState(() => _tracks = result);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // The service is supplied by the parent screen through the live search
+  // result for now; this keeps this catalog screen usable without mock data.
+  Future<List<DiscoveryTrack>> _searchLive(String query) async {
+    return widget.service.search(query, count: 30);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w800)),
         backgroundColor: AppColors.background,
       ),
-      body: tracks.isEmpty
-          ? const Center(
-              child: Text('No results',
-                  style: TextStyle(color: AppColors.textMuted)))
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-              itemCount: tracks.length,
-              separatorBuilder: (_, __) =>
-                  const Divider(height: 1, color: AppColors.borderSubtle),
-              itemBuilder: (context, i) {
-                final t = tracks[i];
-                return ListTile(
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: AppImage(t.artwork, width: 54, height: 54),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 120),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 10),
+            child: Text('Explore this mood', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          ),
+          SizedBox(
+            height: 100,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: _sections.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (_, i) {
+                final section = _sections[i];
+                final selected = section['title'] == _selected;
+                return GestureDetector(
+                  onTap: () => _openSection(section),
+                  child: Container(
+                    width: 150,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [
+                        _catalogColor(i).withValues(alpha: .95),
+                        _catalogColor(i).withValues(alpha: .55),
+                      ]),
+                      borderRadius: BorderRadius.circular(16),
+                      border: selected ? Border.all(color: Colors.white, width: 2) : null,
+                    ),
+                    child: Align(alignment: Alignment.bottomLeft, child: Text(section['title']!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800))),
                   ),
-                  title: Text(t.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(t.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 12)),
-                  trailing: const Icon(Icons.play_circle_fill_rounded,
-                      color: AppColors.accent, size: 30),
-                  onTap: () {
-                    final q = tracks.map((x) => x.toTrackMap()).toList();
-                    final idx = q.indexWhere((x) => x['id'] == t.id);
-                    onPlayTrack(t.toTrackMap(), q, idx < 0 ? 0 : idx);
-                  },
                 );
               },
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: Row(children: [Expanded(child: Text(_selected, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))), if (_loading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))]),
+          ),
+          if (_tracks.isEmpty)
+            const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No live results', style: TextStyle(color: AppColors.textMuted))))
+          else
+            ..._tracks.map((t) => _songTile(t)),
+        ],
+      ),
     );
   }
+
+  Color _catalogColor(int i) => [Colors.pink.shade700, Colors.deepPurple.shade600, Colors.orange.shade700, Colors.teal.shade700, Colors.indigo.shade600][i % 5];
+
+  Widget _songTile(DiscoveryTrack t) => ListTile(
+    leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: AppImage(t.artwork, width: 54, height: 54)),
+    title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+    subtitle: Text(t.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+    trailing: const Icon(Icons.play_circle_fill_rounded, color: AppColors.accent, size: 30),
+    onTap: () { final q = _tracks.map((x) => x.toTrackMap()).toList(); final idx = q.indexWhere((x) => x['id'] == t.id); widget.onPlayTrack(t.toTrackMap(), q, idx < 0 ? 0 : idx); },
+  );
 }
