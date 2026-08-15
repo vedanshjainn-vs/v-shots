@@ -75,7 +75,7 @@ void main() async {
 
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),
-    config: const AudioServiceConfig(
+    config: AudioServiceConfig(
       androidNotificationChannelId: 'com.vshots.live.channel.audio',
       androidNotificationChannelName: 'V Shots playback',
       androidNotificationOngoing: true,
