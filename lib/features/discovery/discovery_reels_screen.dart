@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/discovery/discovery_session_service.dart';
 import '../../core/discovery/innertube_music_service.dart';
 import '../../core/recommendation/recommendation_event_service.dart';
 import '../../core/recommendation/recommendation_memory.dart';
@@ -72,6 +73,7 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
   @override
   void initState() {
     super.initState();
+    unawaited(DiscoverySessionService.instance.initialize());
     _loadInitial();
   }
 
@@ -94,7 +96,12 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
       if (mood != null) _activeMood = mood;
     });
     final lib = LocalLibrary.instance;
-    final exclude = {..._seenIds};
+    final categoryKey = _moodArg ?? _kind.name;
+    final exclude = {
+      ..._seenIds,
+      ...LocalLibrary.instance.recentlyShownIds,
+      ...DiscoverySessionService.instance.exclusionsFor(categoryKey),
+    };
     try {
       final String? moodArg = _moodArg;
       List<DiscoveryTrack> feed;
@@ -144,6 +151,10 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
       for (final t in feed) {
         LocalLibrary.instance.recordShownSong(t.id);
       }
+      await DiscoverySessionService.instance.recordShown(
+        categoryKey,
+        feed.map((t) => t.id),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
