@@ -33,3 +33,4 @@ jobs:
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "fix(home): resolve analyzer typing"
           git push origin HEAD:feature/home-archivetune-v2
+          echo "Home analyzer fix applied; PR validation will run on this commit."
