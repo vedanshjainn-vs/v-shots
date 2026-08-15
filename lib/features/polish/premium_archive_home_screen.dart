@@ -22,7 +22,8 @@ class PremiumArchiveHomeScreen extends StatefulWidget {
   final HomeTrackPlayCallback onPlay;
 
   @override
-  State<PremiumArchiveHomeScreen> createState() => _PremiumArchiveHomeScreenState();
+  State<PremiumArchiveHomeScreen> createState() =>
+      _PremiumArchiveHomeScreenState();
 }
 
 class _HomeShelf {
@@ -40,12 +41,15 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
   List<_HomeShelf> _layout = const [
     _HomeShelf('Quick Picks', 'trending songs today official audio 2026'),
     _HomeShelf('Made For You', 'popular new music official audio 2026'),
-    _HomeShelf('New Releases', 'new hindi punjabi english songs 2026 official audio'),
+    _HomeShelf(
+        'New Releases', 'new hindi punjabi english songs 2026 official audio'),
     _HomeShelf('Trending Now', 'viral trending music hits 2026 official audio'),
-    _HomeShelf('India Hits', 'top bollywood hindi songs official music video 2026'),
+    _HomeShelf(
+        'India Hits', 'top bollywood hindi songs official music video 2026'),
     _HomeShelf('Punjabi Wave', 'latest punjabi pop hits official audio 2026'),
     _HomeShelf('Chill & Lofi', 'chill lofi late night beats official audio'),
-    _HomeShelf('International Pop', 'billboard global pop hits official audio 2026'),
+    _HomeShelf(
+        'International Pop', 'billboard global pop hits official audio 2026'),
   ];
 
   final Map<String, List<Map<String, dynamic>>> _shelves = {};
@@ -88,17 +92,18 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
     if (mounted) setState(() => _refreshing = true);
 
     try {
-      final recent = _dedupe(LocalLibrary.instance.recentlyPlayed.value)
-          .take(12)
-          .toList();
+      final recent =
+          _dedupe(LocalLibrary.instance.recentlyPlayed.value).take(12).toList();
       final artist = recent.isNotEmpty
           ? (recent.first['artist'] as String? ?? '').trim()
           : '';
 
       if (artist.isNotEmpty) {
         _layout = [
-          const _HomeShelf('Quick Picks', 'trending songs today official audio 2026'),
-          const _HomeShelf('Made For You', 'popular new music official audio 2026'),
+          const _HomeShelf(
+              'Quick Picks', 'trending songs today official audio 2026'),
+          const _HomeShelf(
+              'Made For You', 'popular new music official audio 2026'),
           _HomeShelf(
             'Because You Listened To',
             'songs like $artist official audio',
@@ -143,7 +148,8 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
       final cleanedShelves = <String, List<Map<String, dynamic>>>{};
       for (final shelf in _layout) {
         final unique = <Map<String, dynamic>>[];
-        for (final track in fetched[shelf.query] ?? const <Map<String, dynamic>>[]) {
+        for (final track
+            in fetched[shelf.query] ?? const <Map<String, dynamic>>[]) {
           final id = _id(track);
           if (id.isNotEmpty && used.add(id)) {
             unique.add(track);
@@ -271,7 +277,8 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
         child: const Row(
           children: [
             SizedBox(width: 17),
-            Icon(Icons.search_rounded, color: AppColors.textSecondary, size: 23),
+            Icon(Icons.search_rounded,
+                color: AppColors.textSecondary, size: 23),
             SizedBox(width: 12),
             Text(
               'Search songs, artists, albums...',
@@ -359,7 +366,8 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
               left: 20,
               top: 18,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: AppColors.hotPink.withValues(alpha: 0.24),
                   borderRadius: BorderRadius.circular(10),
@@ -465,11 +473,12 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
               padding: const EdgeInsets.only(left: 20, bottom: 5),
               child: Text(
                 shelf.subtitle!,
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                style:
+                    const TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
             ),
           SizedBox(
-            height: 214,
+            height: 216,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               physics: const BouncingScrollPhysics(),
@@ -491,9 +500,8 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
   }
 
   Widget _buildRecentlyPlayed() {
-    final tracks = _dedupe(LocalLibrary.instance.recentlyPlayed.value)
-        .take(10)
-        .toList();
+    final tracks =
+        _dedupe(LocalLibrary.instance.recentlyPlayed.value).take(10).toList();
     if (tracks.isEmpty) return const SizedBox.shrink();
 
     return Padding(
@@ -551,7 +559,8 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
                                 track['title'] as String? ?? '',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w800),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -586,10 +595,13 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
   Widget _buildArtists() {
     final pool = _layout.expand(_tracks).toList();
     final seen = <String>{};
-    final artists = pool.where((track) {
-      final artist = track['artist'] as String? ?? '';
-      return artist.trim().isNotEmpty && seen.add(artist.toLowerCase());
-    }).take(10).toList();
+    final artists = pool
+        .where((track) {
+          final artist = track['artist'] as String? ?? '';
+          return artist.trim().isNotEmpty && seen.add(artist.toLowerCase());
+        })
+        .take(10)
+        .toList();
     if (artists.isEmpty) return const SizedBox.shrink();
 
     return Padding(
