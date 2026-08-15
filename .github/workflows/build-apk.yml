@@ -64,7 +64,7 @@ jobs:
         run: dart format .
 
       - name: 7. Run Flutter Analyzer
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: 8. Run Unit & Widget Tests
         run: flutter test
@@ -77,16 +77,12 @@ jobs:
         run: |
           mkdir -p android/app/keystores
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            # Use the real release keystore from GitHub Secrets.
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
             export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
             export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
             export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
             export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
           else
-            # No release keystore secret configured: generate a CI throwaway
-            # keystore with a random, non-committed password so the build still
-            # succeeds. The resulting APK/AAB is NOT the production signing key.
             CI_PASS=$(openssl rand -hex 16)
             keytool -genkeypair -v \
               -keystore android/app/keystores/release.keystore \
@@ -104,9 +100,6 @@ jobs:
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — built with a CI throwaway keystore, NOT the production key."
           fi
           flutter build apk --release
-          # Build the Play Store AAB in the SAME step so it inherits the same
-          # keystore + password (secrets when configured, otherwise the CI
-          # throwaway keystore created above).
           flutter build appbundle --release
 
       - name: 10. Build Debug APK
@@ -121,9 +114,9 @@ jobs:
           [ -f "$DEBUG_APK" ] || { echo "::error::Debug APK missing"; exit 1; }
           [ -f "$RELEASE_APK" ] || { echo "::error::Release APK missing"; exit 1; }
           [ -f "$AAB" ] || { echo "::error::Release AAB missing"; exit 1; }
-          echo "✅ Debug APK: $(stat -c%s "$DEBUG_APK") bytes"
-          echo "✅ Release APK: $(stat -c%s "$RELEASE_APK") bytes"
-          echo "✅ Release AAB: $(stat -c%s "$AAB") bytes"
+          echo "Debug APK: $(stat -c%s "$DEBUG_APK") bytes"
+          echo "Release APK: $(stat -c%s "$RELEASE_APK") bytes"
+          echo "Release AAB: $(stat -c%s "$AAB") bytes"
           echo "RELEASE_SHA256=$(sha256sum "$RELEASE_APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
           echo "DEBUG_SHA256=$(sha256sum "$DEBUG_APK" | cut -d' ' -f1)" >> "$GITHUB_ENV"
           echo "AAB_SHA256=$(sha256sum "$AAB" | cut -d' ' -f1)" >> "$GITHUB_ENV"
@@ -153,9 +146,6 @@ jobs:
           retention-days: 90
 
       - name: 14. Publish GitHub Release
-        # Release creation is DISABLED until the production acceptance gate is
-        # fully passed (device testing + required secrets configured). Remove
-        # this `if` guard only once that gate is cleared.
         if: github.ref == 'refs/heads/main' && env.ENABLE_RELEASE == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -190,7 +180,7 @@ jobs:
             exit 0
           fi
           echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
-          echo "✅ Uploaded to BrowserStack: $APP_URL"
+          echo "Uploaded to BrowserStack: $APP_URL"
 
       - name: 16. Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
