@@ -36,8 +36,18 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
   String? _activeQuery;
 
   static const _categories = <String>[
-    'Hindi', 'Bollywood', 'Punjabi', 'English', 'Romantic', 'Sad',
-    'Chill', 'Party', 'Lo-fi', 'Workout', 'Devotional', 'Global',
+    'Hindi',
+    'Bollywood',
+    'Punjabi',
+    'English',
+    'Romantic',
+    'Sad',
+    'Chill',
+    'Party',
+    'Lo-fi',
+    'Workout',
+    'Devotional',
+    'Global',
   ];
 
   @override
@@ -124,9 +134,11 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
           physics: const BouncingScrollPhysics(),
           slivers: [
             SliverToBoxAdapter(child: _header()),
-            if (hasResults) ..._resultSlivers() else ...[
-              if (_recentSearches.isNotEmpty) SliverToBoxAdapter(child: _recent()),
-              SliverToBoxAdapter(child: _categories()),
+            if (hasResults) ..._resultSlivers()
+            else ...[
+              if (_recentSearches.isNotEmpty)
+                SliverToBoxAdapter(child: _recent()),
+              SliverToBoxAdapter(child: _browseCategories()),
               SliverToBoxAdapter(child: _suggested()),
             ],
             const SliverToBoxAdapter(child: SizedBox(height: 130)),
@@ -142,8 +154,10 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Search',
-              style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900)),
+          const Text(
+            'Search',
+            style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900),
+          ),
           const SizedBox(height: 14),
           Container(
             height: 56,
@@ -188,19 +202,25 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Recent searches',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const Text(
+              'Recent searches',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _recentSearches.map((q) => ActionChip(
-                label: Text(q),
-                onPressed: () {
-                  _query.text = q;
-                  unawaited(_search(q));
-                },
-              )).toList(),
+              children: _recentSearches
+                  .map(
+                    (q) => ActionChip(
+                      label: Text(q),
+                      onPressed: () {
+                        _query.text = q;
+                        unawaited(_search(q));
+                      },
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         ),
@@ -208,26 +228,32 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
     );
   }
 
-  Widget _categories() {
+  Widget _browseCategories() {
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Browse all',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+            const Text(
+              'Browse all',
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 10,
               runSpacing: 10,
-              children: _categories.map((name) => _CategoryChip(
-                label: name,
-                onTap: () {
-                  _query.text = name;
-                  unawaited(_search(name));
-                },
-              )).toList(),
+              children: _categories
+                  .map(
+                    (name) => _CategoryChip(
+                      label: name,
+                      onTap: () {
+                        _query.text = name;
+                        unawaited(_search(name));
+                      },
+                    ),
+                  )
+                  .toList(),
             ),
           ],
         ),
@@ -244,8 +270,10 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Text('Recommended for you',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900)),
+              child: Text(
+                'Recommended for you',
+                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w900),
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(
@@ -269,17 +297,27 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
 
   List<Widget> _resultSlivers() {
     if (_searching) {
-      return const [SliverFillRemaining(
-        hasScrollBody: false,
-        child: Center(child: CircularProgressIndicator(color: AppColors.accent)),
-      )];
+      return const [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: CircularProgressIndicator(color: AppColors.accent),
+          ),
+        ),
+      ];
     }
     if (_results.isEmpty) {
-      return const [SliverFillRemaining(
-        hasScrollBody: false,
-        child: Center(child: Text('No music found',
-            style: TextStyle(color: AppColors.textMuted))),
-      )];
+      return const [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Text(
+              'No music found',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+        ),
+      ];
     }
 
     final artists = <String>[];
@@ -296,13 +334,20 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
           child: Row(
             children: [
               Expanded(
-                child: Text('Results for "$_activeQuery"',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                child: Text(
+                  'Results for "$_activeQuery"',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
               ),
-              Text('${_results.length}',
-                  style: const TextStyle(color: AppColors.textMuted)),
+              Text(
+                '${_results.length}',
+                style: const TextStyle(color: AppColors.textMuted),
+              ),
             ],
           ),
         ),
@@ -325,23 +370,36 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
         itemBuilder: (_, i) {
           final track = _results[i];
           return ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 3),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 3,
+            ),
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: AppImage(track.artwork, width: 58, height: 58),
             ),
-            title: Text(track.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text(track.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            title: Text(
+              track.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Text(
+              track.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12,
+              ),
+            ),
             trailing: IconButton(
               onPressed: () => _play(track, _results),
-              icon: const Icon(Icons.play_circle_fill_rounded,
-                  color: AppColors.accent, size: 31),
+              icon: const Icon(
+                Icons.play_circle_fill_rounded,
+                color: AppColors.accent,
+                size: 31,
+              ),
             ),
             onTap: () => _play(track, _results),
           );
@@ -368,8 +426,10 @@ class _CategoryChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border),
         ),
-        child: Text(label,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+        child: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
       ),
     );
   }
@@ -391,21 +451,27 @@ class _ArtistPill extends StatelessWidget {
             height: 70,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(colors: [
-                AppColors.accent.withValues(alpha: 0.8),
-                AppColors.surface,
-              ]),
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.accent.withValues(alpha: 0.8),
+                  AppColors.surface,
+                ],
+              ),
             ),
             alignment: Alignment.center,
-            child: Text(initial,
-                style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+            child: Text(
+              initial,
+              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900),
+            ),
           ),
           const SizedBox(height: 7),
-          Text(name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -434,15 +500,19 @@ class _SearchCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(track.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+            Text(
+              track.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 2),
-            Text(track.artist,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+            Text(
+              track.artist,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+            ),
           ],
         ),
       ),
