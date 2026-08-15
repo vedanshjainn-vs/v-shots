@@ -587,7 +587,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                 ),
               ),
               Container(color: Colors.black.withOpacity(.50)),
-              const DecoratedBox(decoration: AppColors.overlayGradient),
+              const DecoratedBox(
+                decoration: BoxDecoration(gradient: AppColors.overlayGradient),
+              ),
             ],
           )
         else
