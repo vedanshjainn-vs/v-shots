@@ -36,6 +36,48 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: 3b. Home-only ArchiveTune implementation + validation on feature branch
+        if: github.ref == 'refs/heads/main'
+        run: |
+          set -e
+          git fetch origin feature/home-archivetune-v1:refs/remotes/origin/feature/home-archivetune-v1
+          rm -rf /tmp/vshots-home-feature
+          git worktree add --detach /tmp/vshots-home-feature origin/feature/home-archivetune-v1
+          cd /tmp/vshots-home-feature
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          main = Path('lib/main.dart')
+          text = main.read_text(encoding='utf-8')
+          start_marker='// HOME SCREEN (AUTO-REFRESH & DATA-DRIVEN)'
+          end_marker='// SEARCH SCREEN'
+          if start_marker in text:
+              wf = Path('.github/workflows/home-archivetune.yml')
+              payload = wf.read_text(encoding='utf-8')
+              m = re.search(r"new_home = r'''(.*?)'''", payload, re.S)
+              if not m:
+                  raise SystemExit('Home implementation payload not found')
+              a = text.index(start_marker)
+              b = text.index(end_marker, a)
+              main.write_text(text[:a] + m.group(1) + '\n' + text[b:], encoding='utf-8')
+              print('Home implementation applied to feature branch')
+          else:
+              print('Home implementation already applied')
+          PY
+          flutter pub get
+          dart format lib/main.dart
+          flutter analyze
+          flutter test
+          flutter build apk --debug
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/main.dart
+          if ! git diff --cached --quiet; then
+            git commit -m "[home-bot] feat(home): ArchiveTune premium Home"
+            git push origin HEAD:feature/home-archivetune-v1
+          fi
+          cd - >/dev/null
+
       - name: 4. Configure Environment (.env)
         run: |
           cat <<EOF > .env
@@ -50,8 +92,7 @@ jobs:
       - name: 4b. Inject Production AdMob App ID (when configured)
         run: |
           if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
-            sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" \
-              android/app/src/main/AndroidManifest.xml
+            sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" android/app/src/main/AndroidManifest.xml
             echo "Injected production AdMob App ID."
           else
             echo "No ADMOB_APP_ID secret — keeping the TEST AdMob App ID."
@@ -77,26 +118,14 @@ jobs:
         run: |
           mkdir -p android/app/keystores
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            # Use the real release keystore from GitHub Secrets.
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
             export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
             export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
             export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
             export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
           else
-            # No release keystore secret configured: generate a CI throwaway
-            # keystore with a random, non-committed password so the build still
-            # succeeds. The resulting APK/AAB is NOT the production signing key.
             CI_PASS=$(openssl rand -hex 16)
-            keytool -genkeypair -v \
-              -keystore android/app/keystores/release.keystore \
-              -storepass "$CI_PASS" \
-              -alias ci-build \
-              -keypass "$CI_PASS" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 365 \
-              -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$CI_PASS" -alias ci-build -keypass "$CI_PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
             export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
             export ANDROID_KEYSTORE_PASSWORD="$CI_PASS"
             export ANDROID_KEY_ALIAS="ci-build"
@@ -104,9 +133,6 @@ jobs:
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — built with a CI throwaway keystore, NOT the production key."
           fi
           flutter build apk --release
-          # Build the Play Store AAB in the SAME step so it inherits the same
-          # keystore + password (secrets when configured, otherwise the CI
-          # throwaway keystore created above).
           flutter build appbundle --release
 
       - name: 10. Build Debug APK
@@ -153,9 +179,6 @@ jobs:
           retention-days: 90
 
       - name: 14. Publish GitHub Release
-        # Release creation is DISABLED until the production acceptance gate is
-        # fully passed (device testing + required secrets configured). Remove
-        # this `if` guard only once that gate is cleared.
         if: github.ref == 'refs/heads/main' && env.ENABLE_RELEASE == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -164,13 +187,7 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk ./v-shots-5.8.0-release.apk
           cp build/app/outputs/flutter-apk/app-debug.apk ./v-shots-5.8.0-debug.apk
           cp build/app/outputs/bundle/release/app-release.aab ./v-shots-5.8.0-release.aab
-          gh release create v5.8.0 \
-            ./v-shots-5.8.0-release.apk \
-            ./v-shots-5.8.0-debug.apk \
-            ./v-shots-5.8.0-release.aab \
-            --title "V Shots v5.8.0 (Build 20)" \
-            --notes "Release publishing is gated — only publishes when ENABLE_RELEASE=true and the acceptance gate is passed." \
-            --clobber || echo "::warning::Release step skipped (gate not enabled)."
+          gh release create v5.8.0 ./v-shots-5.8.0-release.apk ./v-shots-5.8.0-debug.apk ./v-shots-5.8.0-release.aab --title "V Shots v5.8.0 (Build 20)" --notes "Release publishing is gated — only publishes when ENABLE_RELEASE=true and the acceptance gate is passed." --clobber || echo "::warning::Release step skipped (gate not enabled)."
 
       - name: 15. Upload APK to BrowserStack App Automate
         if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}
@@ -179,16 +196,10 @@ jobs:
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
         run: |
           set -e
-          RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" \
-            -X POST "https://api-cloud.browserstack.com/app-automate/upload" \
-            -F "file=@build/app/outputs/flutter-apk/app-release.apk" \
-            -F "custom_id=v-shots-ci-${{ github.run_number }}")
+          RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@build/app/outputs/flutter-apk/app-release.apk" -F "custom_id=v-shots-ci-${{ github.run_number }}")
           echo "BrowserStack upload response: $RESPONSE"
           APP_URL=$(echo "$RESPONSE" | grep -o '"app_url":"[^"]*"' | cut -d'"' -f4)
-          if [ -z "$APP_URL" ]; then
-            echo "::warning::BrowserStack upload did not return an app_url — check the response above."
-            exit 0
-          fi
+          if [ -z "$APP_URL" ]; then echo "::warning::BrowserStack upload did not return an app_url — check the response above."; exit 0; fi
           echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
           echo "✅ Uploaded to BrowserStack: $APP_URL"
 
