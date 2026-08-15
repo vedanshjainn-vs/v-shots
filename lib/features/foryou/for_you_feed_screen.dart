@@ -90,18 +90,14 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _index = 0;
       _loading = false;
     });
-    if (_items.isNotEmpty) {
-      await _select(0);
-    }
+    if (_items.isNotEmpty) await _select(0);
   }
 
   Future<void> _loadMore() async {
     if (_loadingMore || _items.length - _index > 3) return;
     _loadingMore = true;
     final batch = await _fetch();
-    if (mounted && batch.isNotEmpty) {
-      setState(() => _items.addAll(batch));
-    }
+    if (mounted && batch.isNotEmpty) setState(() => _items.addAll(batch));
     _loadingMore = false;
   }
 
@@ -205,10 +201,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               const SizedBox(height: 16),
               Text(
                 genres ? 'Choose a Genre' : 'Choose a Mood',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 14),
               Expanded(
@@ -246,20 +239,14 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                         ),
                         child: Row(
                           children: [
-                            Text(
-                              category.icon,
-                              style: const TextStyle(fontSize: 22),
-                            ),
+                            Text(category.icon, style: const TextStyle(fontSize: 22)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 category.label,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                ),
+                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                               ),
                             ),
                           ],
@@ -287,9 +274,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     final track = _track;
     if (track == null) return;
     final id = track['id'] as String? ?? '';
-    await Share.share(
-      '${track['title'] ?? 'Song'}\nhttps://www.youtube.com/watch?v=$id',
-    );
+    await Share.share('${track['title'] ?? 'Song'}\nhttps://www.youtube.com/watch?v=$id');
   }
 
   Future<void> _addPlaylist() async {
@@ -307,13 +292,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(
-                title: Text(
-                  'Add to playlist',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                title: Text('Add to playlist', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
               ),
               if (playlists.isEmpty)
                 const Padding(
@@ -326,10 +305,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                     leading: const Icon(Icons.queue_music_rounded),
                     title: Text(playlist['name'] as String? ?? 'Playlist'),
                     onTap: () async {
-                      await LocalLibrary.instance.addTrackToPlaylist(
-                        playlist['id'] as String,
-                        track,
-                      );
+                      await LocalLibrary.instance.addTrackToPlaylist(playlist['id'] as String, track);
                       if (sheet.mounted) Navigator.pop(sheet);
                     },
                   ),
@@ -342,12 +318,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     );
   }
 
-  Widget _action(
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
-    bool active = false,
-  }) {
+  Widget _action(IconData icon, String label, VoidCallback onTap, {bool active = false}) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -360,31 +331,57 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               color: Colors.black.withOpacity(.42),
               border: Border.all(color: Colors.white.withOpacity(.14)),
             ),
-            child: Icon(
-              icon,
-              color: active ? AppColors.hotPink : Colors.white,
-              size: 25,
-            ),
+            child: Icon(icon, color: active ? AppColors.hotPink : Colors.white, size: 25),
           ),
           const SizedBox(height: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              shadows: [Shadow(blurRadius: 4, color: Colors.black)],
-            ),
-          ),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, shadows: [Shadow(blurRadius: 4, color: Colors.black)])),
         ],
       ),
     );
   }
 
+  Widget _webView() {
+    if (InAppWebViewPlatform.instance == null) {
+      return const ColoredBox(
+        color: Color(0xFF10131B),
+        child: Center(
+          child: Text(
+            'YouTube Browser preview is unavailable in this test environment.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white54),
+          ),
+        ),
+      );
+    }
+
+    return InAppWebView(
+      initialUrlRequest: URLRequest(url: WebUri('https://www.youtube.com/')),
+      initialSettings: InAppWebViewSettings(
+        javaScriptEnabled: true,
+        domStorageEnabled: true,
+        thirdPartyCookiesEnabled: true,
+        mediaPlaybackRequiresUserGesture: false,
+        allowBackgroundAudioPlaying: true,
+        allowsInlineMediaPlayback: true,
+        allowsPictureInPictureMediaPlayback: true,
+        javaScriptCanOpenWindowsAutomatically: true,
+        useHybridComposition: true,
+        supportZoom: false,
+      ),
+      onWebViewCreated: (controller) {
+        _web = controller;
+        if (mounted) setState(() => _webReady = true);
+        final id = _track?['id'] as String?;
+        if (id != null && id.isNotEmpty) unawaited(_openYouTube(id));
+      },
+      onLoadStop: (controller, url) {
+        if (mounted && !_webReady) setState(() => _webReady = true);
+      },
+    );
+  }
+
   Widget _browser() {
-    final height = _expanded
-        ? MediaQuery.of(context).size.height * .60
-        : 72.0;
+    final height = _expanded ? MediaQuery.of(context).size.height * .60 : 72.0;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 280),
@@ -395,13 +392,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         color: const Color(0xFF10131B),
         borderRadius: BorderRadius.circular(_expanded ? 24 : 18),
         border: Border.all(color: Colors.white.withOpacity(.14)),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black54,
-            blurRadius: 24,
-            offset: Offset(0, -8),
-          ),
-        ],
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, -8))],
       ),
       child: Column(
         children: [
@@ -426,10 +417,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: _track?['artwork'] != null
-                          ? AppImage(
-                              _track!['artwork'] as String,
-                              fit: BoxFit.cover,
-                            )
+                          ? AppImage(_track!['artwork'] as String, fit: BoxFit.cover)
                           : const ColoredBox(color: Colors.black),
                     ),
                   ),
@@ -439,42 +427,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'YouTube Browser',
-                          style: TextStyle(
-                            color: AppColors.primaryLight,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        Text(
-                          _track?['title'] as String? ?? 'YouTube',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          _track?['artist'] as String? ?? 'YouTube',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white54,
-                            fontSize: 11,
-                          ),
-                        ),
+                        const Text('YouTube Browser', style: TextStyle(color: AppColors.primaryLight, fontSize: 10, fontWeight: FontWeight.w900)),
+                        Text(_track?['title'] as String? ?? 'YouTube', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                        Text(_track?['artist'] as String? ?? 'YouTube', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 11)),
                       ],
                     ),
                   ),
-                  Icon(
-                    _expanded
-                        ? Icons.keyboard_arrow_down_rounded
-                        : Icons.keyboard_arrow_up_rounded,
-                    color: Colors.white,
-                    size: 28,
-                  ),
+                  Icon(_expanded ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_up_rounded, color: Colors.white, size: 28),
                 ],
               ),
             ),
@@ -484,83 +443,26 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               height: 42,
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => _web?.goBack(),
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17),
-                  ),
-                  IconButton(
-                    onPressed: () => _web?.goForward(),
-                    icon: const Icon(Icons.arrow_forward_ios_rounded, size: 17),
-                  ),
+                  IconButton(onPressed: () => _web?.goBack(), icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 17)),
+                  IconButton(onPressed: () => _web?.goForward(), icon: const Icon(Icons.arrow_forward_ios_rounded, size: 17)),
                   Expanded(
                     child: Container(
                       height: 30,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF181D28),
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.lock_rounded, size: 13, color: Colors.white54),
-                          SizedBox(width: 6),
-                          Text(
-                            'youtube.com',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
+                      decoration: BoxDecoration(color: const Color(0xFF181D28), borderRadius: BorderRadius.circular(15)),
+                      child: const Row(children: [Icon(Icons.lock_rounded, size: 13, color: Colors.white54), SizedBox(width: 6), Text('youtube.com', style: TextStyle(color: Colors.white60, fontSize: 12))]),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => _web?.reload(),
-                    icon: const Icon(Icons.refresh_rounded, size: 19),
-                  ),
+                  IconButton(onPressed: () => _web?.reload(), icon: const Icon(Icons.refresh_rounded, size: 19)),
                 ],
               ),
             ),
           Expanded(
             child: Stack(
               children: [
-                InAppWebView(
-                  initialUrlRequest: URLRequest(
-                    url: WebUri('https://www.youtube.com/'),
-                  ),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    domStorageEnabled: true,
-                    thirdPartyCookiesEnabled: true,
-                    mediaPlaybackRequiresUserGesture: false,
-                    allowBackgroundAudioPlaying: true,
-                    allowsInlineMediaPlayback: true,
-                    allowsPictureInPictureMediaPlayback: true,
-                    javaScriptCanOpenWindowsAutomatically: true,
-                    useHybridComposition: true,
-                    supportZoom: false,
-                  ),
-                  onWebViewCreated: (controller) {
-                    _web = controller;
-                    if (mounted) setState(() => _webReady = true);
-                    final id = _track?['id'] as String?;
-                    if (id != null && id.isNotEmpty) {
-                      unawaited(_openYouTube(id));
-                    }
-                  },
-                  onLoadStop: (controller, url) {
-                    if (mounted && !_webReady) {
-                      setState(() => _webReady = true);
-                    }
-                  },
-                ),
-                if (!_webReady)
-                  const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primaryLight,
-                    ),
-                  ),
+                _webView(),
+                if (!_webReady && InAppWebViewPlatform.instance != null)
+                  const Center(child: CircularProgressIndicator(color: AppColors.primaryLight)),
               ],
             ),
           ),
@@ -587,9 +489,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                 ),
               ),
               Container(color: Colors.black.withOpacity(.50)),
-              const DecoratedBox(
-                decoration: BoxDecoration(gradient: AppColors.overlayGradient),
-              ),
+              const DecoratedBox(decoration: BoxDecoration(gradient: AppColors.overlayGradient)),
             ],
           )
         else
@@ -603,18 +503,12 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   children: [
                     Center(
                       child: Padding(
-                        padding: const EdgeInsets.only(
-                          left: 24,
-                          right: 82,
-                          bottom: 74,
-                        ),
+                        padding: const EdgeInsets.only(left: 24, right: 82, bottom: 74),
                         child: AspectRatio(
                           aspectRatio: 1,
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(28),
-                            child: artwork == null
-                                ? const ColoredBox(color: Colors.black)
-                                : AppImage(artwork, fit: BoxFit.cover),
+                            child: artwork == null ? const ColoredBox(color: Colors.black) : AppImage(artwork, fit: BoxFit.cover),
                           ),
                         ),
                       ),
@@ -624,37 +518,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                       bottom: 118,
                       child: Column(
                         children: [
-                          _action(
-                            _liked
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            'Like',
-                            _like,
-                            active: _liked,
-                          ),
+                          _action(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, 'Like', _like, active: _liked),
                           const SizedBox(height: 17),
-                          _action(
-                            Icons.playlist_add_rounded,
-                            'Add',
-                            _addPlaylist,
-                          ),
+                          _action(Icons.playlist_add_rounded, 'Add', _addPlaylist),
                           const SizedBox(height: 17),
-                          _action(
-                            Icons.chat_bubble_outline_rounded,
-                            'Comment',
-                            () => CommentSheet.show(
-                              context,
-                              shotId: track['id'] as String,
-                            ),
-                          ),
+                          _action(Icons.chat_bubble_outline_rounded, 'Comment', () => CommentSheet.show(context, shotId: track['id'] as String)),
                           const SizedBox(height: 17),
                           _action(Icons.share_rounded, 'Share', _share),
                           const SizedBox(height: 17),
-                          _action(
-                            Icons.open_in_full_rounded,
-                            'Browser',
-                            () => setState(() => _expanded = true),
-                          ),
+                          _action(Icons.open_in_full_rounded, 'Browser', () => setState(() => _expanded = true)),
                         ],
                       ),
                     ),
@@ -665,37 +537,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            _category?.label ?? 'For You',
-                            style: const TextStyle(
-                              color: AppColors.accent,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                          Text(_category?.label ?? 'For You', style: const TextStyle(color: AppColors.accent, fontSize: 13, fontWeight: FontWeight.w900)),
                           const SizedBox(height: 4),
-                          Text(
-                            track['title'] as String? ?? 'Unknown Song',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 23,
-                              height: 1.05,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                          Text(track['title'] as String? ?? 'Unknown Song', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 23, height: 1.05, fontWeight: FontWeight.w900)),
                           const SizedBox(height: 4),
-                          Text(
-                            track['artist'] as String? ?? 'Unknown Artist',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          Text(track['artist'] as String? ?? 'Unknown Artist', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -742,20 +588,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           decoration: BoxDecoration(
             color: selected ? AppColors.accent : Colors.black.withOpacity(.58),
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(
-              color: selected
-                  ? AppColors.accent
-                  : Colors.white.withOpacity(.12),
-            ),
+            border: Border.all(color: selected ? AppColors.accent : Colors.white.withOpacity(.12)),
           ),
-          child: Text(
-            text,
-            style: TextStyle(
-              color: selected ? Colors.black : Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
+          child: Text(text, style: TextStyle(color: selected ? Colors.black : Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
         ),
       ),
     );
@@ -766,9 +601,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_loading) {
       return const Scaffold(
         backgroundColor: AppColors.background,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primaryLight),
-        ),
+        body: Center(child: CircularProgressIndicator(color: AppColors.primaryLight)),
       );
     }
 
@@ -776,11 +609,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       return const Scaffold(
         backgroundColor: AppColors.background,
         body: Center(
-          child: Text(
-            'No fresh songs available. Try another mood.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white70),
-          ),
+          child: Text('No fresh songs available. Try another mood.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
         ),
       );
     }
@@ -798,12 +627,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             onPageChanged: (index) => unawaited(_select(index)),
             itemBuilder: (context, index) => _page(_items[index]),
           ),
-          Positioned(
-            left: 10,
-            right: 10,
-            bottom: bottom,
-            child: _browser(),
-          ),
+          Positioned(left: 10, right: 10, bottom: bottom, child: _browser()),
         ],
       ),
     );
