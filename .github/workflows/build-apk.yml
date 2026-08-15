@@ -55,7 +55,7 @@ jobs:
       - name: 5. Install Dependencies
         run: flutter pub get
       - name: 6. Run Formatting Check
-        run: dart format .
+        run: dart format lib test
       - name: 7. Run Flutter Analyzer
         run: flutter analyze
       - name: 8. Run Unit & Widget Tests
