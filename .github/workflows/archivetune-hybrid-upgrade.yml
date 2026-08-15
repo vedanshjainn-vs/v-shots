@@ -1,0 +1,67 @@
+name: ArchiveTune Hybrid Upgrade
+
+on:
+  push:
+    branches: [ feature/archivetune-innertube-perfect ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate-and-wire:
+    if: ${{ !startsWith(github.event.head_commit.message, '[archivetune-auto]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Wire hybrid client
+        run: python3 scripts/apply_archivetune_hybrid.py
+
+      - name: Format touched Dart files
+        run: |
+          dart format \
+            lib/main.dart \
+            lib/core/providers/adapters/youtube/youtube_innertube_client.dart \
+            lib/core/providers/adapters/youtube/hybrid_youtube_data_api_client.dart
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Debug build
+        run: flutter build apk --debug
+
+      - name: Commit generated wiring
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/main.dart
+          if git diff --cached --quiet; then
+            echo "No generated wiring changes"
+            exit 0
+          fi
+          git commit -m "[archivetune-auto] wire hybrid InnerTube discovery"
+          git push origin HEAD:feature/archivetune-innertube-perfect
