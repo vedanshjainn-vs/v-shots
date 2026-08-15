@@ -1,29 +1,11 @@
-// ═════════════════════════════════════════════════════════════════════════
-// V SHOTS — PersonalizedHomeService
-//
-// ArchiveTune-style Home: combines LOCAL listening intelligence with REMOTE
-// YouTube Music discovery into an ordered, personalized shelf feed.
-//
-// Signals used (from LocalLibrary):
-//   • recently played      -> Continue Listening / More like recent artist
-//   • song play counts     -> Quick Picks "strong songs"
-//   • artist play counts   -> top artists -> similar search
-//   • liked songs          -> Because You Liked X / Forgotten Favorites
-//
-// Fallback chain (ArchiveTune quickPicksWithFallback):
-//   Quick Picks (personalized) -> recent songs -> trending (all-songs fallback)
-// so a fresh install never shows a dead Home.
-//
-// Each shelf is real data from InnerTube search (no mock songs). One shelf
-// failing never breaks the whole feed.
-// ═════════════════════════════════════════════════════════════════════════
-
 import 'package:flutter/foundation.dart';
 
 import '../storage/local_library.dart';
 import 'innertube_music_service.dart';
 
-/// A Home shelf with a contextual emoji label (presentation sugar).
+/// A data-driven Home shelf. Shelves are intentionally small and deduplicated
+/// so Home feels like a music catalogue instead of a collection of repeated
+/// search results.
 class HomeShelf {
   const HomeShelf({
     required this.title,
@@ -41,203 +23,116 @@ class PersonalizedHomeService {
 
   final InnerTubeMusicService discovery;
 
-  /// Builds the personalized Home shelf feed.
-  ///
-  /// [recentlyPlayed], [likedSongs] and play counts come from LocalLibrary.
-  /// The order personalizes: Quick Picks first, then Continue Listening,
-  /// Because You Liked X, More Like, Trending, genre shelves, Forgotten
-  /// Favorites.
   Future<List<HomeShelf>> buildHome() async {
-    final shelves = <HomeShelf>[];
     final lib = LocalLibrary.instance;
-    final recent = lib.recentlyPlayed.value;
-    final liked = lib.likedSongs.value;
+    final recent = List<Map<String, dynamic>>.from(lib.recentlyPlayed.value);
+    final liked = List<Map<String, dynamic>>.from(lib.likedSongs.value);
+    final exposed = <String>{};
+    final shelves = <HomeShelf>[];
 
-    // ── 1. Quick Picks (personalized) ──────────────────────────────
-    final quickPicks = await _quickPicks(recent: recent, liked: liked);
-    if (quickPicks.tracks.isNotEmpty) {
-      shelves.add(quickPicks);
-    }
+    // Personal shelves are generated first. Remote editorial shelves are then
+    // filtered against everything already shown so one song does not appear
+    // five times on the same Home screen.
+    final personal = <Future<HomeShelf?>>[
+      _quickPicks(recent, liked),
+      if (recent.isNotEmpty) _continueShelf(recent),
+      if (liked.isNotEmpty || recent.isNotEmpty)
+        _becauseYouListened(liked, recent),
+      _rediscoverShelf(liked, recent),
+    ];
 
-    // ── 2. Continue Listening (recent songs, keep listening) ───────
-    if (recent.isNotEmpty) {
-      final continueTracks = await _continueListening(recent);
-      if (continueTracks.isNotEmpty) {
+    final results = await Future.wait(personal);
+    for (final shelf in results) {
+      if (shelf == null) continue;
+      final filtered = _uniqueFresh(shelf.tracks, exposed);
+      if (filtered.isNotEmpty) {
         shelves.add(HomeShelf(
-          title: 'Continue Listening',
-          emoji: '▶️',
-          tracks: continueTracks,
+          title: shelf.title,
+          emoji: shelf.emoji,
+          tracks: filtered.take(12).toList(),
         ));
       }
     }
 
-    // ── 3. Because You Liked X / More Like recent artist ───────────
-    if (liked.isNotEmpty) {
-      final seed = liked.first;
-      final artist = (seed['artist'] as String?)?.trim() ?? '';
-      final title = (seed['title'] as String?)?.trim() ?? '';
-      final seedName = artist.isNotEmpty ? artist : title;
-      if (seedName.isNotEmpty) {
-        final related = await _similar(seedName);
-        if (related.isNotEmpty) {
-          shelves.add(HomeShelf(
-            title: 'Because You Liked "${title.isEmpty ? seedName : title}"',
-            emoji: '❤️',
-            tracks: related,
-          ));
+    // Editorial catalogue shelves are fetched concurrently. This is a major
+    // smoothness improvement over the previous serial request chain.
+    final editorial = await Future.wait(
+      kHomeShelfQueries.map((cfg) async {
+        try {
+          final tracks = await discovery.search(cfg['query']!, count: 12);
+          return HomeShelf(
+            title: cfg['title']!,
+            emoji: _emojiFor(cfg['title']!),
+            tracks: tracks,
+          );
+        } catch (e) {
+          debugPrint('[Home] shelf ${cfg['title']} skipped: $e');
+          return null;
         }
-      }
-    } else if (recent.isNotEmpty) {
-      final seed = recent.first;
-      final artist = (seed['artist'] as String?)?.trim() ?? '';
-      final title = (seed['title'] as String?)?.trim() ?? '';
-      final seedName = artist.isNotEmpty ? artist : title;
-      if (seedName.isNotEmpty) {
-        final related = await _similar(seedName);
-        if (related.isNotEmpty) {
-          shelves.add(HomeShelf(
-            title: 'More Like "${title.isEmpty ? seedName : title}"',
-            emoji: '🎧',
-            tracks: related,
-          ));
-        }
-      }
-    }
+      }),
+    );
 
-    // ── 4. Trending + genre/mood shelves ───────────────────────────
-    for (final cfg in kHomeShelfQueries) {
-      try {
-        final tracks = await discovery.search(cfg['query']!, count: 12);
-        if (tracks.isEmpty) continue;
+    for (final shelf in editorial) {
+      if (shelf == null) continue;
+      final filtered = _uniqueFresh(shelf.tracks, exposed);
+      if (filtered.isNotEmpty) {
         shelves.add(HomeShelf(
-          title: cfg['title']!,
-          emoji: _emojiFor(cfg['title']!),
-          tracks: tracks,
+          title: shelf.title,
+          emoji: shelf.emoji,
+          tracks: filtered.take(12).toList(),
         ));
-      } catch (e) {
-        debugPrint('[Home] shelf "${cfg['title']}" skipped: $e');
       }
-    }
-
-    // ── 5. Forgotten Favorites (liked but not played recently) ─────
-    final forgotten = _forgottenFavorites(liked, recent);
-    if (forgotten.isNotEmpty) {
-      shelves.add(HomeShelf(
-        title: 'Rediscover Your Favorites',
-        emoji: '❤️',
-        tracks: forgotten,
-      ));
     }
 
     return shelves;
   }
 
-  /// Quick Picks: combine recent plays + top artists + strong songs into a
-  /// personalized set. Falls back to recent songs, then trending.
-  Future<HomeShelf> _quickPicks({
-    required List<Map<String, dynamic>> recent,
-    required List<Map<String, dynamic>> liked,
-  }) async {
+  Future<HomeShelf?> _quickPicks(
+    List<Map<String, dynamic>> recent,
+    List<Map<String, dynamic>> liked,
+  ) async {
     final lib = LocalLibrary.instance;
-    final pickPool = <DiscoveryTrack>{};
+    final seeds = <String>[];
 
-    // Signal 1: top artists by play count.
     final topArtists = lib.artistPlayCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-    for (final a in topArtists.take(3)) {
-      try {
-        final tracks = await discovery.search('${a.key} songs', count: 8);
-        for (final t in tracks) {
-          if (pickPool.length >= 20) break;
-          pickPool.add(t);
-        }
-      } catch (_) {}
-      if (pickPool.length >= 20) break;
+    seeds.addAll(topArtists.take(3).map((e) => '${e.key} songs'));
+
+    for (final entry in recent.take(5)) {
+      final title = (entry['title'] as String?)?.trim();
+      if (title != null && title.isNotEmpty) seeds.add(title);
+    }
+    for (final entry in liked.take(3)) {
+      final artist = (entry['artist'] as String?)?.trim();
+      if (artist != null && artist.isNotEmpty) seeds.add('$artist songs');
     }
 
-    // Signal 2: strong songs (highest play count) — re-fetch by title.
-    final strongSongs = lib.songPlayCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    for (final s in strongSongs.take(3)) {
-      if (pickPool.length >= 20) break;
-      final recentTrack = recent.cast<Map<String, dynamic>?>().firstWhere(
-            (r) => r?['id'] == s.key,
-            orElse: () => null,
-          );
-      final title = recentTrack?['title'] as String? ?? '';
-      if (title.isEmpty) continue;
-      try {
-        final tracks = await discovery.search(title, count: 5);
-        for (final t in tracks) {
-          if (pickPool.length >= 20) break;
-          pickPool.add(t);
-        }
-      } catch (_) {}
-    }
-
-    if (pickPool.isNotEmpty) {
-      return HomeShelf(
-        title: 'Quick Picks',
-        emoji: '🔥',
-        tracks: pickPool.take(15).toList(),
-      );
-    }
-
-    // Fallback chain.
-    if (recent.isNotEmpty) {
-      return HomeShelf(
-        title: 'Recent for You',
-        emoji: '🕘',
-        tracks: await _continueListening(recent),
-      );
-    }
-    return const HomeShelf(title: 'Quick Picks', emoji: '🔥', tracks: []);
-  }
-
-  Future<List<DiscoveryTrack>> _continueListening(
-      List<Map<String, dynamic>> recent) async {
     final out = <DiscoveryTrack>[];
     final seen = <String>{};
-    for (final r in recent.take(10)) {
-      final title = (r['title'] as String?)?.trim() ?? '';
-      if (title.isEmpty) continue;
+    for (final seed in seeds.take(6)) {
       try {
-        final tracks = await discovery.search(title, count: 1);
-        for (final t in tracks) {
-          if (seen.add(t.id)) out.add(t);
+        final tracks = await discovery.search(seed, count: 6);
+        for (final track in tracks) {
+          if (seen.add(track.id)) out.add(track);
+          if (out.length >= 16) break;
         }
       } catch (_) {}
+      if (out.length >= 16) break;
     }
-    return out;
+
+    if (out.isEmpty) return null;
+    return HomeShelf(title: 'Quick Picks', emoji: '🔥', tracks: out);
   }
 
-  Future<List<DiscoveryTrack>> _similar(String artistOrSong) async {
-    final seen = <String>{};
-    final out = <DiscoveryTrack>[];
-    try {
-      final tracks = await discovery.search('$artistOrSong songs', count: 15);
-      for (final t in tracks) {
-        if (seen.add(t.id)) out.add(t);
-      }
-    } catch (_) {}
-    return out;
-  }
-
-  List<DiscoveryTrack> _forgottenFavorites(
-    List<Map<String, dynamic>> liked,
-    List<Map<String, dynamic>> recent,
-  ) {
-    final playedIds = recent.map((r) => r['id']).toSet();
+  Future<HomeShelf?> _continueShelf(List<Map<String, dynamic>> recent) async {
     final out = <DiscoveryTrack>[];
     final seen = <String>{};
-    for (final l in liked) {
-      if (playedIds.contains(l['id'])) continue; // still fresh
-      final id = l['id'] as String? ?? '';
-      final title = l['title'] as String? ?? '';
-      final artist = l['artist'] as String? ?? '';
-      final artwork = l['artwork'] as String? ?? '';
-      if (id.isEmpty || title.isEmpty) continue;
-      if (seen.add(id)) {
+    for (final item in recent.take(8)) {
+      final id = item['id'] as String? ?? '';
+      final title = item['title'] as String? ?? '';
+      final artist = item['artist'] as String? ?? '';
+      final artwork = item['artwork'] as String? ?? '';
+      if (id.isNotEmpty && title.isNotEmpty && seen.add(id)) {
         out.add(DiscoveryTrack(
           id: id,
           title: title,
@@ -246,12 +141,75 @@ class PersonalizedHomeService {
         ));
       }
     }
-    return out.take(12).toList();
+    return out.isEmpty
+        ? null
+        : HomeShelf(title: 'Recently Played', emoji: '🕘', tracks: out);
+  }
+
+  Future<HomeShelf?> _becauseYouListened(
+    List<Map<String, dynamic>> liked,
+    List<Map<String, dynamic>> recent,
+  ) async {
+    final seed = liked.isNotEmpty ? liked.first : recent.first;
+    final artist = (seed['artist'] as String?)?.trim() ?? '';
+    final title = (seed['title'] as String?)?.trim() ?? '';
+    final query = artist.isNotEmpty ? '$artist songs' : '$title similar songs';
+    if (query.trim().isEmpty) return null;
+
+    try {
+      final tracks = await discovery.search(query, count: 14);
+      if (tracks.isEmpty) return null;
+      return HomeShelf(
+        title: artist.isNotEmpty
+            ? 'More from $artist'
+            : 'Because You Listened',
+        emoji: '💖',
+        tracks: tracks,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<HomeShelf?> _rediscoverShelf(
+    List<Map<String, dynamic>> liked,
+    List<Map<String, dynamic>> recent,
+  ) async {
+    if (liked.isEmpty) return null;
+    final recentIds = recent.map((e) => e['id']).toSet();
+    final out = liked
+        .where((e) => !recentIds.contains(e['id']))
+        .take(12)
+        .map((e) => DiscoveryTrack(
+              id: e['id'] as String? ?? '',
+              title: e['title'] as String? ?? '',
+              artist: e['artist'] as String? ?? '',
+              artwork: e['artwork'] as String? ?? '',
+            ))
+        .where((t) => t.id.isNotEmpty && t.title.isNotEmpty)
+        .toList();
+    return out.isEmpty
+        ? null
+        : HomeShelf(title: 'Rediscover Your Favorites', emoji: '❤️', tracks: out);
+  }
+
+  List<DiscoveryTrack> _uniqueFresh(
+    List<DiscoveryTrack> source,
+    Set<String> globalSeen,
+  ) {
+    final local = <String>{};
+    final out = <DiscoveryTrack>[];
+    for (final track in source) {
+      if (track.id.isEmpty || !local.add(track.id)) continue;
+      if (globalSeen.contains(track.id)) continue;
+      globalSeen.add(track.id);
+      out.add(track);
+    }
+    return out;
   }
 
   String _emojiFor(String title) {
-    const map = {
-      'Quick Picks': '🔥',
+    const map = <String, String>{
       'Trending Music': '🔥',
       'New Music': '🆕',
       'Bollywood Hits': '🎬',
@@ -259,8 +217,12 @@ class PersonalizedHomeService {
       'Punjabi Hits': '🥁',
       'English Pop': '🌎',
       'Romantic': '💖',
+      'Sad': '💙',
       'Chill': '🌙',
       'Workout': '💪',
+      'Party': '🥳',
+      'Lo-fi': '🎧',
+      'Devotional': '🙏',
     };
     return map[title] ?? '';
   }
