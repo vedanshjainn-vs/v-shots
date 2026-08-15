@@ -1,19 +1,11 @@
-// ═════════════════════════════════════════════════════════════════════════
-// V SHOTS — ArchiveTune-style Search Tab (landing)
-//
-// The Search TAB is a landing with:
-//   • a Material search bar (entry point) -> opens OnlineSearchScreen
-//   • two tabs: Explore (Mood & Genres) and For You (personalized suggestions)
-//
-// Data: real InnerTube search via the shared InnerTubeMusicService. Nothing
-// hardcoded-fake; categories map to real mood queries (kMoodQueries). Playback
-// stays on the existing official player via [onPlayTrack].
-// ═════════════════════════════════════════════════════════════════════════
+// V SHOTS — ArchiveTune-inspired Search landing
+// Search is a search-first surface. Explore/categories never replace the
+// search experience. All content is real InnerTube metadata; playback stays
+// on the existing official YouTube player.
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/discovery/innertube_music_service.dart';
 import '../../core/storage/local_library.dart';
@@ -38,13 +30,18 @@ class ArchiveSearchScreen extends StatefulWidget {
 
 class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
     with AutomaticKeepAliveClientMixin {
-  int _tab = 0; // 0 = Explore, 1 = For You
+  List<Map<String, dynamic>> _history = const [];
+  List<DiscoveryTrack> _quickPicks = const [];
+  bool _loading = true;
 
-  // For You state.
-  List<DiscoveryTrack> _suggestedSongs = const [];
-  List<DiscoveryTrack> _suggestedArtists = const [];
-  List<DiscoveryTrack> _trendingAlbums = const [];
-  bool _loadingSuggestions = false;
+  static const _quickSearches = <String>[
+    'Trending songs',
+    'New releases',
+    'Bollywood hits',
+    'Punjabi hits',
+    'Hindi romantic songs',
+    'English pop',
+  ];
 
   @override
   bool get wantKeepAlive => true;
@@ -52,105 +49,60 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
   @override
   void initState() {
     super.initState();
-    _loadSuggestions();
+    _history = LocalLibrary.instance.recentSearches.value;
+    unawaited(_loadQuickPicks());
   }
 
-  Future<void> _openSearch() async {
+  Future<void> _openSearch([String? query]) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => OnlineSearchScreen(
           service: widget.service,
           onPlayTrack: widget.onPlayTrack,
+          initialQuery: query ?? '',
         ),
       ),
     );
-    if (mounted) setState(() {});
-  }
-
-  /// For You: seed from most-played songs (songPlayCounts) + recently played,
-  /// then fetch related content via real search. Fallback to trending.
-  Future<void> _loadSuggestions() async {
-    setState(() => _loadingSuggestions = true);
-    final lib = LocalLibrary.instance;
-    final recent = lib.recentlyPlayed.value;
-    final playedIds = lib.songPlayCounts.keys.toList();
-
-    final seedTitles = <String>[];
-    for (final r in recent.take(6)) {
-      final t = (r['title'] as String?)?.trim() ?? '';
-      if (t.isNotEmpty && seedTitles.length < 6) seedTitles.add(t);
-    }
-    for (final id in playedIds.take(6)) {
-      if (seedTitles.length >= 6) break;
-      final r = recent.cast<Map<String, dynamic>?>().firstWhere(
-            (x) => x?['id'] == id,
-            orElse: () => null,
-          );
-      final t = r?['title'] as String? ?? '';
-      if (t.isNotEmpty && !seedTitles.contains(t)) seedTitles.add(t);
-    }
-
-    final songs = <DiscoveryTrack>[];
-    final seen = <String>{};
-    if (seedTitles.isNotEmpty) {
-      for (final seed in seedTitles) {
-        try {
-          final related = await widget.service.search('$seed songs', count: 8);
-          for (final t in related) {
-            if (songs.length >= 12) break;
-            if (seen.add(t.id)) songs.add(t);
-          }
-        } catch (_) {}
-        if (songs.length >= 12) break;
-      }
-    }
-    if (songs.isEmpty) {
-      try {
-        songs.addAll(await widget.service.search('trending songs', count: 12));
-      } catch (_) {}
-    }
-
-    // Artists from top artist play counts.
-    final artists = <DiscoveryTrack>[];
-    final aSeen = <String>{};
-    final topArtists = lib.artistPlayCounts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    for (final a in topArtists.take(6)) {
-      try {
-        final r = await widget.service.search('${a.key} artist', count: 3);
-        for (final t in r) {
-          if (artists.length >= 12) break;
-          if (aSeen.add(t.id)) artists.add(t);
-        }
-      } catch (_) {}
-      if (artists.length >= 12) break;
-    }
-    if (artists.isEmpty) {
-      try {
-        artists.addAll(await widget.service.search('top artists', count: 8));
-      } catch (_) {}
-    }
-
-    // Trending albums from new releases + top albums searches.
-    final albums = <DiscoveryTrack>[];
-    final alSeen = <String>{};
-    try {
-      final a1 = await widget.service.search('new album 2026', count: 6);
-      final a2 = await widget.service.search('top albums', count: 6);
-      for (final t in [...a1, ...a2]) {
-        if (albums.length >= 12) break;
-        if (alSeen.add(t.id)) albums.add(t);
-      }
-    } catch (_) {}
-
     if (!mounted) return;
-    setState(() {
-      _suggestedSongs = songs.take(12).toList();
-      _suggestedArtists = artists.take(12).toList();
-      _trendingAlbums = albums.take(12).toList();
-      _loadingSuggestions = false;
-    });
+    setState(() => _history = LocalLibrary.instance.recentSearches.value);
   }
+
+  Future<void> _loadQuickPicks() async {
+    try {
+      final recent = LocalLibrary.instance.recentlyPlayed.value;
+      final queries = <String>[];
+      for (final track in recent.take(3)) {
+        final artist = (track['artist'] as String?)?.trim() ?? '';
+        final title = (track['title'] as String?)?.trim() ?? '';
+        final q = artist.isNotEmpty ? '$artist songs' : title;
+        if (q.isNotEmpty && !queries.contains(q)) queries.add(q);
+      }
+      if (queries.isEmpty) queries.add('trending songs');
+
+      final batches = await Future.wait(
+        queries.take(3).map((q) => widget.service.search(q, count: 5)),
+        eagerError: false,
+      );
+      final seen = <String>{};
+      final tracks = <DiscoveryTrack>[];
+      for (final batch in batches) {
+        for (final track in batch) {
+          if (seen.add(track.id)) tracks.add(track);
+          if (tracks.length >= 12) break;
+        }
+        if (tracks.length >= 12) break;
+      }
+      if (!mounted) return;
+      setState(() {
+        _quickPicks = tracks;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _searchFromChip(String query) => _openSearch(query);
 
   @override
   Widget build(BuildContext context) {
@@ -158,444 +110,271 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildSearchBar(),
-            _buildTabs(),
-            Expanded(
-              child: _tab == 0 ? _buildExplore() : _buildForYou(),
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: AppColors.background,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              title: const Text(
+                'Search',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+              ),
             ),
+            SliverToBoxAdapter(child: _buildSearchField()),
+            SliverToBoxAdapter(child: _buildQuickSearches()),
+            if (_history.isNotEmpty)
+              SliverToBoxAdapter(child: _buildHistory()),
+            SliverToBoxAdapter(child: _buildQuickPicks()),
+            const SliverToBoxAdapter(child: SizedBox(height: 130)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchField() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: InkWell(
-        onTap: _openSearch,
-        borderRadius: BorderRadius.circular(28),
-        child: Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.search_rounded, color: AppColors.textMuted),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Search songs, artists, albums...',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 15),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _openSearch(),
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 17),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.search_rounded, color: AppColors.textMain, size: 25),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Songs, artists, albums, playlists…',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
+                Icon(Icons.mic_none_rounded, color: AppColors.textMuted),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickSearches() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 0, 2),
+      child: SizedBox(
+        height: 38,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _quickSearches.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, index) {
+            final query = _quickSearches[index];
+            return ActionChip(
+              label: Text(query),
+              onPressed: () => _searchFromChip(query),
+              backgroundColor: AppColors.surface,
+              side: const BorderSide(color: AppColors.border),
+              labelStyle: const TextStyle(
+                color: AppColors.textMain,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
-              Icon(Icons.language_rounded,
-                  color: AppColors.textMuted, size: 20),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistory() {
+    final history = _history.take(8).toList();
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader('Recent searches', action: 'Clear'),
+          SizedBox(
+            height: 42,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: history.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, index) {
+                final query = history[index]['query'] as String? ?? '';
+                return InputChip(
+                  avatar: const Icon(Icons.history_rounded, size: 16),
+                  label: Text(query, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onPressed: () => _openSearch(query),
+                  onDeleted: () => _removeHistory(query),
+                  backgroundColor: AppColors.surface,
+                  side: const BorderSide(color: AppColors.border),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title, {String? action}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+            ),
+          ),
+          if (action != null)
+            TextButton(onPressed: _clearHistory, child: Text(action)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickPicks() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader('Start listening'),
+          if (_loading)
+            const SizedBox(
+              height: 176,
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
+            )
+          else if (_quickPicks.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Search for a song, artist or album to get started.',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
+            )
+          else
+            SizedBox(
+              height: 190,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                scrollDirection: Axis.horizontal,
+                itemCount: _quickPicks.length,
+                itemBuilder: (_, index) {
+                  final track = _quickPicks[index];
+                  return _SearchPickCard(
+                    track: track,
+                    onTap: () {
+                      final queue = _quickPicks.map((t) => t.toTrackMap()).toList();
+                      unawaited(widget.onPlayTrack(track.toTrackMap(), queue, index));
+                    },
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _clearHistory() async {
+    await LocalLibrary.instance.clearRecentSearches();
+    if (mounted) setState(() => _history = const []);
+  }
+
+  Future<void> _removeHistory(String query) async {
+    final remaining = _history.where((h) => h['query'] != query).toList();
+    await LocalLibrary.instance.clearRecentSearches();
+    for (final item in remaining) {
+      final q = item['query'] as String? ?? '';
+      if (q.isNotEmpty) await LocalLibrary.instance.recordRecentSearch(q);
+    }
+    if (mounted) setState(() => _history = remaining);
+  }
+}
+
+class _SearchPickCard extends StatelessWidget {
+  const _SearchPickCard({required this.track, required this.onTap});
+
+  final DiscoveryTrack track;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 142,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: AppImage(track.artwork, width: 130, height: 130),
+                  ),
+                  Positioned(
+                    right: 7,
+                    bottom: 7,
+                    child: DecoratedBox(
+                      decoration: const BoxDecoration(
+                        color: AppColors.accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.play_arrow_rounded, size: 20, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 7),
+              Text(
+                track.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                track.artist,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
             ],
           ),
         ),
       ),
     );
   }
-
-  Widget _buildTabs() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: Row(
-        children: [
-          _tabChip('Explore', 0),
-          const SizedBox(width: 10),
-          _tabChip('For You', 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _tabChip(String label, int index) {
-    final selected = _tab == index;
-    return GestureDetector(
-      onTap: () => setState(() => _tab = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.accent : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.black : Colors.white70,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExplore() {
-    final moods =
-        kMoodQueries.keys.where((m) => !_skipForExplore.contains(m)).toList();
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 200,
-        mainAxisExtent: 78,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-      ),
-      itemCount: moods.length,
-      itemBuilder: (context, i) {
-        final mood = moods[i];
-        return _MoodCard(
-          mood: mood,
-          color: _colorFor(mood),
-          onTap: () async {
-            unawaited(HapticFeedback.selectionClick());
-            final nav = Navigator.of(context);
-            final tracks = await widget.service.search(mood, count: 20);
-            if (!mounted) return;
-            unawaited(
-              nav.push(
-                MaterialPageRoute<void>(
-                  builder: (_) => _MoodResultsScreen(
-                    title: mood,
-                    tracks: tracks,
-                    service: widget.service,
-                    onPlayTrack: widget.onPlayTrack,
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  static const _skipForExplore = <String>{
-    'Trending',
-    'For You',
-    'Energize',
-  };
-
-  Color _colorFor(String mood) {
-    const map = <String, Color>{
-      'Workout': Color(0xFFFF5722),
-      'Romance': Color(0xFFE91E63),
-      'Sad': Color(0xFF3F51B5),
-      'Party': Color(0xFFFF9800),
-      'Focus': Color(0xFF00BCD4),
-      'Chill': Color(0xFF4CAF50),
-      'Sleep': Color(0xFF607D8B),
-      'Devotional': Color(0xFFFFC107),
-      'Relax': Color(0xFF9C27B0),
-      'Bollywood': Color(0xFFE91E63),
-      'Hindi': Color(0xFF9C27B0),
-      'Punjabi': Color(0xFFFF9800),
-      'English': Color(0xFF2196F3),
-      'EDM': Color(0xFF00BCD4),
-      'Hip-Hop': Color(0xFF673AB7),
-      'Lo-fi': Color(0xFF4CAF50),
-      'Global': Color(0xFF009688),
-    };
-    return map[mood] ?? AppColors.accent;
-  }
-
-  Widget _buildForYou() {
-    if (_loadingSuggestions) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.accent),
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 120),
-      children: [
-        _SuggestionSection(
-          title: 'Suggested Songs',
-          tracks: _suggestedSongs,
-          onPlayTrack: widget.onPlayTrack,
-        ),
-        _SuggestionSection(
-          title: 'Suggested Artists',
-          tracks: _suggestedArtists,
-          onPlayTrack: widget.onPlayTrack,
-        ),
-        _SuggestionSection(
-          title: 'Trending Albums',
-          tracks: _trendingAlbums,
-          onPlayTrack: widget.onPlayTrack,
-        ),
-      ],
-    );
-  }
-}
-
-class _MoodCard extends StatelessWidget {
-  const _MoodCard({
-    required this.mood,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String mood;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Stack(
-          children: [
-            // Left colored stripe.
-            Container(
-              width: 6,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(16),
-                ),
-              ),
-            ),
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Text(
-                  mood,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SuggestionSection extends StatelessWidget {
-  const _SuggestionSection({
-    required this.title,
-    required this.tracks,
-    required this.onPlayTrack,
-  });
-
-  final String title;
-  final List<DiscoveryTrack> tracks;
-  final OnPlayTrack onPlayTrack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (tracks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20),
-              child: Text('Nothing yet — play some songs first.',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-            )
-          else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: tracks.length,
-              itemBuilder: (context, i) {
-                final t = tracks[i];
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: AppImage(t.artwork, width: 52, height: 52),
-                  ),
-                  title: Text(t.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text(t.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: AppColors.textMuted, fontSize: 12)),
-                  trailing: const Icon(Icons.play_circle_fill_rounded,
-                      color: AppColors.accent, size: 28),
-                  onTap: () {
-                    final q = tracks.map((x) => x.toTrackMap()).toList();
-                    final idx = q.indexWhere((x) => x['id'] == t.id);
-                    onPlayTrack(t.toTrackMap(), q, idx < 0 ? 0 : idx);
-                  },
-                );
-              },
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MoodResultsScreen extends StatefulWidget {
-  const _MoodResultsScreen({
-    required this.title,
-    required this.tracks,
-    required this.service,
-    required this.onPlayTrack,
-  });
-
-  final String title;
-  final List<DiscoveryTrack> tracks;
-  final InnerTubeMusicService service;
-  final OnPlayTrack onPlayTrack;
-
-  @override
-  State<_MoodResultsScreen> createState() => _MoodResultsScreenState();
-}
-
-class _MoodResultsScreenState extends State<_MoodResultsScreen> {
-  late List<DiscoveryTrack> _tracks;
-  late String _selected;
-  bool _loading = false;
-
-  static const _catalogs = <String, List<Map<String, String>>>{
-    'Romantic': [
-      {'title': 'Bollywood Romance', 'query': 'bollywood romantic songs'},
-      {'title': 'Indian Romance', 'query': 'indian romantic songs'},
-      {'title': 'Sweetheart & Romance', 'query': 'sweetheart love songs'},
-      {'title': '90s Romantic', 'query': '90s bollywood romantic songs'},
-      {'title': 'Romantic Hindi', 'query': 'romantic hindi songs'},
-    ],
-    'Bollywood': [
-      {'title': 'Bollywood Romance', 'query': 'bollywood romantic songs'},
-      {'title': 'Bollywood Classics', 'query': 'bollywood classic hits'},
-      {'title': 'Bollywood Party', 'query': 'bollywood party songs'},
-    ],
-    'Hindi': [
-      {'title': 'Hindi Romance', 'query': 'hindi romantic songs'},
-      {'title': 'Hindi Classics', 'query': 'old hindi classics'},
-      {'title': 'Hindi Trending', 'query': 'latest hindi songs'},
-    ],
-  };
-
-  List<Map<String, String>> get _sections =>
-      _catalogs[widget.title] ?? [
-            {'title': '${widget.title} Mix', 'query': '${widget.title} songs'},
-            {'title': 'Popular ${widget.title}', 'query': 'popular ${widget.title} songs'},
-            {'title': 'New ${widget.title}', 'query': 'new ${widget.title} songs'},
-          ];
-
-  @override
-  void initState() {
-    super.initState();
-    _tracks = widget.tracks;
-    _selected = _sections.first['title']!;
-  }
-
-  Future<void> _openSection(Map<String, String> section) async {
-    setState(() { _selected = section['title']!; _loading = true; });
-    try {
-      final result = await _searchLive(section['query']!);
-      if (mounted) setState(() => _tracks = result);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  // The service is supplied by the parent screen through the live search
-  // result for now; this keeps this catalog screen usable without mock data.
-  Future<List<DiscoveryTrack>> _searchLive(String query) async {
-    return widget.service.search(query, count: 30);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w800)),
-        backgroundColor: AppColors.background,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 120),
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: Text('Explore this mood', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-          ),
-          SizedBox(
-            height: 100,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              itemCount: _sections.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, i) {
-                final section = _sections[i];
-                final selected = section['title'] == _selected;
-                return GestureDetector(
-                  onTap: () => _openSection(section),
-                  child: Container(
-                    width: 150,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        _catalogColor(i).withValues(alpha: .95),
-                        _catalogColor(i).withValues(alpha: .55),
-                      ]),
-                      borderRadius: BorderRadius.circular(16),
-                      border: selected ? Border.all(color: Colors.white, width: 2) : null,
-                    ),
-                    child: Align(alignment: Alignment.bottomLeft, child: Text(section['title']!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800))),
-                  ),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Row(children: [Expanded(child: Text(_selected, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))), if (_loading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))]),
-          ),
-          if (_tracks.isEmpty)
-            const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No live results', style: TextStyle(color: AppColors.textMuted))))
-          else
-            ..._tracks.map(_songTile),
-        ],
-      ),
-    );
-  }
-
-  Color _catalogColor(int i) => [Colors.pink.shade700, Colors.deepPurple.shade600, Colors.orange.shade700, Colors.teal.shade700, Colors.indigo.shade600][i % 5];
-
-  Widget _songTile(DiscoveryTrack t) => ListTile(
-    leading: ClipRRect(borderRadius: BorderRadius.circular(8), child: AppImage(t.artwork, width: 54, height: 54)),
-    title: Text(t.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
-    subtitle: Text(t.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
-    trailing: const Icon(Icons.play_circle_fill_rounded, color: AppColors.accent, size: 30),
-    onTap: () { final q = _tracks.map((x) => x.toTrackMap()).toList(); final idx = q.indexWhere((x) => x['id'] == t.id); widget.onPlayTrack(t.toTrackMap(), q, idx < 0 ? 0 : idx); },
-  );
 }
