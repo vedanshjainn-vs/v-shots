@@ -2,7 +2,7 @@ name: V Shots APK Build & Test
 
 on:
   push:
-    branches: [ main, youtube-official-player-migration ]
+    branches: [ main, youtube-official-player-migration, feature/vshots-final-polish-p0-p1-p2 ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
   build:
     name: Build & Validate V Shots APK
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: 1. Checkout Repository
@@ -77,16 +77,12 @@ jobs:
         run: |
           mkdir -p android/app/keystores
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            # Use the real release keystore from GitHub Secrets.
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
             export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
             export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
             export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
             export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
           else
-            # No release keystore secret configured: generate a CI throwaway
-            # keystore with a random, non-committed password so the build still
-            # succeeds. The resulting APK/AAB is NOT the production signing key.
             CI_PASS=$(openssl rand -hex 16)
             keytool -genkeypair -v \
               -keystore android/app/keystores/release.keystore \
@@ -104,12 +100,11 @@ jobs:
             echo "::warning::No ANDROID_KEYSTORE_BASE64 secret set — built with a CI throwaway keystore, NOT the production key."
           fi
           flutter build apk --release
-          # Build the Play Store AAB in the SAME step so it inherits the same
-          # keystore + password (secrets when configured, otherwise the CI
-          # throwaway keystore created above).
           flutter build appbundle --release
 
       - name: 10. Build Debug APK
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx6G
         run: flutter build apk --debug
 
       - name: 11. Validate Generated APKs & AAB
@@ -153,9 +148,6 @@ jobs:
           retention-days: 90
 
       - name: 14. Publish GitHub Release
-        # Release creation is DISABLED until the production acceptance gate is
-        # fully passed (device testing + required secrets configured). Remove
-        # this `if` guard only once that gate is cleared.
         if: github.ref == 'refs/heads/main' && env.ENABLE_RELEASE == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
