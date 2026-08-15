@@ -214,7 +214,7 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 11),
+              padding: const EdgeInsets.fromLTRB(20, 0, 16, 11),
               child: Row(
                 children: [
                   if (shelf.emoji.isNotEmpty) ...[
@@ -233,23 +233,36 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
                       ),
                     ),
                   ),
+                  // Editorial shelves intentionally expose the same affordance
+                  // as the reference design, even while the feed is horizontal.
+                  const Icon(Icons.arrow_forward_rounded, size: 22),
                 ],
               ),
             ),
-            SizedBox(
-              height: 210,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                scrollDirection: Axis.horizontal,
-                itemCount: tracks.length,
-                itemBuilder: (context, index) {
-                  final track = tracks[index];
-                  return _TrackCard(
-                    track: track,
-                    onTap: () => _play(track, tracks),
-                  );
-                },
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                // Three compact cards are visible on a normal phone, with a
+                // fourth card available by swiping — matching the reference
+                // home layout while retaining horizontal browsing.
+                final cardWidth = ((constraints.maxWidth - 40 - 24) / 3)
+                    .clamp(106.0, 156.0);
+                return SizedBox(
+                  height: cardWidth + 72,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: tracks.length,
+                    itemBuilder: (context, index) {
+                      final track = tracks[index];
+                      return _TrackCard(
+                        width: cardWidth,
+                        track: track,
+                        onTap: () => _play(track, tracks),
+                      );
+                    },
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -316,15 +329,20 @@ class _ArchiveHomeScreenState extends State<ArchiveHomeScreen>
 }
 
 class _TrackCard extends StatelessWidget {
-  const _TrackCard({required this.track, required this.onTap});
+  const _TrackCard({
+    required this.width,
+    required this.track,
+    required this.onTap,
+  });
 
+  final double width;
   final DiscoveryTrack track;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 156,
+      width: width,
       child: Padding(
         padding: const EdgeInsets.only(right: 12),
         child: GestureDetector(

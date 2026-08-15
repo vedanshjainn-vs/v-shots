@@ -69,13 +69,19 @@ class MusicShelf {
 
 /// Default Home shelf queries (each becomes a real shelf via InnerTube search).
 const List<Map<String, String>> kHomeShelfQueries = [
+  // Editorial-style shelves: every shelf is live content, never a hard-coded
+  // catalog. The order mirrors the visual music-home experience.
   {'title': 'Quick Picks', 'query': 'trending songs 2026'},
+  {'title': 'New releases', 'query': 'new hindi songs 2026 latest releases'},
+  {'title': '90s Bollywood Dance', 'query': '90s bollywood dance songs'},
+  {'title': 'Bollywood Fire', 'query': 'bollywood fire party songs'},
+  {'title': 'Punjabi Party', 'query': 'punjabi party hits songs'},
+  {'title': 'Brb, Being Nostalgic!', 'query': '90s bollywood nostalgia songs'},
+  {'title': '90s Bollywood Sad Songs', 'query': '90s bollywood sad songs'},
+  {'title': 'Chai, Baarish aur 90s', 'query': 'chai baarish 90s hindi songs'},
+  {'title': 'Sangeet Special', 'query': 'bollywood sangeet wedding songs'},
   {'title': 'Trending Music', 'query': 'viral trending songs'},
-  {'title': 'New Music', 'query': 'new music 2026 releases'},
-  {'title': 'Bollywood Hits', 'query': 'bollywood hindi hits'},
   {'title': 'Hindi Hits', 'query': 'hindi songs hits'},
-  {'title': 'Punjabi Hits', 'query': 'punjabi hits songs'},
-  {'title': 'English Pop', 'query': 'english pop hits'},
   {'title': 'Romantic', 'query': 'romantic love songs'},
   {'title': 'Chill', 'query': 'chill lofi music'},
   {'title': 'Workout', 'query': 'workout gym music'},
