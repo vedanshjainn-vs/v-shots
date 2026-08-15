@@ -785,7 +785,24 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
     if (!widget.isExpanded) {
       // One compact dock shared by every tab. It never creates a second
       // playback surface; tapping/dragging only expands the existing player.
-      return Positioned(
+      return Stack(
+        children: [
+          // Keep the same browser session mounted while collapsed so a swipe
+          // updates the current YouTube page without destroying the surface.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: bottomPadding + 72,
+            height: 1,
+            child: Opacity(
+              opacity: 0.01,
+              child: _InAppYoutubeBrowser(
+                videoId: trackId,
+                artwork: widget.track['artwork'] as String?,
+              ),
+            ),
+          ),
+          Positioned(
         left: 12,
         right: 12,
         bottom: bottomPadding + 8,
@@ -822,6 +839,8 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
             ),
           ),
         ),
+      ),
+        ],
       );
     }
     // ── FULLSCREEN EXPANDED PLAYER VIEW ─────────────────────────────────
