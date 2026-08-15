@@ -36,6 +36,7 @@ jobs:
           else:
               print('Overflow fix already present or source layout changed')
           PY
+          touch .env
           flutter pub get
           dart format lib/features/polish/premium_archive_home_screen.dart
           flutter analyze
