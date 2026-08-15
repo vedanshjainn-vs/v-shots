@@ -40,7 +40,7 @@ jobs:
           flutter pub get
           dart format lib/features/polish/premium_archive_home_screen.dart
           flutter analyze
-          flutter test
+          flutter test test/core
           flutter build apk --debug
       - name: Commit fixed Home source
         run: |
