@@ -394,13 +394,11 @@ class _SuggestionSection extends StatelessWidget {
   const _SuggestionSection({
     required this.title,
     required this.tracks,
-    required this.service,
     required this.onPlayTrack,
   });
 
   final String title;
   final List<DiscoveryTrack> tracks;
-  final InnerTubeMusicService service;
   final OnPlayTrack onPlayTrack;
 
   @override
