@@ -10,6 +10,8 @@
 // stays on the existing official player via [onPlayTrack].
 // ═════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -255,10 +257,11 @@ class _ArchiveSearchScreenState extends State<ArchiveSearchScreen>
           color: _colorFor(mood),
           onTap: () async {
             HapticFeedback.selectionClick();
+            final nav = Navigator.of(context);
             final tracks = await widget.service.search(mood, count: 20);
             if (!mounted) return;
             unawaited(
-              Navigator.of(context).push(
+              nav.push(
                 MaterialPageRoute<void>(
                   builder: (_) => _MoodResultsScreen(
                     title: mood,
