@@ -68,40 +68,6 @@ jobs:
             git push origin HEAD:feature/home-premium-final-v1
           fi
           cd - >/dev/null
-      - name: 3c. Prevent cold-launch Discovery playback
-        run: |
-          set -e
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('lib/features/foryou/for_you_feed_screen.dart')
-          text = p.read_text(encoding='utf-8')
-          old = '''    if (_items.isNotEmpty) {
-      _initOrLoadVideo(_items[0]['id'] as String? ?? 'kJQP7kiw5Fk');
-    }
-'''
-          new = '''    // IndexedStack constructs the Discover tab at cold launch even while
-    // Home is visible. Never create/load the YouTube IFrame here: playback
-    // must begin only after the user actually opens Discover.
-    if (_items.isNotEmpty && _onDiscoverTab) {
-      _initOrLoadVideo(_items[0]['id'] as String? ?? 'kJQP7kiw5Fk');
-    }
-'''
-          if old not in text:
-              raise SystemExit('Expected cold-launch playback block not found')
-          text = text.replace(old, new, 1)
-          p.write_text(text, encoding='utf-8')
-          print('Cold-launch Discovery playback guard applied')
-          PY
-          dart format lib/features/foryou/for_you_feed_screen.dart
-          flutter analyze
-          flutter test
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/features/foryou/for_you_feed_screen.dart
-          if ! git diff --cached --quiet; then
-            git commit -m "fix(discovery): prevent playback before Discover tab is opened"
-            git push origin HEAD:main
-          fi
       - name: 4. Configure Environment (.env)
         run: |
           cat <<EOF > .env
