@@ -96,6 +96,22 @@ text = text.replace(old_play, new_play, 1)
 
 # The old Discover screen is no longer mounted; remove its now-unused import.
 text = text.replace("import 'features/foryou/for_you_feed_screen.dart';\n", '')
-
 main.write_text(text)
-print('Patched main.dart for P0/P1 unified surfaces and browser player.')
+
+# The checked-in ArchiveTune reference file had malformed Dart raw strings in two
+# InnerTube metadata regexes. Repair those so the whole repository remains
+# format/analyze clean even though the reference file is not mounted by V Shots.
+archive = root / 'archive_tune_home_screen.dart'
+if archive.exists():
+    archive_text = archive.read_text()
+    archive_text = archive_text.replace(
+        "RegExp(r'INNERTUBE_API_KEY[\"\\']?\\s*:\\s*[\"\\']([^\"\\']+)')",
+        '''RegExp(r'''INNERTUBE_API_KEY["']?\s*:\s*["']([^"']+)''')''',
+    )
+    archive_text = archive_text.replace(
+        "RegExp(r'INNERTUBE_CLIENT_VERSION[\"\\']?\\s*:\\s*[\"\\']([^\"\\']+)')",
+        '''RegExp(r'''INNERTUBE_CLIENT_VERSION["']?\s*:\s*["']([^"']+)''')''',
+    )
+    archive.write_text(archive_text)
+
+print('Patched main.dart and repaired the malformed ArchiveTune reference regexes.')
