@@ -21,6 +21,7 @@ dependencies:
   flutter:
     sdk: flutter
   just_audio: ^0.9.39
+  audio_session: ^0.1.25
   shimmer: ^3.0.0
   # Backend (see lib/core/backend/supabase_service.dart for wiring notes)
   supabase_flutter: ^2.12.4
