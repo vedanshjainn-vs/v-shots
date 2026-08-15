@@ -543,12 +543,9 @@ class _MainShellState extends State<MainShell> {
                 return ValueListenableBuilder<bool>(
                   valueListenable: isPlayerExpandedNotifier,
                   builder: (context, isExpanded, _) {
-                    // The Discover feed is a full-screen immersive surface
-                    // that renders the single global IFrame itself, so the
-                    // persistent overlay (mini/full player) is hidden while
-                    // the Discover tab is active to avoid two `YoutubePlayer`
-                    // widgets sharing the same controller.
-                    if (_index == 1) return const SizedBox.shrink();
+                    // Discovery uses the same global player session. Keep the
+                    // compact dock visible here as well; the expanded view is
+                    // the only surface that owns the single official iframe.
                     return _PersistentPlayerOverlay(
                       track: track,
                       isExpanded: isExpanded,
@@ -690,11 +687,46 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
     final bottomPadding = mediaQuery.padding.bottom;
 
     if (!widget.isExpanded) {
-      // Mini-player UI is intentionally HIDDEN for this build (Phase 22).
-      // PlaybackManager, the global controller, currentTrack state and the full
-      // player remain intact; only the visible mini dock is removed. The
-      // mini-player will be reintroduced in a separate verified task.
-      return const SizedBox.shrink();
+      // One compact dock shared by every tab. It never creates a second
+      // playback surface; tapping/dragging only expands the existing player.
+      return Positioned(
+        left: 12,
+        right: 12,
+        bottom: bottomPadding + 8,
+        child: GestureDetector(
+          onVerticalDragUpdate: (details) {
+            if (details.primaryDelta != null && details.primaryDelta! < -8) {
+              widget.onToggleExpand(true);
+            }
+          },
+          onTap: () => widget.onToggleExpand(true),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.border),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .35), blurRadius: 18, offset: const Offset(0, 6))],
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(borderRadius: BorderRadius.circular(10), child: AppImage(widget.track['artwork'] as String?, width: 48, height: 48)),
+                  const SizedBox(width: 10),
+                  Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                    const SizedBox(height: 2),
+                    Text(artist.isEmpty ? 'Unknown Artist' : artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                  ])),
+                  IconButton(icon: const Icon(Icons.expand_less_rounded), tooltip: 'Expand player', onPressed: () => widget.onToggleExpand(true)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
     }
     // ── FULLSCREEN EXPANDED PLAYER VIEW ─────────────────────────────────
     return Positioned.fill(
