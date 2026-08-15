@@ -1,0 +1,50 @@
+name: Fix ArchiveTune Home workflow
+on:
+  push:
+    branches: [feature/home-archivetune-v1]
+permissions:
+  contents: write
+jobs:
+  fix-home:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+      - name: Apply embedded Home replacement
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          main = Path('lib/main.dart')
+          text = main.read_text(encoding='utf-8')
+          start_marker='// HOME SCREEN (AUTO-REFRESH & DATA-DRIVEN)'
+          end_marker='// SEARCH SCREEN'
+          if start_marker not in text:
+              print('Home marker already replaced; nothing to do.')
+              raise SystemExit(0)
+          wf=Path('.github/workflows/home-archivetune.yml').read_text(encoding='utf-8')
+          m=re.search(r"new_home = r'''(.*?)'''", wf, re.S)
+          if not m:
+              raise SystemExit('Could not recover Home implementation from workflow payload')
+          new_home=m.group(1)
+          a=text.index(start_marker)
+          b=text.index(end_marker,a)
+          main.write_text(text[:a]+new_home+'\n'+text[b:],encoding='utf-8')
+          print('Home replaced:', a, b)
+          PY
+      - name: Validate
+        run: |
+          flutter pub get
+          dart format lib/main.dart
+          flutter analyze
+          flutter test
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/main.dart
+          if git diff --cached --quiet; then echo 'No Home changes to commit'; exit 0; fi
+          git commit -m "[home-bot] feat(home): ArchiveTune premium Home"
+          git push origin HEAD:${{ github.ref_name }}
