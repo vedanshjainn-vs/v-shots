@@ -143,7 +143,7 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
       final cleanedShelves = <String, List<Map<String, dynamic>>>{};
       for (final shelf in _layout) {
         final unique = <Map<String, dynamic>>[];
-        for (final track in fetched[shelf.query] ?? const []) {
+        for (final track in fetched[shelf.query] ?? const <Map<String, dynamic>>[]) {
           final id = _id(track);
           if (id.isNotEmpty && used.add(id)) {
             unique.add(track);
@@ -246,7 +246,7 @@ class _PremiumArchiveHomeScreenState extends State<PremiumArchiveHomeScreen> {
               ],
             ),
           ),
-          _CircleButton(icon: Icons.notifications_none_rounded),
+          const _CircleButton(icon: Icons.notifications_none_rounded),
           const SizedBox(width: 8),
           const CircleAvatar(
             radius: 21,
