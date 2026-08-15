@@ -23,6 +23,8 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/discovery/innertube_music_service.dart';
+import '../../core/recommendation/recommendation_event_service.dart';
+import '../../core/recommendation/recommendation_memory.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
@@ -185,6 +187,16 @@ class _DiscoveryReelsScreenState extends State<DiscoveryReelsScreen>
   }
 
   void _onPageChanged(int index) {
+    final previous = _currentIndex;
+    if (previous != index && previous < _tracks.length) {
+      final old = _tracks[previous];
+      RecommendationMemory.instance.recordSkip(old.id);
+      RecommendationEventService.instance.track(
+        RecommendationEvents.discoverSwipe,
+        videoId: old.id,
+        extra: {'category': _contextLabel(), 'toIndex': index},
+      );
+    }
     setState(() => _currentIndex = index);
     // Discovery is swipe-first: selecting a page immediately hands the track
     // to the existing global/official player.
