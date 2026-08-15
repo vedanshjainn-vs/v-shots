@@ -583,7 +583,7 @@ class _MoodResultsScreenState extends State<_MoodResultsScreen> {
           if (_tracks.isEmpty)
             const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No live results', style: TextStyle(color: AppColors.textMuted))))
           else
-            ..._tracks.map((t) => _songTile(t)),
+            ..._tracks.map(_songTile),
         ],
       ),
     );
