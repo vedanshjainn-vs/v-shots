@@ -4,7 +4,6 @@ root = Path(__file__).resolve().parents[1]
 main = root / 'lib' / 'main.dart'
 text = main.read_text()
 
-# New unified surfaces.
 imports = [
     "import 'features/polish/archive_style_screens.dart';",
     "import 'features/polish/browser_player_overlay.dart';",
@@ -65,7 +64,6 @@ if old_overlay not in text:
     raise SystemExit('Persistent overlay block not found')
 text = text.replace(old_overlay, new_overlay, 1)
 
-# Start on Home with the player minimized/closed rather than reopening the full player.
 old_init = '''    currentTabIndexNotifier.value = 0;
     audioPlayer.playerStateStream.listen((state) {'''
 new_init = '''    currentTabIndexNotifier.value = 0;
@@ -76,7 +74,6 @@ if old_init not in text:
     raise SystemExit('MainShell init anchor not found')
 text = text.replace(old_init, new_init, 1)
 
-# The unified browser player now owns playback. Do not create a second hidden IFrame engine.
 old_play = '''  final videoId = (track['id'] as String?) ?? 'kJQP7kiw5Fk';
   // Play through the single global YouTube engine (stops/replaces the previous
   // video; does not create a second playback engine).
@@ -94,23 +91,19 @@ if old_play not in text:
     raise SystemExit('playTrack player block not found')
 text = text.replace(old_play, new_play, 1)
 
-# The old Discover screen is no longer mounted; remove its now-unused import.
 text = text.replace("import 'features/foryou/for_you_feed_screen.dart';\n", '')
 main.write_text(text)
 
-# The checked-in ArchiveTune reference file had malformed Dart raw strings in two
-# InnerTube metadata regexes. Repair those so the whole repository remains
-# format/analyze clean even though the reference file is not mounted by V Shots.
 archive = root / 'archive_tune_home_screen.dart'
 if archive.exists():
     archive_text = archive.read_text()
     archive_text = archive_text.replace(
-        "RegExp(r'INNERTUBE_API_KEY[\"\\']?\\s*:\\s*[\"\\']([^\"\\']+)')",
-        '''RegExp(r'''INNERTUBE_API_KEY["']?\s*:\s*["']([^"']+)''')''',
+        '''RegExp(r'INNERTUBE_API_KEY["\\']?\\s*:\\s*["\\']([^"\\']+)')''',
+        "RegExp(r'''INNERTUBE_API_KEY[\"']?\\s*:\\s*[\"']([^\"']+)''')",
     )
     archive_text = archive_text.replace(
-        "RegExp(r'INNERTUBE_CLIENT_VERSION[\"\\']?\\s*:\\s*[\"\\']([^\"\\']+)')",
-        '''RegExp(r'''INNERTUBE_CLIENT_VERSION["']?\s*:\s*["']([^"']+)''')''',
+        '''RegExp(r'INNERTUBE_CLIENT_VERSION["\\']?\\s*:\\s*["\\']([^"\\']+)')''',
+        "RegExp(r'''INNERTUBE_CLIENT_VERSION[\"']?\\s*:\\s*[\"']([^\"']+)''')",
     )
     archive.write_text(archive_text)
 
