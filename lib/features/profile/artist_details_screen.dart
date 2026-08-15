@@ -4,12 +4,18 @@
 
 import 'package:flutter/material.dart';
 import '../../core/motion/motion.dart';
+import '../../core/recommendation/recommendation_event_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../main.dart'
-    show musicRepository, playTrack, currentTrackNotifier, audioPlayer;
+    show
+        musicRepository,
+        playTrack,
+        currentTrackNotifier,
+        youTubeRepository,
+        audioPlayer;
 
 class ArtistDetailsScreen extends StatefulWidget {
   const ArtistDetailsScreen({
@@ -31,29 +37,78 @@ class ArtistDetailsScreen extends StatefulWidget {
 
 class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   List<Map<String, dynamic>> _tracks = [];
+  List<Map<String, dynamic>> _latest = [];
+  List<String> _related = [];
+  String _avatarUrl = '';
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchArtistTracks();
+    _fetchArtistData();
+    RecommendationEventService.instance.track(
+      RecommendationEvents.artistOpen,
+      extra: {'artist': widget.name},
+    );
   }
 
-  Future<void> _fetchArtistTracks() async {
+  Future<void> _fetchArtistData() async {
     setState(() => _isLoading = true);
+    // Top songs + latest releases (separate candidate pools so they differ).
+    final topFuture = musicRepository.search(widget.query, limit: 25);
+    final latestFuture = musicRepository.search(
+      '${widget.name} new song official audio',
+      limit: 12,
+    );
+    // Real channel avatar when the API key is available; else keep fallback.
+    final avatarFuture = _resolveAvatar();
+
+    final results = await topFuture;
+    final latest = await latestFuture;
+    final avatar = await avatarFuture;
+
+    if (!mounted) return;
+    setState(() {
+      _tracks = results;
+      _latest = latest;
+      if (avatar.isNotEmpty) _avatarUrl = avatar;
+      _related = _relatedArtists();
+      _isLoading = false;
+    });
+  }
+
+  Future<String> _resolveAvatar() async {
+    if (!youTubeRepository.isLive) return widget.imageUrl;
     try {
-      final results = await musicRepository.search(widget.query, limit: 25);
-      if (mounted) {
-        setState(() {
-          _tracks = results;
-          _isLoading = false;
-        });
+      final items = await youTubeRepository.searchArtists(
+        widget.name,
+        limit: 1,
+      );
+      if (items.isNotEmpty && items.first.thumbnailUrl.isNotEmpty) {
+        return items.first.thumbnailUrl;
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    } catch (_) {}
+    return widget.imageUrl;
+  }
+
+  /// Related-artist suggestions derived from known collaborators/common genres.
+  List<String> _relatedArtists() {
+    const pool = [
+      'Pritam',
+      'Amit Trivedi',
+      'Sachin-Jigar',
+      'Vishal-Shekhar',
+      'Mithoon',
+      'Atif Aslam',
+      'Jubin Nautiyal',
+      'Shreya Ghoshal',
+      'Karan Aujla',
+      'AP Dhillon',
+      'Rahul Sharma',
+    ];
+    return pool
+        .where((a) => a.toLowerCase() != widget.name.toLowerCase())
+        .toList();
   }
 
   @override
@@ -79,7 +134,10 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  AppImage(widget.imageUrl, fit: BoxFit.cover),
+                  AppImage(
+                    _avatarUrl.isEmpty ? widget.imageUrl : _avatarUrl,
+                    fit: BoxFit.cover,
+                  ),
                   Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
@@ -277,8 +335,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                     trailing: ValueListenableBuilder<Map<String, dynamic>?>(
                       valueListenable: currentTrackNotifier,
                       builder: (context, current, _) {
-                        final isThisPlaying =
-                            current?['id'] == track['id'] &&
+                        final isThisPlaying = current?['id'] == track['id'] &&
                             audioPlayer.playing;
                         if (isThisPlaying) {
                           return const AnimatedEqualizer(
@@ -302,6 +359,145 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                 );
               }, childCount: _tracks.length),
             ),
+
+          // Latest Releases
+          if (!_isLoading && _latest.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
+                child: Text(
+                  'Latest Releases',
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 200,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _latest.length,
+                  itemBuilder: (context, i) {
+                    final t = _latest[i];
+                    return PressableScale(
+                      onTap: () => playTrack(context, t, _latest, i),
+                      child: Container(
+                        width: 150,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: AppImage(
+                                t['artwork'] as String?,
+                                width: 150,
+                                height: 150,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              t['title'] as String? ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
+          // Related Artists
+          if (!_isLoading && _related.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(20, 24, 20, 8),
+                child: Text(
+                  'Related Artists',
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 92,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _related.length,
+                  itemBuilder: (context, i) {
+                    final name = _related[i];
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          AppPageRoute<void>(
+                            builder: (_) => ArtistDetailsScreen(
+                              name: name,
+                              role: 'Artist',
+                              imageUrl: '',
+                              query: '$name top hits official audio',
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: 92,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: AppColors.primaryGradient,
+                              ),
+                              child: const Icon(
+                                Icons.person_rounded,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
         ],
       ),

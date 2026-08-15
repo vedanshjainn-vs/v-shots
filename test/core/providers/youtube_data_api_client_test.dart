@@ -133,5 +133,39 @@ void main() {
         }
       }
     });
+
+    test(
+        'new Home sections (Romantic, Road Trip) stay within intended categories',
+        () async {
+      // Multi-category sections may draw from a constrained set only — never
+      // from unrelated categories (e.g. Chill must not become Devotional).
+      const cases = <(String, Set<String>)>{
+        (
+          'romantic love songs official audio hindi',
+          {
+            'bollywood',
+            'indie',
+            'global',
+          }
+        ),
+        (
+          'road trip driving travel songs playlist official',
+          {
+            'workout',
+            'global',
+            'punjabi',
+          }
+        ),
+      };
+      for (final (query, allowed) in cases) {
+        final results = await client.searchMusicVideos(query, maxResults: 15);
+        expect(results, isNotEmpty, reason: '$query should not be empty');
+        for (final r in results) {
+          expect(allowed.contains(r.category), isTrue,
+              reason:
+                  'category leak for "$query" -> ${r.category}: ${r.title}');
+        }
+      }
+    });
   });
 }

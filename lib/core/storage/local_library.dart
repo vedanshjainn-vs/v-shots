@@ -35,6 +35,9 @@ class LocalLibrary {
   static const _kRecentlyPlayed = 'v_shots.recently_played.v1';
   static const _kPlaylists = 'v_shots.playlists.v1';
   static const _kArtistPlayCounts = 'v_shots.artist_play_counts.v1';
+  static const _kSongPlayCounts = 'v_shots.song_play_counts.v1';
+  static const _kBlockedArtists = 'v_shots.blocked_artists.v1';
+  static const _kNotInterested = 'v_shots.not_interested.v1';
   static const _kDownloadedTracks = 'v_shots.downloaded_tracks.v1';
   static const _kRecentSearches = 'v_shots.recent_searches.v1';
   static const _kShownSongs = 'v_shots.shown_songs.v1';
@@ -56,6 +59,16 @@ class LocalLibrary {
   final ValueNotifier<List<Map<String, dynamic>>> recentSearches =
       ValueNotifier([]);
   Map<String, int> artistPlayCounts = {};
+
+  /// Per-song play counts — the "strong songs / play-time" signal used by the
+  /// personalized Quick Picks. Keyed by video id.
+  Map<String, int> songPlayCounts = {};
+
+  /// Artists the user blocked ("Don't recommend this artist"). Persisted.
+  Set<String> blockedArtists = {};
+
+  /// Track ids the user marked "Not interested". Persisted.
+  Set<String> notInterestedIds = {};
 
   /// Recently-shown song video IDs (Section 2). Capped and time-stamped so
   /// Home/Discover can exclude songs shown recently (e.g. within the last 24h)
@@ -131,6 +144,24 @@ class LocalLibrary {
         final decoded = jsonDecode(rawCounts) as Map<String, dynamic>;
         artistPlayCounts = decoded.map((k, v) => MapEntry(k, v as int));
       }
+      final rawSong = _prefs!.getString(_kSongPlayCounts);
+      if (rawSong != null) {
+        final decoded = jsonDecode(rawSong) as Map<String, dynamic>;
+        songPlayCounts = decoded.map((k, v) => MapEntry(k, v as int));
+      }
+      final rawBlocked = _prefs!.getString(_kBlockedArtists);
+      if (rawBlocked != null) {
+        try {
+          blockedArtists =
+              (jsonDecode(rawBlocked) as List).cast<String>().toSet();
+        } catch (_) {}
+      }
+      final rawNI = _prefs!.getString(_kNotInterested);
+      if (rawNI != null) {
+        try {
+          notInterestedIds = (jsonDecode(rawNI) as List).cast<String>().toSet();
+        } catch (_) {}
+      }
       _loadShown();
       _ready = true;
       debugPrint(
@@ -201,6 +232,12 @@ class LocalLibrary {
     if (artist.isNotEmpty) {
       artistPlayCounts[artist] = (artistPlayCounts[artist] ?? 0) + 1;
       await _prefs?.setString(_kArtistPlayCounts, jsonEncode(artistPlayCounts));
+    }
+    // Per-song play count (Quick Picks "strong songs" signal).
+    final songId = track['id'] as String? ?? '';
+    if (songId.isNotEmpty) {
+      songPlayCounts[songId] = (songPlayCounts[songId] ?? 0) + 1;
+      await _prefs?.setString(_kSongPlayCounts, jsonEncode(songPlayCounts));
     }
   }
 
@@ -302,5 +339,22 @@ class LocalLibrary {
   Future<void> clearRecentSearches() async {
     recentSearches.value = [];
     await _writeList(_kRecentSearches, []);
+  }
+
+  // ── Recommendation feedback (blocked artists / not interested) ───
+  /// Blocks an artist so Discovery/Search stop recommending them.
+  Future<void> blockArtist(String artist) async {
+    if (artist.isEmpty) return;
+    blockedArtists.add(artist);
+    await _prefs?.setString(
+        _kBlockedArtists, jsonEncode(blockedArtists.toList()));
+  }
+
+  /// Marks a track "not interested" (strong negative signal).
+  Future<void> markNotInterested(String trackId) async {
+    if (trackId.isEmpty) return;
+    notInterestedIds.add(trackId);
+    await _prefs?.setString(
+        _kNotInterested, jsonEncode(notInterestedIds.toList()));
   }
 }

@@ -4,12 +4,21 @@
 
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:v_shots/core/preferences/user_preferences.dart';
 import 'package:v_shots/main.dart';
 import 'package:v_shots/shared/widgets/bottom_tab_bar.dart';
 
 void main() {
-  setUpAll(() {
+  setUpAll(() async {
     HttpOverrides.global = _TestHttpOverrides();
+    // Mark onboarding as already completed so the splash routes straight to the
+    // main 4-tab shell (avoids the one-time content-preferences onboarding).
+    SharedPreferences.setMockInitialValues({
+      'v_shots.user_preferences.v1':
+          '{"country":"India","languages":["Hindi","English"],"genres":["Bollywood"],"vibes":["Bollywood"],"onboardingCompleted":true}',
+    });
+    await PreferencesStore.instance.initialize();
   });
 
   group('V Shots App Tests', () {

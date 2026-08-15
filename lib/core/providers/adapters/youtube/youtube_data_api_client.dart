@@ -115,6 +115,154 @@ class PaginatedSearchResult {
   final String? nextPageToken;
 }
 
+/// Data model representing a YouTube channel/artist from Data API v3.
+class YouTubeChannelItem {
+  const YouTubeChannelItem({
+    required this.id,
+    required this.title,
+    required this.channelTitle,
+    required this.thumbnailUrl,
+  });
+
+  final String id;
+  final String title;
+  final String channelTitle;
+  final String thumbnailUrl;
+
+  factory YouTubeChannelItem.fromJson(Map<String, dynamic> json) {
+    final id = json['id'] as String? ?? '';
+    final snippet = (json['snippet'] as Map<String, dynamic>?) ?? {};
+    final title = (snippet['title'] as String?) ?? 'Unknown Artist';
+    final thumbnails = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+    final url = (thumbnails['high']?['url'] ??
+        thumbnails['medium']?['url'] ??
+        thumbnails['default']?['url']) as String?;
+    return YouTubeChannelItem(
+      id: id,
+      title: title,
+      channelTitle: title,
+      thumbnailUrl: url ?? '',
+    );
+  }
+}
+
+/// A YouTube playlist (from a channel's playlists.list).
+class YouTubePlaylist {
+  const YouTubePlaylist({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.thumbnailUrl,
+    required this.itemCount,
+    required this.channelId,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String thumbnailUrl;
+  final int itemCount;
+  final String channelId;
+
+  factory YouTubePlaylist.fromJson(Map<String, dynamic> json) {
+    final snippet = (json['snippet'] as Map<String, dynamic>?) ?? {};
+    final thumbnails = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+    final url = (thumbnails['maxres']?['url'] ??
+        thumbnails['high']?['url'] ??
+        thumbnails['medium']?['url'] ??
+        thumbnails['default']?['url']) as String?;
+    final contentDetails =
+        (json['contentDetails'] as Map<String, dynamic>?) ?? {};
+    return YouTubePlaylist(
+      id: json['id'] as String? ?? '',
+      title: (snippet['title'] as String?) ?? '',
+      description: (snippet['description'] as String?) ?? '',
+      thumbnailUrl: url ?? '',
+      itemCount: (contentDetails['itemCount'] as int?) ?? 0,
+      channelId: (snippet['channelId'] as String?) ?? '',
+    );
+  }
+}
+
+/// A page of playlists plus the next page token.
+class PlaylistPage {
+  const PlaylistPage({required this.playlists, this.nextPageToken});
+  final List<YouTubePlaylist> playlists;
+  final String? nextPageToken;
+}
+
+/// A single item within a playlist (playlistItems.list).
+class YouTubePlaylistItem {
+  const YouTubePlaylistItem({
+    required this.videoId,
+    required this.title,
+    required this.channelTitle,
+    required this.thumbnailUrl,
+    required this.position,
+    this.publishedAt,
+  });
+
+  final String videoId;
+  final String title;
+  final String channelTitle;
+  final String thumbnailUrl;
+  final int position;
+  final DateTime? publishedAt;
+
+  factory YouTubePlaylistItem.fromJson(Map<String, dynamic> json) {
+    final snippet = (json['snippet'] as Map<String, dynamic>?) ?? {};
+    final resourceId = (snippet['resourceId'] as Map<String, dynamic>?) ?? {};
+    final thumbnails = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+    final url = (thumbnails['maxres']?['url'] ??
+        thumbnails['high']?['url'] ??
+        thumbnails['medium']?['url'] ??
+        thumbnails['default']?['url']) as String?;
+    DateTime? published;
+    if (snippet['publishedAt'] is String) {
+      published = DateTime.tryParse(snippet['publishedAt'] as String);
+    }
+    return YouTubePlaylistItem(
+      videoId: (resourceId['videoId'] as String?) ?? '',
+      title: (snippet['title'] as String?) ?? '',
+      channelTitle: (snippet['videoOwnerChannelTitle'] as String?) ??
+          (snippet['channelTitle'] as String?) ??
+          '',
+      thumbnailUrl: url ?? '',
+      position: (json['snippet']?['position'] as int?) ?? 0,
+      publishedAt: published,
+    );
+  }
+}
+
+/// A page of playlist items plus the next page token.
+class PlaylistItemsPage {
+  const PlaylistItemsPage({required this.items, this.nextPageToken});
+  final List<YouTubePlaylistItem> items;
+  final String? nextPageToken;
+}
+
+/// A channel section from `channelSections.list` (contentDetails.playlists).
+///
+/// The official YouTube *Music* channel (e.g. `UC-9-kyTW8ZkZNDHQJ6FgpwQ`)
+/// exposes its auto-generated music playlists through channel sections rather
+/// than `playlists.list?channelId=...` (which returns 0). This is the PRIMARY
+/// playlist-discovery mechanism for Home/Discovery.
+class YouTubeChannelSection {
+  const YouTubeChannelSection({
+    required this.id,
+    required this.type,
+    required this.playlistIds,
+  });
+
+  final String id;
+
+  /// section type, e.g. 'singlePlaylist' | 'multiplePlaylists' | 'allPlaylists'.
+  final String type;
+
+  /// Real playlist ids referenced by this section (from contentDetails.playlists).
+  final List<String> playlistIds;
+}
+
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
@@ -264,6 +412,259 @@ class YouTubeDataApiClient {
     }
   }
 
+  /// Searches for artist/channel entities (Data API Channels search). Returns
+  /// an empty list when no API key is configured (callers fall back gracefully).
+  Future<List<YouTubeChannelItem>> searchChannels(
+    String query, {
+    int maxResults = 10,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty) return [];
+    try {
+      final uri = Uri.parse('$_baseUrl/search').replace(
+        queryParameters: {
+          'part': 'snippet',
+          'type': 'channel',
+          'q': query,
+          'maxResults': maxResults.clamp(1, 50).toString(),
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubeChannelItem.fromJson)
+          .where((c) => c.id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] searchChannels error: $e');
+      return [];
+    }
+  }
+
+  /// Fetches a channel's details (name + avatar) by its channel id.
+  Future<({String name, String avatarUrl})?> getChannelDetails(
+    String channelId,
+  ) async {
+    final key = apiKey;
+    if (key.isEmpty) return null;
+    try {
+      final uri = Uri.parse('$_baseUrl/channels').replace(
+        queryParameters: {
+          'part': 'snippet',
+          'id': channelId,
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      final snippet = (items.first as Map<String, dynamic>)['snippet']
+          as Map<String, dynamic>?;
+      if (snippet == null) return null;
+      final name = (snippet['title'] as String?) ?? '';
+      final thumbs = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
+      final url = (thumbs['high']?['url'] ??
+          thumbs['medium']?['url'] ??
+          thumbs['default']?['url']) as String?;
+      return (name: name, avatarUrl: url ?? '');
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] getChannelDetails error: $e');
+      return null;
+    }
+  }
+
+  /// Lists the playlists owned by [channelId] (playlists.list), paginated.
+  Future<PlaylistPage> listChannelPlaylists(
+    String channelId, {
+    int maxResults = 50,
+    String? pageToken,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty || channelId.isEmpty) {
+      return const PlaylistPage(playlists: [], nextPageToken: null);
+    }
+    try {
+      final params = <String, String>{
+        'part': 'snippet,contentDetails',
+        'channelId': channelId,
+        'maxResults': maxResults.clamp(1, 50).toString(),
+        'key': key,
+      };
+      if (pageToken != null && pageToken.isNotEmpty) {
+        params['pageToken'] = pageToken;
+      }
+      final uri =
+          Uri.parse('$_baseUrl/playlists').replace(queryParameters: params);
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+            '[YouTubeDataApiClient] playlists HTTP ${response.statusCode}');
+        return const PlaylistPage(playlists: [], nextPageToken: null);
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final playlists = items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubePlaylist.fromJson)
+          .where((p) => p.id.isNotEmpty && p.title.isNotEmpty)
+          .toList();
+      return PlaylistPage(
+        playlists: playlists,
+        nextPageToken: data['nextPageToken'] as String?,
+      );
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] listChannelPlaylists error: $e');
+      return const PlaylistPage(playlists: [], nextPageToken: null);
+    }
+  }
+
+  /// Lists the items of [playlistId] (playlistItems.list), paginated.
+  Future<PlaylistItemsPage> listPlaylistItems(
+    String playlistId, {
+    int maxResults = 50,
+    String? pageToken,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty || playlistId.isEmpty) {
+      return const PlaylistItemsPage(items: [], nextPageToken: null);
+    }
+    try {
+      final params = <String, String>{
+        'part': 'snippet,contentDetails',
+        'playlistId': playlistId,
+        'maxResults': maxResults.clamp(1, 50).toString(),
+        'key': key,
+      };
+      if (pageToken != null && pageToken.isNotEmpty) {
+        params['pageToken'] = pageToken;
+      }
+      final uri =
+          Uri.parse('$_baseUrl/playlistItems').replace(queryParameters: params);
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+            '[YouTubeDataApiClient] playlistItems HTTP ${response.statusCode}');
+        return const PlaylistItemsPage(items: [], nextPageToken: null);
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final mapped = items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubePlaylistItem.fromJson)
+          .where((i) => i.videoId.isNotEmpty)
+          .toList();
+      return PlaylistItemsPage(
+        items: mapped,
+        nextPageToken: data['nextPageToken'] as String?,
+      );
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] listPlaylistItems error: $e');
+      return const PlaylistItemsPage(items: [], nextPageToken: null);
+    }
+  }
+
+  /// Lists the channel sections of [channelId] (`channelSections.list`).
+  ///
+  /// This is the PRIMARY playlist-discovery path for the official YouTube
+  /// Music channel, whose auto-generated playlists are not returned by
+  /// `playlists.list?channelId=...`. Returns the playlist ids referenced by
+  /// each section so callers can resolve them into real playlists.
+  Future<List<YouTubeChannelSection>> listChannelSections(
+    String channelId, {
+    int maxResults = 50,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty || channelId.isEmpty) return const [];
+    try {
+      final uri = Uri.parse('$_baseUrl/channelSections').replace(
+        queryParameters: {
+          'part': 'snippet,contentDetails',
+          'channelId': channelId,
+          'maxResults': maxResults.clamp(1, 50).toString(),
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+            '[YouTubeDataApiClient] channelSections HTTP ${response.statusCode}');
+        return const [];
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      final sections = <YouTubeChannelSection>[];
+      for (final item in items) {
+        if (item is! Map<String, dynamic>) continue;
+        final id = item['id'] as String? ?? '';
+        final snippet = (item['snippet'] as Map<String, dynamic>?) ?? {};
+        final type = (snippet['type'] as String?) ?? '';
+        final contentDetails =
+            (item['contentDetails'] as Map<String, dynamic>?) ?? {};
+        final playlists = contentDetails['playlists'] as List? ?? [];
+        final playlistIds =
+            playlists.whereType<String>().where((p) => p.isNotEmpty).toList();
+        if (id.isNotEmpty) {
+          sections.add(YouTubeChannelSection(
+            id: id,
+            type: type,
+            playlistIds: playlistIds,
+          ));
+        }
+      }
+      final refs =
+          sections.fold<int>(0, (sum, s) => sum + s.playlistIds.length);
+      debugPrint(
+        '[YouTubeDataApiClient] channelSections: ${sections.length} sections, '
+        '$refs playlist refs',
+      );
+      return sections;
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] listChannelSections error: $e');
+      return const [];
+    }
+  }
+
+  /// Resolves metadata for a list of playlist ids (`playlists.list?id=`).
+  /// Used to turn channelSection playlist refs into real [YouTubePlaylist]s.
+  Future<List<YouTubePlaylist>> listPlaylistsByIds(
+    List<String> playlistIds,
+  ) async {
+    final key = apiKey;
+    if (key.isEmpty || playlistIds.isEmpty) return const [];
+    try {
+      final uri = Uri.parse('$_baseUrl/playlists').replace(
+        queryParameters: {
+          'part': 'snippet,contentDetails',
+          'id': playlistIds.take(50).join(','),
+          'maxResults': '50',
+          'key': key,
+        },
+      );
+      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+            '[YouTubeDataApiClient] playlists-by-id HTTP ${response.statusCode}');
+        return const [];
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubePlaylist.fromJson)
+          .where((p) => p.id.isNotEmpty && p.title.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] listPlaylistsByIds error: $e');
+      return const [];
+    }
+  }
+
   /// Real Data-API pagination: returns one page of results plus the
   /// [nextPageToken] to request the following page. Falls back to the verified
   /// category-specific catalog when no API key is configured (with
@@ -274,6 +675,12 @@ class YouTubeDataApiClient {
     int maxResults = 20,
     Set<String> excludeIds = const {},
     String? pageToken,
+    String? regionCode,
+    String? relevanceLanguage,
+    String? publishedAfter,
+    bool videoEmbeddable = false,
+    String videoDuration = 'any', // any | short | medium | long
+    bool videoSyndicated = false,
   }) async {
     final key = apiKey;
     if (key.isEmpty) {
@@ -297,6 +704,18 @@ class YouTubeDataApiClient {
         'maxResults': maxResults.clamp(1, 50).toString(),
         'key': key,
       };
+      if (regionCode != null && regionCode.isNotEmpty) {
+        params['regionCode'] = regionCode;
+      }
+      if (relevanceLanguage != null && relevanceLanguage.isNotEmpty) {
+        params['relevanceLanguage'] = relevanceLanguage;
+      }
+      if (publishedAfter != null && publishedAfter.isNotEmpty) {
+        params['publishedAfter'] = publishedAfter;
+      }
+      if (videoEmbeddable) params['videoEmbeddable'] = 'true';
+      if (videoDuration != 'any') params['videoDuration'] = videoDuration;
+      if (videoSyndicated) params['videoSyndicated'] = 'true';
       if (pageToken != null && pageToken.isNotEmpty) {
         params['pageToken'] = pageToken;
       }
@@ -1273,8 +1692,7 @@ class YouTubeDataApiClient {
         cleanQuery.contains('sangeet')) {
       // Wedding & Sangeet → Bollywood celebration tracks.
       matchedCategory = 'bollywood';
-    } else if (cleanQuery.contains('monsoon') ||
-        cleanQuery.contains('rain')) {
+    } else if (cleanQuery.contains('monsoon') || cleanQuery.contains('rain')) {
       // Monsoon Vibes → Hindi romantic Bollywood.
       multiCategories = ['bollywood', 'indie'];
     } else if (cleanQuery.contains('motivational') ||
