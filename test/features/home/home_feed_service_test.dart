@@ -319,7 +319,8 @@ void main() {
           reason: 'Home must actually change after meaningful listening');
     });
 
-    test('no duplicate track ids across the loaded Home feed', () async {
+    test('within-shelf dedup is hard; cross-shelf duplication is allowed',
+        () async {
       final repo = buildFakeRepository();
       final engine = RecommendationEngine(repo);
       final service = HomeFeedService(repository: repo, engine: engine);
@@ -327,15 +328,34 @@ void main() {
       final shelves = service.buildShelfDescriptors();
       await service.loadShelves(shelves);
 
-      final ids = <String>[];
-      for (final s in shelves) {
-        for (final t in s.tracks) {
-          final id = t['id'] as String? ?? '';
-          if (id.isNotEmpty) ids.add(id);
-        }
+      // Within a shelf: no duplicate ids (hard).
+      for (final s
+          in shelves.where((x) => x.status == HomeShelfStatus.loaded)) {
+        final ids = s.tracks.map((t) => t['id'] as String? ?? '').toList();
+        expect(ids.toSet().length, ids.length,
+            reason: 'shelf ${s.id} must never contain duplicate ids');
       }
-      expect(ids.toSet().length, ids.length,
-          reason: 'the same video must not appear on two shelves');
+    });
+
+    test('catalog shelves replenish from fallback queries when sparse',
+        () async {
+      final repo = buildFakeRepository();
+      final engine = RecommendationEngine(repo);
+      final service = HomeFeedService(repository: repo, engine: engine);
+
+      // A custom catalog shelf with fallback queries.
+      final shelf = HomeShelf(
+        id: 'test-catalog',
+        title: 'Test',
+        subtitle: 'sub',
+        kind: HomeShelfKind.catalog,
+        query: 'bollywood songs',
+        limit: 12,
+        fallbackQueries: ['punjabi songs', 'hindi songs'],
+      );
+      await service.loadShelves([shelf]);
+      expect(shelf.status, HomeShelfStatus.loaded);
+      expect(shelf.tracks, isNotEmpty);
     });
 
     test('artist repetition within a shelf is capped', () async {

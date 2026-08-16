@@ -1609,8 +1609,11 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 300) {
+    // Prefetch the next page once the user reaches ~75% of the current
+    // results (not only at the very end), so Search never stalls at 10/20.
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    if (maxExtent > 0 &&
+        _scrollController.position.pixels >= maxExtent * 0.75) {
       _loadMore();
     }
   }

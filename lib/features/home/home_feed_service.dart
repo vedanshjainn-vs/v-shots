@@ -65,6 +65,7 @@ class HomeShelf {
     this.order = 'relevance',
     this.limit = 12,
     this.onlyWhenPersonalized = false,
+    this.fallbackQueries = const [],
   });
 
   final String id;
@@ -80,6 +81,11 @@ class HomeShelf {
   final String? query;
   final String order;
   final int limit;
+
+  /// Additional relevant queries used to REPLENISH the shelf when the primary
+  /// query returns too few valid tracks (never random filler — only related,
+  /// official-music queries).
+  final List<String> fallbackQueries;
 
   /// When true the shelf is skipped entirely unless the user has enough
   /// listening history for it to be meaningful (avoids "Because you
@@ -136,6 +142,10 @@ class HomeFeedService {
           query: 'trending songs official music video 2026',
           order: 'viewCount',
           limit: 12,
+          fallbackQueries: [
+            'viral trending songs official audio 2026',
+            'top songs official audio 2026',
+          ],
         ),
         HomeShelf(
           id: 'new',
@@ -145,6 +155,7 @@ class HomeFeedService {
           query: 'new music releases official audio 2026',
           order: 'date',
           limit: 12,
+          fallbackQueries: ['latest songs official audio 2026'],
         ),
         HomeShelf(
           id: 'tfy',
@@ -181,6 +192,10 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: 'top bollywood hindi songs official music video',
           limit: 12,
+          fallbackQueries: [
+            'latest bollywood songs official audio',
+            'new hindi movie songs official',
+          ],
         ),
         HomeShelf(
           id: 'punjabi',
@@ -189,6 +204,7 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: 'latest punjabi pop hits official audio',
           limit: 12,
+          fallbackQueries: ['punjabi hit songs official audio'],
         ),
         HomeShelf(
           id: 'global',
@@ -197,6 +213,7 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: 'billboard top global pop hits official audio',
           limit: 12,
+          fallbackQueries: ['english pop hits official audio'],
         ),
         HomeShelf(
           id: 'lofi',
@@ -205,6 +222,7 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: 'chill lofi late night beats official audio',
           limit: 12,
+          fallbackQueries: ['lofi study beats official audio'],
         ),
         HomeShelf(
           id: 'hiphop',
@@ -213,6 +231,7 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: 'hip hop rap songs official audio',
           limit: 12,
+          fallbackQueries: ['rap hits official audio'],
         ),
         HomeShelf(
           id: 'romantic',
@@ -221,6 +240,7 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: 'romantic love songs official audio hindi',
           limit: 12,
+          fallbackQueries: ['romantic hindi songs official video'],
         ),
         HomeShelf(
           id: 'classics',
@@ -229,6 +249,7 @@ class HomeFeedService {
           kind: HomeShelfKind.catalog,
           query: '90s 2000s evergreen bollywood classic songs',
           limit: 12,
+          fallbackQueries: ['90s hindi songs official'],
         ),
       ];
 
@@ -244,6 +265,11 @@ class HomeFeedService {
   /// (the write path already records signals; this is the read path honoring
   /// them). [onUpdate] is invoked after each shelf's state changes so the UI
   /// can repaint progressively instead of waiting for everything.
+  /// Pagination state per shelf (continuation/page token for catalog
+  /// shelves). Keyed by shelf id — one source of truth, no second pipeline.
+  final Map<String, String?> _shelfTokens = {};
+  final Map<String, bool> _shelfExhausted = {};
+
   Future<void> loadShelves(
     List<HomeShelf> shelves, {
     bool forceRefresh = false,
@@ -253,16 +279,16 @@ class HomeFeedService {
       // New listening/like/skip signals must be visible on the next Home
       // load, not up to 5 stale minutes later.
       RecommendationCache.instance.invalidateAll();
+      _shelfTokens.clear();
+      _shelfExhausted.clear();
     }
 
-    // Shared exclusion set so the same track doesn't appear on two shelves
-    // (real duplicate prevention, not just within a single shelf).
-    final excludeIds = <String>{...LocalLibrary.instance.recentlyShownIds};
+    // Per-shelf exclusion: each shelf starts from the SESSION recently-shown
+    // set (freshness) and dedupes within itself only. Cross-shelf duplication
+    // is SOFT (allowed) — a genuinely top track may legitimately appear on
+    // Trending AND Global Pop; forcing artificial uniqueness hurt quality.
+    final baseExclude = LocalLibrary.instance.recentlyShownIds;
 
-    // Phase 1: the shelves a user sees first — load them concurrently so
-    // Home fills in quickly. Phase 2: the deeper catalog rows, loaded after
-    // (and therefore excluded from) phase 1's results for cross-shelf
-    // de-duplication.
     const phaseOneIds = {
       'continue',
       'mfy',
@@ -276,50 +302,49 @@ class HomeFeedService {
     final phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
 
     // Load in small chunks (not a full parallel burst): InnerTube/YouTube
-    // throttle a burst of ~11 simultaneous discovery requests, which was
-    // causing individual Home shelves to fail. 3-at-a-time keeps Home fast
-    // without tripping rate limits.
-    await _loadInChunks(phaseOne, excludeIds, onUpdate: onUpdate);
-    await _loadInChunks(phaseTwo, excludeIds, onUpdate: onUpdate);
-
-    // Cross-shelf de-duplication is applied AFTER loading because phase-one
-    // shelves load concurrently (and therefore can't see each other's
-    // results). Shelves earlier in the plan win; later duplicates are
-    // dropped. This is the hard guarantee that the same video never appears
-    // on two different Home shelves.
-    _dedupAcrossShelves(shelves);
+    // throttle a burst of ~11 simultaneous discovery requests. 3-at-a-time
+    // keeps Home fast without tripping rate limits.
+    await _loadInChunks(
+      phaseOne,
+      baseExclude,
+      force: forceRefresh,
+      onUpdate: onUpdate,
+    );
+    await _loadInChunks(
+      phaseTwo,
+      baseExclude,
+      force: forceRefresh,
+      onUpdate: onUpdate,
+    );
     onUpdate?.call();
   }
 
   Future<void> _loadInChunks(
     List<HomeShelf> shelves,
-    Set<String> excludeIds, {
+    Set<String> baseExclude, {
+    required bool force,
     void Function()? onUpdate,
   }) async {
     const chunkSize = 3;
     for (var i = 0; i < shelves.length; i += chunkSize) {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(
-        chunk.map((s) => _loadShelf(s, excludeIds, onUpdate: onUpdate)),
+        chunk.map(
+          (s) => _loadShelf(
+            s,
+            {...baseExclude},
+            force: force,
+            onUpdate: onUpdate,
+          ),
+        ),
       );
-    }
-  }
-
-  void _dedupAcrossShelves(List<HomeShelf> shelves) {
-    final seen = <String>{};
-    for (final shelf in shelves) {
-      final kept = <Map<String, dynamic>>[];
-      for (final t in shelf.tracks) {
-        final id = t['id'] as String? ?? '';
-        if (id.isEmpty || seen.add(id)) kept.add(t);
-      }
-      shelf.tracks = kept;
     }
   }
 
   Future<void> _loadShelf(
     HomeShelf shelf,
     Set<String> excludeIds, {
+    required bool force,
     void Function()? onUpdate,
   }) async {
     // Skip shelves that need history the user doesn't have yet.
@@ -340,7 +365,9 @@ class HomeFeedService {
       return;
     }
 
-    if (shelf.status == HomeShelfStatus.loaded && shelf.tracks.isNotEmpty) {
+    if (!force &&
+        shelf.status == HomeShelfStatus.loaded &&
+        shelf.tracks.isNotEmpty) {
       return;
     }
 
@@ -378,6 +405,85 @@ class HomeFeedService {
       shelf.error = '$e';
     }
     onUpdate?.call();
+  }
+
+  /// Appends the NEXT PAGE of results to [shelf] (lazy pagination). Returns
+  /// true when more was appended, false when the provider is genuinely
+  /// exhausted. Uses the existing searchPaginated/continuation pipeline.
+  Future<bool> loadMoreShelf(
+    HomeShelf shelf, {
+    void Function()? onUpdate,
+  }) async {
+    if (_shelfExhausted[shelf.id] == true) return false;
+    final repo = _repository;
+    final engine = _engine;
+    if (repo == null) return false;
+
+    final currentIds = shelf.tracks
+        .map((t) => t['id'] as String? ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    List<Map<String, dynamic>> more;
+    if (shelf.kind == HomeShelfKind.catalog) {
+      final query = shelf.query ?? '';
+      if (query.isEmpty) {
+        _shelfExhausted[shelf.id] = true;
+        return false;
+      }
+      final page = await repo.searchPaginated(
+        query,
+        order: shelf.order,
+        limit: shelf.limit,
+        excludeIds: currentIds,
+        pageToken: _shelfTokens[shelf.id],
+      );
+      _shelfTokens[shelf.id] = page.nextPageToken;
+      more = page.tracks;
+    } else {
+      // Personalized shelves: generate fresh candidates excluding what's
+      // already shown (the engine de-dups against excludeIds).
+      if (engine == null) {
+        _shelfExhausted[shelf.id] = true;
+        return false;
+      }
+      final intent = switch (shelf.kind) {
+        HomeShelfKind.madeForYou => FeedIntent.madeForYou,
+        HomeShelfKind.becauseYouListenedTo => FeedIntent.becauseYouListenedTo,
+        HomeShelfKind.trendingForYou => FeedIntent.trendingForYou,
+        HomeShelfKind.discoverSomethingNew => FeedIntent.discoverSomethingNew,
+        _ => FeedIntent.madeForYou,
+      };
+      final scored = await engine.generateFeed(
+        intent: intent,
+        excludeIds: currentIds,
+        count: shelf.limit,
+        forceRefresh: true,
+      );
+      more = scored.map((s) => s.track.toTrackMap()).toList();
+    }
+
+    if (more.isEmpty) {
+      _shelfExhausted[shelf.id] = true;
+      return false;
+    }
+
+    final seen = <String>{
+      ...shelf.tracks.map((t) => t['id'] as String? ?? ''),
+    };
+    final appended = <Map<String, dynamic>>[];
+    for (final track in more) {
+      final id = track['id'] as String? ?? '';
+      if (id.isEmpty || !seen.add(id)) continue;
+      appended.add(track);
+    }
+    if (appended.isEmpty) {
+      _shelfExhausted[shelf.id] = true;
+      return false;
+    }
+    shelf.tracks = [...shelf.tracks, ...appended];
+    onUpdate?.call();
+    return true;
   }
 
   Future<List<Map<String, dynamic>>> _fetch(
@@ -457,13 +563,44 @@ class HomeFeedService {
         if (repo == null) return const [];
         final query = shelf.query ?? '';
         if (query.isEmpty) return const [];
-        return repo.search(
-          query,
-          order: shelf.order,
-          limit: shelf.limit,
-          excludeIds: excludeIds,
-        );
+        return _fetchWithReplenishment(shelf, excludeIds);
     }
+  }
+
+  /// Fetches a catalog shelf and REPLENISHES it from related fallback queries
+  /// when the primary query returns too few valid tracks — so a shelf is never
+  /// 3 cards + empty space. Only related official-music queries are used
+  /// (never random filler); dedup by id; stops once the target minimum is
+  /// reached or queries are exhausted.
+  Future<List<Map<String, dynamic>>> _fetchWithReplenishment(
+    HomeShelf shelf,
+    Set<String> excludeIds,
+  ) async {
+    final repo = _repository;
+    if (repo == null) return const [];
+    final queries = <String>[
+      if (shelf.query != null && shelf.query!.isNotEmpty) shelf.query!,
+      ...shelf.fallbackQueries,
+    ];
+
+    final result = <Map<String, dynamic>>[];
+    final seen = <String>{...excludeIds};
+    for (final q in queries) {
+      final batch = await repo.search(
+        q,
+        order: shelf.order,
+        limit: shelf.limit,
+        excludeIds: seen,
+      );
+      for (final t in batch) {
+        final id = t['id'] as String? ?? '';
+        if (id.isEmpty || !seen.add(id)) continue;
+        result.add(t);
+        if (result.length >= shelf.limit) break;
+      }
+      if (result.length >= shelf.limit) break;
+    }
+    return result;
   }
 
   /// Top artists derived from the real taste profile (plays/completions/

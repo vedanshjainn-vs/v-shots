@@ -621,11 +621,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           SizedBox(
             height: 206,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: shelf.tracks.length,
-              itemBuilder: (context, i) => _buildTrackCard(shelf.tracks, i),
+            // Lazy per-shelf pagination: scrolling near the end fetches the
+            // next page and appends, so shelves are endless instead of capped
+            // at the first batch.
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification.metrics.axis != Axis.horizontal) return false;
+                if (notification.metrics.pixels >=
+                    notification.metrics.maxScrollExtent - 200) {
+                  homeFeedService.loadMoreShelf(
+                    shelf,
+                    onUpdate: () {
+                      if (mounted) setState(() {});
+                    },
+                  );
+                }
+                return false;
+              },
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: shelf.tracks.length,
+                itemBuilder: (context, i) => _buildTrackCard(shelf.tracks, i),
+              ),
             ),
           ),
         ],
