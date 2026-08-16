@@ -21,10 +21,9 @@ import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
 import '../../main.dart'
     show
+        coordinateDiscoveryBrowserTakesOver,
         currentTabIndexNotifier,
         forYouFeedService,
-        globalPlaybackStateNotifier,
-        globalYtController,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
@@ -113,6 +112,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // The browser is the ONLY playback owner in Discovery. App launch stays
     // silent — this fires only on an actual tab switch to Discovery.
     if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
+      coordinateDiscoveryBrowserTakesOver();
       _browser.open(_items[_currentIndex]);
     }
   }
@@ -190,11 +190,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       '[DiscoveryPlay] videoId=$videoId url=${youtubeWatchUrl(videoId)}',
     );
     // The old global player is intentionally bypassed for Discovery — the
-    // in-app browser owns playback. Pause the global IFrame in case another
-    // tab (Home/Search) was playing, so audio never doubles.
+    // in-app browser owns playback. The single playback coordinator pauses the
+    // global IFrame (in case another tab was playing) so audio never doubles.
     debugPrint('[DiscoveryPlay] OLD_PLAYER_CALL_BLOCKED (routing to browser)');
-    globalYtController?.pauseVideo();
-    globalPlaybackStateNotifier.value = false;
+    coordinateDiscoveryBrowserTakesOver();
     _browser.open(track);
     setState(() {});
   }
@@ -275,7 +274,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
     // Swiping Discovery moves playback to the new active item: reuse the ONE
     // in-app browser (switch URL + autoplay). The old global player is never
-    // used here.
+    // used here; the coordinator keeps exactly one source audible.
+    coordinateDiscoveryBrowserTakesOver();
     _browser.open(track);
 
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));

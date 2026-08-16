@@ -235,6 +235,15 @@ void _log(String message) {
   debugPrint('[VShots] $message');
 }
 
+/// Single playback coordinator: at any moment exactly ONE playback source may
+/// be audible — the global YouTube IFrame (Home/Search/Profile player) OR the
+/// Discovery in-app browser. When the Discovery browser takes over, the global
+/// IFrame is paused (never started). No double audio, no competing players.
+void coordinateDiscoveryBrowserTakesOver() {
+  globalYtController?.pauseVideo();
+  globalPlaybackStateNotifier.value = false;
+}
+
 /// Adds [track] to the END of the global queue. If nothing is queued yet,
 /// it starts playing immediately (same as tapping a song).
 void addToQueueEnd(BuildContext? context, Map<String, dynamic> track) {

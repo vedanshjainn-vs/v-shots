@@ -77,4 +77,46 @@ void main() {
       expect(c.url, isNull);
     });
   });
+
+  group('BrowserState machine', () {
+    test('CLOSED -> COLLAPSED -> EXPANDED -> COLLAPSED -> CLOSED', () {
+      final c = DiscoveryBrowserController();
+      expect(c.state, BrowserState.closed);
+
+      c.open(_track('abcDEF12345'));
+      expect(c.state, BrowserState.collapsed,
+          reason: 'open() must land in the collapsed state');
+
+      c.expand();
+      expect(c.state, BrowserState.expanded);
+
+      c.minimize();
+      expect(c.state, BrowserState.collapsed,
+          reason: 'minimize must NOT close — just collapse');
+
+      c.close();
+      expect(c.state, BrowserState.closed);
+    });
+
+    test('state never claims expanded while closed', () {
+      final c = DiscoveryBrowserController();
+      c.open(_track('abcDEF12345'));
+      c.expand();
+      c.close();
+      expect(c.state, BrowserState.closed);
+      expect(c.isExpanded, isFalse);
+    });
+
+    test('collapse (minimize) keeps isOpen true and preserves the track/url',
+        () {
+      final c = DiscoveryBrowserController();
+      c.open(_track('abcDEF12345'));
+      final urlBefore = c.url;
+      c.expand();
+      c.minimize();
+      expect(c.isOpen, isTrue);
+      expect(c.url, urlBefore,
+          reason: 'collapsing must not reset or reload the URL');
+    });
+  });
 }

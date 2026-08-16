@@ -17,6 +17,15 @@ import 'package:flutter/foundation.dart';
 
 import '../../shared/utils/youtube_url.dart';
 
+/// Explicit browser lifecycle states. One source of truth for what the
+/// Discovery browser is doing — prevents "browser visible but player disposed"
+/// / "player playing but browser hidden" bugs.
+enum BrowserState {
+  closed,
+  collapsed,
+  expanded,
+}
+
 class DiscoveryBrowserController extends ChangeNotifier {
   Map<String, dynamic>? _track;
   bool _isOpen = false;
@@ -26,6 +35,13 @@ class DiscoveryBrowserController extends ChangeNotifier {
   bool? _pagePlaying;
 
   Map<String, dynamic>? get track => _track;
+
+  /// Current lifecycle state (see [BrowserState]).
+  BrowserState get state {
+    if (!_isOpen) return BrowserState.closed;
+    return _isExpanded ? BrowserState.expanded : BrowserState.collapsed;
+  }
+
   bool get isOpen => _isOpen;
   bool get isExpanded => _isExpanded;
   bool get isLoading => _isLoading;

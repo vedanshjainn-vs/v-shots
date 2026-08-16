@@ -12,8 +12,12 @@
 // so the collapse/expand gesture is finger-connected and deterministic — no
 // DraggableScrollableSheet quirks. Drag on the mini player or the browser bar
 // updates the extent; release snaps to collapsed/expanded (with a midpoint
-// snap). The WebView is created ONCE per session and stays mounted (clipped,
-// not removed) while collapsed so playback continues; closing removes it.
+// snap).
+//
+// The WebView is created ONCE per session (VShotsBrowserSession) and stays
+// mounted, at a CONSTANT size, while collapsed — collapse/expand only
+// TRANSLATE the browser layer, never resizing or detaching the platform view.
+// Closing disposes the session.
 //
 // BACKGROUND-PLAYBACK LIMITATION (documented honestly): WebView-based YouTube
 // playback is not guaranteed while the OS backgrounds the app or locks the
@@ -172,58 +176,67 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
-
+  //
+  // CRITICAL LIFECYCLE GUARANTEE (regression fix): the WebView is laid out at
+  // a CONSTANT full height (maxH) at all times and is only TRANSLATED when
+  // collapsed. It is never resized, clipped-to-tiny, or detached — resizing an
+  // AndroidView to a ~84px strip was the root cause of "Playback failed —
+  // please retry" + "Tap to unmute" in the collapsed state (YouTube fails in a
+  // tiny viewport, and the platform-view surface churned on every
+  // collapse/expand). The mini player is pure chrome ON TOP of the still-alive
+  // WebView.
   @override
   Widget build(BuildContext context) {
-    final maxH = MediaQuery.of(context).size.height * _maxFraction;
+    final screenH = MediaQuery.of(context).size.height;
+    final maxH = screenH * _maxFraction; // constant WebView height
     return AnimatedBuilder(
       animation: _extent,
       builder: (context, _) {
         final e = _extent.value;
-        final currentH = _miniHeight + e * (maxH - _miniHeight);
-        return Align(
-          alignment: Alignment.bottomCenter,
-          child: SizedBox(
-            height: currentH,
-            width: double.infinity,
-            child: ClipRect(
-              child: Stack(
-                children: [
-                  // Expanded browser content — kept MOUNTED while collapsed
-                  // (so the WebView keeps playing) but fully hidden behind the
-                  // opaque mini player: the browser bar fades out and the
-                  // WebView is squeezed + covered, never visible at collapse.
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      ignoring: e < 0.5,
-                      child: SizedBox(
-                        height: maxH,
-                        child: Column(
-                          children: [
-                            Opacity(
-                              opacity: e.clamp(0.0, 1.0),
-                              child: _buildBrowserBar(),
-                            ),
-                            Expanded(child: _buildBrowserBody()),
-                          ],
+        // 0 when expanded; slides the whole browser down so only the mini
+        // strip stays visible when collapsed. The WebView never changes size.
+        final collapseOffset = (1 - e) * (maxH - _miniHeight);
+        return ClipRect(
+          child: Stack(
+            children: [
+              // 1. Persistent WebView host — ONE instance, constant size,
+              // pinned to the bottom of the body (above the bottom nav).
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: maxH,
+                child: IgnorePointer(
+                  ignoring: e < 0.5,
+                  child: Transform.translate(
+                    offset: Offset(0, collapseOffset),
+                    child: Column(
+                      children: [
+                        Opacity(
+                          opacity: e.clamp(0.0, 1.0),
+                          child: _buildBrowserBar(),
                         ),
-                      ),
+                        Expanded(child: _buildBrowserBody()),
+                      ],
                     ),
                   ),
-                  // Collapsed mini player — OPAQUE and fills the whole
-                  // collapsed strip, so nothing behind it peeks through.
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      ignoring: e > 0.5,
-                      child: Opacity(
-                        opacity: (1 - e * 2).clamp(0.0, 1.0),
-                        child: _buildMiniPlayer(),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+              // 2. Collapsed mini player — visual chrome only; the WebView is
+              // the real player, alive underneath.
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 8,
+                child: IgnorePointer(
+                  ignoring: e > 0.5,
+                  child: Opacity(
+                    opacity: (1 - e * 2).clamp(0.0, 1.0),
+                    child: _buildMiniPlayer(),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
