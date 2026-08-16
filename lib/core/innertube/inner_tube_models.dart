@@ -38,7 +38,9 @@ class InnerTubeVideoItem {
 class InnerTubePage {
   const InnerTubePage({required this.items, this.continuationToken});
 
-  const InnerTubePage.empty() : items = const [], continuationToken = null;
+  const InnerTubePage.empty()
+      : items = const [],
+        continuationToken = null;
 
   final List<InnerTubeVideoItem> items;
   final String? continuationToken;

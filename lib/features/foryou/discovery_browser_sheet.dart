@@ -173,8 +173,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
-    final webViewController = _webViewController ??=
-        await _createWebViewController();
+    final webViewController =
+        _webViewController ??= await _createWebViewController();
     try {
       await webViewController.loadRequest(Uri.parse(url));
     } catch (e) {
@@ -210,13 +210,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   void _close() {
     _extent
         .animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeIn,
-        )
+      0.0,
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeIn,
+    )
         .then((_) {
-          if (mounted) widget.controller.close();
-        });
+      if (mounted) widget.controller.close();
+    });
   }
 
   // ── Build ────────────────────────────────────────────────────────────────

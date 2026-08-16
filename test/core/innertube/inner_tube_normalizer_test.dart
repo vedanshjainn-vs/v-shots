@@ -18,14 +18,15 @@ InnerTubeVideoItem _item(
   String channel = 'Artist',
   int duration = 200,
   bool isOfficial = false,
-}) => InnerTubeVideoItem(
-  videoId: id,
-  title: title,
-  channelName: channel,
-  thumbnailUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-  durationSeconds: duration,
-  isOfficial: isOfficial,
-);
+}) =>
+    InnerTubeVideoItem(
+      videoId: id,
+      title: title,
+      channelName: channel,
+      thumbnailUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      durationSeconds: duration,
+      isOfficial: isOfficial,
+    );
 
 void main() {
   const normalizer = InnerTubeNormalizer();
@@ -74,7 +75,8 @@ void main() {
       },
     );
 
-    test('accepts official original songs (no longer drops compilations by '
+    test(
+        'accepts official original songs (no longer drops compilations by '
         'title — duration cap handles long ones)', () {
       expect(
         normalizer.isPlayableMusic(_item('8', title: 'Tum Hi Ho')),
