@@ -83,6 +83,17 @@ class MusicRepository {
     );
   }
 
+  /// Related tracks for [trackId] ("More Like This") via the primary
+  /// provider (InnerTube's /next). Returns an empty list on failure, so
+  /// callers can fall back gracefully.
+  Future<List<Map<String, dynamic>>> getRelated(
+    String trackId, {
+    int limit = 10,
+  }) async {
+    final result = await _manager.getRelated(trackId, limit: limit);
+    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+  }
+
   Future<List<Map<String, dynamic>>> getTrending({int limit = 15}) async {
     final result = await _manager.getTrending(limit: limit);
     return result.orElse(const []).map((t) => t.toTrackMap()).toList();

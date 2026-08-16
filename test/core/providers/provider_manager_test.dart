@@ -99,6 +99,13 @@ class FakeProvider implements MusicProvider {
   }
 
   @override
+  Future<ProviderResult<List<ProviderTrack>>> getRelated(
+    String trackId, {
+    int limit = 10,
+  }) async =>
+      ProviderResult.failure('not supported');
+
+  @override
   Future<ProviderResult<String>> getStream(String id) async {
     return ProviderResult.success('https://example.com/stream/$id');
   }

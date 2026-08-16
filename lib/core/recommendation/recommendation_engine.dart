@@ -113,7 +113,26 @@ class RecommendationEngine {
     required Set<String> excludeIds,
     int count = 10,
     bool forceRefresh = false,
+    String? seedTrackId,
   }) async {
+    // "More Like This" with a concrete seed uses a genuinely different
+    // candidate source: the provider's related-content endpoint
+    // (InnerTube /next), which returns real "similar to this video"
+    // candidates — not query-string searches. If that source returns
+    // nothing (failure/empty), we fall through to the query-based
+    // generation below so the intent never yields a blank feed.
+    if (intent == FeedIntent.moreLikeThis &&
+        seedTrackId != null &&
+        seedTrackId.isNotEmpty) {
+      final related = await _generateRelatedFeed(
+        seedTrackId: seedTrackId,
+        excludeIds: excludeIds,
+        count: count,
+        forceRefresh: forceRefresh,
+      );
+      if (related.isNotEmpty) return related;
+    }
+
     final cacheKey = '${intent.name}:$count';
     if (!forceRefresh && RecommendationCache.instance.isFeedFresh(cacheKey)) {
       final cached = RecommendationCache.instance.getFeed(cacheKey)!;
@@ -191,6 +210,62 @@ class RecommendationEngine {
       totalTracks: finalFeed.length,
       distinctArtists: distinctArtists,
       explorationFraction: config.explorationRate,
+    );
+
+    return finalFeed;
+  }
+
+  /// The "More Like This" candidate source: resolves real related videos
+  /// for a seed track from the provider's related-content endpoint
+  /// (InnerTube /next), then scores / dedupes / diversifies them through
+  /// the same pipeline as every other intent — so related candidates are
+  /// still ranked by the user's taste profile, never a raw "YouTube says
+  /// these are related" list.
+  Future<List<ScoredTrack>> _generateRelatedFeed({
+    required String seedTrackId,
+    required Set<String> excludeIds,
+    required int count,
+    required bool forceRefresh,
+  }) async {
+    final cacheKey = 'related:$seedTrackId:$count';
+    if (!forceRefresh && RecommendationCache.instance.isFeedFresh(cacheKey)) {
+      final cached = RecommendationCache.instance.getFeed(cacheKey)!;
+      final filtered =
+          cached.where((t) => !excludeIds.contains(t.track.id)).toList();
+      if (filtered.length >= count) return filtered.take(count).toList();
+    }
+
+    final profile = _getProfile();
+    final tracks = await _repository.getRelated(seedTrackId, limit: count * 3);
+
+    final scored = <ScoredTrack>[];
+    final seenIds = <String>{seedTrackId, ...excludeIds};
+    for (final trackMap in tracks) {
+      final id = trackMap['id'] as String? ?? '';
+      if (id.isEmpty || !seenIds.add(id)) continue;
+
+      final providerTrack = ProviderTrack.fromTrackMap(trackMap);
+      final result = _scorer.score(
+        providerTrack,
+        profile,
+        sourceQuery: null,
+        isTrendingOrNewSource: false,
+      );
+      scored.add(result);
+    }
+
+    final filtered = scored.where((s) => s.score > -1.0).toList()
+      ..sort((a, b) => b.score.compareTo(a.score));
+    final diversified = _diversity.apply(filtered);
+    final finalFeed = diversified.take(count).toList();
+
+    RecommendationCache.instance.setFeed(cacheKey, finalFeed);
+
+    final distinctArtists = finalFeed.map((t) => t.track.artist).toSet().length;
+    RecommendationMetrics.sink.recordBatchDiversity(
+      totalTracks: finalFeed.length,
+      distinctArtists: distinctArtists,
+      explorationFraction: 0,
     );
 
     return finalFeed;

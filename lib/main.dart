@@ -46,6 +46,7 @@ import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/home/home_feed_service.dart';
 import 'features/home/home_screen.dart';
+import 'features/morelikethis/more_like_this_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
@@ -2851,6 +2852,19 @@ void showMoreOptionsSheet(
                 ),
               ),
               const Divider(color: AppColors.borderSubtle),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome_rounded),
+                title: const Text('More Like This'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    AppPageRoute<void>(
+                      builder: (_) => MoreLikeThisScreen(track: track),
+                    ),
+                  );
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.share_rounded),
                 title: const Text('Share'),

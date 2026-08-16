@@ -39,6 +39,7 @@ class InnerTubeMusicProvider extends MusicProvider {
         ProviderCapability.search,
         ProviderCapability.getTrending,
         ProviderCapability.getRecommendations,
+        ProviderCapability.getRelated,
       };
 
   bool _initialized = false;
@@ -141,6 +142,27 @@ class InnerTubeMusicProvider extends MusicProvider {
       limit: limit,
       excludeIds: excludeIds,
     );
+  }
+
+  @override
+  Future<ProviderResult<List<ProviderTrack>>> getRelated(
+    String trackId, {
+    int limit = 10,
+  }) async {
+    try {
+      // Fetch extra so the shared quality filter can still fill the limit
+      // (related lockups carry no duration, so the filter's duration cap
+      // won't drop them; title/keyword filtering still applies).
+      final items = await _client.related(trackId, limit: limit * 2);
+      final tracks = _normalizer.mapSearchResults(
+        items,
+        limit: limit,
+        excludeIds: {trackId},
+      );
+      return ProviderResult.success(tracks);
+    } catch (e) {
+      return ProviderResult.failure('InnerTube related failed: $e');
+    }
   }
 
   @override

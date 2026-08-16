@@ -163,4 +163,17 @@ class ProviderManager {
       (p) => p.getRecommendations(excludeIds: excludeIds, limit: limit),
     );
   }
+
+  /// Related tracks for a given track ("More Like This"). Routed to the
+  /// primary provider that declares [ProviderCapability.getRelated]
+  /// (InnerTube); fails over through the priority order.
+  Future<ProviderResult<List<ProviderTrack>>> getRelated(
+    String trackId, {
+    int limit = 10,
+  }) {
+    return _routeWithFailover(
+      ProviderCapability.getRelated,
+      (p) => p.getRelated(trackId, limit: limit),
+    );
+  }
 }

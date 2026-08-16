@@ -14,6 +14,7 @@ enum ProviderCapability {
   getLyrics,
   getTrending,
   getRecommendations,
+  getRelated,
 }
 
 /// Abstract interface every music/content provider must implement.
@@ -65,6 +66,18 @@ abstract class MusicProvider {
     required Set<String> excludeIds,
     int limit = 10,
   });
+
+  /// Related tracks for a given track ("More Like This"). Only providers
+  /// with a native related-content endpoint (InnerTube's `/next`) implement
+  /// this and declare [ProviderCapability.getRelated]; the default returns
+  /// failure and is never routed to (ProviderManager only routes to
+  /// providers whose `supports(getRelated)` is true).
+  Future<ProviderResult<List<ProviderTrack>>> getRelated(
+    String trackId, {
+    int limit = 10,
+  }) async {
+    return ProviderResult.failure('getRelated not supported by this provider');
+  }
 
   Future<void> dispose();
 }
