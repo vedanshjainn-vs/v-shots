@@ -147,7 +147,8 @@ void main() {
   });
 
   group('Recommendation -> Home pipeline', () {
-    test('cold start: personalized shelves fall back, '
+    test(
+        'cold start: personalized shelves fall back, '
         '"Because You Listened To" hidden', () async {
       final repo = buildFakeRepository();
       final engine = RecommendationEngine(repo);
@@ -323,7 +324,8 @@ void main() {
       final shelves = service.buildShelfDescriptors();
       await service.loadShelves(shelves);
 
-      for (final s in shelves.where((x) => x.status == HomeShelfStatus.loaded)) {
+      for (final s
+          in shelves.where((x) => x.status == HomeShelfStatus.loaded)) {
         final counts = <String, int>{};
         for (final t in s.tracks) {
           counts[t['artist'] as String? ?? ''] =
