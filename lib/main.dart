@@ -1812,85 +1812,189 @@ class _SearchScreenState extends State<SearchScreen> {
         AdConfig.adsEnabled && _results.length >= AdConfig.searchAdEvery;
     final int adCount = showAd ? 1 : 0;
     final int footerIndex = _results.length + adCount;
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: footerIndex + 1,
-      itemBuilder: (context, i) {
-        if (i == footerIndex) {
-          if (!_hasMore) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                  child: Text('No more results',
-                      style:
-                          TextStyle(color: AppColors.textMuted, fontSize: 12))),
-            );
-          }
-          if (_isLoadingMore) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                  child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.accent))),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Center(
-              child: TextButton(
-                onPressed: _loadMore,
-                child: const Text('Load more',
-                    style: TextStyle(color: AppColors.accent)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+          child: Row(
+            children: [
+              const Text(
+                'Songs & videos',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textMain,
+                ),
               ),
-            ),
-          );
-        }
-        // Native ad slot after the 8th organic result.
-        if (showAd && i == AdConfig.searchAdEvery) {
-          return const NativeAdWidget();
-        }
-        // Account for the ad slot offset when indexing results.
-        final int resultIndex =
-            showAd && i > AdConfig.searchAdEvery ? i - 1 : i;
-        final track = _results[resultIndex];
-        final title = (track['title'] as String?) ?? '';
-        final artist = (track['artist'] as String?) ?? '';
+              const SizedBox(width: 8),
+              Text(
+                '${_results.length} results',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const Spacer(),
+              const Icon(
+                Icons.play_circle_filled_rounded,
+                size: 14,
+                color: Colors.redAccent,
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                'YouTube',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            itemCount: footerIndex + 1,
+            itemBuilder: (context, i) {
+              if (i == footerIndex) {
+                if (!_hasMore) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                        child: Text('No more results',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 12))),
+                  );
+                }
+                if (_isLoadingMore) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                        child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: AppColors.accent))),
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Center(
+                    child: TextButton(
+                      onPressed: _loadMore,
+                      child: const Text('Load more',
+                          style: TextStyle(color: AppColors.accent)),
+                    ),
+                  ),
+                );
+              }
+              // Native ad slot after the 8th organic result.
+              if (showAd && i == AdConfig.searchAdEvery) {
+                return const NativeAdWidget();
+              }
+              // Account for the ad slot offset when indexing results.
+              final int resultIndex =
+                  showAd && i > AdConfig.searchAdEvery ? i - 1 : i;
+              final track = _results[resultIndex];
+              final title = (track['title'] as String?) ?? '';
+              final artist = (track['artist'] as String?) ?? '';
+              final durationSeconds = (track['duration'] as int?) ?? 0;
+              final durationLabel = durationSeconds > 0
+                  ? '${durationSeconds ~/ 60}:${(durationSeconds % 60).toString().padLeft(2, '0')}'
+                  : '';
 
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: AppImage(
-              track['artwork'] as String?,
-              width: 50,
-              height: 50,
-              fit: BoxFit.cover,
-            ),
+              return InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => playTrack(context, track, _results, resultIndex),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: AppImage(
+                          track['artwork'] as String?,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorIconColor: AppColors.accent,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14.5,
+                                color: AppColors.textMain,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                if (durationLabel.isNotEmpty) ...[
+                                  Text(
+                                    durationLabel,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textMuted,
+                                      fontFeatures: [
+                                        FontFeature.tabularFigures()
+                                      ],
+                                    ),
+                                  ),
+                                  const Padding(
+                                    padding:
+                                        EdgeInsets.symmetric(horizontal: 6),
+                                    child: Text(
+                                      '•',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSubtle,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    artist,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: AppColors.accent,
+                        size: 32,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
-          title: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-          ),
-          subtitle: Text(
-            artist,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-          ),
-          trailing: const Icon(
-            Icons.play_arrow_rounded,
-            color: AppColors.accent,
-            size: 26,
-          ),
-          onTap: () => playTrack(context, track, _results, resultIndex),
-        );
-      },
+        ),
+      ],
     );
   }
 }
