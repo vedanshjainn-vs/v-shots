@@ -13,21 +13,23 @@
 //                          global player sheet mounted once at the shell)
 //
 // There is exactly ONE active playback session. The native WebView is created
-// ONCE per open (by the global player sheet) and reused for every video
-// switch — never destroyed on tab changes / minimize / expand; only on
-// explicit close().
+// ONCE per open and reused for every video switch — never destroyed on tab
+// changes / minimize / expand; only on explicit close().
 //
-// NOTE (safe incremental migration): this turn unifies DISCOVERY onto the
-// global manager and provides the global queue/state. The legacy IFrame
-// (audio_service) path still serves Home/Search/Profile playback and is
-// coordinated against this manager via main.dart (opening the browser pauses
-// the IFrame; starting the IFrame closes the browser) — it will be migrated
-// onto this manager in the next phase, one surface at a time.
+// Owns the global QUEUE with shuffle + repeat (pure Dart, unit-tested).
+// NOTE: auto-advance on video END is not implemented — the WebView engine does
+// not emit a reliable "ended" event (documented limitation, not faked).
 // ═════════════════════════════════════════════════════════════════════════════
+
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 
 import '../../features/foryou/discovery_browser_controller.dart';
 
-class VShotsPlaybackManager {
+enum PlaybackRepeat { off, one, all }
+
+class VShotsPlaybackManager extends ChangeNotifier {
   VShotsPlaybackManager._();
   static final VShotsPlaybackManager instance = VShotsPlaybackManager._();
 
@@ -37,48 +39,127 @@ class VShotsPlaybackManager {
 
   final List<Map<String, dynamic>> _queue = [];
   int _index = 0;
+  bool _shuffle = false;
+  final List<int> _shuffleOrder = [];
+  PlaybackRepeat _repeat = PlaybackRepeat.off;
+  final Random _random = Random();
 
   bool get isOpen => browser.isOpen;
   Map<String, dynamic>? get currentTrack => browser.track;
   List<Map<String, dynamic>> get queue => List.unmodifiable(_queue);
   int get currentIndex => _index;
+  bool get isShuffleOn => _shuffle;
+  PlaybackRepeat get repeatMode => _repeat;
+  List<int> get shuffleOrder => List.unmodifiable(_shuffleOrder);
 
   /// Plays a single track in the global session (reusing the same WebView).
-  void play(Map<String, dynamic> track) {
+  void play(Map<String, dynamic> track, {bool expanded = false}) {
     _queue
       ..clear()
       ..add(track);
     _index = 0;
+    _rebuildShuffle(keepCurrentAt: null);
+    browser.startExpanded = expanded;
     browser.open(track);
+    notifyListeners();
   }
 
-  /// Plays [tracks] starting at [startIndex]; next()/previous() then navigate
-  /// this queue through the SAME browser session (no second WebView).
-  void playQueue(List<Map<String, dynamic>> tracks, int startIndex) {
+  /// Plays [tracks] starting at [startIndex]. [expanded] opens the full
+  /// player immediately (explicit taps); Discovery autoplay passes false.
+  void playQueue(List<Map<String, dynamic>> tracks, int startIndex,
+      {bool expanded = false}) {
     if (tracks.isEmpty) return;
     _queue
       ..clear()
       ..addAll(tracks);
     _index = startIndex.clamp(0, _queue.length - 1);
+    _rebuildShuffle(keepCurrentAt: _index);
+    browser.startExpanded = expanded;
     browser.open(_queue[_index]);
+    notifyListeners();
   }
 
-  /// Plays the same track the browser already holds (no-op if closed).
-  void playCurrent() {
-    if (_queue.isEmpty) return;
+  /// Jumps to a queue index (tap on the queue list).
+  void jumpTo(int index) {
+    if (index < 0 || index >= _queue.length) return;
+    _index = index;
     browser.open(_queue[_index]);
+    notifyListeners();
   }
 
   void next() {
     if (_queue.length < 2) return;
-    _index = (_index + 1) % _queue.length;
+    _index = _nextIndex(1);
     browser.open(_queue[_index]);
+    notifyListeners();
   }
 
   void previous() {
     if (_queue.length < 2) return;
-    _index = (_index - 1 + _queue.length) % _queue.length;
+    _index = _nextIndex(-1);
     browser.open(_queue[_index]);
+    notifyListeners();
+  }
+
+  int _nextIndex(int delta) {
+    if (_shuffle && _shuffleOrder.length == _queue.length) {
+      final pos = _shuffleOrder.indexOf(_index);
+      final safePos = pos == -1 ? 0 : pos;
+      return _shuffleOrder[
+          (safePos + delta + _shuffleOrder.length) % _shuffleOrder.length];
+    }
+    return (_index + delta + _queue.length) % _queue.length;
+  }
+
+  void toggleShuffle() {
+    _shuffle = !_shuffle;
+    _rebuildShuffle(keepCurrentAt: _index);
+    notifyListeners();
+  }
+
+  void setRepeat(PlaybackRepeat mode) {
+    _repeat = mode;
+    notifyListeners();
+  }
+
+  void cycleRepeat() {
+    _repeat = switch (_repeat) {
+      PlaybackRepeat.off => PlaybackRepeat.all,
+      PlaybackRepeat.all => PlaybackRepeat.one,
+      PlaybackRepeat.one => PlaybackRepeat.off,
+    };
+    notifyListeners();
+  }
+
+  void addToEnd(Map<String, dynamic> track) {
+    if (_queue.isEmpty) {
+      play(track);
+      return;
+    }
+    _queue.add(track);
+    _rebuildShuffle(keepCurrentAt: _index);
+    notifyListeners();
+  }
+
+  /// Inserts [track] right after the current one (Play Next).
+  void playNext(Map<String, dynamic> track) {
+    if (_queue.isEmpty) {
+      play(track);
+      return;
+    }
+    _queue.insert(_index + 1, track);
+    _rebuildShuffle(keepCurrentAt: _index);
+    notifyListeners();
+  }
+
+  void _rebuildShuffle({int? keepCurrentAt}) {
+    _shuffleOrder.clear();
+    final indices = List<int>.generate(_queue.length, (i) => i);
+    indices.shuffle(_random);
+    if (keepCurrentAt != null && indices.remove(keepCurrentAt)) {
+      indices.insert(0, keepCurrentAt);
+    }
+    _shuffleOrder.addAll(indices);
   }
 
   /// Closes the global session: stops playback and disposes the WebView (the
@@ -87,5 +168,13 @@ class VShotsPlaybackManager {
     browser.close();
     _queue.clear();
     _index = 0;
+    _shuffleOrder.clear();
+    notifyListeners();
   }
+
+  /// Minimizes the player to the mini player (playback continues).
+  void minimize() => browser.requestMinimize();
+
+  /// Expands the player to the full player.
+  void expand() => browser.requestExpand();
 }

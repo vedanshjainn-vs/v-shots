@@ -4,15 +4,12 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import 'core/ads/ad_config.dart';
 import 'core/ads/ad_manager.dart';
@@ -25,7 +22,6 @@ import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
 import 'core/models/profile_model.dart';
 import 'core/motion/motion.dart';
-import 'core/player/queue_controller.dart';
 import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
 import 'core/playback/vshots_playback_manager.dart';
@@ -37,7 +33,6 @@ import 'core/recommendation/signal_store.dart';
 import 'core/recommendation/taste_profile.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
-import 'shared/widgets/animated_equalizer.dart';
 import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
@@ -141,83 +136,6 @@ final ValueNotifier<int> currentTabIndexNotifier = ValueNotifier<int>(0);
 /// so the full player's "Up Next" list rebuilds against the new queue.
 final ValueNotifier<int> queueVersionNotifier = ValueNotifier<int>(0);
 
-YoutubePlayerController? globalYtController;
-String? globalPlayingVideoId;
-
-/// Single source of truth for whether the global YouTube player is currently
-/// playing (mirrors the official player's onStateChange). This is what the
-/// mini-player dock, full player and any UI read to reflect playback state.
-final ValueNotifier<bool> globalPlaybackStateNotifier = ValueNotifier<bool>(
-  false,
-);
-
-/// Fires whenever the current YouTube video reaches ENDED. The Discover feed
-/// listens to this to auto-advance to the next item (record completion ->
-/// next page -> load + autoplay next video).
-final ValueNotifier<String?> globalVideoEndedNotifier = ValueNotifier<String?>(
-  null,
-);
-
-/// There is exactly ONE YouTube IFrame engine in the app: [globalYtController].
-///
-/// Home, Search, the full player, the mini-player and (when relevant) any
-/// global transition all operate on this single controller so that only one
-/// logical "current player state" ever exists. Loading a different [videoId]
-/// replaces the current media in-place (which stops the previous video) rather
-/// than creating a second playback engine.
-///
-/// When [autoPlay] is true the newly (re)loaded video is started; otherwise it
-/// is only cued and must be started by an explicit user interaction (required
-/// by YouTube/Android autoplay-with-sound policies).
-YoutubePlayerController ensureGlobalPlayer({
-  String? videoId,
-  bool autoPlay = true,
-}) {
-  final targetId = videoId ?? 'kJQP7kiw5Fk';
-  if (globalYtController == null) {
-    final controller = YoutubePlayerController.fromVideoId(
-      videoId: targetId,
-      autoPlay: autoPlay,
-      params: const YoutubePlayerParams(
-        showControls: true,
-        showFullscreenButton: true,
-        mute: false,
-        loop: false,
-        enableCaption: false,
-        showVideoAnnotations: false,
-      ),
-    );
-    // Mirror the official player's live state so the mini dock and UI show
-    // the true play/pause state (handles autoplay-blocked videos correctly).
-    controller.listen((value) {
-      final st = value.playerState;
-      if (st == PlayerState.playing || st == PlayerState.buffering) {
-        globalPlaybackStateNotifier.value = true;
-      } else if (st == PlayerState.paused || st == PlayerState.cued) {
-        globalPlaybackStateNotifier.value = false;
-      } else if (st == PlayerState.ended) {
-        globalPlaybackStateNotifier.value = false;
-        globalVideoEndedNotifier.value = globalPlayingVideoId;
-      }
-    });
-    globalYtController = controller;
-    globalPlayingVideoId = targetId;
-  } else if (globalPlayingVideoId != targetId) {
-    unawaited(globalYtController!.loadVideoById(videoId: targetId));
-    globalPlayingVideoId = targetId;
-    if (autoPlay) {
-      unawaited(globalYtController!.playVideo());
-      globalPlaybackStateNotifier.value = true;
-    } else {
-      globalPlaybackStateNotifier.value = false;
-    }
-  } else if (autoPlay) {
-    unawaited(globalYtController!.playVideo());
-    globalPlaybackStateNotifier.value = true;
-  }
-  return globalYtController!;
-}
-
 bool isCurrentlyPlaying = false;
 RepeatMode repeatMode = RepeatMode.off;
 bool isShuffleOn = false;
@@ -237,23 +155,11 @@ void _log(String message) {
   debugPrint('[VShots] $message');
 }
 
-/// Single playback coordinator: at any moment exactly ONE playback source may
-/// be audible — the global YouTube IFrame (Home/Search/Profile player) OR the
-/// Discovery in-app browser. When the Discovery browser takes over, the global
-/// IFrame is paused (never started). No double audio, no competing players.
-void coordinateDiscoveryBrowserTakesOver() {
-  globalYtController?.pauseVideo();
-  globalPlaybackStateNotifier.value = false;
-}
-
 /// Adds [track] to the END of the global queue. If nothing is queued yet,
 /// it starts playing immediately (same as tapping a song).
 void addToQueueEnd(BuildContext? context, Map<String, dynamic> track) {
-  if (currentQueue.isEmpty) {
-    playTrack(context, track, [track], 0);
-    return;
-  }
-  currentQueue = QueueController.appendToQueue(currentQueue, track);
+  VShotsPlaybackManager.instance.addToEnd(track);
+  currentQueue = VShotsPlaybackManager.instance.queue;
   queueVersionNotifier.value++;
   if (context != null && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -269,15 +175,8 @@ void addToQueueEnd(BuildContext? context, Map<String, dynamic> track) {
 /// Inserts [track] right after the currently playing track so it plays
 /// next. If nothing is queued yet, it starts playing immediately.
 void playNextInQueue(BuildContext? context, Map<String, dynamic> track) {
-  if (currentQueue.isEmpty) {
-    playTrack(context, track, [track], 0);
-    return;
-  }
-  currentQueue = QueueController.insertNext(
-    currentQueue,
-    currentQueueIndex,
-    track,
-  );
+  VShotsPlaybackManager.instance.playNext(track);
+  currentQueue = VShotsPlaybackManager.instance.queue;
   queueVersionNotifier.value++;
   if (context != null && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -290,48 +189,6 @@ void playNextInQueue(BuildContext? context, Map<String, dynamic> track) {
   }
 }
 
-/// Plays the next/previous track in the current global queue.
-Future<void> _playAdjacentInQueue(BuildContext? context, int delta) async {
-  if (currentQueue.isEmpty) return;
-  if (isShuffleOn && shuffleOrder.length != currentQueue.length) {
-    QueueController.rebuildShuffleOrder(keepCurrentAt: currentQueueIndex);
-  }
-  final nextIndex = QueueController.computeSkip(
-    queueLength: currentQueue.length,
-    currentIndex: currentQueueIndex,
-    delta: delta,
-    shuffleOn: isShuffleOn,
-    order: shuffleOrder,
-  );
-  final nextTrack = currentQueue[nextIndex];
-  await playTrack(context, nextTrack, currentQueue, nextIndex);
-}
-
-void _handleTrackCompleted(BuildContext? context) {
-  _log('[QUEUE] Track natural completion received');
-  playbackSignalTracker.onTrackEnded(completed: true);
-  if (currentQueue.isEmpty) return;
-
-  if (repeatMode == RepeatMode.one) {
-    _log('[QUEUE] RepeatMode.one — replaying current track');
-    final current = currentQueue[currentQueueIndex];
-    playTrack(context, current, currentQueue, currentQueueIndex);
-    return;
-  }
-
-  final nextIndex = QueueController.nextIndexOnCompletion();
-  if (nextIndex == null) {
-    _log('[QUEUE] End of queue reached, playback stopped');
-    return;
-  }
-
-  _log('[QUEUE] Auto-advancing to queue index $nextIndex');
-  final nextTrack = currentQueue[nextIndex];
-  playTrack(context, nextTrack, currentQueue, nextIndex);
-}
-
-// ═══════════════════════════════════════════════
-// SPLASH SCREEN
 // ═══════════════════════════════════════════════
 
 class SplashScreen extends StatefulWidget {
@@ -460,15 +317,29 @@ class _MainShellState extends State<MainShell> {
       isCurrentlyPlaying = state.playing;
     });
 
-    audioHandler?.onSkipNext = () => _playAdjacentInQueue(context, 1);
-    audioHandler?.onSkipPrevious = () => _playAdjacentInQueue(context, -1);
-    audioHandler?.onTrackCompleted = () => _handleTrackCompleted(context);
+    // Lock-screen / headset skip buttons route through the single global
+    // playback manager (same engine as the in-app player).
+    audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
+    audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
+    audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
+    VShotsPlaybackManager.instance.browser.addListener(_syncPlayerExpanded);
+  }
+
+  void _syncPlayerExpanded() {
+    isPlayerExpandedNotifier.value =
+        VShotsPlaybackManager.instance.browser.isExpanded;
+  }
+
+  @override
+  void dispose() {
+    VShotsPlaybackManager.instance.browser.removeListener(_syncPlayerExpanded);
+    super.dispose();
   }
 
   Future<bool> _onWillPop() async {
-    // 1. If player is currently expanded full screen, minimize down to mini player dock
-    if (isPlayerExpandedNotifier.value) {
-      isPlayerExpandedNotifier.value = false;
+    // 1. If the global player is expanded, minimize it to the mini player.
+    if (VShotsPlaybackManager.instance.browser.isExpanded) {
+      VShotsPlaybackManager.instance.minimize();
       return false;
     }
     // 2. If on Discover (1), Search (2), or Profile (3), go back to Home (0)
@@ -558,32 +429,6 @@ class _MainShellState extends State<MainShell> {
               ],
             ),
 
-            // Persistent Overlay: Dual-State Player (Full screen & Mini-Player)
-            ValueListenableBuilder<Map<String, dynamic>?>(
-              valueListenable: currentTrackNotifier,
-              builder: (context, track, _) {
-                if (track == null) return const SizedBox.shrink();
-                return ValueListenableBuilder<bool>(
-                  valueListenable: isPlayerExpandedNotifier,
-                  builder: (context, isExpanded, _) {
-                    // The Discover feed is a full-screen immersive surface
-                    // that renders the single global IFrame itself, so the
-                    // persistent overlay (mini/full player) is hidden while
-                    // the Discover tab is active to avoid two `YoutubePlayer`
-                    // widgets sharing the same controller.
-                    if (_index == 1) return const SizedBox.shrink();
-                    return _PersistentPlayerOverlay(
-                      track: track,
-                      isExpanded: isExpanded,
-                      onToggleExpand: (val) {
-                        isPlayerExpandedNotifier.value = val;
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-
             // GLOBAL PLAYER SHELL — the single in-app YouTube browser session
             // (native WebView engine) mounted ONCE at the app shell, above
             // every tab. Discovery (and, next phase, Home/Search/Library)
@@ -615,663 +460,6 @@ class _MainShellState extends State<MainShell> {
               },
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════
-// PERSISTENT PLAYER OVERLAY (FULL & MINI RESIZE)
-// ═══════════════════════════════════════════════
-
-class _PersistentPlayerOverlay extends StatefulWidget {
-  const _PersistentPlayerOverlay({
-    required this.track,
-    required this.isExpanded,
-    required this.onToggleExpand,
-  });
-
-  final Map<String, dynamic> track;
-  final bool isExpanded;
-  final ValueChanged<bool> onToggleExpand;
-
-  @override
-  State<_PersistentPlayerOverlay> createState() =>
-      _PersistentPlayerOverlayState();
-}
-
-class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
-  bool _isLiked = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _isLiked = LocalLibrary.instance.isLiked(
-      widget.track['id'] as String? ?? '',
-    );
-    LocalLibrary.instance.likedSongs.addListener(_onLikedChange);
-    // Rebuild the "Up Next" list when the queue is mutated elsewhere
-    // (play-next / add-to-queue actions).
-    queueVersionNotifier.addListener(_onQueueChanged);
-    // Keep the single global engine aligned with the current track's metadata.
-    _ensureExpandedPlayerLoaded();
-  }
-
-  void _onQueueChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void didUpdateWidget(covariant _PersistentPlayerOverlay oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.track['id'] != widget.track['id']) {
-      setState(() {
-        _isLiked = LocalLibrary.instance.isLiked(
-          widget.track['id'] as String? ?? '',
-        );
-      });
-    }
-    _ensureExpandedPlayerLoaded();
-  }
-
-  /// Guarantees the single global YouTube engine is loaded with the CURRENT
-  /// track, never a stale/different video than the metadata being shown.
-  /// This is what makes the mini-player and full player consistent even when
-  /// the current track originated from the Discover feed (which is played
-  /// through the same engine while its own in-feed surface is active).
-  void _ensureExpandedPlayerLoaded() {
-    final id = widget.track['id'] as String? ?? '';
-    if (id.isEmpty) return;
-    if (globalPlayingVideoId == id) return;
-    ensureGlobalPlayer(videoId: id, autoPlay: widget.isExpanded);
-  }
-
-  @override
-  void dispose() {
-    LocalLibrary.instance.likedSongs.removeListener(_onLikedChange);
-    queueVersionNotifier.removeListener(_onQueueChanged);
-    super.dispose();
-  }
-
-  void _onLikedChange() {
-    if (mounted) {
-      setState(() {
-        _isLiked = LocalLibrary.instance.isLiked(
-          widget.track['id'] as String? ?? '',
-        );
-      });
-    }
-  }
-
-  void _toggleLiked() async {
-    unawaited(HapticFeedback.lightImpact());
-    final wasLiked = _isLiked;
-    await LocalLibrary.instance.toggleLiked(widget.track);
-    if (wasLiked) {
-      playbackSignalTracker.onUnliked(widget.track);
-    } else {
-      playbackSignalTracker.onLiked(widget.track);
-    }
-    if (mounted) {
-      setState(() {
-        _isLiked = LocalLibrary.instance.isLiked(
-          widget.track['id'] as String? ?? '',
-        );
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final trackId = widget.track['id'] as String? ?? '';
-    final artwork = widget.track['artwork'] as String? ?? '';
-    final title = widget.track['title'] as String? ?? '';
-    final artist = widget.track['artist'] as String? ?? '';
-    final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = mediaQuery.padding.bottom;
-
-    if (!widget.isExpanded) {
-      // ── COMPACT PLAYER (COMPLIANT ≥200x200) ────────────────────────────
-      //
-      // YouTube's embedded-player policy requires a minimum 200x200 player
-      // viewport. The previous 96x54 mini-dock iframe VIOLATED that, so it is
-      // replaced here with a compliant compact player: the single global IFrame
-      // is kept mounted at a fixed 200x200 viewport (the minimum legal size),
-      // so audio keeps playing while minimized, WITHOUT a hidden-webview trick
-      // and WITHOUT any sub-200px iframe. Metadata + controls sit beside it,
-      // outside the player viewport.
-      return ValueListenableBuilder<bool>(
-        valueListenable: globalPlaybackStateNotifier,
-        builder: (context, playing, _) {
-          return Positioned(
-            left: 8,
-            right: 8,
-            bottom: 64,
-            child: GestureDetector(
-              onTap: () => widget.onToggleExpand(true),
-              child: Container(
-                height: 212,
-                decoration: BoxDecoration(
-                  color: AppColors.surface.withValues(alpha: 0.98),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.border, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    // Compliant 200x200 YouTube player viewport (the single
-                    // global engine, never a duplicate). Video is letterboxed
-                    // inside the square viewport; controls remain YouTube's own.
-                    if (globalYtController != null)
-                      Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
-                            width: 200,
-                            height: 200,
-                            child: YoutubePlayer(
-                              controller: globalYtController!,
-                              aspectRatio: 1,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: SizedBox(
-                          width: 200,
-                          height: 200,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: AppImage(
-                              widget.track['artwork'] as String?,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    // Metadata + controls OUTSIDE the player viewport.
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: AppColors.textMain,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.6),
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Powered by YouTube',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: Icon(
-                                  playing
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  color: AppColors.accent,
-                                  size: 30,
-                                ),
-                                tooltip: playing ? 'Pause' : 'Play',
-                                onPressed: () {
-                                  final id =
-                                      widget.track['id'] as String? ?? '';
-                                  if (playing) {
-                                    globalYtController?.pauseVideo();
-                                    globalPlaybackStateNotifier.value = false;
-                                  } else {
-                                    ensureGlobalPlayer(
-                                      videoId: id,
-                                      autoPlay: true,
-                                    );
-                                  }
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.skip_next_rounded,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () =>
-                                    _playAdjacentInQueue(context, 1),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.open_in_full_rounded,
-                                  color: AppColors.accent,
-                                  size: 22,
-                                ),
-                                tooltip: 'Full Player',
-                                onPressed: () => widget.onToggleExpand(true),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    }
-
-    // ── FULLSCREEN EXPANDED PLAYER VIEW ─────────────────────────────────
-    return Positioned.fill(
-      child: Material(
-        color: AppColors.background,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Cinematic blurred-artwork backdrop (premium player look). The
-            // artwork is blurred heavily and darkened so it never competes
-            // with the controls; the official YouTube player sits on top.
-            if (artwork.isNotEmpty)
-              ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 48, sigmaY: 48),
-                child: Opacity(
-                  opacity: 0.55,
-                  child: AppImage(artwork, fit: BoxFit.cover),
-                ),
-              ),
-            // Dark gradient overlay keeps text/controls readable.
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    AppColors.background.withValues(alpha: 0.55),
-                    AppColors.accent.withValues(alpha: 0.10),
-                    AppColors.background.withValues(alpha: 0.94),
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
-                ),
-              ),
-            ),
-            SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  // Top Bar with Minimize Action
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 32,
-                          ),
-                          onPressed: () => widget.onToggleExpand(false),
-                        ),
-                        Column(
-                          children: [
-                            Text(
-                              'PLAYING FROM',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.white.withValues(alpha: 0.5),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const Text(
-                              'Official YouTube Player',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.accent,
-                              ),
-                            ),
-                          ],
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.more_vert_rounded),
-                          onPressed: () =>
-                              showMoreOptionsSheet(context, widget.track),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Large 16:9 Visible YouTube Player
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border, width: 1),
-                        ),
-                        child: globalYtController != null
-                            ? YoutubePlayer(
-                                controller: globalYtController!,
-                                aspectRatio: 16 / 9,
-                              )
-                            : const SizedBox(height: 200),
-                      ),
-                    ),
-                  ),
-
-                  // Attribution Badge
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.play_circle_filled_rounded,
-                          size: 16,
-                          color: Colors.redAccent,
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Powered by YouTube',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () => launchUrl(
-                            Uri.parse('https://www.youtube.com/t/terms'),
-                            mode: LaunchMode.externalApplication,
-                          ),
-                          child: const Text(
-                            'YouTube Terms',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textSubtle,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Track Title & Action Buttons
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: const TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                artist,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.white.withValues(alpha: 0.7),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: LikePop(
-                            liked: _isLiked,
-                            child: Icon(
-                              _isLiked
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              size: 28,
-                              color:
-                                  _isLiked ? AppColors.hotPink : Colors.white70,
-                            ),
-                          ),
-                          onPressed: _toggleLiked,
-                        ),
-                        IconButton(
-                          icon:
-                              const Icon(Icons.playlist_add_rounded, size: 26),
-                          tooltip: 'Add to playlist',
-                          onPressed: () =>
-                              showAddToPlaylistSheet(context, widget.track),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.lyrics_outlined, size: 24),
-                          tooltip: 'Lyrics',
-                          onPressed: () => Navigator.push(
-                            context,
-                            AppPageRoute<void>(
-                              builder: (_) => LyricsScreen(track: widget.track),
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.share_rounded, size: 22),
-                          tooltip: 'Share',
-                          onPressed: () {
-                            SharePlus.instance.share(
-                              ShareParams(
-                                text:
-                                    'Listen to $title on V Shots! https://www.youtube.com/watch?v=$trackId',
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Controls Row (Prev / Shuffle / Next)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 6,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon:
-                              const Icon(Icons.skip_previous_rounded, size: 34),
-                          color: Colors.white,
-                          onPressed: () => _playAdjacentInQueue(context, -1),
-                        ),
-                        const SizedBox(width: 24),
-                        IconButton(
-                          icon: Icon(
-                            isShuffleOn
-                                ? Icons.shuffle_on_rounded
-                                : Icons.shuffle_rounded,
-                            size: 22,
-                            color:
-                                isShuffleOn ? AppColors.accent : Colors.white60,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              isShuffleOn = !isShuffleOn;
-                              if (isShuffleOn) {
-                                QueueController.rebuildShuffleOrder(
-                                  keepCurrentAt: currentQueueIndex,
-                                );
-                              }
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 24),
-                        IconButton(
-                          icon: const Icon(Icons.skip_next_rounded, size: 34),
-                          color: Colors.white,
-                          onPressed: () => _playAdjacentInQueue(context, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Divider(color: AppColors.borderSubtle, height: 1),
-
-                  // Up Next Queue Header
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Up Next in Queue',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textMain,
-                          ),
-                        ),
-                        Text(
-                          '${currentQueue.length} tracks',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Queue List
-                  Expanded(
-                    child: ListView.builder(
-                      padding:
-                          EdgeInsets.fromLTRB(16, 4, 16, bottomPadding + 16),
-                      itemCount: currentQueue.length,
-                      itemBuilder: (context, index) {
-                        final item = currentQueue[index];
-                        final isSelected = index == currentQueueIndex;
-                        final itemArtwork = item['artwork'] as String?;
-                        final itemTitle = (item['title'] as String?) ?? '';
-                        final itemArtist = (item['artist'] as String?) ?? '';
-
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          tileColor: isSelected
-                              ? AppColors.primary.withValues(alpha: 0.15)
-                              : Colors.transparent,
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: AppImage(
-                              itemArtwork,
-                              width: 44,
-                              height: 44,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          title: Text(
-                            itemTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: isSelected
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: isSelected
-                                  ? AppColors.accent
-                                  : AppColors.textMain,
-                            ),
-                          ),
-                          subtitle: Text(
-                            itemArtist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                          trailing: isSelected
-                              ? const AnimatedEqualizer(
-                                  isPlaying: true,
-                                  color: AppColors.accent,
-                                  size: 16,
-                                )
-                              : const Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: AppColors.textSubtle,
-                                  size: 20,
-                                ),
-                          onTap: () {
-                            playTrack(context, item, currentQueue, index);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -1418,29 +606,19 @@ Future<void> playTrack(
   _log('Track: ${track['title']} (${track['id']})');
   unawaited(HapticFeedback.selectionClick());
 
-  // Single-playback-source coordination: if the in-app browser (WebView
-  // engine) is open, close it before the IFrame path starts — never two
-  // audible sources at once.
-  VShotsPlaybackManager.instance.close();
+  // ONE global playback engine: route through VShotsPlaybackManager (native
+  // YouTube WebView). Explicit taps open the full player (expanded).
+  VShotsPlaybackManager.instance.playQueue(queue, index, expanded: true);
 
   currentTrack = track;
   currentTrackNotifier.value = track;
-  currentQueue = queue;
+  currentQueue = List<Map<String, dynamic>>.from(queue);
   currentQueueIndex = index;
 
-  final videoId = (track['id'] as String?) ?? 'kJQP7kiw5Fk';
-  // Play through the single global YouTube engine (stops/replaces the previous
-  // video; does not create a second playback engine).
-  ensureGlobalPlayer(videoId: videoId, autoPlay: true);
-  globalPlaybackStateNotifier.value = true;
-
-  isPlayerExpandedNotifier.value = true;
   unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
   playbackSignalTracker.onTrackStarted(track);
 }
 
-// ═══════════════════════════════════════════════
-// SEARCH SCREEN
 // ═══════════════════════════════════════════════
 
 class SearchScreen extends StatefulWidget {

@@ -28,6 +28,7 @@ import '../../core/recommendation/recommendation_cache.dart';
 import '../../core/recommendation/recommendation_engine.dart';
 import '../../core/recommendation/recommendation_scorer.dart';
 import '../../core/recommendation/recommendation_service.dart';
+import '../../core/music/music_validator.dart';
 import '../../core/recommendation/taste_profile.dart';
 import '../../core/storage/local_library.dart';
 
@@ -377,6 +378,9 @@ class HomeFeedService {
 
     try {
       var tracks = await _fetch(shelf, excludeIds);
+      // Music-first safety gate: reject non-music and canonical-deduplicate
+      // BEFORE anything reaches the UI.
+      tracks = validateAndFilterMusic(tracks, label: shelf.id);
       tracks = _enforceArtistDiversity(tracks);
       if (tracks.isEmpty) {
         // "Official Music" (and any high-confidence-only shelf) hides
@@ -471,6 +475,7 @@ class HomeFeedService {
     final seen = <String>{
       ...shelf.tracks.map((t) => t['id'] as String? ?? ''),
     };
+    more = validateAndFilterMusic(more, label: '${shelf.id}.more');
     final appended = <Map<String, dynamic>>[];
     for (final track in more) {
       final id = track['id'] as String? ?? '';

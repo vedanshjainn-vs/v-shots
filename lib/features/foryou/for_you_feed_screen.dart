@@ -11,7 +11,7 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/config/discovery_filters.dart';
-import '../../core/innertube/discovery_relevance.dart';
+import '../../core/music/music_validator.dart';
 import '../../core/motion/motion.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
@@ -22,7 +22,6 @@ import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
 import '../../main.dart'
     show
-        coordinateDiscoveryBrowserTakesOver,
         currentTabIndexNotifier,
         forYouFeedService,
         playbackSignalTracker,
@@ -111,7 +110,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // The browser is the ONLY playback owner in Discovery. App launch stays
     // silent — this fires only on an actual tab switch to Discovery.
     if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
-      coordinateDiscoveryBrowserTakesOver();
       VShotsPlaybackManager.instance.playQueue(_items, _currentIndex);
     }
   }
@@ -193,7 +191,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // in-app browser owns playback. The single playback coordinator pauses the
     // global IFrame (in case another tab was playing) so audio never doubles.
     debugPrint('[DiscoveryPlay] OLD_PLAYER_CALL_BLOCKED (routing to browser)');
-    coordinateDiscoveryBrowserTakesOver();
     VShotsPlaybackManager.instance.playQueue(List.of(_items), _currentIndex);
     setState(() {});
   }
@@ -226,7 +223,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           forceRefresh: true,
         );
         if (scored.isNotEmpty) {
-          return filterRelevantTracks(
+          return validateAndFilterMusic(
             scored.map((s) => s.track.toTrackMap()).toList(),
           );
         }
@@ -234,7 +231,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         debugPrint('[ForYouFeed] Engine discover batch failed: $e');
       }
       // Mood/language/region-biased fallback pool.
-      return filterRelevantTracks(
+      return validateAndFilterMusic(
         await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12),
       );
     }
@@ -248,12 +245,12 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         excludeIds: _seenIds,
         count: 12,
       );
-      if (batch.isNotEmpty) return filterRelevantTracks(batch);
+      if (batch.isNotEmpty) return validateAndFilterMusic(batch);
     }
     // Graceful fallback so a filter never leaves Discovery empty.
     final fallback =
         await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
-    return filterRelevantTracks(fallback);
+    return validateAndFilterMusic(fallback);
   }
 
   Future<void> _maybeLoadMore() async {
@@ -283,9 +280,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     setState(() => _currentIndex = index);
 
     // Swiping Discovery moves playback to the new active item: reuse the ONE
-    // in-app browser (switch URL + autoplay). The old global player is never
-    // used here; the coordinator keeps exactly one source audible.
-    coordinateDiscoveryBrowserTakesOver();
+    // global in-app browser (switch URL + autoplay) — one playback engine.
     VShotsPlaybackManager.instance.playQueue(List.of(_items), index);
 
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));

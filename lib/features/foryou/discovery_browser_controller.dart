@@ -34,6 +34,16 @@ class DiscoveryBrowserController extends ChangeNotifier {
   String? _error;
   bool? _pagePlaying;
 
+  /// When true, the sheet mounts already expanded (explicit taps from Home /
+  /// Search / Library open the full player). Discovery autoplay stays
+  /// collapsed (false).
+  bool startExpanded = false;
+
+  /// Extent commands from OUTSIDE the sheet (e.g. the manager's minimize()/
+  /// expand()). 0=none, 1=minimize, 2=expand. The sheet observes this and
+  /// animates its own extent.
+  final ValueNotifier<int> extentCommand = ValueNotifier<int>(0);
+
   Map<String, dynamic>? get track => _track;
 
   /// Current lifecycle state (see [BrowserState]).
@@ -130,4 +140,10 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _pagePlaying = value;
     notifyListeners();
   }
+
+  /// Requests the sheet to minimize its extent (used by the manager/back).
+  void requestMinimize() => extentCommand.value = 1;
+
+  /// Requests the sheet to expand its extent (used by the manager).
+  void requestExpand() => extentCommand.value = 2;
 }

@@ -22,7 +22,13 @@
 
 import 'package:flutter/material.dart';
 
+import 'package:share_plus/share_plus.dart';
+
+import '../../core/playback/vshots_playback_manager.dart';
+import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
+import '../../main.dart'
+    show LyricsScreen, playbackSignalTracker, showAddToPlaylistSheet;
 import '../../shared/widgets/app_image.dart';
 import 'discovery_browser_controller.dart';
 import 'vshots_browser_session.dart';
@@ -49,9 +55,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   @override
   void initState() {
     super.initState();
-    _extent = AnimationController(vsync: this, value: 0.0);
+    _extent = AnimationController(
+      vsync: this,
+      value: widget.controller.startExpanded ? 1.0 : 0.0,
+    );
     _extent.addListener(_onExtentTick);
     widget.controller.addListener(_onControllerChanged);
+    widget.controller.extentCommand.addListener(_onExtentCommand);
     // The single browser session: owns the native WebView + lifecycle; the
     // sheet is only the UI/interaction layer. Minimizing never destroys the
     // session.
@@ -64,14 +74,30 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       },
     );
     _loadForCurrent();
+    // Sync the controller's expanded flag with the initial extent AFTER the
+    // first frame (setState can't run during initState).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.controller.setExpanded(_extent.value > 0.55);
+    });
   }
 
   @override
   void dispose() {
+    widget.controller.extentCommand.removeListener(_onExtentCommand);
     widget.controller.removeListener(_onControllerChanged);
     _extent.dispose();
     _session.dispose();
     super.dispose();
+  }
+
+  void _onExtentCommand() {
+    final command = widget.controller.extentCommand.value;
+    widget.controller.extentCommand.value = 0;
+    if (command == 1) {
+      _animateTo(0.0);
+    } else if (command == 2) {
+      _animateTo(1.0);
+    }
   }
 
   void _onExtentTick() {
@@ -424,20 +450,312 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   Widget _buildBrowserBody() {
     if (widget.controller.error != null) return _buildError();
-    return Stack(
-      fit: StackFit.expand,
+    return Column(
       children: [
-        _session.buildWidget(),
-        if (widget.controller.isLoading)
-          IgnorePointer(
-            child: Container(
-              color: Colors.black.withValues(alpha: 0.4),
-              child: const Center(
-                child: CircularProgressIndicator(color: AppColors.accent),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _session.buildWidget(),
+              if (widget.controller.isLoading)
+                IgnorePointer(
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // V Shots full-player chrome: metadata + controls + queue. Rendered
+        // only when expanded (the mini player covers the collapsed state).
+        if (_extent.value > 0.5) _buildExpandedControls(),
+      ],
+    );
+  }
+
+  /// The app-level full-player controls over the WebView engine. The real
+  /// YouTube page provides its own seek bar; V Shots adds queue control
+  /// (prev/next/shuffle/repeat), like, playlist, lyrics and share.
+  Widget _buildExpandedControls() {
+    final mgr = VShotsPlaybackManager.instance;
+    final track = widget.controller.track ?? const {};
+    final title = (track['title'] as String?) ?? '';
+    final artist = (track['artist'] as String?) ?? '';
+    final trackId = (track['id'] as String?) ?? '';
+    final isLiked =
+        trackId.isNotEmpty && LocalLibrary.instance.isLiked(trackId);
+    final playing = widget.controller.pagePlaying != false;
+
+    return Container(
+      color: const Color(0xFF0A0D16),
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        top: 6,
+        bottom: MediaQuery.of(context).padding.bottom + 6,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Metadata
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMain,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        if (track['isOfficial'] == true) ...[
+                          const SizedBox(width: 6),
+                          const Icon(
+                            Icons.verified_rounded,
+                            size: 13,
+                            color: AppColors.accent,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white70,
+                ),
+                tooltip: 'Close',
+                onPressed: _close,
+              ),
+            ],
+          ),
+          // Primary controls: shuffle / prev / play-pause / next / repeat.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: Icon(
+                  mgr.isShuffleOn
+                      ? Icons.shuffle_on_rounded
+                      : Icons.shuffle_rounded,
+                  color: mgr.isShuffleOn ? AppColors.accent : Colors.white60,
+                ),
+                tooltip: 'Shuffle',
+                onPressed: () => setState(mgr.toggleShuffle),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.skip_previous_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
+                tooltip: 'Previous',
+                onPressed: mgr.previous,
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: Icon(
+                  playing
+                      ? Icons.pause_circle_filled_rounded
+                      : Icons.play_circle_filled_rounded,
+                  color: AppColors.accent,
+                  size: 52,
+                ),
+                tooltip: playing ? 'Pause' : 'Play',
+                onPressed: () async {
+                  await _togglePagePlayback();
+                  setState(() {});
+                },
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                icon: const Icon(
+                  Icons.skip_next_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
+                tooltip: 'Next',
+                onPressed: mgr.next,
+              ),
+              IconButton(
+                icon: Icon(
+                  switch (mgr.repeatMode) {
+                    PlaybackRepeat.off => Icons.repeat_rounded,
+                    PlaybackRepeat.all => Icons.repeat_rounded,
+                    PlaybackRepeat.one => Icons.repeat_one_rounded,
+                  },
+                  color: mgr.repeatMode == PlaybackRepeat.off
+                      ? Colors.white60
+                      : AppColors.accent,
+                ),
+                tooltip: 'Repeat',
+                onPressed: () => setState(mgr.cycleRepeat),
+              ),
+            ],
+          ),
+          // Secondary actions.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: Icon(
+                  isLiked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  color: isLiked ? AppColors.hotPink : Colors.white70,
+                ),
+                tooltip: 'Like',
+                onPressed: () {
+                  final wasLiked = isLiked;
+                  LocalLibrary.instance.toggleLiked(track).then((_) {
+                    if (wasLiked) {
+                      playbackSignalTracker.onUnliked(track);
+                    } else {
+                      playbackSignalTracker.onLiked(track);
+                    }
+                    if (mounted) setState(() {});
+                  });
+                },
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.playlist_add_rounded,
+                  color: Colors.white70,
+                ),
+                tooltip: 'Add to playlist',
+                onPressed: () => showAddToPlaylistSheet(context, track),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.lyrics_outlined,
+                  color: Colors.white70,
+                ),
+                tooltip: 'Lyrics',
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => LyricsScreen(track: track),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(
+                  Icons.share_rounded,
+                  color: Colors.white70,
+                ),
+                tooltip: 'Share',
+                onPressed: () => SharePlus.instance.share(
+                  ShareParams(
+                    text: 'Listen to "$title" by $artist on V Shots: '
+                        'https://www.youtube.com/watch?v=$trackId',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // Queue
+          if (mgr.queue.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              child: Row(
+                children: [
+                  const Text(
+                    'Up Next',
+                    style: TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${mgr.queue.length} tracks',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-      ],
+            SizedBox(
+              height: 132,
+              child: ListView.builder(
+                itemCount: mgr.queue.length,
+                itemBuilder: (context, i) {
+                  final t = mgr.queue[i];
+                  final isCurrent = i == mgr.currentIndex;
+                  return ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    tileColor: isCurrent
+                        ? AppColors.primary.withValues(alpha: 0.18)
+                        : Colors.transparent,
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: AppImage(
+                        t['artwork'] as String?,
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    title: Text(
+                      (t['title'] as String?) ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color:
+                            isCurrent ? AppColors.accent : AppColors.textMain,
+                        fontSize: 13,
+                        fontWeight:
+                            isCurrent ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      (t['artist'] as String?) ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                    onTap: () => mgr.jumpTo(i),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
