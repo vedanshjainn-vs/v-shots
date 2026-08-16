@@ -40,8 +40,7 @@ void main() {
 
     test('source + mood changes the query', () {
       final trending = kDiscoverySources[1];
-      final romantic =
-          kDiscoveryMoods.firstWhere((m) => m.id == 'romantic');
+      final romantic = kDiscoveryMoods.firstWhere((m) => m.id == 'romantic');
       final q = buildDiscoveryQuery(source: trending, mood: romantic);
       expect(q, contains('trending'));
       expect(q, contains('romantic'));
@@ -65,8 +64,7 @@ void main() {
     });
 
     test('selecting a different source produces a different query', () {
-      final trending =
-          buildDiscoveryQuery(source: kDiscoverySources[1]);
+      final trending = buildDiscoveryQuery(source: kDiscoverySources[1]);
       final viral = buildDiscoveryQuery(source: kDiscoverySources[3]);
       expect(trending, isNot(viral));
     });
