@@ -92,6 +92,25 @@ class ProviderManager {
     );
   }
 
+  Future<ProviderResult<ProviderSearchPage>> searchPage(
+    String query, {
+    String order = 'relevance',
+    int limit = 20,
+    Set<String> excludeIds = const {},
+    String? pageToken,
+  }) {
+    return _routeWithFailover(
+      ProviderCapability.search,
+      (p) => p.searchPage(
+        query,
+        order: order,
+        limit: limit,
+        excludeIds: excludeIds,
+        pageToken: pageToken,
+      ),
+    );
+  }
+
   Future<ProviderResult<ProviderTrack>> getTrack(String id) {
     return _routeWithFailover(
       ProviderCapability.getTrack,

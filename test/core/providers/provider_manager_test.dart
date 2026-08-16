@@ -71,6 +71,21 @@ class FakeProvider implements MusicProvider {
   }
 
   @override
+  Future<ProviderResult<ProviderSearchPage>> searchPage(
+    String query, {
+    String order = 'relevance',
+    int limit = 20,
+    Set<String> excludeIds = const {},
+    String? pageToken,
+  }) async {
+    final tracks = await search(query, limit: limit, excludeIds: excludeIds);
+    if (tracks.isFailure) return ProviderResult.failure(tracks.error!);
+    return ProviderResult.success(
+      ProviderSearchPage(tracks: tracks.data!, nextPageToken: null),
+    );
+  }
+
+  @override
   Future<ProviderResult<ProviderTrack>> getTrack(String id) async {
     return ProviderResult.success(
       ProviderTrack(
@@ -168,10 +183,44 @@ void main() {
 
   group('ProviderManager', () {
     test('activeProvider exposes the configured provider', () {
-      final registry = ProviderRegistry()..register(FakeProvider('youtube'));
+      final registry = ProviderRegistry()..register(FakeProvider('innertube'));
       final manager = ProviderManager(registry: registry);
-      expect(manager.activeProvider?.id, 'youtube');
+      expect(manager.activeProvider?.id, 'innertube');
     });
+
+    test('default config routes InnerTube first, YouTube as fallback',
+        () async {
+      final innerTube = FakeProvider('innertube');
+      final youtube = FakeProvider('youtube');
+      final registry = ProviderRegistry()
+        ..register(innerTube)
+        ..register(youtube);
+      final manager = ProviderManager(registry: registry); // default config
+
+      final result = await manager.search('test query');
+      expect(result.isSuccess, isTrue);
+      expect(result.data!.single.title, 'Track from innertube');
+      expect(innerTube.searchCallCount, 1);
+      expect(youtube.searchCallCount, 0,
+          reason: 'InnerTube is primary — YouTube must not be hit on success');
+    });
+
+    test(
+      'InnerTube failure falls through to the YouTube provider',
+      () async {
+        final failingInnerTube = FakeProvider('innertube', failSearch: true);
+        final youtube = FakeProvider('youtube');
+        final registry = ProviderRegistry()
+          ..register(failingInnerTube)
+          ..register(youtube);
+        final manager = ProviderManager(registry: registry);
+
+        final result = await manager.search('query');
+        expect(result.isSuccess, isTrue);
+        expect(result.data!.single.title, 'Track from youtube',
+            reason: 'failover must serve YouTube content when InnerTube fails');
+      },
+    );
 
     test(
       'search routes to the healthy provider and returns real data',

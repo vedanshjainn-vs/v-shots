@@ -101,6 +101,17 @@ class ProviderLyrics {
   static const notFound = ProviderLyrics();
 }
 
+/// One page of paginated search results — the unified shape both the
+/// InnerTube provider (continuation tokens) and the YouTube Data API
+/// provider (pageToken) return through the shared provider interface,
+/// so Search / Discovery can page through results provider-agnostically.
+class ProviderSearchPage {
+  const ProviderSearchPage({required this.tracks, this.nextPageToken});
+
+  final List<ProviderTrack> tracks;
+  final String? nextPageToken;
+}
+
 /// Health-check result for a provider — used by [ProviderManager] to
 /// decide whether a provider is currently usable. Kept deliberately
 /// simple (bool + optional message) — this is NOT a full metrics/SLA

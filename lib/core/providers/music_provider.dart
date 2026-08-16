@@ -37,6 +37,18 @@ abstract class MusicProvider {
     Set<String> excludeIds = const {},
   });
 
+  /// Paginated search. Providers that support [ProviderCapability.search]
+  /// must implement this too (InnerTube: continuation tokens; Data API:
+  /// pageToken). Returns one page plus a token for the next page (null when
+  /// exhausted).
+  Future<ProviderResult<ProviderSearchPage>> searchPage(
+    String query, {
+    String order = 'relevance',
+    int limit = 20,
+    Set<String> excludeIds = const {},
+    String? pageToken,
+  });
+
   Future<ProviderResult<ProviderTrack>> getTrack(String id);
   Future<ProviderResult<String>> getStream(String id);
   Future<ProviderResult<String>> getArtwork(String id);

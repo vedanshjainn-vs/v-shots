@@ -5,16 +5,17 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../../core/config/discovery_categories.dart';
-import '../../core/providers/adapters/youtube/youtube_data_api_client.dart';
+import '../../core/providers/music_repository.dart';
+import '../../core/providers/provider_bootstrap.dart';
 import '../../core/recommendation/recommendation_service.dart';
 import '../../core/storage/local_library.dart';
 
 class ForYouFeedService {
   ForYouFeedService({
-    YouTubeDataApiClient? apiClient,
-  }) : _apiClient = apiClient ?? YouTubeDataApiClient();
+    MusicRepository? repository,
+  }) : _repository = repository ?? buildMusicRepository();
 
-  final YouTubeDataApiClient _apiClient;
+  final MusicRepository _repository;
   final _random = Random();
 
   String? activeMood;
@@ -259,29 +260,21 @@ class ForYouFeedService {
       _nextPageToken = null;
     }
     try {
-      // Live Data-API pagination with pageToken; falls back to the verified
-      // category-specific catalog (nextPageToken null) when no API key is set.
-      final page = await _apiClient.searchMusicVideosPaginated(
+      // Primary discovery via InnerTube with YouTube Data API fallback —
+      // real pagination through the shared repository.
+      final page = await _repository.searchPaginated(
         query,
-        maxResults: count,
+        limit: count,
         excludeIds: excludeIds,
         pageToken: _nextPageToken,
       );
       _nextPageToken = page.nextPageToken;
-      return page.items.map(_videoToTrack).toList();
+      return page.tracks;
     } catch (e) {
       debugPrint('[ForYouFeedService] fetchNextBatch failed: $e');
       return [];
     }
   }
-
-  Map<String, dynamic> _videoToTrack(YouTubeVideoItem v) => {
-        'id': v.id,
-        'title': v.title,
-        'artist': v.channelTitle,
-        'artwork': v.thumbnailUrl,
-        'duration': v.durationSeconds,
-      };
 
   /// Fetches a batch for a specific [DiscoveryCategory] using its own query.
   /// This is the single reactive path the Discovery feed calls whenever the
@@ -298,14 +291,14 @@ class ForYouFeedService {
       _nextPageToken = null;
     }
     try {
-      final page = await _apiClient.searchMusicVideosPaginated(
+      final page = await _repository.searchPaginated(
         query,
-        maxResults: count,
+        limit: count,
         excludeIds: excludeIds,
         pageToken: _nextPageToken,
       );
       _nextPageToken = page.nextPageToken;
-      final tracks = page.items.map(_videoToTrack).toList();
+      final tracks = page.tracks;
       // Section 2: record shown IDs so the same song isn't re-surfaced soon.
       for (final t in tracks) {
         final id = t['id'] as String?;

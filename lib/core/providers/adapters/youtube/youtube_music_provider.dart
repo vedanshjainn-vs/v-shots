@@ -88,6 +88,35 @@ class YouTubeMusicProvider extends MusicProvider {
   }
 
   @override
+  Future<ProviderResult<ProviderSearchPage>> searchPage(
+    String query, {
+    String order = 'relevance',
+    int limit = 20,
+    Set<String> excludeIds = const {},
+    String? pageToken,
+  }) async {
+    try {
+      final page = await _apiClient.searchMusicVideosPaginated(
+        query,
+        order: order,
+        maxResults: limit,
+        excludeIds: excludeIds,
+        pageToken: pageToken,
+      );
+      final tracks = _mapper.mapSearchResults(
+        page.items,
+        limit: limit,
+        excludeIds: excludeIds,
+      );
+      return ProviderResult.success(
+        ProviderSearchPage(tracks: tracks, nextPageToken: page.nextPageToken),
+      );
+    } catch (e) {
+      return ProviderResult.failure('YouTube searchPage failed: $e');
+    }
+  }
+
+  @override
   Future<ProviderResult<ProviderTrack>> getTrack(String id) async {
     try {
       final video = await _apiClient.getVideoDetails(id);

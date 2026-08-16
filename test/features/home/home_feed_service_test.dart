@@ -93,6 +93,21 @@ class KeywordProvider implements MusicProvider {
   }
 
   @override
+  Future<ProviderResult<ProviderSearchPage>> searchPage(
+    String query, {
+    String order = 'relevance',
+    int limit = 20,
+    Set<String> excludeIds = const {},
+    String? pageToken,
+  }) async {
+    final tracks = await search(query, limit: limit, excludeIds: excludeIds);
+    if (tracks.isFailure) return ProviderResult.failure(tracks.error!);
+    return ProviderResult.success(
+      ProviderSearchPage(tracks: tracks.data!, nextPageToken: null),
+    );
+  }
+
+  @override
   Future<ProviderResult<ProviderTrack>> getTrack(String id) async =>
       ProviderResult.failure('unused');
 

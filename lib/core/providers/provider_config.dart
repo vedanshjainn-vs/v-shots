@@ -37,15 +37,15 @@ class ProviderConfig {
   /// [activeProvider] should normally be first in this list.
   final List<String> providerPriority;
 
-  /// Today's real, only configuration: YouTube is the sole
-  /// implemented, enabled provider. Adding a second real provider
-  /// later means adding its id here — no other code needs to change
-  /// (see ProviderManager/ProviderRegistry, which are already written
-  /// generically against this list).
+  /// InnerTube is the PRIMARY discovery provider (live, real YouTube
+  /// catalog); the official YouTube Data API v3 provider is the fallback
+  /// (itself backed by a curated catalog when no API key is configured).
+  /// ProviderManager routes every search through this priority order with
+  /// automatic failover.
   static const defaultConfig = ProviderConfig(
-    activeProvider: 'youtube',
-    enabledProviders: ['youtube'],
-    providerPriority: ['youtube'],
+    activeProvider: 'innertube',
+    enabledProviders: ['innertube', 'youtube'],
+    providerPriority: ['innertube', 'youtube'],
   );
 
   Map<String, dynamic> toJson() => {
@@ -56,15 +56,15 @@ class ProviderConfig {
 
   factory ProviderConfig.fromJson(Map<String, dynamic> json) {
     return ProviderConfig(
-      activeProvider: json['activeProvider'] as String? ?? 'youtube',
+      activeProvider: json['activeProvider'] as String? ?? 'innertube',
       enabledProviders: (json['enabledProviders'] as List?)
               ?.map((e) => e as String)
               .toList() ??
-          const ['youtube'],
+          const ['innertube', 'youtube'],
       providerPriority: (json['providerPriority'] as List?)
               ?.map((e) => e as String)
               .toList() ??
-          const ['youtube'],
+          const ['innertube', 'youtube'],
     );
   }
 }

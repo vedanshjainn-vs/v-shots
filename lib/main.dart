@@ -210,7 +210,7 @@ List<int> shuffleOrder = [];
 
 final YouTubeDataApiClient sharedYtApiClient = YouTubeDataApiClient();
 final musicRepository = buildMusicRepository(apiClient: sharedYtApiClient);
-final forYouFeedService = ForYouFeedService(apiClient: sharedYtApiClient);
+final forYouFeedService = ForYouFeedService(repository: musicRepository);
 final recommendationEngine = RecommendationEngine(musicRepository);
 final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
 final homeFeedService =
@@ -1392,17 +1392,17 @@ class _SearchScreenState extends State<SearchScreen> {
     _nextPageToken = null;
 
     try {
-      // Live Data-API first page with real pageToken support. Falls back to
-      // the verified catalog (nextPageToken null) when no API key is set.
-      final page = await sharedYtApiClient.searchMusicVideosPaginated(
+      // Primary discovery via InnerTube with YouTube Data API fallback —
+      // real pagination through the shared repository.
+      final page = await musicRepository.searchPaginated(
         query,
-        maxResults: _pageSize,
+        limit: _pageSize,
         excludeIds: _seenIds,
       );
       if (seq != _requestSeq || !mounted) return;
 
       _nextPageToken = page.nextPageToken;
-      final rawResults = page.items.map(_videoToTrack).toList();
+      final rawResults = page.tracks;
 
       final uniqueResults = <Map<String, dynamic>>[];
       for (final track in rawResults) {
@@ -1448,17 +1448,17 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_status != _SearchStatus.loaded) return;
     setState(() => _isLoadingMore = true);
     try {
-      // Real Data-API pagination: request the NEXT page via the stored token.
-      // Without an API key the fallback returns the same verified catalog with
-      // nextPageToken null, so `_hasMore` becomes false and stops cleanly.
-      final page = await sharedYtApiClient.searchMusicVideosPaginated(
+      // Request the NEXT page via the stored continuation/page token. When
+      // the token is null (exhausted / catalog fallback), `_hasMore` becomes
+      // false and stops cleanly.
+      final page = await musicRepository.searchPaginated(
         _lastQuery!,
-        maxResults: _pageSize,
+        limit: _pageSize,
         excludeIds: _seenIds,
         pageToken: _nextPageToken,
       );
       if (!mounted) return;
-      if (page.items.isEmpty) {
+      if (page.tracks.isEmpty) {
         setState(() {
           _hasMore = false;
           _isLoadingMore = false;
@@ -1467,8 +1467,7 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       _nextPageToken = page.nextPageToken;
       final newItems = <Map<String, dynamic>>[];
-      for (final v in page.items) {
-        final t = _videoToTrack(v);
+      for (final t in page.tracks) {
         final id = t['id'] as String? ?? '';
         if (id.isEmpty || _seenIds.contains(id)) continue;
         _seenIds.add(id);
@@ -1492,17 +1491,6 @@ class _SearchScreenState extends State<SearchScreen> {
       if (mounted) setState(() => _isLoadingMore = false);
     }
   }
-
-  /// Converts a YouTubeDataApiClient video item into the app's track-map shape
-  /// (single canonical mapping so title/artist/thumbnail always come from the
-  /// SAME videoId — no cross-metadata mixing).
-  Map<String, dynamic> _videoToTrack(YouTubeVideoItem v) => {
-        'id': v.id,
-        'title': v.title,
-        'artist': v.channelTitle,
-        'artwork': v.thumbnailUrl,
-        'duration': v.durationSeconds,
-      };
 
   @override
   void initState() {
