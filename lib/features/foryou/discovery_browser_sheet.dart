@@ -25,11 +25,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 import 'discovery_browser_controller.dart';
+import 'vshots_browser_session.dart';
 
 class DiscoveryBrowserSheet extends StatefulWidget {
   const DiscoveryBrowserSheet({super.key, required this.controller});
@@ -43,7 +43,7 @@ class DiscoveryBrowserSheet extends StatefulWidget {
 class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     with SingleTickerProviderStateMixin {
   late final AnimationController _extent;
-  WebViewController? _webViewController;
+  late final VShotsBrowserSession _session;
   String? _lastLoadedUrl;
 
   static const double _miniHeight = 84;
@@ -56,6 +56,16 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _extent = AnimationController(vsync: this, value: 0.0);
     _extent.addListener(_onExtentTick);
     widget.controller.addListener(_onControllerChanged);
+    // The single browser session: owns the WebView + lifecycle; the sheet is
+    // only the UI/interaction layer. Minimizing never destroys the session.
+    _session = VShotsBrowserSession(
+      onPageStarted: () => widget.controller.setLoading(true),
+      onPageFinished: () => widget.controller.setLoading(false),
+      onError: (message) {
+        widget.controller.setLoading(false);
+        widget.controller.setError(message);
+      },
+    );
     _loadForCurrent();
   }
 
@@ -63,7 +73,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
     _extent.dispose();
-    _webViewController = null;
+    _session.dispose();
     super.dispose();
   }
 
@@ -128,57 +138,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
-  // ── WebView lifecycle ────────────────────────────────────────────────────
-
-  Future<WebViewController> _createWebViewController() async {
-    final webViewController = WebViewController();
-    await webViewController.setJavaScriptMode(JavaScriptMode.unrestricted);
-    await webViewController.setBackgroundColor(Colors.black);
-    await webViewController.setNavigationDelegate(
-      NavigationDelegate(
-        onPageStarted: (_) => widget.controller.setLoading(true),
-        onPageFinished: (_) => widget.controller.setLoading(false),
-        onWebResourceError: (error) {
-          widget.controller.setLoading(false);
-          widget.controller.setError('Playback failed — please retry');
-        },
-        onNavigationRequest: (request) => _isAllowedNavigation(request.url)
-            ? NavigationDecision.navigate
-            : NavigationDecision.prevent,
-      ),
-    );
-    // Android: allow the official YouTube page's media to start without an
-    // extra in-page tap (the user already tapped Play in the app).
-    try {
-      final android = webViewController.platform as AndroidWebViewController;
-      await android.setMediaPlaybackRequiresUserGesture(false);
-    } catch (_) {
-      // Non-Android or platform not ready — page still loads; the user can
-      // tap YouTube's own play button.
-    }
-    return webViewController;
-  }
-
-  /// Only allow YouTube/Google infrastructure hosts; anything else is blocked
-  /// in place so the browser never wanders off to arbitrary external sites.
-  bool _isAllowedNavigation(String url) {
-    String host;
-    try {
-      host = Uri.parse(url).host.toLowerCase();
-    } catch (_) {
-      return false;
-    }
-    const allowed = [
-      'youtube.com',
-      'youtu.be',
-      'googlevideo.com',
-      'ytimg.com',
-      'google.com',
-      'gstatic.com',
-      'ggpht.com',
-    ];
-    return allowed.any((h) => host == h || host.endsWith('.$h'));
-  }
+  // ── Browser session (WebView owned by VShotsBrowserSession) ──────────────
 
   Future<void> _loadForCurrent() async {
     final url = widget.controller.url;
@@ -186,38 +146,17 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
-    final webViewController =
-        _webViewController ??= await _createWebViewController();
-    try {
-      await webViewController.loadRequest(Uri.parse(url));
-    } catch (e) {
-      widget.controller.setLoading(false);
-      widget.controller.setError('Could not open this video');
-    }
+    await _session.load(url);
   }
 
   Future<void> _togglePagePlayback() async {
-    final wc = _webViewController;
-    if (wc == null) {
+    final result = await _session.togglePagePlayback();
+    if (result == null) {
+      // No session/controller yet — load and let the page start.
       await _loadForCurrent();
       return;
     }
-    try {
-      final result = await wc.runJavaScriptReturningResult(
-        "(function(){var v=document.querySelector('video');"
-        "if(!v){return 'none';}"
-        "if(v.paused){v.play();return 'playing';}"
-        "v.pause();return 'paused';})()",
-      );
-      final state = result.toString();
-      if (state.contains('playing')) {
-        widget.controller.setPagePlaying(true);
-      } else if (state.contains('paused')) {
-        widget.controller.setPagePlaying(false);
-      }
-    } catch (_) {
-      // Non-fatal: page structure unknown / webview not ready.
-    }
+    widget.controller.setPagePlaying(result);
   }
 
   void _close() {
@@ -476,7 +415,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   Widget _buildBrowserBody() {
     if (widget.controller.error != null) return _buildError();
-    final wc = _webViewController;
+    final wc = _session.controller;
     if (wc == null) return _buildLoading();
     return Stack(
       fit: StackFit.expand,
