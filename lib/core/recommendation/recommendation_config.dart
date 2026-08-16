@@ -22,6 +22,7 @@ class RecommendationConfig {
     this.weightNovelty = 0.5,
     this.weightSkipPenalty = 1.2,
     this.weightRepetitionPenalty = 0.9,
+    this.weightOfficialBoost = 0.35,
     this.explorationRate = 0.15,
     this.maxConsecutiveSameArtist = 2,
     this.skipPenaltyHalfLifeHours = 48,
@@ -39,6 +40,12 @@ class RecommendationConfig {
   final double weightNovelty;
   final double weightSkipPenalty;
   final double weightRepetitionPenalty;
+
+  /// Small ranking boost for tracks from official/verified uploads, so
+  /// original artist uploads surface above fan/lyrics channels without
+  /// making Home purely popularity-driven (personal relevance still
+  /// dominates once enough behavior exists).
+  final double weightOfficialBoost;
 
   // ── Exploration (Part O) ────────────────────────────────────────
   /// Fraction of a feed batch that should be genuine exploration

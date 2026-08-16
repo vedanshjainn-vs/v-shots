@@ -35,6 +35,8 @@ class ProviderTrack {
     required this.artworkUrl,
     required this.durationSeconds,
     this.providerId = ProviderId.youtube,
+    this.isOfficial = false,
+    this.channelId,
   });
 
   final String id;
@@ -44,17 +46,28 @@ class ProviderTrack {
   final int durationSeconds;
   final ProviderId providerId;
 
+  /// True when the uploader carries an official/verified creator badge
+  /// (InnerTube metadata). Used to prefer and badge original artist uploads.
+  /// NEVER true just because a channel name contains "official"/"music".
+  final bool isOfficial;
+
+  /// Uploader channel id (YouTube `UC...`) when available, else null.
+  final String? channelId;
+
   /// Converts to the app's existing `Map<String, dynamic>` track shape
   /// — this is what actually flows into `currentQueue`, `LocalLibrary`,
   /// `playTrack()`, etc. Field names/values are UNCHANGED from what
   /// main.dart's own `_search()`/`ForYouFeedService.fetchNextBatch()`
-  /// already produced, so no downstream code needs to change.
+  /// already produced; `isOfficial`/`channelId` are ADDITIVE keys, so no
+  /// downstream consumer breaks.
   Map<String, dynamic> toTrackMap() => {
         'id': id,
         'title': title,
         'artist': artist,
         'artwork': artworkUrl,
         'duration': durationSeconds,
+        if (isOfficial) 'isOfficial': true,
+        if (channelId != null && channelId!.isNotEmpty) 'channelId': channelId,
       };
 
   /// Builds a [ProviderTrack] from the app's existing
@@ -73,6 +86,8 @@ class ProviderTrack {
       artworkUrl: (map['artwork'] as String?) ?? '',
       durationSeconds: map['duration'] is int ? map['duration'] as int : 0,
       providerId: providerId,
+      isOfficial: map['isOfficial'] == true,
+      channelId: map['channelId'] as String?,
     );
   }
 }

@@ -18,6 +18,7 @@ InnerTubeVideoItem _item(
   String channel = 'Artist',
   int duration = 200,
   bool isOfficial = false,
+  String? channelId,
 }) =>
     InnerTubeVideoItem(
       videoId: id,
@@ -26,6 +27,7 @@ InnerTubeVideoItem _item(
       thumbnailUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
       durationSeconds: duration,
       isOfficial: isOfficial,
+      channelId: channelId,
     );
 
 void main() {
@@ -129,6 +131,24 @@ void main() {
     test('falls back to Unknown Artist when channel is missing', () {
       final track = normalizer.toProviderTrack(_item('vid3', channel: ''));
       expect(track.artist, 'Unknown Artist');
+    });
+
+    test('passes official + channelId metadata into ProviderTrack', () {
+      final track = normalizer.toProviderTrack(
+        _item(
+          'vid4',
+          isOfficial: true,
+          channelId: 'UC_official_123',
+        ),
+      );
+      expect(track.isOfficial, isTrue);
+      expect(track.channelId, 'UC_official_123');
+    });
+
+    test('never fabricates official: unbadged items stay false/null', () {
+      final track = normalizer.toProviderTrack(_item('vid5'));
+      expect(track.isOfficial, isFalse);
+      expect(track.channelId, isNull);
     });
   });
 

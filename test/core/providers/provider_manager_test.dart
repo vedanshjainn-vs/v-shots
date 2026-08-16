@@ -309,5 +309,36 @@ void main() {
       expect(roundTripped.title, track.title);
       expect(roundTripped.durationSeconds, track.durationSeconds);
     });
+
+    test('toTrackMap carries official + channelId additively', () {
+      const track = ProviderTrack(
+        id: 'abc123',
+        title: 'My Song',
+        artist: 'My Artist',
+        artworkUrl: 'x.jpg',
+        durationSeconds: 210,
+        isOfficial: true,
+        channelId: 'UC_official_1',
+      );
+      final map = track.toTrackMap();
+      expect(map['isOfficial'], isTrue);
+      expect(map['channelId'], 'UC_official_1');
+
+      // Unbadged tracks omit the key entirely (no fake metadata).
+      const plain = ProviderTrack(
+        id: 'p',
+        title: 'T',
+        artist: 'A',
+        artworkUrl: '',
+        durationSeconds: 1,
+      );
+      expect(plain.toTrackMap().containsKey('isOfficial'), isFalse);
+      expect(plain.toTrackMap().containsKey('channelId'), isFalse);
+
+      // Round-trip preserves the new fields.
+      final rt = ProviderTrack.fromTrackMap(map);
+      expect(rt.isOfficial, isTrue);
+      expect(rt.channelId, 'UC_official_1');
+    });
   });
 }

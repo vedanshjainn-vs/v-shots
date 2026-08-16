@@ -106,6 +106,8 @@ class InnerTubeNormalizer {
       artist: item.channelName.isEmpty ? 'Unknown Artist' : item.channelName,
       artworkUrl: item.thumbnailUrl,
       durationSeconds: item.durationSeconds,
+      isOfficial: item.isOfficial,
+      channelId: item.channelId,
     );
   }
 

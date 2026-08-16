@@ -26,7 +26,9 @@ import '../../core/theme/app_colors.dart';
 import '../../main.dart'
     show currentTrackNotifier, homeFeedService, musicRepository, playTrack;
 import '../../shared/widgets/animated_equalizer.dart';
+import '../../shared/widgets/app_avatar.dart';
 import '../../shared/widgets/app_image.dart';
+import '../profile/artist_details_screen.dart';
 import 'home_feed_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -395,8 +397,109 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case HomeShelfStatus.error:
         return _buildErrorSliver(shelf);
       case HomeShelfStatus.loaded:
-        return _buildLoadedSliver(shelf);
+        return shelf.kind == HomeShelfKind.artistsForYou
+            ? _buildArtistsSliver(shelf)
+            : _buildLoadedSliver(shelf);
     }
+  }
+
+  /// "Artists For You" — circular avatar cards derived from the taste
+  /// profile. Tapping opens the existing ArtistDetailsScreen.
+  Widget _buildArtistsSliver(HomeShelf shelf) {
+    return SliverToBoxAdapter(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.people_rounded,
+                      size: 16,
+                      color: AppColors.accent,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        shelf.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textMain,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  shelf.subtitle,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 112,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: shelf.artists.length,
+              itemBuilder: (context, i) {
+                final name = shelf.artists[i]['name'] as String;
+                return GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    AppPageRoute<void>(
+                      builder: (_) => ArtistDetailsScreen(
+                        name: name,
+                        role: 'Artist',
+                        imageUrl: '',
+                        query: '$name top songs official audio',
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    width: 80,
+                    margin: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Column(
+                      children: [
+                        AppAvatar(
+                          name: name,
+                          size: 68,
+                          hasGradientBorder: true,
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMain,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLoadedSliver(HomeShelf shelf) {
@@ -563,6 +666,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     fontSize: 12,
                   ),
                 ),
+                if (track['isOfficial'] == true)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.verified_rounded,
+                          size: 12,
+                          color: AppColors.accent,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Official',
+                          style: TextStyle(
+                            color: AppColors.accent,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

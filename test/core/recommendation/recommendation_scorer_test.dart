@@ -202,4 +202,43 @@ void main() {
       expect(result.debugBreakdown!['similarity'], greaterThan(0));
     },
   );
+
+  test('official/verified uploads receive a ranking boost', () {
+    final scorer = RecommendationScorer();
+    const profile = TasteProfile.empty;
+    const officialTrack = ProviderTrack(
+      id: 'o1',
+      title: 'Some Song',
+      artist: 'Known Artist',
+      artworkUrl: '',
+      durationSeconds: 200,
+      isOfficial: true,
+    );
+    const plainTrack = ProviderTrack(
+      id: 'p1',
+      title: 'Some Song',
+      artist: 'Known Artist',
+      artworkUrl: '',
+      durationSeconds: 200,
+      isOfficial: false,
+    );
+
+    final officialScore = scorer.score(
+      officialTrack,
+      profile,
+      sourceQuery: null,
+      isTrendingOrNewSource: false,
+    );
+    final plainScore = scorer.score(
+      plainTrack,
+      profile,
+      sourceQuery: null,
+      isTrendingOrNewSource: false,
+    );
+
+    expect(officialScore.score, greaterThan(plainScore.score),
+        reason: 'official content must rank above identical non-official');
+    expect(officialScore.score - plainScore.score,
+        closeTo(RecommendationScorer().config.weightOfficialBoost, 0.0001));
+  });
 }

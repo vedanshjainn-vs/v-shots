@@ -18,6 +18,7 @@ class InnerTubeVideoItem {
     required this.durationSeconds,
     this.viewCount = 0,
     this.isOfficial = false,
+    this.channelId,
   });
 
   final String videoId;
@@ -31,6 +32,9 @@ class InnerTubeVideoItem {
   /// (OFFICIAL_ARTIST_BADGE / BADGE_STYLE_TYPE_VERIFIED…). Used to prefer
   /// original artist uploads over fan/lyrics channels.
   final bool isOfficial;
+
+  /// Uploader channel id (YouTube `UC…`) when available, else null.
+  final String? channelId;
 }
 
 /// One page of InnerTube search results plus an optional continuation token

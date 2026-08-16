@@ -43,6 +43,10 @@ class YoutubeMusicMapper {
       artist: video.channelTitle,
       artworkUrl: video.thumbnailUrl,
       durationSeconds: video.durationSeconds,
+      // The Data API search snippet has no official/verified badge signal,
+      // so we stay honest: unknown → false/null (never guessed).
+      isOfficial: false,
+      channelId: null,
     );
   }
 

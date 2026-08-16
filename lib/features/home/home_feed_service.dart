@@ -28,6 +28,7 @@ import '../../core/recommendation/recommendation_cache.dart';
 import '../../core/recommendation/recommendation_engine.dart';
 import '../../core/recommendation/recommendation_scorer.dart';
 import '../../core/recommendation/recommendation_service.dart';
+import '../../core/recommendation/taste_profile.dart';
 import '../../core/storage/local_library.dart';
 
 /// What kind of content a shelf is built from.
@@ -40,6 +41,12 @@ enum HomeShelfKind {
   becauseYouListenedTo,
   trendingForYou,
   discoverSomethingNew,
+
+  /// Top artists derived from the user's taste profile (recs-driven).
+  artistsForYou,
+
+  /// Only official/verified uploads — hidden when too few qualify.
+  officialMusic,
 
   /// A fixed catalog query (YouTube Data API / fallback catalog).
   catalog,
@@ -81,6 +88,9 @@ class HomeShelf {
 
   HomeShelfStatus status = HomeShelfStatus.loading;
   List<Map<String, dynamic>> tracks = [];
+
+  /// Artist entries (name-based) for [HomeShelfKind.artistsForYou] shelves.
+  List<Map<String, dynamic>> artists = [];
   String? error;
 }
 
@@ -141,6 +151,20 @@ class HomeFeedService {
           title: 'Trending For You',
           subtitle: 'Trending, ranked by your taste',
           kind: HomeShelfKind.trendingForYou,
+          limit: 12,
+        ),
+        HomeShelf(
+          id: 'artists',
+          title: 'Artists For You',
+          subtitle: 'From your listening taste',
+          kind: HomeShelfKind.artistsForYou,
+          onlyWhenPersonalized: true,
+        ),
+        HomeShelf(
+          id: 'official',
+          title: 'Official Music',
+          subtitle: 'Verified artist & label uploads',
+          kind: HomeShelfKind.officialMusic,
           limit: 12,
         ),
         HomeShelf(
@@ -239,7 +263,15 @@ class HomeFeedService {
     // Home fills in quickly. Phase 2: the deeper catalog rows, loaded after
     // (and therefore excluded from) phase 1's results for cross-shelf
     // de-duplication.
-    const phaseOneIds = {'continue', 'mfy', 'byld', 'trending', 'new', 'tfy'};
+    const phaseOneIds = {
+      'continue',
+      'mfy',
+      'byld',
+      'trending',
+      'new',
+      'tfy',
+      'artists',
+    };
     final phaseOne = shelves.where((s) => phaseOneIds.contains(s.id)).toList();
     final phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
 
@@ -296,6 +328,18 @@ class HomeFeedService {
       onUpdate?.call();
       return;
     }
+
+    // "Artists For You" is derived directly from the taste profile — no
+    // network call, and no fabricated artist list (empty → hidden).
+    if (shelf.kind == HomeShelfKind.artistsForYou) {
+      shelf.artists = _topArtists();
+      shelf.status = shelf.artists.isEmpty
+          ? HomeShelfStatus.hidden
+          : HomeShelfStatus.loaded;
+      onUpdate?.call();
+      return;
+    }
+
     if (shelf.status == HomeShelfStatus.loaded && shelf.tracks.isNotEmpty) {
       return;
     }
@@ -308,8 +352,15 @@ class HomeFeedService {
       var tracks = await _fetch(shelf, excludeIds);
       tracks = _enforceArtistDiversity(tracks);
       if (tracks.isEmpty) {
-        shelf.status = HomeShelfStatus.error;
-        shelf.error = 'Nothing to show yet';
+        // "Official Music" (and any high-confidence-only shelf) hides
+        // gracefully instead of showing an error when too few candidates
+        // qualify — never padded with random uploads.
+        if (shelf.kind == HomeShelfKind.officialMusic) {
+          shelf.status = HomeShelfStatus.hidden;
+        } else {
+          shelf.status = HomeShelfStatus.error;
+          shelf.error = 'Nothing to show yet';
+        }
       } else {
         shelf.tracks = tracks;
         shelf.status = HomeShelfStatus.loaded;
@@ -384,6 +435,24 @@ class HomeFeedService {
           excludeIds: excludeIds,
         );
 
+      case HomeShelfKind.artistsForYou:
+        // Handled directly in _loadShelf (no fetch needed).
+        return const [];
+
+      case HomeShelfKind.officialMusic:
+        if (repo == null) return const [];
+        // Fetch extra, then keep ONLY official/verified uploads. Hidden
+        // gracefully when fewer than a few qualify (see _loadShelf).
+        final official = await repo.search(
+          'top songs official audio 2026',
+          limit: shelf.limit * 2,
+          excludeIds: excludeIds,
+        );
+        return official
+            .where((t) => t['isOfficial'] == true)
+            .take(shelf.limit)
+            .toList();
+
       case HomeShelfKind.catalog:
         if (repo == null) return const [];
         final query = shelf.query ?? '';
@@ -395,6 +464,13 @@ class HomeFeedService {
           excludeIds: excludeIds,
         );
     }
+  }
+
+  /// Top artists derived from the real taste profile (plays/completions/
+  /// likes) — the same signal that drives the rest of Home. Never fabricated.
+  List<Map<String, dynamic>> _topArtists() {
+    final profile = TasteProfileBuilder().build();
+    return profile.topArtists.take(10).map((name) => {'name': name}).toList();
   }
 
   static String _fallbackQueryFor(HomeShelfKind kind) {

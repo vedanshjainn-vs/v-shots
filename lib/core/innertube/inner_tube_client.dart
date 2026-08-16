@@ -274,7 +274,27 @@ class InnerTubeClient {
       durationSeconds: duration,
       viewCount: viewCount,
       isOfficial: _parseOfficialBadge(v['ownerBadges']),
+      channelId: _parseChannelId(v['ownerText']),
     );
+  }
+
+  /// Extracts the uploader channel id (`UC…`) from the owner runs'
+  /// navigation endpoint — real metadata, never fabricated.
+  static String? _parseChannelId(dynamic ownerText) {
+    if (ownerText is! Map<String, dynamic>) return null;
+    final runs = ownerText['runs'];
+    if (runs is! List) return null;
+    for (final run in runs) {
+      if (run is! Map<String, dynamic>) continue;
+      final nav = run['navigationEndpoint'];
+      if (nav is! Map<String, dynamic>) continue;
+      final browse = nav['browseEndpoint'];
+      if (browse is Map<String, dynamic>) {
+        final id = browse['browseId'];
+        if (id is String && id.startsWith('UC')) return id;
+      }
+    }
+    return null;
   }
 
   /// Detects YouTube's official/verified creator badge on a result so the

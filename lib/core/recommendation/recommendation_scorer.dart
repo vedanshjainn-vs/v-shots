@@ -106,6 +106,9 @@ class RecommendationScorer {
     final skipPenalty = profile.artistSkipPenalty[track.artist] ?? 0.0;
     const repetitionPenalty =
         0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
+    // Official/verified uploads get a small, honest ranking boost (real
+    // InnerTube badge metadata only — never guessed from channel names).
+    final officialBoost = track.isOfficial ? 1.0 : 0.0;
 
     final total = config.weightUserAffinity * userAffinity +
         config.weightArtistAffinity * artistAffinity +
@@ -114,7 +117,8 @@ class RecommendationScorer {
         config.weightCompletionProbability * completionProbability +
         config.weightPopularity * popularity +
         config.weightContextMatch * contextMatch +
-        config.weightNovelty * novelty -
+        config.weightNovelty * novelty +
+        config.weightOfficialBoost * officialBoost -
         config.weightSkipPenalty * skipPenalty -
         config.weightRepetitionPenalty * repetitionPenalty;
 
@@ -132,6 +136,7 @@ class RecommendationScorer {
               'popularity': popularity,
               'contextMatch': contextMatch,
               'novelty': novelty,
+              'officialBoost': officialBoost,
               'skipPenalty': skipPenalty,
               'repetitionPenalty': repetitionPenalty,
             }
