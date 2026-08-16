@@ -27,7 +27,7 @@ class VShotsBrowserPlaybackService : Service() {
         val notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("V Shots")
             .setContentText("Discovery playback is active")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
