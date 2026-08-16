@@ -2,27 +2,26 @@
 // V Shots — Discovery in-app YouTube browser (mini player + expandable sheet)
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Discovery-scoped, draggable bottom sheet that opens the OFFICIAL YouTube
-// watch page (https://www.youtube.com/watch?v=<id>) inside the app — the real
-// YouTube web content, never a fake player. States:
+// Discovery-scoped browser that opens the OFFICIAL YouTube watch page
+// (https://www.youtube.com/watch?v=<id>) inside the app — the real YouTube
+// web content, never a fake player. States:
 //   collapsed  → a compact glass mini player above the bottom navigation
 //   expanded   → browser bar (minimize / lock+URL / close) over the live page
 //
-// Playback continuity: the WebView is created ONCE per session and stays
-// mounted at every sheet size, so minimizing keeps the video playing. Closing
-// removes the sheet (and therefore the WebView) entirely.
+// Extent is driven by a single AnimationController (0=collapsed .. 1=expanded)
+// so the collapse/expand gesture is finger-connected and deterministic — no
+// DraggableScrollableSheet quirks. Drag on the mini player or the browser bar
+// updates the extent; release snaps to collapsed/expanded (with a midpoint
+// snap). The WebView is created ONCE per session and stays mounted (clipped,
+// not removed) while collapsed so playback continues; closing removes it.
 //
 // BACKGROUND-PLAYBACK LIMITATION (documented honestly): WebView-based YouTube
 // playback is not guaranteed while the OS backgrounds the app or locks the
-// screen (YouTube's web player pauses in backgrounded webviews; Android may
-// also stop the page). We do NOT fake background audio or add brittle
-// workarounds. In-app continuity (collapse/expand/tab-switch via IndexedStack)
-// works because the WebView stays alive in the tree. The existing
-// audio_service global player remains the app's true background-playback path
-// for the licensed/audio pipeline.
+// screen (YouTube pauses backgrounded webviews). We do NOT fake background
+// audio. In-app continuity (collapse/expand, tab-switch) works because the
+// WebView stays alive in the tree. The audio_service global player remains the
+// app's true background-playback path.
 // ═════════════════════════════════════════════════════════════════════════════
-
-import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -41,44 +40,34 @@ class DiscoveryBrowserSheet extends StatefulWidget {
   State<DiscoveryBrowserSheet> createState() => _DiscoveryBrowserSheetState();
 }
 
-class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
-  final DraggableScrollableController _sheet = DraggableScrollableController();
+class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _extent;
   WebViewController? _webViewController;
   String? _lastLoadedUrl;
-  bool _collapsed = true;
 
-  static const double _minExtent = 0.10;
-  static const double _midExtent = 0.45;
-  static const double _maxExtent = 0.92;
-  static const List<double> _snaps = [_minExtent, _midExtent, _maxExtent];
+  static const double _miniHeight = 84;
+  static const double _maxFraction = 0.92;
 
   @override
   void initState() {
     super.initState();
-    // Start collapsed (0.10) before the sheet attaches.
-    _sheet.jumpTo(_minExtent);
-    _sheet.addListener(_onExtentChanged);
+    _extent = AnimationController(vsync: this, value: 0.0);
+    _extent.addListener(_onExtentTick);
     widget.controller.addListener(_onControllerChanged);
     _loadForCurrent();
   }
 
   @override
   void dispose() {
-    _sheet.removeListener(_onExtentChanged);
     widget.controller.removeListener(_onControllerChanged);
-    _sheet.dispose();
-    // The platform WebView is disposed when WebViewWidget is removed from the
-    // tree (on close); dropping our reference here releases it.
+    _extent.dispose();
     _webViewController = null;
     super.dispose();
   }
 
-  void _onExtentChanged() {
-    final collapsed = _sheet.size < 0.3;
-    if (collapsed != _collapsed) {
-      setState(() => _collapsed = collapsed);
-      widget.controller.setExpanded(!collapsed);
-    }
+  void _onExtentTick() {
+    widget.controller.setExpanded(_extent.value > 0.55);
   }
 
   void _onControllerChanged() {
@@ -87,10 +76,43 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
     final url = widget.controller.url;
     if (url != null && url != _lastLoadedUrl) {
       // Video switched: collapse back to the mini player and reload.
-      if (_sheet.size > _minExtent) _sheet.jumpTo(_minExtent);
+      _extent.value = 0.0;
       _loadForCurrent();
     }
     setState(() {});
+  }
+
+  // ── Extent gesture (finger-connected with snap) ─────────────────────────
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final maxH = MediaQuery.of(context).size.height * _maxFraction;
+    final travel = maxH - _miniHeight;
+    if (travel <= 0) return;
+    final delta = -details.delta.dy / travel;
+    _extent.value = (_extent.value + delta).clamp(0.0, 1.0);
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    double target;
+    if (velocity < -600) {
+      target = 1.0; // fling up → expand
+    } else if (velocity > 600) {
+      target = 0.0; // fling down → collapse
+    } else if (_extent.value > 0.45) {
+      target = 1.0;
+    } else {
+      target = 0.0;
+    }
+    _animateTo(target);
+  }
+
+  void _animateTo(double target) {
+    _extent.animateTo(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   // ── WebView lifecycle ────────────────────────────────────────────────────
@@ -151,8 +173,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
-    final webViewController =
-        _webViewController ??= await _createWebViewController();
+    final webViewController = _webViewController ??=
+        await _createWebViewController();
     try {
       await webViewController.loadRequest(Uri.parse(url));
     } catch (e) {
@@ -186,111 +208,68 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
   }
 
   void _close() {
-    if (!_collapsed) {
-      _sheet
-          .animateTo(
-        _minExtent,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeIn,
-      )
-          .then((_) {
-        if (mounted) widget.controller.close();
-      });
-    } else {
-      widget.controller.close();
-    }
-  }
-
-  // ── Manual drag (finger-connected, snaps) ────────────────────────────────
-
-  void _onDragUpdate(DragUpdateDetails details, double sheetHeight) {
-    if (sheetHeight <= 0) return;
-    final deltaExtent = -details.delta.dy / sheetHeight;
-    final next = (_sheet.size + deltaExtent).clamp(_minExtent, _maxExtent);
-    _sheet.jumpTo(next);
-  }
-
-  void _onDragEnd(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    final target = _snapTarget(_sheet.size, velocity);
-    _sheet.animateTo(
-      target,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  double _snapTarget(double current, double velocity) {
-    if (velocity < -600) return _maxExtent; // fling up
-    if (velocity > 600) return _minExtent; // fling down
-    var best = _snaps.first;
-    var bestDistance = (current - best).abs();
-    for (final snap in _snaps.skip(1)) {
-      final distance = (current - snap).abs();
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = snap;
-      }
-    }
-    return best;
+    _extent
+        .animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeIn,
+        )
+        .then((_) {
+          if (mounted) widget.controller.close();
+        });
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final sheetHeight = constraints.maxHeight;
-        return DraggableScrollableSheet(
-          controller: _sheet,
-          minChildSize: _minExtent,
-          maxChildSize: _maxExtent,
-          snap: true,
-          snapSizes: _snaps,
-          expand: false,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color:
-                    _collapsed ? Colors.transparent : const Color(0xF20A0D16),
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(_collapsed ? 20 : 0),
-                ),
-                boxShadow: _collapsed
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.25),
-                          blurRadius: 18,
-                          offset: const Offset(0, -4),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Column(
+    final maxH = MediaQuery.of(context).size.height * _maxFraction;
+    return AnimatedBuilder(
+      animation: _extent,
+      builder: (context, _) {
+        final e = _extent.value;
+        final currentH = _miniHeight + e * (maxH - _miniHeight);
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            height: currentH,
+            width: double.infinity,
+            child: ClipRect(
+              child: Stack(
                 children: [
-                  if (!_collapsed) _buildBrowserBar(),
-                  Expanded(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // The live YouTube page — mounted once per session so
-                        // audio keeps playing while minimized.
-                        if (_webViewController != null)
-                          WebViewWidget(controller: _webViewController!),
-                        if (_collapsed)
-                          _buildMiniPlayer(sheetHeight)
-                        else ...[
-                          if (widget.controller.isLoading) _buildLoading(),
-                          if (widget.controller.error != null) _buildError(),
-                        ],
-                      ],
+                  // Expanded browser content — kept mounted at full size and
+                  // CLIPPED while collapsed so the WebView keeps playing.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: e < 0.5,
+                      child: SizedBox(
+                        height: maxH,
+                        child: Column(
+                          children: [
+                            _buildBrowserBar(),
+                            Expanded(child: _buildBrowserBody()),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Collapsed mini player — fades out as the sheet expands.
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 8,
+                    child: IgnorePointer(
+                      ignoring: e > 0.5,
+                      child: Opacity(
+                        opacity: (1 - e * 2).clamp(0.0, 1.0),
+                        child: _buildMiniPlayer(),
+                      ),
                     ),
                   ),
                 ],
               ),
-            );
-          },
+            ),
+          ),
         );
       },
     );
@@ -300,14 +279,14 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
 
   Widget _buildBrowserBar() {
     return GestureDetector(
-      onVerticalDragUpdate: (d) => _onDragUpdate(d, _sheetAreaHeight()),
+      onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       child: Container(
         color: const Color(0xFF0A0D16),
         padding: EdgeInsets.only(
           left: 4,
           right: 4,
-          top: MediaQuery.of(context).padding.top + 4,
+          top: MediaQuery.of(context).padding.top + 6,
           bottom: 4,
         ),
         child: Row(
@@ -319,14 +298,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
                 size: 28,
               ),
               tooltip: 'Minimize',
-              onPressed: () => _sheet.animateTo(
-                _minExtent,
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
-              ),
+              onPressed: () => _animateTo(0.0),
             ),
-            const Icon(Icons.lock_outline_rounded,
-                color: AppColors.textSubtle, size: 14),
+            const Icon(
+              Icons.lock_outline_rounded,
+              color: AppColors.textSubtle,
+              size: 14,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -362,20 +340,17 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
 
   // ── Collapsed mini player ────────────────────────────────────────────────
 
-  Widget _buildMiniPlayer(double sheetHeight) {
+  Widget _buildMiniPlayer() {
     final title = widget.controller.title ?? 'Playing video';
     final artist = widget.controller.artist ?? '';
     final artwork = widget.controller.artwork;
 
     return GestureDetector(
-      onVerticalDragUpdate: (d) => _onDragUpdate(d, sheetHeight),
+      onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
-      onTap: () => _sheet.animateTo(
-        _maxExtent,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-      ),
+      onTap: () => _animateTo(1.0),
       child: Container(
+        height: 68,
         decoration: BoxDecoration(
           color: const Color(0xF20E111C),
           borderRadius: BorderRadius.circular(18),
@@ -425,11 +400,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
                       ),
                     ),
                   ),
-                const Positioned(
-                  left: 4,
-                  bottom: 4,
-                  child: _YoutubeBadge(),
-                ),
+                const Positioned(left: 4, bottom: 4, child: _YoutubeBadge()),
               ],
             ),
             const SizedBox(width: 12),
@@ -477,15 +448,36 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
                 size: 24,
               ),
               tooltip: 'Expand',
-              onPressed: () => _sheet.animateTo(
-                _maxExtent,
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-              ),
+              onPressed: () => _animateTo(1.0),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  // ── Expanded body (WebView / loading / error) ────────────────────────────
+
+  Widget _buildBrowserBody() {
+    if (widget.controller.error != null) return _buildError();
+    final wc = _webViewController;
+    if (wc == null) return _buildLoading();
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        WebViewWidget(controller: wc),
+        // A brief loading veil on top while the page is still starting; the
+        // YouTube page then takes over its own rendering.
+        if (widget.controller.isLoading)
+          IgnorePointer(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.4),
+              child: const Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -554,13 +546,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet> {
         ),
       ),
     );
-  }
-
-  double _sheetAreaHeight() {
-    final size = MediaQuery.of(context).size;
-    // The sheet occupies the Discovery body area (above bottom nav); using
-    // screen height is a close-enough scale for the finger-follow drag.
-    return size.height;
   }
 }
 

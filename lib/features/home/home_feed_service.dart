@@ -86,8 +86,8 @@ class HomeShelf {
 
 class HomeFeedService {
   HomeFeedService({MusicRepository? repository, RecommendationEngine? engine})
-      : _repository = repository,
-        _engine = engine;
+    : _repository = repository,
+      _engine = engine;
 
   final MusicRepository? _repository;
   final RecommendationEngine? _engine;
@@ -96,117 +96,117 @@ class HomeFeedService {
   /// decision of what Home emphasizes; the CONTENT of each shelf is decided
   /// by the data (taste profile + live catalog), not hardcoded here.
   List<HomeShelf> buildShelfDescriptors() => <HomeShelf>[
-        HomeShelf(
-          id: 'continue',
-          title: 'Continue Listening',
-          subtitle: 'Pick up where you left off',
-          kind: HomeShelfKind.continueListening,
-          limit: 15,
-        ),
-        HomeShelf(
-          id: 'mfy',
-          title: 'Made For You',
-          subtitle: 'Personalized from your listening',
-          kind: HomeShelfKind.madeForYou,
-          limit: 14,
-        ),
-        HomeShelf(
-          id: 'byld',
-          title: 'Because You Listened To',
-          subtitle: 'Based on your recent plays',
-          kind: HomeShelfKind.becauseYouListenedTo,
-          limit: 12,
-          onlyWhenPersonalized: true,
-        ),
-        HomeShelf(
-          id: 'trending',
-          title: 'Trending Now',
-          subtitle: 'What the world is playing',
-          kind: HomeShelfKind.catalog,
-          query: 'trending songs official music video 2026',
-          order: 'viewCount',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'new',
-          title: 'New Releases',
-          subtitle: 'Fresh drops this week',
-          kind: HomeShelfKind.catalog,
-          query: 'new music releases official audio 2026',
-          order: 'date',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'tfy',
-          title: 'Trending For You',
-          subtitle: 'Trending, ranked by your taste',
-          kind: HomeShelfKind.trendingForYou,
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'discover',
-          title: 'Discover Something New',
-          subtitle: 'Step outside your usual mix',
-          kind: HomeShelfKind.discoverSomethingNew,
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'bollywood',
-          title: 'Bollywood Hits',
-          subtitle: 'Hindi cinema favourites',
-          kind: HomeShelfKind.catalog,
-          query: 'top bollywood hindi songs official music video',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'punjabi',
-          title: 'Punjabi Bangers',
-          subtitle: 'Desi energy',
-          kind: HomeShelfKind.catalog,
-          query: 'latest punjabi pop hits official audio',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'global',
-          title: 'Global Pop',
-          subtitle: 'International chart hits',
-          kind: HomeShelfKind.catalog,
-          query: 'billboard top global pop hits official audio',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'lofi',
-          title: 'Chill & Lo-Fi',
-          subtitle: 'Late night focus',
-          kind: HomeShelfKind.catalog,
-          query: 'chill lofi late night beats official audio',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'hiphop',
-          title: 'Hip-Hop',
-          subtitle: 'Rap & beats',
-          kind: HomeShelfKind.catalog,
-          query: 'hip hop rap songs official audio',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'romantic',
-          title: 'Romantic',
-          subtitle: 'Love songs',
-          kind: HomeShelfKind.catalog,
-          query: 'romantic love songs official audio hindi',
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'classics',
-          title: '90s Classics',
-          subtitle: 'Evergreen hits',
-          kind: HomeShelfKind.catalog,
-          query: '90s 2000s evergreen bollywood classic songs',
-          limit: 12,
-        ),
-      ];
+    HomeShelf(
+      id: 'continue',
+      title: 'Continue Listening',
+      subtitle: 'Pick up where you left off',
+      kind: HomeShelfKind.continueListening,
+      limit: 15,
+    ),
+    HomeShelf(
+      id: 'mfy',
+      title: 'Made For You',
+      subtitle: 'Personalized from your listening',
+      kind: HomeShelfKind.madeForYou,
+      limit: 14,
+    ),
+    HomeShelf(
+      id: 'byld',
+      title: 'Because You Listened To',
+      subtitle: 'Based on your recent plays',
+      kind: HomeShelfKind.becauseYouListenedTo,
+      limit: 12,
+      onlyWhenPersonalized: true,
+    ),
+    HomeShelf(
+      id: 'trending',
+      title: 'Trending Now',
+      subtitle: 'What the world is playing',
+      kind: HomeShelfKind.catalog,
+      query: 'trending songs official music video 2026',
+      order: 'viewCount',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'new',
+      title: 'New Releases',
+      subtitle: 'Fresh drops this week',
+      kind: HomeShelfKind.catalog,
+      query: 'new music releases official audio 2026',
+      order: 'date',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'tfy',
+      title: 'Trending For You',
+      subtitle: 'Trending, ranked by your taste',
+      kind: HomeShelfKind.trendingForYou,
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'discover',
+      title: 'Discover Something New',
+      subtitle: 'Step outside your usual mix',
+      kind: HomeShelfKind.discoverSomethingNew,
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'bollywood',
+      title: 'Bollywood Hits',
+      subtitle: 'Hindi cinema favourites',
+      kind: HomeShelfKind.catalog,
+      query: 'top bollywood hindi songs official music video',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'punjabi',
+      title: 'Punjabi Bangers',
+      subtitle: 'Desi energy',
+      kind: HomeShelfKind.catalog,
+      query: 'latest punjabi pop hits official audio',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'global',
+      title: 'Global Pop',
+      subtitle: 'International chart hits',
+      kind: HomeShelfKind.catalog,
+      query: 'billboard top global pop hits official audio',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'lofi',
+      title: 'Chill & Lo-Fi',
+      subtitle: 'Late night focus',
+      kind: HomeShelfKind.catalog,
+      query: 'chill lofi late night beats official audio',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'hiphop',
+      title: 'Hip-Hop',
+      subtitle: 'Rap & beats',
+      kind: HomeShelfKind.catalog,
+      query: 'hip hop rap songs official audio',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'romantic',
+      title: 'Romantic',
+      subtitle: 'Love songs',
+      kind: HomeShelfKind.catalog,
+      query: 'romantic love songs official audio hindi',
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'classics',
+      title: '90s Classics',
+      subtitle: 'Evergreen hits',
+      kind: HomeShelfKind.catalog,
+      query: '90s 2000s evergreen bollywood classic songs',
+      limit: 12,
+    ),
+  ];
 
   /// Whether the user has enough signal history for genuinely personalized
   /// shelves. Exposed for the UI (e.g. to show a "personalize your feed"
@@ -243,12 +243,12 @@ class HomeFeedService {
     final phaseOne = shelves.where((s) => phaseOneIds.contains(s.id)).toList();
     final phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
 
-    await Future.wait(
-      phaseOne.map((s) => _loadShelf(s, excludeIds, onUpdate: onUpdate)),
-    );
-    await Future.wait(
-      phaseTwo.map((s) => _loadShelf(s, excludeIds, onUpdate: onUpdate)),
-    );
+    // Load in small chunks (not a full parallel burst): InnerTube/YouTube
+    // throttle a burst of ~11 simultaneous discovery requests, which was
+    // causing individual Home shelves to fail. 3-at-a-time keeps Home fast
+    // without tripping rate limits.
+    await _loadInChunks(phaseOne, excludeIds, onUpdate: onUpdate);
+    await _loadInChunks(phaseTwo, excludeIds, onUpdate: onUpdate);
 
     // Cross-shelf de-duplication is applied AFTER loading because phase-one
     // shelves load concurrently (and therefore can't see each other's
@@ -257,6 +257,20 @@ class HomeFeedService {
     // on two different Home shelves.
     _dedupAcrossShelves(shelves);
     onUpdate?.call();
+  }
+
+  Future<void> _loadInChunks(
+    List<HomeShelf> shelves,
+    Set<String> excludeIds, {
+    void Function()? onUpdate,
+  }) async {
+    const chunkSize = 3;
+    for (var i = 0; i < shelves.length; i += chunkSize) {
+      final chunk = shelves.skip(i).take(chunkSize).toList();
+      await Future.wait(
+        chunk.map((s) => _loadShelf(s, excludeIds, onUpdate: onUpdate)),
+      );
+    }
   }
 
   void _dedupAcrossShelves(List<HomeShelf> shelves) {

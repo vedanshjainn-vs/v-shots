@@ -99,8 +99,11 @@ const _relatedFixture = '''
 
 InnerTubeClient _clientReturning(String body) {
   final mock = MockClient((request) async {
-    return http.Response(body, 200,
-        headers: {'content-type': 'application/json'});
+    return http.Response(
+      body,
+      200,
+      headers: {'content-type': 'application/json'},
+    );
   });
   // Fixed key/version bypass the (network) context-extraction step.
   return InnerTubeClient(
@@ -110,25 +113,87 @@ InnerTubeClient _clientReturning(String body) {
   );
 }
 
+const _officialFixture = '''
+{
+  "contents": {
+    "twoColumnSearchResultsRenderer": {
+      "primaryContents": {
+        "sectionListRenderer": {
+          "contents": [
+            {
+              "itemSectionRenderer": {
+                "contents": [
+                  {
+                    "videoRenderer": {
+                      "videoId": "officialVIDEO1",
+                      "title": {"runs": [{"text": "Tum Hi Ho (Official Video)"}]},
+                      "ownerText": {"runs": [{"text": "Arijit Singh"}]},
+                      "lengthText": {"simpleText": "4:26"},
+                      "viewCountText": {"simpleText": "1.2B views"},
+                      "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/officialVIDEO1/hqdefault.jpg"}]},
+                      "ownerBadges": [
+                        {"metadataBadgeRenderer": {"style": "BADGE_STYLE_TYPE_VERIFIED_ARTIST"}}
+                      ]
+                    }
+                  },
+                  {
+                    "videoRenderer": {
+                      "videoId": "fanVIDEO999",
+                      "title": {"runs": [{"text": "Tum Hi Ho Lyrics"}]},
+                      "ownerText": {"runs": [{"text": "Lyrics Channel"}]},
+                      "lengthText": {"simpleText": "4:26"},
+                      "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/fanVIDEO999/hqdefault.jpg"}]}
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+''';
+
 void main() {
   group('InnerTubeClient search', () {
-    test('parses videoRenderer items (id/title/channel/duration/viewCount)',
-        () async {
-      final client = _clientReturning(_searchFixture);
-      final items = await client.search('arijit singh');
+    test(
+      'parses videoRenderer items (id/title/channel/duration/viewCount)',
+      () async {
+        final client = _clientReturning(_searchFixture);
+        final items = await client.search('arijit singh');
+
+        expect(items, hasLength(2));
+        expect(items.first.videoId, 'O5gwxm3NxFU');
+        expect(items.first.title, 'Best Of Arijit Singh 2024');
+        expect(items.first.channelName, 'ABT Lofi Music');
+        expect(items.first.durationSeconds, 272); // 4:32
+        expect(items.first.viewCount, 66544320);
+        expect(
+          items.first.thumbnailUrl,
+          'https://i.ytimg.com/vi/O5gwxm3NxFU/hq720.jpg',
+        );
+
+        // 1:00:52 -> 3652s
+        expect(items[1].durationSeconds, 3652);
+        expect(items[1].viewCount, 5700000); // 5.7M
+      },
+    );
+
+    test('detects official/verified creator badges', () async {
+      final client = _clientReturning(_officialFixture);
+      final items = await client.search('tum hi ho');
 
       expect(items, hasLength(2));
-      expect(items.first.videoId, 'O5gwxm3NxFU');
-      expect(items.first.title, 'Best Of Arijit Singh 2024');
-      expect(items.first.channelName, 'ABT Lofi Music');
-      expect(items.first.durationSeconds, 272); // 4:32
-      expect(items.first.viewCount, 66544320);
-      expect(items.first.thumbnailUrl,
-          'https://i.ytimg.com/vi/O5gwxm3NxFU/hq720.jpg');
-
-      // 1:00:52 -> 3652s
-      expect(items[1].durationSeconds, 3652);
-      expect(items[1].viewCount, 5700000); // 5.7M
+      final official = items.firstWhere((i) => i.videoId == 'officialVIDEO1');
+      final fan = items.firstWhere((i) => i.videoId == 'fanVIDEO999');
+      expect(
+        official.isOfficial,
+        isTrue,
+        reason: 'OFFICIAL/VERIFIED badge must be detected',
+      );
+      expect(fan.isOfficial, isFalse);
     });
 
     test('searchPage surfaces the continuation token', () async {
@@ -159,9 +224,7 @@ void main() {
     });
 
     test('returns empty gracefully on a non-200 response', () async {
-      final mock = MockClient(
-        (request) async => http.Response('oops', 403),
-      );
+      final mock = MockClient((request) async => http.Response('oops', 403));
       final client = InnerTubeClient(
         httpClient: mock,
         apiKey: 'TEST_KEY',

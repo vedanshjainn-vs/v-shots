@@ -22,8 +22,8 @@ class InnerTubeMusicProvider extends MusicProvider {
   InnerTubeMusicProvider({
     InnerTubeClient? client,
     InnerTubeNormalizer normalizer = const InnerTubeNormalizer(),
-  })  : _client = client ?? InnerTubeClient(),
-        _normalizer = normalizer;
+  }) : _client = client ?? InnerTubeClient(),
+       _normalizer = normalizer;
 
   final InnerTubeClient _client;
   final InnerTubeNormalizer _normalizer;
@@ -36,11 +36,11 @@ class InnerTubeMusicProvider extends MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-        ProviderCapability.search,
-        ProviderCapability.getTrending,
-        ProviderCapability.getRecommendations,
-        ProviderCapability.getRelated,
-      };
+    ProviderCapability.search,
+    ProviderCapability.getTrending,
+    ProviderCapability.getRecommendations,
+    ProviderCapability.getRelated,
+  };
 
   bool _initialized = false;
 
@@ -89,6 +89,13 @@ class InnerTubeMusicProvider extends MusicProvider {
         minMinutes: minDurationMinutes,
         excludeIds: excludeIds,
       );
+      // Empty (or fully filtered) results are reported as a FAILURE so the
+      // ProviderManager fails over to the YouTube Data API provider (and its
+      // curated catalog) — a shelf must never come back empty just because
+      // InnerTube returned nothing usable.
+      if (tracks.isEmpty) {
+        return ProviderResult.failure('InnerTube returned no usable results');
+      }
       return ProviderResult.success(tracks);
     } catch (e) {
       return ProviderResult.failure('InnerTube search failed: $e');
@@ -116,9 +123,14 @@ class InnerTubeMusicProvider extends MusicProvider {
         limit: limit,
         excludeIds: excludeIds,
       );
+      if (tracks.isEmpty) {
+        return ProviderResult.failure('InnerTube page had no usable results');
+      }
       return ProviderResult.success(
         ProviderSearchPage(
-            tracks: tracks, nextPageToken: page.continuationToken),
+          tracks: tracks,
+          nextPageToken: page.continuationToken,
+        ),
       );
     } catch (e) {
       return ProviderResult.failure('InnerTube searchPage failed: $e');
@@ -159,6 +171,9 @@ class InnerTubeMusicProvider extends MusicProvider {
         limit: limit,
         excludeIds: {trackId},
       );
+      if (tracks.isEmpty) {
+        return ProviderResult.failure('InnerTube related returned nothing');
+      }
       return ProviderResult.success(tracks);
     } catch (e) {
       return ProviderResult.failure('InnerTube related failed: $e');

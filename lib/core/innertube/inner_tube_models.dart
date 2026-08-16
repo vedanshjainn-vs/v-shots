@@ -17,6 +17,7 @@ class InnerTubeVideoItem {
     required this.thumbnailUrl,
     required this.durationSeconds,
     this.viewCount = 0,
+    this.isOfficial = false,
   });
 
   final String videoId;
@@ -25,6 +26,11 @@ class InnerTubeVideoItem {
   final String thumbnailUrl;
   final int durationSeconds;
   final int viewCount;
+
+  /// True when the uploader carries a YouTube official/verified badge
+  /// (OFFICIAL_ARTIST_BADGE / BADGE_STYLE_TYPE_VERIFIED…). Used to prefer
+  /// original artist uploads over fan/lyrics channels.
+  final bool isOfficial;
 }
 
 /// One page of InnerTube search results plus an optional continuation token
@@ -32,9 +38,7 @@ class InnerTubeVideoItem {
 class InnerTubePage {
   const InnerTubePage({required this.items, this.continuationToken});
 
-  const InnerTubePage.empty()
-      : items = const [],
-        continuationToken = null;
+  const InnerTubePage.empty() : items = const [], continuationToken = null;
 
   final List<InnerTubeVideoItem> items;
   final String? continuationToken;

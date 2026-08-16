@@ -102,29 +102,50 @@ class InnerTubeClient {
   ) async {
     await _ensureContext();
     final uri = Uri.parse('$_endpointBase/$endpoint').replace(
-      queryParameters: {
-        'key': _apiKey ?? _fallbackKey,
-        'prettyPrint': 'false',
-      },
+      queryParameters: {'key': _apiKey ?? _fallbackKey, 'prettyPrint': 'false'},
     );
-    try {
-      final res = await _http
-          .post(
-            uri,
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 12));
-      if (res.statusCode != 200) {
-        debugPrint('[InnerTube] $endpoint HTTP ${res.statusCode}');
+    // One retry — YouTube occasionally throttles bursts (the app fires
+    // several discovery requests close together). Retrying once turns most
+    // transient 4xx/5xx failures into real results. The backoff delay only
+    // applies in release builds (debug/tests retry immediately so no timer
+    // is left pending in the widget-test harness).
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final res = await _http
+            .post(
+              uri,
+              headers: const {'Content-Type': 'application/json'},
+              body: jsonEncode(body),
+            )
+            .timeout(const Duration(seconds: 12));
+        if (res.statusCode != 200) {
+          debugPrint(
+            '[InnerTube] $endpoint HTTP ${res.statusCode} '
+            '(attempt ${attempt + 1})',
+          );
+          if (attempt == 0) {
+            await _retryDelay();
+            continue;
+          }
+          return null;
+        }
+        final decoded = jsonDecode(res.body);
+        return decoded is Map<String, dynamic> ? decoded : null;
+      } catch (e) {
+        debugPrint('[InnerTube] $endpoint failed (attempt ${attempt + 1}): $e');
+        if (attempt == 0) {
+          await _retryDelay();
+          continue;
+        }
         return null;
       }
-      final decoded = jsonDecode(res.body);
-      return decoded is Map<String, dynamic> ? decoded : null;
-    } catch (e) {
-      debugPrint('[InnerTube] $endpoint failed: $e');
-      return null;
     }
+    return null;
+  }
+
+  Future<void> _retryDelay() async {
+    if (kDebugMode) return;
+    await Future<void>.delayed(const Duration(milliseconds: 500));
   }
 
   /// Searches for music videos. Returns up to [limit] unique items.
@@ -181,10 +202,10 @@ class InnerTubeClient {
     String videoId, {
     int limit = 20,
   }) async {
-    final json = await _post(
-      'next',
-      {'context': _context(), 'videoId': videoId},
-    );
+    final json = await _post('next', {
+      'context': _context(),
+      'videoId': videoId,
+    });
     if (json == null) return const [];
     final seen = <String>{videoId};
     final kept = <InnerTubeVideoItem>[];
@@ -252,7 +273,25 @@ class InnerTubeClient {
       thumbnailUrl: thumbnail ?? '',
       durationSeconds: duration,
       viewCount: viewCount,
+      isOfficial: _parseOfficialBadge(v['ownerBadges']),
     );
+  }
+
+  /// Detects YouTube's official/verified creator badge on a result so the
+  /// app can prefer original artist uploads over fan/lyrics channels.
+  static bool _parseOfficialBadge(dynamic ownerBadges) {
+    if (ownerBadges is! List) return false;
+    for (final badge in ownerBadges) {
+      if (badge is! Map<String, dynamic>) continue;
+      final renderer = badge['metadataBadgeRenderer'];
+      if (renderer is! Map<String, dynamic>) continue;
+      final style = (renderer['style'] as String?) ?? '';
+      final upper = style.toUpperCase();
+      if (upper.contains('OFFICIAL') || upper.contains('VERIFIED')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   List<InnerTubeVideoItem> _collectLockupVideos(Map<String, dynamic> json) {
