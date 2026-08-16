@@ -28,6 +28,7 @@ import 'core/motion/motion.dart';
 import 'core/player/queue_controller.dart';
 import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
+import 'core/playback/vshots_playback_manager.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/recommendation_engine.dart';
@@ -44,6 +45,7 @@ import 'shared/widgets/bottom_tab_bar.dart';
 import 'core/storage/local_library.dart';
 import 'core/storage/personalization_store.dart';
 import 'features/auth/auth_modal.dart';
+import 'features/foryou/discovery_browser_sheet.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/home/home_feed_service.dart';
@@ -578,6 +580,22 @@ class _MainShellState extends State<MainShell> {
                       },
                     );
                   },
+                );
+              },
+            ),
+
+            // GLOBAL PLAYER SHELL — the single in-app YouTube browser session
+            // (native WebView engine) mounted ONCE at the app shell, above
+            // every tab. Discovery (and, next phase, Home/Search/Library)
+            // route playback through VShotsPlaybackManager; this sheet is the
+            // one persistent UI+media surface for all of them.
+            AnimatedBuilder(
+              animation: VShotsPlaybackManager.instance.browser,
+              builder: (context, _) {
+                final b = VShotsPlaybackManager.instance.browser;
+                if (!b.isOpen) return const SizedBox.shrink();
+                return Positioned.fill(
+                  child: DiscoveryBrowserSheet(controller: b),
                 );
               },
             ),
@@ -1399,6 +1417,11 @@ Future<void> playTrack(
   _log('═══ PLAYBACK START ═══');
   _log('Track: ${track['title']} (${track['id']})');
   unawaited(HapticFeedback.selectionClick());
+
+  // Single-playback-source coordination: if the in-app browser (WebView
+  // engine) is open, close it before the IFrame path starts — never two
+  // audible sources at once.
+  VShotsPlaybackManager.instance.close();
 
   currentTrack = track;
   currentTrackNotifier.value = track;

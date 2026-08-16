@@ -30,7 +30,7 @@ import '../../main.dart'
         showMoreOptionsSheet,
         showAddToPlaylistSheet;
 import 'discovery_browser_controller.dart';
-import 'discovery_browser_sheet.dart';
+import '../../core/playback/vshots_playback_manager.dart';
 
 class ForYouFeedScreen extends StatefulWidget {
   const ForYouFeedScreen({super.key});
@@ -42,9 +42,10 @@ class ForYouFeedScreen extends StatefulWidget {
 class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   final PageController _pageController = PageController();
 
-  /// The ONE Discovery in-app browser session. Tapping Play on any card
-  /// reuses this — a second browser is never created.
-  final DiscoveryBrowserController _browser = DiscoveryBrowserController();
+  /// The ONE app-global in-app browser session (VShotsPlaybackManager).
+  /// Discovery reuses it — a second browser is never created anywhere.
+  DiscoveryBrowserController get _browser =>
+      VShotsPlaybackManager.instance.browser;
 
   final List<Map<String, dynamic>> _items = [];
   final Set<String> _seenIds = {};
@@ -111,7 +112,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // silent — this fires only on an actual tab switch to Discovery.
     if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
       coordinateDiscoveryBrowserTakesOver();
-      _browser.open(_items[_currentIndex]);
+      VShotsPlaybackManager.instance.playQueue(_items, _currentIndex);
     }
   }
 
@@ -120,8 +121,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   @override
   void dispose() {
     currentTabIndexNotifier.removeListener(_onTabChanged);
+    // The global browser is owned by VShotsPlaybackManager — do NOT dispose
+    // it here (it must survive tab switches).
     _browser.removeListener(_onBrowserChanged);
-    _browser.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -192,7 +194,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // global IFrame (in case another tab was playing) so audio never doubles.
     debugPrint('[DiscoveryPlay] OLD_PLAYER_CALL_BLOCKED (routing to browser)');
     coordinateDiscoveryBrowserTakesOver();
-    _browser.open(track);
+    VShotsPlaybackManager.instance.playQueue(List.of(_items), _currentIndex);
     setState(() {});
   }
 
@@ -284,7 +286,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // in-app browser (switch URL + autoplay). The old global player is never
     // used here; the coordinator keeps exactly one source audible.
     coordinateDiscoveryBrowserTakesOver();
-    _browser.open(track);
+    VShotsPlaybackManager.instance.playQueue(List.of(_items), index);
 
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
     playbackSignalTracker.onTrackStarted(track);
@@ -547,25 +549,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               ),
             ),
           ),
-
-          // 2. Discovery in-app YouTube browser (mini player + expandable
-          // sheet). One session; shown only while open. Entrance animates up.
-          if (_browser.isOpen)
-            Positioned.fill(
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(begin: 1, end: 0),
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-                builder: (context, slide, child) => FractionalTranslation(
-                  translation: Offset(0, slide),
-                  child: Opacity(
-                    opacity: (1 - slide).clamp(0.0, 1.0),
-                    child: child,
-                  ),
-                ),
-                child: DiscoveryBrowserSheet(controller: _browser),
-              ),
-            ),
         ],
       ),
     );
