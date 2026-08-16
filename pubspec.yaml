@@ -61,6 +61,13 @@ dependencies:
   # this app now calls it directly.
   url_launcher: ^6.3.2
   youtube_player_iframe: ^6.0.2
+  # In-app browser surface for the Discovery YouTube browser player. Already
+  # present transitively (via youtube_player_iframe) — promoted to a direct
+  # dependency because the Discovery browser imports it directly.
+  webview_flutter: ^4.14.1
+  # Platform-specific WebView APIs (Android autoplay settings) used by the
+  # Discovery browser. Already present transitively.
+  webview_flutter_android: ^4.13.0
   # Google AdMob (native ads) + Google UMP consent. Development uses the
   # official TEST ad unit IDs; production IDs are injected via secure config
   # (see lib/core/ads/ad_config.dart). See docs/legal/privacy_policy.md for
