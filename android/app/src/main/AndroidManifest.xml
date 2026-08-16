@@ -2,8 +2,7 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- Required by audio_service for background playback — see
-         lib/core/audio/vshots_audio_handler.dart for why this exists. -->
+    <!-- Required by audio_service and Discovery browser background media. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
@@ -30,8 +29,7 @@
             </intent-filter>
         </activity>
 
-        <!-- audio_service's background media session service — see
-             https://pub.dev/packages/audio_service Android setup docs. -->
+        <!-- audio_service's background media session service. -->
         <service android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="true"
@@ -40,6 +38,14 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!-- Discovery browser playback lifetime service. The native WebView
+             remains the actual media owner; this FGS keeps the app eligible for
+             intentional background/screen-off media execution. -->
+        <service
+            android:name=".VShotsBrowserPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true"
@@ -54,8 +60,7 @@
             android:value="2" />
 
         <!-- Google AdMob App ID. The value is the TEST AdMob App ID; the real
-             production App ID must be injected for release. Development/test
-             App ID from Google's docs. -->
+             production App ID must be injected for release. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713" />

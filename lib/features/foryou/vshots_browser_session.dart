@@ -1,28 +1,27 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — VShotsBrowserSession (reusable in-app YouTube browser session)
+// V Shots — Native Discovery YouTube browser session
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Owns ONE WebViewController session (the real YouTube watch page) and its
-// lifecycle: creation/config, loading, page playback toggle, and disposal.
-// The UI/interaction layer (mini player, drag, expand/collapse) belongs to
-// DiscoveryBrowserSheet — this class is the content/session layer, so the same
-// browser can later be reused by Home/Search/Artist pages without duplicating
-// WebView setup.
+// Discovery uses a native Android WebView platform view rather than the
+// generic webview_flutter widget. The native view is deliberately kept alive
+// while its media session is playing so minimizing the browser does not resize
+// or recreate the playback surface. The Android implementation also keeps the
+// WebView media lifecycle alive across Activity visibility changes.
 //
-// Honest limits (documented, not faked):
-//   • Playback is the real YouTube web page inside a WebView. Continuity while
-//     minimized/expanded works because the WebView stays mounted; genuine
-//     background/lock-screen audio is NOT guaranteed by WebViews and is the
-//     existing audio_service global player's job, not this session's.
-//   • Navigation is restricted to YouTube/Google infrastructure hosts.
+// The session remains UI-agnostic: it owns the native channel and exposes a
+// Widget for the sheet. This keeps the existing Discovery sheet/drag UX intact
+// while replacing only the playback engine underneath it.
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:flutter/services.dart';
 
-/// Pure host policy — approved YouTube/Google infrastructure only. Extracted
-/// for unit testing (no platform needed).
+import '../../shared/utils/youtube_url.dart';
+
+/// Pure host policy — approved YouTube/Google infrastructure only.
 bool isAllowedBrowserHost(String host) {
   final h = host.toLowerCase();
   const allowed = [
@@ -37,8 +36,6 @@ bool isAllowedBrowserHost(String host) {
   return allowed.any((a) => h == a || h.endsWith('.$a'));
 }
 
-/// A single in-app YouTube browser session. Created once per Discovery
-/// browser opening; reused across video switches; disposed on close.
 class VShotsBrowserSession {
   VShotsBrowserSession({
     required this.onPageStarted,
@@ -50,92 +47,139 @@ class VShotsBrowserSession {
   final void Function() onPageFinished;
   final void Function(String message) onError;
 
-  WebViewController? _controller;
+  MethodChannel? _channel;
   String? _lastUrl;
+  String? _pendingUrl;
+  bool _disposed = false;
+  bool _pagePlaying = false;
 
-  WebViewController? get controller => _controller;
+  bool get hasLoaded => _channel != null;
+  bool get pagePlaying => _pagePlaying;
 
-  bool get hasLoaded => _controller != null;
-
-  /// Loads [url] into the session, creating the WebView on first use.
-  /// Safe to call repeatedly (video switching) — the SAME session/WebView is
-  /// reused, preserving cookies/session state.
   Future<void> load(String url) async {
+    if (_disposed) return;
     _lastUrl = url;
-    final webViewController = _controller ??= await _createController();
+    _pendingUrl = url;
+    final channel = _channel;
+    if (channel == null) return;
     try {
-      await webViewController.loadRequest(Uri.parse(url));
-    } catch (e) {
+      await channel.invokeMethod<void>('load', url);
+    } catch (_) {
       onError('Could not open this video');
     }
   }
 
-  /// Reloads the last-loaded URL (retry after an error).
   Future<void> retry() async {
     final url = _lastUrl;
-    if (url != null) await load(url);
+    if (url == null) return;
+    final channel = _channel;
+    if (channel == null) {
+      _pendingUrl = url;
+      return;
+    }
+    try {
+      await channel.invokeMethod<void>('reload');
+    } catch (_) {
+      onError('Playback failed — please retry');
+    }
   }
 
-  /// Toggles the page's video play/pause. Best-effort: YouTube does not
-  /// expose playback state to the embedder, so this is a command, not a
-  /// guaranteed status.
   Future<bool?> togglePagePlayback() async {
-    final webViewController = _controller;
-    if (webViewController == null) return null;
+    final channel = _channel;
+    if (channel == null) return null;
     try {
-      final result = await webViewController.runJavaScriptReturningResult(
-        "(function(){var v=document.querySelector('video');"
-        "if(!v){return 'none';}"
-        "if(v.paused){v.play();return 'playing';}"
-        "v.pause();return 'paused';})()",
+      await channel.invokeMethod<void>('toggle');
+      return _pagePlaying;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> play() async {
+    final channel = _channel;
+    if (channel == null) return;
+    try {
+      await channel.invokeMethod<void>('play');
+    } catch (_) {
+      // The page may still be loading or YouTube may reject unmuted autoplay.
+    }
+  }
+
+  Widget buildWidget() {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: Text(
+            'Discovery browser is available on Android.',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
       );
-      final state = result.toString();
-      if (state.contains('playing')) return true;
-      if (state.contains('paused')) return false;
-      return null;
-    } catch (_) {
-      return null;
     }
-  }
 
-  Future<WebViewController> _createController() async {
-    final webViewController = WebViewController();
-    await webViewController.setJavaScriptMode(JavaScriptMode.unrestricted);
-    await webViewController.setBackgroundColor(Colors.black);
-    await webViewController.setNavigationDelegate(
-      NavigationDelegate(
-        onPageStarted: (_) => onPageStarted(),
-        onPageFinished: (_) => onPageFinished(),
-        onWebResourceError: (error) =>
-            onError('Playback failed — please retry'),
-        onNavigationRequest: (request) {
-          String host;
-          try {
-            host = Uri.parse(request.url).host.toLowerCase();
-          } catch (_) {
-            return NavigationDecision.prevent;
-          }
-          return isAllowedBrowserHost(host)
-              ? NavigationDecision.navigate
-              : NavigationDecision.prevent;
-        },
-      ),
+    return AndroidView(
+      viewType: 'vshots/native_browser',
+      layoutDirection: TextDirection.ltr,
+      onPlatformViewCreated: _attachPlatformView,
     );
-    // Android: allow the official YouTube page's media to start without an
-    // extra in-page tap (the user already tapped Play in the app).
-    try {
-      final android = webViewController.platform as AndroidWebViewController;
-      await android.setMediaPlaybackRequiresUserGesture(false);
-    } catch (_) {
-      // Non-Android or platform not ready — page still loads; the user can
-      // tap YouTube's own play button.
-    }
-    return webViewController;
   }
 
-  /// Disposes the session. Must be called on browser close.
+  void _attachPlatformView(int viewId) {
+    if (_disposed) return;
+    final channel = MethodChannel('vshots/browser/$viewId');
+    _channel = channel;
+    channel.setMethodCallHandler(_handleNativeEvent);
+    final pending = _pendingUrl;
+    if (pending != null) {
+      unawaited(load(pending));
+    }
+  }
+
+  Future<void> _handleNativeEvent(MethodCall call) async {
+    switch (call.method) {
+      case 'pageStarted':
+        onPageStarted();
+        break;
+      case 'pageFinished':
+        onPageFinished();
+        unawaited(_autoplayPass());
+        break;
+      case 'playbackState':
+        _pagePlaying = call.arguments == true;
+        break;
+      case 'error':
+        onError(call.arguments?.toString() ?? 'Playback failed — please retry');
+        break;
+    }
+  }
+
+  Future<void> _autoplayPass() async {
+    for (final delay in const [
+      Duration(milliseconds: 250),
+      Duration(milliseconds: 900),
+      Duration(milliseconds: 1800),
+    ]) {
+      if (_disposed) return;
+      await Future<void>.delayed(delay);
+      if (_disposed) return;
+      await play();
+    }
+  }
+
   void dispose() {
-    _controller = null;
+    if (_disposed) return;
+    _disposed = true;
+    final channel = _channel;
+    _channel = null;
+    _pendingUrl = null;
     _lastUrl = null;
+    _pagePlaying = false;
+    if (channel != null) {
+      unawaited(channel.invokeMethod<void>('dispose'));
+      channel.setMethodCallHandler(null);
+    }
   }
 }
+
+String browserWatchUrl(String videoId) => youtubeWatchUrl(videoId);

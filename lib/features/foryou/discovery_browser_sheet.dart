@@ -14,21 +14,13 @@
 // updates the extent; release snaps to collapsed/expanded (with a midpoint
 // snap).
 //
-// The WebView is created ONCE per session (VShotsBrowserSession) and stays
+// The native Android browser view is created ONCE per session and stays
 // mounted, at a CONSTANT size, while collapsed — collapse/expand only
-// TRANSLATE the browser layer, never resizing or detaching the platform view.
+// TRANSLATE the browser layer, never resizing or detaching the playback view.
 // Closing disposes the session.
-//
-// BACKGROUND-PLAYBACK LIMITATION (documented honestly): WebView-based YouTube
-// playback is not guaranteed while the OS backgrounds the app or locks the
-// screen (YouTube pauses backgrounded webviews). We do NOT fake background
-// audio. In-app continuity (collapse/expand, tab-switch) works because the
-// WebView stays alive in the tree. The audio_service global player remains the
-// app's true background-playback path.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
@@ -60,8 +52,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _extent = AnimationController(vsync: this, value: 0.0);
     _extent.addListener(_onExtentTick);
     widget.controller.addListener(_onControllerChanged);
-    // The single browser session: owns the WebView + lifecycle; the sheet is
-    // only the UI/interaction layer. Minimizing never destroys the session.
+    // The single browser session: owns the native WebView + lifecycle; the
+    // sheet is only the UI/interaction layer. Minimizing never destroys the
+    // session.
     _session = VShotsBrowserSession(
       onPageStarted: () => widget.controller.setLoading(true),
       onPageFinished: () => widget.controller.setLoading(false),
@@ -142,7 +135,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
-  // ── Browser session (WebView owned by VShotsBrowserSession) ──────────────
+  // ── Browser session ─────────────────────────────────────────────────────
 
   Future<void> _loadForCurrent() async {
     final url = widget.controller.url;
@@ -156,7 +149,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   Future<void> _togglePagePlayback() async {
     final result = await _session.togglePagePlayback();
     if (result == null) {
-      // No session/controller yet — load and let the page start.
       await _loadForCurrent();
       return;
     }
@@ -177,30 +169,22 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   // ── Build ────────────────────────────────────────────────────────────────
   //
-  // CRITICAL LIFECYCLE GUARANTEE (regression fix): the WebView is laid out at
-  // a CONSTANT full height (maxH) at all times and is only TRANSLATED when
-  // collapsed. It is never resized, clipped-to-tiny, or detached — resizing an
-  // AndroidView to a ~84px strip was the root cause of "Playback failed —
-  // please retry" + "Tap to unmute" in the collapsed state (YouTube fails in a
-  // tiny viewport, and the platform-view surface churned on every
-  // collapse/expand). The mini player is pure chrome ON TOP of the still-alive
-  // WebView.
+  // CRITICAL LIFECYCLE GUARANTEE: the native browser view is laid out at a
+  // CONSTANT full height (maxH) at all times and is only TRANSLATED when
+  // collapsed. It is never resized, clipped-to-tiny, or detached — the mini
+  // player is pure chrome ON TOP of the still-alive browser.
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
-    final maxH = screenH * _maxFraction; // constant WebView height
+    final maxH = screenH * _maxFraction;
     return AnimatedBuilder(
       animation: _extent,
       builder: (context, _) {
         final e = _extent.value;
-        // 0 when expanded; slides the whole browser down so only the mini
-        // strip stays visible when collapsed. The WebView never changes size.
         final collapseOffset = (1 - e) * (maxH - _miniHeight);
         return ClipRect(
           child: Stack(
             children: [
-              // 1. Persistent WebView host — ONE instance, constant size,
-              // pinned to the bottom of the body (above the bottom nav).
               Positioned(
                 left: 0,
                 right: 0,
@@ -222,8 +206,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                   ),
                 ),
               ),
-              // 2. Collapsed mini player — visual chrome only; the WebView is
-              // the real player, alive underneath.
               Positioned(
                 left: 12,
                 right: 12,
@@ -424,18 +406,14 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
-  // ── Expanded body (WebView / loading / error) ────────────────────────────
+  // ── Expanded body (native browser / loading / error) ────────────────────
 
   Widget _buildBrowserBody() {
     if (widget.controller.error != null) return _buildError();
-    final wc = _session.controller;
-    if (wc == null) return _buildLoading();
     return Stack(
       fit: StackFit.expand,
       children: [
-        WebViewWidget(controller: wc),
-        // A brief loading veil on top while the page is still starting; the
-        // YouTube page then takes over its own rendering.
+        _session.buildWidget(),
         if (widget.controller.isLoading)
           IgnorePointer(
             child: Container(
@@ -446,34 +424,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
             ),
           ),
       ],
-    );
-  }
-
-  Widget _buildLoading() {
-    final artwork = widget.controller.artwork;
-    return Container(
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (artwork != null && artwork.isNotEmpty)
-            AppImage(artwork, fit: BoxFit.cover),
-          Container(color: Colors.black.withValues(alpha: 0.6)),
-          const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: AppColors.accent),
-                SizedBox(height: 14),
-                Text(
-                  'Loading video…',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 
