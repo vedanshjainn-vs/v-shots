@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -35,6 +37,19 @@ private class VShotsBackgroundMediaWebView(
 ) : WebView(context) {
 
     private val appContext = context.applicationContext
+    private val handler = Handler(Looper.getMainLooper())
+    private val playbackPoll = object : Runnable {
+        override fun run() {
+            if (!isAttachedToWindow && !mediaPlaying) return
+            evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(!v){return 'none';}return v.paused?'paused':'playing';})()",
+            ) { result ->
+                setMediaPlaying(cleanJsResult(result) == "playing")
+            }
+            handler.postDelayed(this, 1000L)
+        }
+    }
+
     var mediaPlaying: Boolean = false
         private set
 
@@ -56,6 +71,7 @@ private class VShotsBackgroundMediaWebView(
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 events.invokeMethod("pageFinished", null)
+                startPlaybackPolling()
                 attemptAutoplayWithAudio()
             }
 
@@ -110,6 +126,15 @@ private class VShotsBackgroundMediaWebView(
             stopPlaybackForegroundService()
         }
         events.invokeMethod("playbackState", value)
+    }
+
+    private fun startPlaybackPolling() {
+        handler.removeCallbacks(playbackPoll)
+        handler.post(playbackPoll)
+    }
+
+    private fun stopPlaybackPolling() {
+        handler.removeCallbacks(playbackPoll)
     }
 
     private fun startPlaybackForegroundService() {
@@ -221,6 +246,7 @@ private class VShotsBackgroundMediaWebView(
     }
 
     fun disposeMedia() {
+        stopPlaybackPolling()
         setMediaPlaying(false)
         stopLoading()
         loadUrl("about:blank")
@@ -254,8 +280,7 @@ private class VShotsBrowserPlatformView(
                     webView.evaluateJavascript(
                         "(function(){var v=document.querySelector('video');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
                     ) { value ->
-                        val playing = clean(value) == "playing"
-                        webView.setMediaPlaying(playing)
+                        webView.setMediaPlaying(clean(value) == "playing")
                     }
                     result.success(null)
                 }
