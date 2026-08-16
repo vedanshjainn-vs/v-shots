@@ -24,7 +24,15 @@ class VShotsBrowserPlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        val notification = Notification.Builder(this, CHANNEL_ID)
+
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        val notification = builder
             .setContentTitle("V Shots")
             .setContentText("Discovery playback is active")
             .setSmallIcon(android.R.drawable.ic_media_play)
