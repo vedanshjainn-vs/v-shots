@@ -1,7 +1,9 @@
 package com.vshots.live
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -32,7 +34,9 @@ private class VShotsBackgroundMediaWebView(
     private val events: MethodChannel,
 ) : WebView(context) {
 
+    private val appContext = context.applicationContext
     var mediaPlaying: Boolean = false
+        private set
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -97,6 +101,41 @@ private class VShotsBackgroundMediaWebView(
         reload()
     }
 
+    private fun setMediaPlaying(value: Boolean) {
+        if (mediaPlaying == value) return
+        mediaPlaying = value
+        if (value) {
+            startPlaybackForegroundService()
+        } else {
+            stopPlaybackForegroundService()
+        }
+        events.invokeMethod("playbackState", value)
+    }
+
+    private fun startPlaybackForegroundService() {
+        val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appContext.startForegroundService(intent)
+            } else {
+                appContext.startService(intent)
+            }
+        } catch (_: Exception) {
+            // The WebView remains the playback owner; FGS startup is a hardening
+            // layer and must never crash the browser if the OS rejects it.
+        }
+    }
+
+    private fun stopPlaybackForegroundService() {
+        try {
+            appContext.stopService(
+                Intent(appContext, VShotsBrowserPlaybackService::class.java),
+            )
+        } catch (_: Exception) {
+            // Best effort only.
+        }
+    }
+
     fun togglePlayback() {
         evaluateJavascript(
             """
@@ -114,8 +153,7 @@ private class VShotsBackgroundMediaWebView(
             """.trimIndent(),
         ) { result ->
             val state = cleanJsResult(result)
-            mediaPlaying = state.contains("playing")
-            events.invokeMethod("playbackState", mediaPlaying)
+            setMediaPlaying(state.contains("playing"))
         }
     }
 
@@ -155,8 +193,7 @@ private class VShotsBackgroundMediaWebView(
         ) { result ->
             val state = cleanJsResult(result)
             if (state == "playing") {
-                mediaPlaying = true
-                events.invokeMethod("playbackState", true)
+                setMediaPlaying(true)
             }
         }
     }
@@ -182,7 +219,7 @@ private class VShotsBackgroundMediaWebView(
     /**
      * Do not pause an actively playing browser media session merely because
      * Flutter's Activity is no longer visible. Close/pause explicitly clears
-     * [mediaPlaying] before disposal.
+     * mediaPlaying before disposal.
      */
     override fun onPause() {
         if (mediaPlaying) return
@@ -192,6 +229,12 @@ private class VShotsBackgroundMediaWebView(
     override fun onResume() {
         super.onResume()
         if (mediaPlaying) attemptAutoplayWithAudio()
+    }
+
+    fun disposeMedia() {
+        setMediaPlaying(false)
+        stopLoading()
+        loadUrl("about:blank")
     }
 }
 
@@ -222,15 +265,14 @@ private class VShotsBrowserPlatformView(
                     webView.evaluateJavascript(
                         "(function(){var v=document.querySelector('video');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
                     ) { value ->
-                        webView.mediaPlaying = clean(value) == "playing"
-                        channel.invokeMethod("playbackState", webView.mediaPlaying)
+                        val playing = clean(value) == "playing"
+                        if (playing) webView.setMediaPlayingForBridge(true)
+                        channel.invokeMethod("playbackState", playing)
                     }
                     result.success(null)
                 }
                 "dispose" -> {
-                    webView.mediaPlaying = false
-                    webView.stopLoading()
-                    webView.loadUrl("about:blank")
+                    webView.disposeMedia()
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -243,10 +285,8 @@ private class VShotsBrowserPlatformView(
     override fun getView(): View = webView
 
     override fun dispose() {
-        webView.mediaPlaying = false
+        webView.disposeMedia()
         channel.setMethodCallHandler(null)
-        webView.stopLoading()
-        webView.loadUrl("about:blank")
         webView.destroy()
     }
 }
@@ -257,4 +297,15 @@ class VShotsBrowserPlatformViewFactory(
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
         return VShotsBrowserPlatformView(context, viewId, messenger)
     }
+}
+
+// Small bridge kept outside the private WebView class so the PlatformView can
+// update playback state without exposing the service internals to Dart.
+private fun VShotsBackgroundMediaWebView.setMediaPlayingForBridge(value: Boolean) {
+    val method = VShotsBackgroundMediaWebView::class.java.getDeclaredMethod(
+        "setMediaPlaying",
+        Boolean::class.javaPrimitiveType,
+    )
+    method.isAccessible = true
+    method.invoke(this, value)
 }
