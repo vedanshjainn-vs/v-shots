@@ -48,6 +48,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   static const double _miniHeight = 84;
   static const double _maxFraction = 0.92;
+  static const double _halfFraction = 0.55;
 
   @override
   void initState() {
@@ -94,17 +95,29 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   void _onDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    double target;
-    if (velocity < -600) {
-      target = 1.0; // fling up → expand
-    } else if (velocity > 600) {
-      target = 0.0; // fling down → collapse
-    } else if (_extent.value > 0.45) {
-      target = 1.0;
-    } else {
-      target = 0.0;
+    // Strong downward fling while (near-)collapsed → CLOSE the browser
+    // (stop playback, dispose, return to Discovery). Distinct from a small
+    // downward drag, which merely minimizes.
+    if (velocity > 800 && _extent.value < 0.25) {
+      _close();
+      return;
     }
-    _animateTo(target);
+    if (velocity < -800) {
+      _animateTo(1.0); // fling up → full
+      return;
+    }
+    if (velocity > 800) {
+      _animateTo(0.0); // fling down → collapse
+      return;
+    }
+    // Velocity-neutral: snap to the nearest of collapsed / half / full.
+    if (_extent.value > 0.75) {
+      _animateTo(1.0);
+    } else if (_extent.value > 0.35) {
+      _animateTo(_halfFraction);
+    } else {
+      _animateTo(0.0);
+    }
   }
 
   void _animateTo(double target) {

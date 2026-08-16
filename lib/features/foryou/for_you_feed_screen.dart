@@ -10,9 +10,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/native_ad_widget.dart';
-import '../../core/config/discovery_categories.dart';
+import '../../core/config/discovery_filters.dart';
 import '../../core/motion/motion.dart';
-import '../../core/remote_config/remote_config_service.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
@@ -21,6 +20,7 @@ import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
 import '../../main.dart'
     show
+        currentTabIndexNotifier,
         forYouFeedService,
         globalPlaybackStateNotifier,
         globalYtController,
@@ -84,25 +84,19 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     return page - adsBefore;
   }
 
-  /// The single source of truth for the currently selected Discovery category.
-  /// Both the displayed label AND the active fetch query come from this one
-  /// object (Section 1, point 1) — there is no separate "label" vs "fetch"
-  /// variable that can drift apart.
-  DiscoveryCategory? _activeCategory;
-
-  DiscoveryCategory get _defaultCategory =>
-      RemoteConfigService.instance.categories.isNotEmpty
-          ? RemoteConfigService.instance.categories.first
-          : kDiscoveryCategories.first;
-
-  String get _currentVibeLabel =>
-      _activeCategory?.label ?? _defaultCategory.label;
+  /// The single sources of truth for the Discovery filter hierarchy. Each
+  /// selection changes the actual candidate query (see _fetchDiscoverBatch)
+  /// — the chip labels can never drift apart from what is fetched.
+  DiscoverySource _activeSource = kDiscoverySources.first;
+  DiscoveryMood? _activeMood;
+  DiscoveryFilterOption? _activeLanguage;
+  DiscoveryFilterOption? _activeRegion;
 
   @override
   void initState() {
     super.initState();
-    _activeCategory = _defaultCategory;
     _browser.addListener(_onBrowserChanged);
+    currentTabIndexNotifier.addListener(_onTabChanged);
     _loadInitialBatch();
   }
 
@@ -110,8 +104,23 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (mounted) setState(() {});
   }
 
+  void _onTabChanged() {
+    if (!mounted) return;
+    setState(() {});
+    // Entering Discovery auto-plays the active item in the in-app browser
+    // (collapsed), so the experience starts immediately without a Play tap.
+    // The browser is the ONLY playback owner in Discovery. App launch stays
+    // silent — this fires only on an actual tab switch to Discovery.
+    if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
+      _browser.open(_items[_currentIndex]);
+    }
+  }
+
+  bool get _onDiscoverTab => currentTabIndexNotifier.value == 1;
+
   @override
   void dispose() {
+    currentTabIndexNotifier.removeListener(_onTabChanged);
     _browser.removeListener(_onBrowserChanged);
     _browser.dispose();
     _pageController.dispose();
@@ -190,41 +199,46 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
-    // The selected category is the single source of truth for the query.
-    final cat = _activeCategory ?? _defaultCategory;
-    // Section 1 point 6 (verification): log the exact outgoing query so we can
-    // confirm each category selection hits a DIFFERENT query.
-    debugPrint(
-      '[Discover] Fetching category="${cat.label}" query="${cat.query}"',
+    final query = buildDiscoveryQuery(
+      source: _activeSource,
+      mood: _activeMood,
+      language: _activeLanguage,
+      region: _activeRegion,
     );
-    try {
-      // Prefer the category's own query (via the feed service, which handles
-      // live pagination + category fallback). Only if no category is active do
-      // we fall through to the recommendation engine's generic discover feed.
-      if (cat.query.isNotEmpty) {
-        return forYouFeedService.fetchForCategory(
-          cat,
+    debugPrint(
+      '[Discover] source="${_activeSource.label}" '
+      'mood="${_activeMood?.label}" query="$query"',
+    );
+
+    // "For You" (null source query) → personalized recommendation engine.
+    if (_activeSource.query == null) {
+      forYouFeedService.setMood(_activeMood?.label, _activeMood?.query ?? '');
+      try {
+        final scored = await recommendationEngine.generateFeed(
+          intent: FeedIntent.forYou,
           excludeIds: _seenIds,
           count: 12,
         );
+        if (scored.isNotEmpty) {
+          return scored.map((s) => s.track.toTrackMap()).toList();
+        }
+      } catch (e) {
+        debugPrint('[ForYouFeed] Engine discover batch failed: $e');
       }
-    } catch (e) {
-      debugPrint('[ForYouFeed] Category fetch failed, falling back: $e');
+      // Mood-biased fallback pool.
+      return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
     }
-    try {
-      // "For You" (and any category with an empty query) is personalized:
-      // full hybrid mix of the recommendation engine.
-      final scored = await recommendationEngine.generateFeed(
-        intent: FeedIntent.forYou,
+
+    // Source/mood/language/region → exact YouTube query.
+    if (query.isNotEmpty) {
+      final batch = await forYouFeedService.fetchQuery(
+        query,
         excludeIds: _seenIds,
         count: 12,
       );
-      if (scored.isNotEmpty) {
-        return scored.map((s) => s.track.toTrackMap()).toList();
-      }
-    } catch (e) {
-      debugPrint('[ForYouFeed] Engine discover batch failed, falling back: $e');
+      if (batch.isNotEmpty) return batch;
     }
+    // Graceful fallback so a filter never leaves Discovery empty.
     return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
   }
 
@@ -254,46 +268,68 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     final track = _items[index];
     setState(() => _currentIndex = index);
 
-    // No global playback in Discovery — swiping only changes the visible
-    // card. Record the interaction so history + taste profile stay alive;
-    // actual playback starts when the user taps Play (→ browser).
+    // Swiping Discovery moves playback to the new active item: reuse the ONE
+    // in-app browser (switch URL + autoplay). The old global player is never
+    // used here.
+    _browser.open(track);
+
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
     playbackSignalTracker.onTrackStarted(track);
     unawaited(_maybeLoadMore());
   }
 
-  void _showMoodPicker() {
+  void _showFilters() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _MoodPickerSheet(
-        currentMood: _currentVibeLabel,
-        onMoodSelected: (label, query) {
+      builder: (ctx) => _FiltersSheet(
+        activeLanguage: _activeLanguage,
+        activeRegion: _activeRegion,
+        onLanguageSelected: (lang) {
           Navigator.pop(ctx);
-          final cat = discoveryCategoryByLabel(label);
-          _selectCategory(cat ?? _defaultCategory);
+          _applyFilter(() => _activeLanguage = lang);
+        },
+        onRegionSelected: (region) {
+          Navigator.pop(ctx);
+          _applyFilter(() => _activeRegion = region);
+        },
+        onClear: () {
+          Navigator.pop(ctx);
+          _applyFilter(() {
+            _activeLanguage = null;
+            _activeRegion = null;
+          });
         },
       ),
     );
   }
 
-  /// Single code path for changing the active Discovery category — used by
-  /// both the inline chip rail and the full mood-picker sheet, so the two
-  /// can never drift apart. Replaces results entirely (never merges with the
-  /// previous category's list), resets to index 0, and starts fresh so the
-  /// new category genuinely changes the candidate pool.
-  void _selectCategory(DiscoveryCategory cat) {
+  /// Selecting a source or mood replaces the candidate pool entirely and
+  /// starts fresh — so the filters genuinely change what plays.
+  void _selectSource(DiscoverySource source) {
     if (!mounted) return;
-    if (cat.label == _currentVibeLabel) return;
+    if (source.id == _activeSource.id) return;
+    _applyFilter(() => _activeSource = source);
+  }
+
+  void _selectMood(DiscoveryMood mood) {
+    if (!mounted) return;
+    if (_activeMood?.id == mood.id) return;
+    _applyFilter(() => _activeMood = mood);
+  }
+
+  void _applyFilter(VoidCallback apply) {
+    apply();
     setState(() {
-      _activeCategory = cat;
       _initialLoading = true;
       _items.clear();
       _seenIds.clear();
       _currentIndex = 0;
     });
-    forYouFeedService.setMood(cat.label, cat.query);
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(0);
+    }
     _loadInitialBatch();
   }
 
@@ -393,9 +429,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             ),
           ),
 
-          // Top Floating Mood & Vibe Selector — horizontal chip rail
-          // (TikTok/Reels-style). One tap switches the candidate pool;
-          // the trailing "More" chip opens the full category sheet.
+          // Top filter hierarchy — two organized sections:
+          //   DISCOVER (source) + a compact Filters entry, then MOOD.
           Positioned(
             top: 0,
             left: 0,
@@ -403,42 +438,73 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             child: SafeArea(
               bottom: false,
               child: Container(
-                height: 48,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.85),
+                      Colors.black.withValues(alpha: 0.9),
+                      Colors.black.withValues(alpha: 0.55),
                       Colors.black.withValues(alpha: 0.0),
                     ],
                   ),
                 ),
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  itemCount: RemoteConfigService.instance.categories.length + 1,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, i) {
-                    final cats = RemoteConfigService.instance.categories;
-                    if (i == cats.length) {
-                      return _VibeChip(
-                        emoji: null,
-                        label: 'More',
-                        icon: Icons.tune_rounded,
-                        isSelected: false,
-                        onTap: _showMoodPicker,
-                      );
-                    }
-                    final cat = cats[i];
-                    return _VibeChip(
-                      emoji: cat.icon,
-                      label: cat.label,
-                      icon: null,
-                      isSelected: cat.label == _currentVibeLabel,
-                      onTap: () => _selectCategory(cat),
-                    );
-                  },
+                padding: const EdgeInsets.only(top: 8, bottom: 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── DISCOVER sources ─────────────────────────────
+                    SizedBox(
+                      height: 38,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        itemCount: kDiscoverySources.length + 1,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          if (i == kDiscoverySources.length) {
+                            return _VibeChip(
+                              emoji: null,
+                              label: 'Filters',
+                              icon: Icons.tune_rounded,
+                              isSelected: _activeLanguage != null ||
+                                  _activeRegion != null,
+                              onTap: _showFilters,
+                            );
+                          }
+                          final source = kDiscoverySources[i];
+                          return _VibeChip(
+                            emoji: source.icon,
+                            label: source.label,
+                            icon: null,
+                            isSelected: source.id == _activeSource.id,
+                            onTap: () => _selectSource(source),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    // ── MOOD ─────────────────────────────────────────
+                    SizedBox(
+                      height: 34,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        itemCount: kDiscoveryMoods.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final mood = kDiscoveryMoods[i];
+                          return _VibeChip(
+                            emoji: mood.icon,
+                            label: mood.label,
+                            icon: null,
+                            isSelected: _activeMood?.id == mood.id,
+                            onTap: () => _selectMood(mood),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -551,14 +617,22 @@ class _VibeChip extends StatelessWidget {
   }
 }
 
-class _MoodPickerSheet extends StatelessWidget {
-  const _MoodPickerSheet({
-    required this.currentMood,
-    required this.onMoodSelected,
+/// Secondary Filters sheet: Language + Region/Culture. Kept OUT of the main
+/// Discovery rail so the top stays clean (DISCOVER sources + MOOD only).
+class _FiltersSheet extends StatelessWidget {
+  const _FiltersSheet({
+    required this.activeLanguage,
+    required this.activeRegion,
+    required this.onLanguageSelected,
+    required this.onRegionSelected,
+    required this.onClear,
   });
 
-  final String currentMood;
-  final void Function(String label, String query) onMoodSelected;
+  final DiscoveryFilterOption? activeLanguage;
+  final DiscoveryFilterOption? activeRegion;
+  final ValueChanged<DiscoveryFilterOption> onLanguageSelected;
+  final ValueChanged<DiscoveryFilterOption> onRegionSelected;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -589,104 +663,115 @@ class _MoodPickerSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                const Text(
+                  'Filters',
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Choose Your Vibe',
-                      style: TextStyle(
-                        color: AppColors.textMain,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
+                    if (activeLanguage != null || activeRegion != null)
+                      TextButton(
+                        onPressed: onClear,
+                        child: const Text(
+                          'Clear',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Discover tracks tailored to your current mood',
-                      style: TextStyle(
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close,
                         color: AppColors.textMuted,
-                        fontSize: 12,
+                        size: 20,
                       ),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.close,
-                    color: AppColors.textMuted,
-                    size: 20,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                ),
               ],
             ),
-            const SizedBox(height: 16),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 380),
-              child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: RemoteConfigService.instance.categories.map((m) {
-                    final isSelected = m.label == currentMood;
-                    return GestureDetector(
-                      onTap: () => onMoodSelected(m.label, m.query),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          gradient:
-                              isSelected ? AppColors.primaryGradient : null,
-                          color: isSelected ? null : AppColors.surface2,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isSelected
-                                ? Colors.transparent
-                                : AppColors.border,
-                            width: 1,
-                          ),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.3,
-                                    ),
-                                    blurRadius: 10,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(m.icon, style: const TextStyle(fontSize: 14)),
-                            const SizedBox(width: 6),
-                            Text(
-                              m.label,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? Colors.white
-                                    : AppColors.textMain,
-                                fontSize: 13,
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+            const SizedBox(height: 8),
+            const Text(
+              'Language',
+              style: TextStyle(
+                color: AppColors.textMain,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
+            _optionWrap(
+              kDiscoveryLanguages,
+              activeLanguage?.id,
+              onLanguageSelected,
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Region / Culture',
+              style: TextStyle(
+                color: AppColors.textMain,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _optionWrap(kDiscoveryRegions, activeRegion?.id, onRegionSelected),
+            const SizedBox(height: 20),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _optionWrap(
+    List<DiscoveryFilterOption> options,
+    String? activeId,
+    ValueChanged<DiscoveryFilterOption> onSelected,
+  ) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 200),
+      child: SingleChildScrollView(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((option) {
+            final isSelected = option.id == activeId;
+            return GestureDetector(
+              onTap: () => onSelected(option),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 9,
+                ),
+                decoration: BoxDecoration(
+                  gradient: isSelected ? AppColors.primaryGradient : null,
+                  color: isSelected ? null : AppColors.surface2,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected ? Colors.transparent : AppColors.border,
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  option.label,
+                  style: TextStyle(
+                    color: isSelected ? Colors.white : AppColors.textMain,
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
         ),
       ),
     );

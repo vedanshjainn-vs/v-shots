@@ -306,19 +306,66 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // ── Mood / genre chips ─────────────────────────────────────────────────
-  static const _moods = <(String, String, String)>[
-    ('🔥', 'Trending', 'trending hits viral songs official audio'),
-    ('💖', 'Romantic', 'romantic love songs official audio hindi'),
-    ('🎉', 'Party', 'party dance bollywood punjabi hits'),
-    ('😌', 'Chill', 'chill lofi sleep beats official audio'),
-    ('💪', 'Workout', 'workout gym motivation hype songs'),
-    ('🌧️', 'Sad', 'sad heartbroken emotional songs'),
-    ('🙏', 'Devotional', 'devotional bhajan aarti official audio'),
-    ('🎤', 'Hip-Hop', 'hip hop rap desi english songs'),
-    ('🎧', 'EDM', 'edm electronic dance music hits'),
-    ('🎬', 'Bollywood', 'top bollywood hindi songs official'),
-    ('🥁', 'Punjabi', 'latest punjabi pop hits official audio'),
-    ('🌍', 'English', 'top english pop billboard hits official'),
+  /// Mood cards — rounded-square tiles with a distinct gradient each, so they
+  /// read as a different content TYPE from the horizontal song shelves
+  /// (visual variety, not another identical row of cards).
+  static const _moods = <(String, String, String, Color, Color)>[
+    (
+      '💖',
+      'Romantic',
+      'romantic love songs official audio hindi',
+      Color(0xFFEC4899),
+      Color(0xFF7C3AED)
+    ),
+    (
+      '😢',
+      'Sad',
+      'sad emotional songs official audio',
+      Color(0xFF64748B),
+      Color(0xFF1E293B)
+    ),
+    (
+      '⚡',
+      'Energy',
+      'energetic upbeat workout songs official',
+      Color(0xFFF59E0B),
+      Color(0xFFEF4444)
+    ),
+    (
+      '😌',
+      'Chill',
+      'chill relaxing lofi songs official audio',
+      Color(0xFF22D3EE),
+      Color(0xFF3B82F6)
+    ),
+    (
+      '🌙',
+      'Late Night',
+      'late night chill songs official audio',
+      Color(0xFF8B5CF6),
+      Color(0xFF1E1B4B)
+    ),
+    (
+      '💃',
+      'Party',
+      'party dance bollywood punjabi hits',
+      Color(0xFFEF4444),
+      Color(0xFF7C3AED)
+    ),
+    (
+      '🙏',
+      'Devotional',
+      'devotional bhajan aarti official audio',
+      Color(0xFFF59E0B),
+      Color(0xFFB45309)
+    ),
+    (
+      '✨',
+      'Feel Good',
+      'feel good happy songs official audio',
+      Color(0xFF22C55E),
+      Color(0xFF0891B2)
+    ),
   ];
 
   Widget _buildMoodChips() {
@@ -327,21 +374,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
-            padding: EdgeInsets.fromLTRB(20, 18, 20, 10),
+            padding: EdgeInsets.fromLTRB(20, 20, 20, 12),
             child: Text(
-              'Browse moods & genres',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              'What are you feeling?',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
             ),
           ),
           SizedBox(
-            height: 40,
+            height: 112,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _moods.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (context, i) {
-                final (emoji, label, query) = _moods[i];
+                final (emoji, label, query, c1, c2) = _moods[i];
                 return GestureDetector(
                   onTap: () {
                     HapticFeedback.selectionClick();
@@ -356,23 +403,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    alignment: Alignment.center,
+                    width: 112,
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.border, width: 1),
+                      gradient: LinearGradient(
+                        colors: [
+                          c1.withValues(alpha: 0.35),
+                          c2.withValues(alpha: 0.16),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: c1.withValues(alpha: 0.35),
+                        width: 1,
+                      ),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(emoji, style: const TextStyle(fontSize: 14)),
-                        const SizedBox(width: 6),
+                        Text(emoji, style: const TextStyle(fontSize: 26)),
+                        const SizedBox(height: 8),
                         Text(
                           label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textSecondary,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textMain,
                           ),
                         ),
                       ],

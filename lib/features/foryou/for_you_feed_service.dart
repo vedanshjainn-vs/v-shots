@@ -313,8 +313,37 @@ class ForYouFeedService {
 
   bool get hasTasteProfile => _recencyWeightedArtistScores().isNotEmpty;
 
-  String personalizedQueryForHome() {
-    return RecommendationService.instance.getPersonalizedHomeQuery();
+  /// Fetches a batch for an exact query (used by the Discovery source/mood/
+  /// language/region filter pipeline). Real pagination through the shared
+  /// repository (InnerTube primary → YouTube fallback).
+  Future<List<Map<String, dynamic>>> fetchQuery(
+    String query, {
+    required Set<String> excludeIds,
+    int count = 10,
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) return [];
+    if (_tokenQuery != q) {
+      _tokenQuery = q;
+      _nextPageToken = null;
+    }
+    try {
+      final page = await _repository.searchPaginated(
+        q,
+        limit: count,
+        excludeIds: excludeIds,
+        pageToken: _nextPageToken,
+      );
+      _nextPageToken = page.nextPageToken;
+      for (final t in page.tracks) {
+        final id = t['id'] as String?;
+        if (id != null) LocalLibrary.instance.recordShownSong(id);
+      }
+      return page.tracks;
+    } catch (e) {
+      debugPrint('[ForYouFeedService] fetchQuery failed: $e');
+      return [];
+    }
   }
 
   final Set<String> _excludedArtists = {};
