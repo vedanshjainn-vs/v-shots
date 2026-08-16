@@ -56,9 +56,6 @@ class VShotsBrowserSession {
   bool get hasLoaded => _channel != null;
   bool get pagePlaying => _pagePlaying;
 
-  /// Loads [url] into the same native browser instance. If the platform view
-  /// has not been attached yet, the URL is queued and sent immediately after
-  /// Android creates the view.
   Future<void> load(String url) async {
     if (_disposed) return;
     _lastUrl = url;
@@ -98,8 +95,6 @@ class VShotsBrowserSession {
     }
   }
 
-  /// Explicitly asks the native player to start with audio. This is used as a
-  /// second-stage autoplay attempt after the YouTube page has loaded.
   Future<void> play() async {
     final channel = _channel;
     if (channel == null) return;
@@ -110,9 +105,6 @@ class VShotsBrowserSession {
     }
   }
 
-  /// Native Android platform view. The existing Discovery sheet keeps this
-  /// widget mounted for the whole browser session, including the collapsed
-  /// mini-player state.
   Widget buildWidget() {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return const ColoredBox(
@@ -129,7 +121,6 @@ class VShotsBrowserSession {
     return AndroidView(
       viewType: 'vshots/native_browser',
       layoutDirection: TextDirection.ltr,
-      hitTestBehavior: PlatformViewHitTestBehavior.opaque,
       onPlatformViewCreated: _attachPlatformView,
     );
   }
@@ -152,8 +143,6 @@ class VShotsBrowserSession {
         break;
       case 'pageFinished':
         onPageFinished();
-        // Give YouTube's dynamic player a moment to attach, then make a few
-        // best-effort play/unmute attempts. We never fake success in Dart.
         unawaited(_autoplayPass());
         break;
       case 'playbackState':
@@ -193,6 +182,4 @@ class VShotsBrowserSession {
   }
 }
 
-/// Canonical YouTube watch URL helper retained for callers/tests that use the
-/// browser session as a standalone component.
 String browserWatchUrl(String videoId) => youtubeWatchUrl(videoId);
