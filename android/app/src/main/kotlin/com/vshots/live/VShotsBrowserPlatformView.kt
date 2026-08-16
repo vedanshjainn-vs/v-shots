@@ -101,7 +101,7 @@ private class VShotsBackgroundMediaWebView(
         reload()
     }
 
-    private fun setMediaPlaying(value: Boolean) {
+    fun setMediaPlaying(value: Boolean) {
         if (mediaPlaying == value) return
         mediaPlaying = value
         if (value) {
@@ -121,8 +121,7 @@ private class VShotsBackgroundMediaWebView(
                 appContext.startService(intent)
             }
         } catch (_: Exception) {
-            // The WebView remains the playback owner; FGS startup is a hardening
-            // layer and must never crash the browser if the OS rejects it.
+            // FGS startup is a hardening layer and must never crash Discovery.
         }
     }
 
@@ -191,8 +190,7 @@ private class VShotsBackgroundMediaWebView(
             })()
             """.trimIndent(),
         ) { result ->
-            val state = cleanJsResult(result)
-            if (state == "playing") {
+            if (cleanJsResult(result) == "playing") {
                 setMediaPlaying(true)
             }
         }
@@ -202,12 +200,7 @@ private class VShotsBackgroundMediaWebView(
         return result.orEmpty().trim().trim('"').lowercase(Locale.US)
     }
 
-    /**
-     * Android WebView normally propagates window visibility changes to its
-     * media pipeline. Keeping the media pipeline logically visible while an
-     * actively playing Discovery browser is backgrounded prevents the browser
-     * video/audio from being suspended.
-     */
+    /** Keep active WebView media alive across Android visibility changes. */
     override fun onWindowVisibilityChanged(visibility: Int) {
         if (mediaPlaying) {
             super.onWindowVisibilityChanged(View.VISIBLE)
@@ -216,11 +209,7 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    /**
-     * Do not pause an actively playing browser media session merely because
-     * Flutter's Activity is no longer visible. Close/pause explicitly clears
-     * mediaPlaying before disposal.
-     */
+    /** Do not pause active Discovery media just because the Activity is hidden. */
     override fun onPause() {
         if (mediaPlaying) return
         super.onPause()
@@ -266,8 +255,7 @@ private class VShotsBrowserPlatformView(
                         "(function(){var v=document.querySelector('video');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
                     ) { value ->
                         val playing = clean(value) == "playing"
-                        if (playing) webView.setMediaPlayingForBridge(true)
-                        channel.invokeMethod("playbackState", playing)
+                        webView.setMediaPlaying(playing)
                     }
                     result.success(null)
                 }
@@ -297,15 +285,4 @@ class VShotsBrowserPlatformViewFactory(
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
         return VShotsBrowserPlatformView(context, viewId, messenger)
     }
-}
-
-// Small bridge kept outside the private WebView class so the PlatformView can
-// update playback state without exposing the service internals to Dart.
-private fun VShotsBackgroundMediaWebView.setMediaPlayingForBridge(value: Boolean) {
-    val method = VShotsBackgroundMediaWebView::class.java.getDeclaredMethod(
-        "setMediaPlaying",
-        Boolean::class.javaPrimitiveType,
-    )
-    method.isAccessible = true
-    method.invoke(this, value)
 }
