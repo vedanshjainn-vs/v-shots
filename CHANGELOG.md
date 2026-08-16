@@ -5,6 +5,26 @@ All notable changes to Project Lyra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.20.0-baseline] - 2026-08-16
+
+### Preserved baseline
+- Tagged `v5.20.0-baseline` at commit `67df1f6c` (CI run 31967313426, green).
+- Release with attached APK/AAB/debug-APK:
+  https://github.com/vedanshjainn-vs/v-shots/releases/tag/v5.20.0-baseline
+- See `docs/RELEASE_BASELINE.md` for the full verified state.
+
+### Included (relative to the original scaffold)
+- Discovery in-app YouTube browser: persistent WebView session with
+  collapsed mini player + expandable real YouTube page; native Android
+  platform view + foreground `mediaPlayback` service for best-effort
+  background playback.
+- InnerTube-first discovery, official/verified-channel priority, relevance
+  filter, Explore filter hierarchy (source/mood/language/region).
+- Data-driven personalized Home (endless shelves, Artists For You, Official
+  Music), recommendation engine wired to Home, onboarding taste
+  personalization, search pagination + prefetch, queue (Play Next/Add to
+  Queue), listening history, artist pages.
+
 ## [0.1.0-rc1] - 2025-01-XX
 
 ### Added
