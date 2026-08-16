@@ -1,21 +1,19 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — Discovery filter configuration (source / mood / language / region)
+// V Shots — Discovery filter configuration (source / moods / languages / regions)
 // ═════════════════════════════════════════════════════════════════════════════
 //
 // Single source of truth for the Discovery filter hierarchy:
 //
-//   DISCOVER (source)   →  For You / Trending / New Releases / Viral /
-//                          Popular / Latest Music
-//   MOOD                →  Romantic / Sad / Energetic / Chill / Late Night /
-//                          Party / Workout / Peaceful / Feel Good
-//   LANGUAGE            →  Hindi / English / Punjabi / …  (secondary)
-//   REGION / CULTURE    →  Bollywood / Punjabi / South Indian / …  (secondary)
+//   DISCOVER (source, single-select)  → For You / Trending / New Releases /
+//                                        Viral / Popular / Latest Music
+//   MOODS    (multi-select)           → Romantic / Sad / Energetic / …
+//   LANGUAGES (multi-select)          → Hindi / English / Punjabi / …
+//   REGIONS   (multi-select)          → Bollywood / Punjabi / South Indian / …
 //
-// Selecting a source/mood/language/region MUST change the actual YouTube query
-// (via [buildDiscoveryQuery]) — never just a chip label. "For You" has a NULL
-// query: that signals the personalized recommendation-engine path. Query
-// tokens are kept BARE (e.g. "hindi", "romantic") so they compose into a clean,
-// strongly-constrained query instead of repetitive "...songs ...songs" noise.
+// Each SOURCE carries a distinct query AND a distinct ranking ORDER so the
+// modes produce materially different feeds — never the same query renamed.
+// "For You" has a NULL query: it uses the personalized recommendation engine,
+// with moods/languages/regions composing the fallback pool query.
 // ═════════════════════════════════════════════════════════════════════════════
 
 /// A discovery SOURCE — the primary "what kind of content" selector.
@@ -25,6 +23,7 @@ class DiscoverySource {
     required this.label,
     required this.icon,
     this.query,
+    this.order = 'relevance',
   });
 
   final String id;
@@ -33,6 +32,11 @@ class DiscoverySource {
 
   /// Exact YouTube query. NULL → personalized ("For You" engine path).
   final String? query;
+
+  /// Ranking order passed to the provider: 'relevance' | 'viewCount' | 'date'.
+  /// This is what makes Trending/Viral/Popular rank differently from
+  /// New Releases / Latest Music.
+  final String order;
 }
 
 /// A discovery MOOD — biases the candidate pool emotionally.
@@ -47,8 +51,6 @@ class DiscoveryMood {
   final String id;
   final String label;
   final String icon;
-
-  /// Bare mood token appended to the query (e.g. "romantic").
   final String query;
 }
 
@@ -62,8 +64,6 @@ class DiscoveryFilterOption {
 
   final String id;
   final String label;
-
-  /// Bare query token (e.g. "hindi", "bollywood").
   final String token;
 }
 
@@ -74,30 +74,35 @@ const List<DiscoverySource> kDiscoverySources = [
     label: 'Trending',
     icon: '🔥',
     query: 'trending songs official video 2026',
+    order: 'viewCount',
   ),
   DiscoverySource(
     id: 'new',
     label: 'New Releases',
     icon: '🆕',
     query: 'new music releases official audio 2026',
+    order: 'date',
   ),
   DiscoverySource(
     id: 'viral',
     label: 'Viral',
     icon: '📈',
     query: 'viral trending songs official audio 2026',
+    order: 'viewCount',
   ),
   DiscoverySource(
     id: 'popular',
     label: 'Popular',
     icon: '🎧',
     query: 'top songs official audio 2026',
+    order: 'viewCount',
   ),
   DiscoverySource(
     id: 'latest',
     label: 'Latest Music',
     icon: '🎵',
     query: 'latest songs official audio 2026',
+    order: 'date',
   ),
 ];
 
@@ -146,25 +151,65 @@ const List<DiscoveryFilterOption> kDiscoveryRegions = [
       id: 'international', label: 'International', token: 'international hits'),
 ];
 
-/// Builds the final YouTube discovery query from the selected filters.
-/// Pure + deterministic (unit-tested). [source.query] == null means the
-/// personalized "For You" path (the engine), in which case the mood/language/
-/// region tokens still form the fallback pool query. An "official music"
-/// intent is appended when the composed query has none, so filters strongly
-/// constrain toward official music content.
+/// The committed/applied Discovery filter configuration — a value object so
+/// the Explore sheet can hold a DRAFT copy and compare it to the applied one.
+class DiscoveryFilterConfig {
+  const DiscoveryFilterConfig({
+    required this.source,
+    this.moods = const [],
+    this.languages = const [],
+    this.regions = const [],
+  });
+
+  final DiscoverySource source;
+  final List<DiscoveryMood> moods;
+  final List<DiscoveryFilterOption> languages;
+  final List<DiscoveryFilterOption> regions;
+
+  static final initial = DiscoveryFilterConfig(source: kDiscoverySources.first);
+
+  bool matches(DiscoveryFilterConfig other) =>
+      source.id == other.source.id &&
+      _ids(moods) == _ids(other.moods) &&
+      _ids(languages) == _ids(other.languages) &&
+      _ids(regions) == _ids(other.regions);
+
+  bool get hasOnlySource =>
+      moods.isEmpty && languages.isEmpty && regions.isEmpty;
+
+  static String _ids(List<dynamic> items) =>
+      items.map((e) => (e as dynamic).id as String).toList().join(',');
+
+  DiscoveryFilterConfig copyWith({
+    DiscoverySource? source,
+    List<DiscoveryMood>? moods,
+    List<DiscoveryFilterOption>? languages,
+    List<DiscoveryFilterOption>? regions,
+  }) =>
+      DiscoveryFilterConfig(
+        source: source ?? this.source,
+        moods: moods ?? this.moods,
+        languages: languages ?? this.languages,
+        regions: regions ?? this.regions,
+      );
+}
+
+/// Builds the final YouTube discovery query from the applied filters.
+/// Pure + deterministic. [source.query] == null means the personalized
+/// "For You" path; moods/languages/regions then compose the fallback query.
 String buildDiscoveryQuery({
   required DiscoverySource source,
-  DiscoveryMood? mood,
-  DiscoveryFilterOption? language,
-  DiscoveryFilterOption? region,
+  List<DiscoveryMood> moods = const [],
+  List<DiscoveryFilterOption> languages = const [],
+  List<DiscoveryFilterOption> regions = const [],
 }) {
   final parts = <String>[];
   if (source.query != null && source.query!.isNotEmpty) {
     parts.add(source.query!);
   }
-  if (mood != null) parts.add(mood.query);
-  if (language != null) parts.add(language.token);
-  if (region != null) parts.add(region.token);
+  parts.addAll(moods.map((m) => m.query));
+  parts.addAll(languages.map((l) => l.token));
+  parts.addAll(regions.map((r) => r.token));
   var query = parts.join(' ');
   if (query.trim().isEmpty) query = 'songs';
   if (!query.toLowerCase().contains('official')) {
@@ -173,22 +218,18 @@ String buildDiscoveryQuery({
   return query.trim();
 }
 
-/// Human-readable summary of the active filters for the compact top pill,
-/// e.g. "For You", "Trending", "Romantic · Hindi", "Chill · English".
+/// Human-readable summary of the applied filters for the compact top pill.
 String discoveryFilterSummary({
   required DiscoverySource source,
-  DiscoveryMood? mood,
-  DiscoveryFilterOption? language,
-  DiscoveryFilterOption? region,
+  List<DiscoveryMood> moods = const [],
+  List<DiscoveryFilterOption> languages = const [],
+  List<DiscoveryFilterOption> regions = const [],
 }) {
   final extras = <String>[
-    if (mood != null) mood.label,
-    if (language != null) language.label,
-    if (region != null) region.label,
+    ...moods.map((m) => m.label),
+    ...languages.map((l) => l.label),
+    ...regions.map((r) => r.label),
   ];
-  if (extras.isNotEmpty) {
-    // When mood/language/region carry the intent, they are the headline.
-    return extras.join(' · ');
-  }
+  if (extras.isNotEmpty) return extras.join(' · ');
   return source.label;
 }

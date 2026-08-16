@@ -92,7 +92,17 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   // ── Extent gesture (finger-connected with snap) ─────────────────────────
 
+  /// Cumulative downward drag distance for the CURRENT gesture — used so a
+  /// deliberate pull-down closes the browser even when the release velocity
+  /// is low (drag-then-hold, or a slow but firm swipe).
+  double _downPixels = 0;
+
+  void _onDragStart(DragStartDetails details) {
+    _downPixels = 0;
+  }
+
   void _onDragUpdate(DragUpdateDetails details) {
+    if (details.delta.dy > 0) _downPixels += details.delta.dy;
     final maxH = MediaQuery.of(context).size.height * _maxFraction;
     final travel = maxH - _miniHeight;
     if (travel <= 0) return;
@@ -102,10 +112,12 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   void _onDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    // Strong downward fling while (near-)collapsed → CLOSE the browser
-    // (stop playback, dispose, return to Discovery). Distinct from a small
-    // downward drag, which merely minimizes.
-    if (velocity > 800 && _extent.value < 0.25) {
+    // Dismiss: a deliberate downward fling OR a firm downward pull while
+    // (near-)collapsed closes the browser. A tiny tap or a few pixels of
+    // noise never reaches this.
+    final fastDownFling = velocity > 450;
+    final firmDownPull = _downPixels > 80;
+    if ((fastDownFling || firmDownPull) && _extent.value < 0.25) {
       _close();
       return;
     }
@@ -229,6 +241,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   Widget _buildBrowserBar() {
     return GestureDetector(
+      onVerticalDragStart: _onDragStart,
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       child: Container(
@@ -296,6 +309,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     final artwork = widget.controller.artwork;
 
     return GestureDetector(
+      onVerticalDragStart: _onDragStart,
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       onTap: () => _animateTo(1.0),

@@ -320,6 +320,7 @@ class ForYouFeedService {
     String query, {
     required Set<String> excludeIds,
     int count = 10,
+    String order = 'relevance',
   }) async {
     final q = query.trim();
     if (q.isEmpty) return [];
@@ -330,6 +331,7 @@ class ForYouFeedService {
     try {
       final page = await _repository.searchPaginated(
         q,
+        order: order,
         limit: count,
         excludeIds: excludeIds,
         pageToken: _nextPageToken,

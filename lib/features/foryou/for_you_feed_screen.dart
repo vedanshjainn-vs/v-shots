@@ -17,6 +17,7 @@ import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/utils/youtube_url.dart';
+import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
 import '../../main.dart'
@@ -84,13 +85,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     return page - adsBefore;
   }
 
-  /// The single sources of truth for the Discovery filter hierarchy. Each
-  /// selection changes the actual candidate query (see _fetchDiscoverBatch)
-  /// — the chip labels can never drift apart from what is fetched.
-  DiscoverySource _activeSource = kDiscoverySources.first;
-  DiscoveryMood? _activeMood;
-  DiscoveryFilterOption? _activeLanguage;
-  DiscoveryFilterOption? _activeRegion;
+  /// The APPLIED Discovery filter configuration — the only state the feed
+  /// actually fetches from. The Explore sheet works on a DRAFT copy and only
+  /// commits here on APPLY (see _showExplore).
+  DiscoveryFilterConfig _applied = DiscoveryFilterConfig.initial;
 
   @override
   void initState() {
@@ -199,25 +197,31 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
+    final source = _applied.source;
     final query = buildDiscoveryQuery(
-      source: _activeSource,
-      mood: _activeMood,
-      language: _activeLanguage,
-      region: _activeRegion,
+      source: source,
+      moods: _applied.moods,
+      languages: _applied.languages,
+      regions: _applied.regions,
     );
     debugPrint(
-      '[Discover] source="${_activeSource.label}" '
-      'mood="${_activeMood?.label}" query="$query"',
+      '[Discover] source="${source.label}" order="${source.order}" '
+      'moods=${_applied.moods.length} query="$query"',
     );
 
     // "For You" (null source query) → personalized recommendation engine.
-    if (_activeSource.query == null) {
-      forYouFeedService.setMood(_activeMood?.label, _activeMood?.query ?? '');
+    // forceRefresh so APPLY genuinely reshapes the feed (never the stale
+    // cached forYou feed).
+    if (source.query == null) {
+      final primaryMood =
+          _applied.moods.isNotEmpty ? _applied.moods.first : null;
+      forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
       try {
         final scored = await recommendationEngine.generateFeed(
           intent: FeedIntent.forYou,
           excludeIds: _seenIds,
           count: 12,
+          forceRefresh: true,
         );
         if (scored.isNotEmpty) {
           return filterRelevantTracks(
@@ -227,14 +231,18 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       } catch (e) {
         debugPrint('[ForYouFeed] Engine discover batch failed: $e');
       }
-      // Mood-biased fallback pool.
-      return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
+      // Mood/language/region-biased fallback pool.
+      return filterRelevantTracks(
+        await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12),
+      );
     }
 
-    // Source/mood/language/region → exact, strongly-constrained YouTube query.
+    // Source/mood/language/region → exact query with the source's OWN ranking
+    // order (viewCount for trending/viral/popular, date for new/latest).
     if (query.isNotEmpty) {
       final batch = await forYouFeedService.fetchQuery(
         query,
+        order: source.order,
         excludeIds: _seenIds,
         count: 12,
       );
@@ -286,60 +294,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// Opens the Explore panel: the full filter hierarchy (DISCOVER / MOODS /
   /// LANGUAGE / REGION) in a premium bottom sheet — never permanently visible
   /// across the top of Discovery.
-  void _showExplore() {
-    showModalBottomSheet<void>(
+  void _showExplore() async {
+    final committed = await showModalBottomSheet<DiscoveryFilterConfig>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _ExploreSheet(
-        activeSource: _activeSource,
-        activeMood: _activeMood,
-        activeLanguage: _activeLanguage,
-        activeRegion: _activeRegion,
-        onSourceSelected: (source) {
-          Navigator.pop(ctx);
-          _selectSource(source);
-        },
-        onMoodSelected: (mood) {
-          Navigator.pop(ctx);
-          _selectMood(mood);
-        },
-        onLanguageSelected: (lang) {
-          Navigator.pop(ctx);
-          _applyFilter(() => _activeLanguage = lang);
-        },
-        onRegionSelected: (region) {
-          Navigator.pop(ctx);
-          _applyFilter(() => _activeRegion = region);
-        },
-        onClear: () {
-          Navigator.pop(ctx);
-          _applyFilter(() {
-            _activeMood = null;
-            _activeLanguage = null;
-            _activeRegion = null;
-          });
-        },
-      ),
+      builder: (ctx) => _ExploreSheet(initial: _applied),
     );
+    // null → dismissed WITHOUT APPLY (X / Done / tap-outside): discard draft,
+    // keep the previously applied configuration.
+    if (committed == null) return;
+    _commitFilters(committed);
   }
 
-  /// Selecting a source or mood replaces the candidate pool entirely and
-  /// starts fresh — so the filters genuinely change what plays.
-  void _selectSource(DiscoverySource source) {
+  /// Commits a config (from APPLY): updates the applied state and rebuilds
+  /// the feed exactly once. Chip taps never call this.
+  void _commitFilters(DiscoveryFilterConfig config) {
     if (!mounted) return;
-    if (source.id == _activeSource.id) return;
-    _applyFilter(() => _activeSource = source);
-  }
-
-  void _selectMood(DiscoveryMood mood) {
-    if (!mounted) return;
-    if (_activeMood?.id == mood.id) return;
-    _applyFilter(() => _activeMood = mood);
-  }
-
-  void _applyFilter(VoidCallback apply) {
-    apply();
+    if (_applied.matches(config)) return;
+    _applied = config;
     setState(() {
       _initialLoading = true;
       _items.clear();
@@ -354,10 +327,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   /// Compact summary for the top pill (e.g. "For You", "Romantic · Hindi").
   String _filterSummary() => discoveryFilterSummary(
-        source: _activeSource,
-        mood: _activeMood,
-        language: _activeLanguage,
-        region: _activeRegion,
+        source: _applied.source,
+        moods: _applied.moods,
+        languages: _applied.languages,
+        regions: _applied.regions,
       );
 
   @override
@@ -508,7 +481,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              _activeSource.icon,
+                              _applied.source.icon,
                               style: const TextStyle(fontSize: 13),
                             ),
                             const SizedBox(width: 6),
@@ -624,31 +597,83 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 /// Explore panel: the full Discovery filter hierarchy in a premium bottom
 /// sheet. The top of Discovery stays clean — only the compact summary pill +
 /// Explore control are persistent; everything else lives here.
-class _ExploreSheet extends StatelessWidget {
-  const _ExploreSheet({
-    required this.activeSource,
-    required this.activeMood,
-    required this.activeLanguage,
-    required this.activeRegion,
-    required this.onSourceSelected,
-    required this.onMoodSelected,
-    required this.onLanguageSelected,
-    required this.onRegionSelected,
-    required this.onClear,
-  });
+class _ExploreSheet extends StatefulWidget {
+  const _ExploreSheet({required this.initial});
 
-  final DiscoverySource activeSource;
-  final DiscoveryMood? activeMood;
-  final DiscoveryFilterOption? activeLanguage;
-  final DiscoveryFilterOption? activeRegion;
-  final ValueChanged<DiscoverySource> onSourceSelected;
-  final ValueChanged<DiscoveryMood> onMoodSelected;
-  final ValueChanged<DiscoveryFilterOption> onLanguageSelected;
-  final ValueChanged<DiscoveryFilterOption> onRegionSelected;
-  final VoidCallback onClear;
+  final DiscoveryFilterConfig initial;
+
+  @override
+  State<_ExploreSheet> createState() => _ExploreSheetState();
+}
+
+class _ExploreSheetState extends State<_ExploreSheet> {
+  // DRAFT state — chip taps mutate ONLY this; the live feed is untouched
+  // until APPLY is pressed (then this draft is returned to _showExplore,
+  // which commits it and refreshes the feed).
+  late DiscoverySource _draftSource;
+  late List<DiscoveryMood> _draftMoods;
+  late List<DiscoveryFilterOption> _draftLanguages;
+  late List<DiscoveryFilterOption> _draftRegions;
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initial;
+    _draftSource = i.source;
+    _draftMoods = List.of(i.moods);
+    _draftLanguages = List.of(i.languages);
+    _draftRegions = List.of(i.regions);
+  }
+
+  DiscoveryFilterConfig get _draft => DiscoveryFilterConfig(
+        source: _draftSource,
+        moods: _draftMoods,
+        languages: _draftLanguages,
+        regions: _draftRegions,
+      );
+
+  bool get _hasChanges => !_draft.matches(widget.initial);
+
+  void _toggleMood(DiscoveryMood mood) {
+    setState(() {
+      _draftMoods.any((m) => m.id == mood.id)
+          ? _draftMoods.removeWhere((m) => m.id == mood.id)
+          : _draftMoods.add(mood);
+    });
+  }
+
+  void _toggleLanguage(DiscoveryFilterOption lang) {
+    setState(() {
+      _draftLanguages.any((l) => l.id == lang.id)
+          ? _draftLanguages.removeWhere((l) => l.id == lang.id)
+          : _draftLanguages.add(lang);
+    });
+  }
+
+  void _toggleRegion(DiscoveryFilterOption region) {
+    setState(() {
+      _draftRegions.any((r) => r.id == region.id)
+          ? _draftRegions.removeWhere((r) => r.id == region.id)
+          : _draftRegions.add(region);
+    });
+  }
+
+  void _clear() {
+    setState(() {
+      _draftMoods.clear();
+      _draftLanguages.clear();
+      _draftRegions.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final appliedLabel = discoveryFilterSummary(
+      source: widget.initial.source,
+      moods: widget.initial.moods,
+      languages: widget.initial.languages,
+      regions: widget.initial.regions,
+    );
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -689,25 +714,23 @@ class _ExploreSheet extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (activeMood != null ||
-                          activeLanguage != null ||
-                          activeRegion != null)
-                        TextButton(
-                          onPressed: onClear,
-                          child: const Text(
-                            'Clear',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 13,
-                            ),
+                      TextButton(
+                        onPressed: _clear,
+                        child: const Text(
+                          'Clear',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
                           ),
                         ),
+                      ),
                       IconButton(
                         icon: const Icon(
                           Icons.close,
                           color: AppColors.textMuted,
                           size: 20,
                         ),
+                        // X → discard draft (no APPLY): return null.
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
@@ -721,8 +744,8 @@ class _ExploreSheet extends StatelessWidget {
                     .map((s) => (
                           label: s.label,
                           icon: s.icon,
-                          selected: s.id == activeSource.id,
-                          onTap: () => onSourceSelected(s),
+                          selected: s.id == _draftSource.id,
+                          onTap: () => setState(() => _draftSource = s),
                         ))
                     .toList(),
               ),
@@ -733,8 +756,8 @@ class _ExploreSheet extends StatelessWidget {
                     .map((m) => (
                           label: m.label,
                           icon: m.icon,
-                          selected: activeMood?.id == m.id,
-                          onTap: () => onMoodSelected(m),
+                          selected: _draftMoods.any((x) => x.id == m.id),
+                          onTap: () => _toggleMood(m),
                         ))
                     .toList(),
               ),
@@ -745,8 +768,8 @@ class _ExploreSheet extends StatelessWidget {
                     .map((l) => (
                           label: l.label,
                           icon: '',
-                          selected: activeLanguage?.id == l.id,
-                          onTap: () => onLanguageSelected(l),
+                          selected: _draftLanguages.any((x) => x.id == l.id),
+                          onTap: () => _toggleLanguage(l),
                         ))
                     .toList(),
               ),
@@ -757,12 +780,49 @@ class _ExploreSheet extends StatelessWidget {
                     .map((r) => (
                           label: r.label,
                           icon: '',
-                          selected: activeRegion?.id == r.id,
-                          onTap: () => onRegionSelected(r),
+                          selected: _draftRegions.any((x) => x.id == r.id),
+                          onTap: () => _toggleRegion(r),
                         ))
                     .toList(),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 22),
+              // ── APPLY / DONE ─────────────────────────────────────────
+              if (_hasChanges)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Applied: $appliedLabel',
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ),
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  text: 'Apply',
+                  icon: Icons.check_rounded,
+                  isFullWidth: true,
+                  size: AppButtonSize.large,
+                  // APPLY commits the draft and returns it; the sheet STAYS
+                  // open so the user can then press DONE.
+                  onPressed: () => Navigator.pop(context, _draft),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  text: 'Done',
+                  variant: AppButtonVariant.secondary,
+                  isFullWidth: true,
+                  size: AppButtonSize.medium,
+                  // DONE closes the sheet without committing anything new.
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -829,9 +889,6 @@ class _ExploreSheet extends StatelessWidget {
   }
 }
 
-/// A clearly-separated Discovery ad page (Section 7). Shown between organic
-/// video cards. It does NOT render or touch the YouTube player — the previous
-/// song keeps playing behind it — so it can never violate YouTube ad policy.
 class _ForYouAdCard extends StatelessWidget {
   const _ForYouAdCard({required this.onSkip});
 
