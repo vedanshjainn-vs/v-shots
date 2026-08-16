@@ -427,34 +427,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
-  Widget _buildLoading() {
-    final artwork = widget.controller.artwork;
-    return Container(
-      color: Colors.black,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (artwork != null && artwork.isNotEmpty)
-            AppImage(artwork, fit: BoxFit.cover),
-          Container(color: Colors.black.withValues(alpha: 0.6)),
-          const Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: AppColors.accent),
-                SizedBox(height: 14),
-                Text(
-                  'Loading video…',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildError() {
     return Container(
       color: const Color(0xFF0A0D16),
