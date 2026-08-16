@@ -27,12 +27,15 @@ import '../../main.dart'
         currentTabIndexNotifier,
         ensureGlobalPlayer,
         forYouFeedService,
+        globalPlaybackStateNotifier,
         globalVideoEndedNotifier,
         globalYtController,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
         showAddToPlaylistSheet;
+import 'discovery_browser_controller.dart';
+import 'discovery_browser_sheet.dart';
 
 class ForYouFeedScreen extends StatefulWidget {
   const ForYouFeedScreen({super.key});
@@ -43,6 +46,10 @@ class ForYouFeedScreen extends StatefulWidget {
 
 class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   final PageController _pageController = PageController();
+
+  /// The ONE Discovery in-app browser session. Tapping Play on any card
+  /// reuses this — a second browser is never created.
+  final DiscoveryBrowserController _browser = DiscoveryBrowserController();
 
   final List<Map<String, dynamic>> _items = [];
   final Set<String> _seenIds = {};
@@ -115,7 +122,12 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // card correctly (re)attaches the single global IFrame.
     currentTabIndexNotifier.addListener(_onTabChanged);
     globalVideoEndedNotifier.addListener(_onVideoEnded);
+    _browser.addListener(_onBrowserChanged);
     _loadInitialBatch();
+  }
+
+  void _onBrowserChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onVideoEnded() {
@@ -142,7 +154,12 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     setState(() {});
     // When the user returns to the Discover tab, if the current video is cued
     // but not playing, start it (gesture-initiated, so permitted to autoplay).
-    if (_onDiscoverTab && !_isPlaying && _items.isNotEmpty) {
+    // The in-app browser owns playback while open, so the feed must not
+    // autoplay the global IFrame then (no dual audio).
+    if (_onDiscoverTab &&
+        !_isPlaying &&
+        !_browser.isOpen &&
+        _items.isNotEmpty) {
       final videoId =
           _activeVideoId ?? (_items[_currentIndex]['id'] as String? ?? '');
       if (videoId.isNotEmpty) {
@@ -156,6 +173,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   void dispose() {
     currentTabIndexNotifier.removeListener(_onTabChanged);
     globalVideoEndedNotifier.removeListener(_onVideoEnded);
+    _browser.removeListener(_onBrowserChanged);
+    _browser.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -220,12 +239,17 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// initiated and therefore permitted by Android/YouTube autoplay policies.
   /// Loading a different [videoId] into the same engine stops the previous
   /// video in-place — no second playback engine is ever created.
+  /// Whether the feed may autoplay the global IFrame: only when the Discover
+  /// tab is foreground AND the in-app browser is not owning playback.
+  bool get _feedCanAutoplay => _onDiscoverTab && !_browser.isOpen;
+
   void _initOrLoadVideo(String videoId) {
     if (!mounted) return;
     try {
       if (_activeVideoId == videoId && globalYtController != null) {
-        // Already current — (re)start it (only when Discover is foreground).
-        if (_onDiscoverTab) {
+        // Already current — (re)start it (only when Discover is foreground
+        // and the browser is closed).
+        if (_feedCanAutoplay) {
           unawaited(globalYtController!.playVideo());
           _isPlaying = true;
         }
@@ -234,29 +258,24 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       // Autoplay only when the Discover tab is actually in the foreground —
       // IndexedStack builds every tab at startup, so we must NOT start audio
       // while the user is on Home/Search/Profile.
-      ensureGlobalPlayer(videoId: videoId, autoPlay: _onDiscoverTab);
+      ensureGlobalPlayer(videoId: videoId, autoPlay: _feedCanAutoplay);
       _activeVideoId = videoId;
-      _isPlaying = _onDiscoverTab;
+      _isPlaying = _feedCanAutoplay;
     } catch (_) {
       // Graceful in headless widget test environments
     }
   }
 
-  void _togglePlayPause() {
-    if (globalYtController == null) return;
-    if (_isPlaying) {
-      unawaited(globalYtController!.pauseVideo());
-      _isPlaying = false;
-    } else {
-      final videoId = _activeVideoId ??
-          (_items.isNotEmpty
-              ? (_items[_currentIndex]['id'] as String? ?? '')
-              : '');
-      if (videoId.isNotEmpty) {
-        ensureGlobalPlayer(videoId: videoId, autoPlay: true);
-      }
-      _isPlaying = true;
-    }
+  /// Play tap on a Discovery card → open the selected video in the in-app
+  /// YouTube browser (reusing the single session).
+  void _onPlayTap() {
+    final track = _items.isNotEmpty ? _items[_currentIndex] : null;
+    if (track == null) return;
+    // Pause the feed's global IFrame so the browser owns the audio.
+    globalYtController?.pauseVideo();
+    globalPlaybackStateNotifier.value = false;
+    _isPlaying = false;
+    _browser.open(track);
     setState(() {});
   }
 
@@ -466,50 +485,57 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           if (_onDiscoverTab) _buildBackgroundPlayer(),
 
           // 2. Vertical Reel-Style Swipe PageView (transparent metadata overlay
-          // on top of the always-mounted player).
-          PageView.builder(
-            controller: _pageController,
-            scrollDirection: Axis.vertical,
-            physics: const BouncingScrollPhysics(),
-            itemCount: _pageCount,
-            onPageChanged: _onPageChanged,
-            itemBuilder: (context, page) {
-              final isCurrent = page == _currentIndex;
-              // Ad page: a clearly-separated, labeled native ad card. It never
-              // touches the YouTube player (which keeps playing the song that
-              // was active before/after), so it can't violate YouTube policy.
-              if (_isAdPage(page)) {
+          // on top of the always-mounted player). Bottom padding is added
+          // while the browser mini player is visible so feed content is never
+          // hidden underneath it.
+          AnimatedPadding(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            padding: EdgeInsets.only(bottom: _browser.isOpen ? 88 : 0),
+            child: PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.vertical,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _pageCount,
+              onPageChanged: _onPageChanged,
+              itemBuilder: (context, page) {
+                final isCurrent = page == _currentIndex;
+                // Ad page: a clearly-separated, labeled native ad card. It never
+                // touches the YouTube player (which keeps playing the song that
+                // was active before/after), so it can't violate YouTube policy.
+                if (_isAdPage(page)) {
+                  return RepaintBoundary(
+                    child: _ForYouAdCard(
+                      onSkip: () => _goToPage(page + 1),
+                    ),
+                  );
+                }
+                final songIndex = _songIndexForPage(page);
+                final track = _items[songIndex];
                 return RepaintBoundary(
-                  child: _ForYouAdCard(
-                    onSkip: () => _goToPage(page + 1),
+                  child: _ForYouCard(
+                    track: track,
+                    isActive: isCurrent,
+                    isPlaying: _isPlaying,
+                    onPlayPauseToggle: _onPlayTap,
+                    onNotInterested: () => _handleNotInterested(songIndex),
+                    onDoubleTapLike: () => _handleDoubleTapLike(track),
+                    onSkipPrevious: page > 0
+                        ? () => _pageController.previousPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            )
+                        : null,
+                    onSkipNext: page < _pageCount - 1
+                        ? () => _pageController.nextPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            )
+                        : null,
                   ),
                 );
-              }
-              final songIndex = _songIndexForPage(page);
-              final track = _items[songIndex];
-              return RepaintBoundary(
-                child: _ForYouCard(
-                  track: track,
-                  isActive: isCurrent,
-                  isPlaying: _isPlaying,
-                  onPlayPauseToggle: _togglePlayPause,
-                  onNotInterested: () => _handleNotInterested(songIndex),
-                  onDoubleTapLike: () => _handleDoubleTapLike(track),
-                  onSkipPrevious: page > 0
-                      ? () => _pageController.previousPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                          )
-                      : null,
-                  onSkipNext: page < _pageCount - 1
-                      ? () => _pageController.nextPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                          )
-                      : null,
-                ),
-              );
-            },
+              },
+            ),
           ),
 
           // Top Floating Mood & Vibe Selector — horizontal chip rail
@@ -562,6 +588,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               ),
             ),
           ),
+
+          // 3. Discovery in-app YouTube browser (mini player + expandable
+          // sheet). One session; shown only while open. Entrance animates up.
+          if (_browser.isOpen)
+            Positioned.fill(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 1, end: 0),
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                builder: (context, slide, child) => FractionalTranslation(
+                  translation: Offset(0, slide),
+                  child: Opacity(
+                    opacity: (1 - slide).clamp(0.0, 1.0),
+                    child: child,
+                  ),
+                ),
+                child: DiscoveryBrowserSheet(controller: _browser),
+              ),
+            ),
         ],
       ),
     );
