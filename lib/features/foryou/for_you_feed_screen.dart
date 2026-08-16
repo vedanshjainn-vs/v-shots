@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/config/discovery_filters.dart';
+import '../../core/innertube/discovery_relevance.dart';
 import '../../core/motion/motion.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
@@ -220,7 +221,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           count: 12,
         );
         if (scored.isNotEmpty) {
-          return scored.map((s) => s.track.toTrackMap()).toList();
+          return filterRelevantTracks(
+            scored.map((s) => s.track.toTrackMap()).toList(),
+          );
         }
       } catch (e) {
         debugPrint('[ForYouFeed] Engine discover batch failed: $e');
@@ -229,17 +232,19 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
     }
 
-    // Source/mood/language/region → exact YouTube query.
+    // Source/mood/language/region → exact, strongly-constrained YouTube query.
     if (query.isNotEmpty) {
       final batch = await forYouFeedService.fetchQuery(
         query,
         excludeIds: _seenIds,
         count: 12,
       );
-      if (batch.isNotEmpty) return batch;
+      if (batch.isNotEmpty) return filterRelevantTracks(batch);
     }
     // Graceful fallback so a filter never leaves Discovery empty.
-    return forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
+    final fallback =
+        await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
+    return filterRelevantTracks(fallback);
   }
 
   Future<void> _maybeLoadMore() async {
@@ -278,14 +283,27 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     unawaited(_maybeLoadMore());
   }
 
-  void _showFilters() {
+  /// Opens the Explore panel: the full filter hierarchy (DISCOVER / MOODS /
+  /// LANGUAGE / REGION) in a premium bottom sheet — never permanently visible
+  /// across the top of Discovery.
+  void _showExplore() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _FiltersSheet(
+      builder: (ctx) => _ExploreSheet(
+        activeSource: _activeSource,
+        activeMood: _activeMood,
         activeLanguage: _activeLanguage,
         activeRegion: _activeRegion,
+        onSourceSelected: (source) {
+          Navigator.pop(ctx);
+          _selectSource(source);
+        },
+        onMoodSelected: (mood) {
+          Navigator.pop(ctx);
+          _selectMood(mood);
+        },
         onLanguageSelected: (lang) {
           Navigator.pop(ctx);
           _applyFilter(() => _activeLanguage = lang);
@@ -297,6 +315,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         onClear: () {
           Navigator.pop(ctx);
           _applyFilter(() {
+            _activeMood = null;
             _activeLanguage = null;
             _activeRegion = null;
           });
@@ -332,6 +351,14 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     }
     _loadInitialBatch();
   }
+
+  /// Compact summary for the top pill (e.g. "For You", "Romantic · Hindi").
+  String _filterSummary() => discoveryFilterSummary(
+        source: _activeSource,
+        mood: _activeMood,
+        language: _activeLanguage,
+        region: _activeRegion,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -450,58 +477,96 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   ),
                 ),
                 padding: const EdgeInsets.only(top: 8, bottom: 6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                child: Row(
                   children: [
-                    // ── DISCOVER sources ─────────────────────────────
-                    SizedBox(
-                      height: 38,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        itemCount: kDiscoverySources.length + 1,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (context, i) {
-                          if (i == kDiscoverySources.length) {
-                            return _VibeChip(
-                              emoji: null,
-                              label: 'Filters',
-                              icon: Icons.tune_rounded,
-                              isSelected: _activeLanguage != null ||
-                                  _activeRegion != null,
-                              onTap: _showFilters,
-                            );
-                          }
-                          final source = kDiscoverySources[i];
-                          return _VibeChip(
-                            emoji: source.icon,
-                            label: source.label,
-                            icon: null,
-                            isSelected: source.id == _activeSource.id,
-                            onTap: () => _selectSource(source),
-                          );
-                        },
+                    const SizedBox(width: 14),
+                    // Compact summary pill — the ONLY persistent filter
+                    // control. Tapping opens the Explore panel.
+                    GestureDetector(
+                      onTap: _showExplore,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color:
+                                AppColors.primaryLight.withValues(alpha: 0.6),
+                            width: 1,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              blurRadius: 12,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _activeSource.icon,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _filterSummary(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: AppColors.accent,
+                              size: 18,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    // ── MOOD ─────────────────────────────────────────
-                    SizedBox(
-                      height: 34,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        itemCount: kDiscoveryMoods.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (context, i) {
-                          final mood = kDiscoveryMoods[i];
-                          return _VibeChip(
-                            emoji: mood.icon,
-                            label: mood.label,
-                            icon: null,
-                            isSelected: _activeMood?.id == mood.id,
-                            onTap: () => _selectMood(mood),
-                          );
-                        },
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _showExplore,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.22),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.tune_rounded,
+                              size: 15,
+                              color: Colors.white70,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'Explore',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -556,80 +621,28 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   }
 }
 
-/// A single chip in the Discovery category rail.
-class _VibeChip extends StatelessWidget {
-  const _VibeChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-    this.emoji,
-    this.icon,
-  });
-
-  final String label;
-  final String? emoji;
-  final IconData? icon;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary
-              : Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected
-                ? AppColors.primaryLight
-                : Colors.white.withValues(alpha: 0.25),
-            width: 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (emoji != null) ...[
-              Text(emoji!, style: const TextStyle(fontSize: 13)),
-              const SizedBox(width: 5),
-            ] else if (icon != null) ...[
-              Icon(icon, size: 14, color: Colors.white),
-              const SizedBox(width: 5),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 12.5,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Secondary Filters sheet: Language + Region/Culture. Kept OUT of the main
-/// Discovery rail so the top stays clean (DISCOVER sources + MOOD only).
-class _FiltersSheet extends StatelessWidget {
-  const _FiltersSheet({
+/// Explore panel: the full Discovery filter hierarchy in a premium bottom
+/// sheet. The top of Discovery stays clean — only the compact summary pill +
+/// Explore control are persistent; everything else lives here.
+class _ExploreSheet extends StatelessWidget {
+  const _ExploreSheet({
+    required this.activeSource,
+    required this.activeMood,
     required this.activeLanguage,
     required this.activeRegion,
+    required this.onSourceSelected,
+    required this.onMoodSelected,
     required this.onLanguageSelected,
     required this.onRegionSelected,
     required this.onClear,
   });
 
+  final DiscoverySource activeSource;
+  final DiscoveryMood? activeMood;
   final DiscoveryFilterOption? activeLanguage;
   final DiscoveryFilterOption? activeRegion;
+  final ValueChanged<DiscoverySource> onSourceSelected;
+  final ValueChanged<DiscoveryMood> onMoodSelected;
   final ValueChanged<DiscoveryFilterOption> onLanguageSelected;
   final ValueChanged<DiscoveryFilterOption> onRegionSelected;
   final VoidCallback onClear;
@@ -642,138 +655,176 @@ class _FiltersSheet extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         border: Border(top: BorderSide(color: AppColors.border, width: 1)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Filters',
-                  style: TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (activeLanguage != null || activeRegion != null)
-                      TextButton(
-                        onPressed: onClear,
-                        child: const Text(
-                          'Clear',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 13,
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Explore',
+                    style: TextStyle(
+                      color: AppColors.textMain,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (activeMood != null ||
+                          activeLanguage != null ||
+                          activeRegion != null)
+                        TextButton(
+                          onPressed: onClear,
+                          child: const Text(
+                            'Clear',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.close,
+                          color: AppColors.textMuted,
+                          size: 20,
+                        ),
+                        onPressed: () => Navigator.pop(context),
                       ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.close,
-                        color: AppColors.textMuted,
-                        size: 20,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Language',
-              style: TextStyle(
-                color: AppColors.textMain,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+                    ],
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            _optionWrap(
-              kDiscoveryLanguages,
-              activeLanguage?.id,
-              onLanguageSelected,
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Region / Culture',
-              style: TextStyle(
-                color: AppColors.textMain,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
+              const SizedBox(height: 8),
+              _sectionLabel('Discover'),
+              _chipWrap(
+                kDiscoverySources
+                    .map((s) => (
+                          label: s.label,
+                          icon: s.icon,
+                          selected: s.id == activeSource.id,
+                          onTap: () => onSourceSelected(s),
+                        ))
+                    .toList(),
               ),
-            ),
-            const SizedBox(height: 10),
-            _optionWrap(kDiscoveryRegions, activeRegion?.id, onRegionSelected),
-            const SizedBox(height: 20),
-          ],
+              const SizedBox(height: 18),
+              _sectionLabel('Moods'),
+              _chipWrap(
+                kDiscoveryMoods
+                    .map((m) => (
+                          label: m.label,
+                          icon: m.icon,
+                          selected: activeMood?.id == m.id,
+                          onTap: () => onMoodSelected(m),
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              _sectionLabel('Language'),
+              _chipWrap(
+                kDiscoveryLanguages
+                    .map((l) => (
+                          label: l.label,
+                          icon: '',
+                          selected: activeLanguage?.id == l.id,
+                          onTap: () => onLanguageSelected(l),
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              _sectionLabel('Region / Culture'),
+              _chipWrap(
+                kDiscoveryRegions
+                    .map((r) => (
+                          label: r.label,
+                          icon: '',
+                          selected: activeRegion?.id == r.id,
+                          onTap: () => onRegionSelected(r),
+                        ))
+                    .toList(),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _optionWrap(
-    List<DiscoveryFilterOption> options,
-    String? activeId,
-    ValueChanged<DiscoveryFilterOption> onSelected,
-  ) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 200),
-      child: SingleChildScrollView(
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: options.map((option) {
-            final isSelected = option.id == activeId;
-            return GestureDetector(
-              onTap: () => onSelected(option),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  gradient: isSelected ? AppColors.primaryGradient : null,
-                  color: isSelected ? null : AppColors.surface2,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? Colors.transparent : AppColors.border,
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  option.label,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.textMain,
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
+  Widget _sectionLabel(String label) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
+      );
+
+  Widget _chipWrap(
+    List<({String label, String icon, bool selected, VoidCallback onTap})>
+        items,
+  ) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: items.map((item) {
+        return GestureDetector(
+          onTap: item.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              gradient: item.selected ? AppColors.primaryGradient : null,
+              color: item.selected ? null : AppColors.surface2,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: item.selected ? Colors.transparent : AppColors.border,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (item.icon.isNotEmpty) ...[
+                  Text(item.icon, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 5),
+                ],
+                Text(
+                  item.label,
+                  style: TextStyle(
+                    color: item.selected ? Colors.white : AppColors.textMain,
+                    fontSize: 13,
+                    fontWeight:
+                        item.selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

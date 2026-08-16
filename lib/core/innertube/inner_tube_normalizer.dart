@@ -45,10 +45,14 @@ class InnerTubeNormalizer {
     'karaoke',
     'slowed',
     'reverb',
+    'nightcore',
     'mashup',
     'whatsapp status',
     'status video',
     'full screen status',
+    'sped up',
+    'edit audio',
+    'cover song',
   ];
 
   bool _isNonMusic(String title) => _nonMusicKeywords.any(title.contains);

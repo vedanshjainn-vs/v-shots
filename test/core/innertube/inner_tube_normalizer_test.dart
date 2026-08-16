@@ -74,6 +74,14 @@ void main() {
           ),
           isFalse,
         );
+        expect(
+          normalizer.isPlayableMusic(_item('15', title: 'Nightcore Mix')),
+          isFalse,
+        );
+        expect(
+          normalizer.isPlayableMusic(_item('16', title: 'Cover Song by Fan')),
+          isFalse,
+        );
       },
     );
 
