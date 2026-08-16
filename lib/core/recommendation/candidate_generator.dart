@@ -30,6 +30,7 @@
 import 'dart:math';
 
 import '../storage/local_library.dart';
+import '../storage/personalization_store.dart';
 import 'recommendation_config.dart';
 import 'taste_profile.dart';
 
@@ -90,6 +91,26 @@ class CandidateGenerator {
     'K-Pop': 'k-pop hits official',
     'Indie': 'indie songs official audio',
     'RnB': 'rnb slow jams',
+    'Lo-Fi': 'lofi chill study beats instrumental',
+    'Party': 'party dance bollywood punjabi hits',
+    'Devotional': 'bhajan devotional songs official audio',
+    'Rock': 'best rock songs classic modern official',
+    'Electronic': 'electronic edm dance music hits official',
+    '90s': '90s hindi evergreen songs official',
+    '2000s': '2000s bollywood hit songs official',
+    'Global': 'global pop hits official video',
+  };
+
+  /// Language preference → discovery query (used for cold-start seeding).
+  static const _languageQueries = {
+    'Hindi': 'hindi songs official audio',
+    'Punjabi': 'punjabi songs official audio',
+    'English': 'english pop songs official audio',
+    'Tamil': 'tamil hit songs official audio',
+    'Telugu': 'telugu hit songs official audio',
+    'Bengali': 'bengali hit songs official audio',
+    'Marathi': 'marathi hit songs official audio',
+    'Gujarati': 'gujarati garba folk songs official',
   };
 
   /// Generates a pool of candidate queries from every real source
@@ -216,13 +237,40 @@ class CandidateGenerator {
     return candidates.take(count).toList();
   }
 
-  /// Part M — Cold Start. No play history yet: trending + regional
-  /// popularity (Bollywood/Hindi/Punjabi as the app's established
-  /// regional defaults, matching Home's own existing section order)
-  /// + global popularity + genre diversity + exploration. Never
+  /// Part M — Cold Start. No play history yet.
+  ///
+  /// When the user completed onboarding, their stated genre/language
+  /// preferences come FIRST (in the order they chose them) so a brand-new
+  /// user's Home/Discovery is seeded with their taste — never a completely
+  /// generic feed. The remaining slots are filled from the regional/global
+  /// defaults and then shuffled, so there is always real diversity. Never
   /// returns an empty list.
   List<CandidateQuery> _coldStartCandidates({required int count}) {
-    final pool = <CandidateQuery>[
+    final store = PersonalizationStore.instance;
+
+    final ordered = <CandidateQuery>[];
+    final seenQueries = <String>{};
+
+    void addPref(String query, CandidateSource source, String? seed) {
+      if (query.isEmpty || !seenQueries.add(query)) return;
+      ordered.add(
+        CandidateQuery(query: query, source: source, seedGenre: seed),
+      );
+    }
+
+    // 1. Preferred genres first (user's explicit stated taste).
+    for (final genre in store.preferredGenres) {
+      final q = _allKnownGenreQueries[genre];
+      if (q != null) addPref(q, CandidateSource.genreTag, genre);
+    }
+    // 2. Preferred languages.
+    for (final lang in store.preferredLanguages) {
+      final q = _languageQueries[lang];
+      if (q != null) addPref(q, CandidateSource.exploration, lang);
+    }
+
+    // 3. Default regional/global pool (deduped against preferences).
+    final defaults = <CandidateQuery>[
       const CandidateQuery(
         query: 'trending music today official audio',
         source: CandidateSource.trending,
@@ -265,8 +313,12 @@ class CandidateGenerator {
         query: 'new music releases official audio',
         source: CandidateSource.newContent,
       ),
-    ];
-    pool.shuffle(_random);
-    return pool.take(count).toList();
+    ]..shuffle(_random);
+
+    for (final candidate in defaults) {
+      if (seenQueries.add(candidate.query)) ordered.add(candidate);
+    }
+
+    return ordered.take(count).toList();
   }
 }

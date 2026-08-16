@@ -41,12 +41,14 @@ import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
 import 'shared/widgets/bottom_tab_bar.dart';
 import 'core/storage/local_library.dart';
+import 'core/storage/personalization_store.dart';
 import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
 import 'features/home/home_feed_service.dart';
 import 'features/home/home_screen.dart';
 import 'features/morelikethis/more_like_this_screen.dart';
+import 'features/onboarding/onboarding_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
@@ -58,6 +60,7 @@ void main() async {
     SupabaseService.initialize(),
     LocalLibrary.instance.initialize(),
     SignalStore.instance.initialize(),
+    PersonalizationStore.instance.initialize(),
     RemoteConfigService.instance.init(),
   ]);
 
@@ -285,11 +288,26 @@ class _SplashScreenState extends State<SplashScreen>
     );
     _c.forward();
     Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute<void>(builder: (_) => const MainShell()),
-        );
-      }
+      if (!mounted) return;
+      // Capture the NavigatorState now — it outlives this Splash widget.
+      // (The onComplete callback fires much later, after the user finishes
+      // onboarding, so using this State's context there would be defunct.)
+      final navigator = Navigator.of(context);
+      // First launch → taste personalization onboarding; afterwards straight
+      // to the app. Onboarding NEVER starts playback — it only records
+      // preferences for cold-start recommendations.
+      final Widget next = PersonalizationStore.instance.onboarded
+          ? const MainShell()
+          : OnboardingScreen(
+              onComplete: () {
+                navigator.pushReplacement(
+                  MaterialPageRoute<void>(builder: (_) => const MainShell()),
+                );
+              },
+            );
+      navigator.pushReplacement(
+        MaterialPageRoute<void>(builder: (_) => next),
+      );
     });
   }
 

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:v_shots/core/recommendation/candidate_generator.dart';
 import 'package:v_shots/core/recommendation/taste_profile.dart';
 import 'package:v_shots/core/storage/local_library.dart';
+import 'package:v_shots/core/storage/personalization_store.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +15,8 @@ void main() {
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await LocalLibrary.instance.initialize();
+    await PersonalizationStore.instance.reset();
+    await PersonalizationStore.instance.initialize();
   });
 
   test('cold start (empty profile) never returns an empty candidate list', () {
@@ -28,6 +31,27 @@ void main() {
     for (final c in candidates) {
       expect(c.query, isNotEmpty);
     }
+  });
+
+  test('cold start seeds preferred genres/languages from onboarding', () async {
+    await PersonalizationStore.instance.completeOnboarding(
+      languages: ['Punjabi'],
+      genres: ['Romantic', 'Punjabi'],
+    );
+
+    final generator = CandidateGenerator();
+    final candidates = generator.generate(TasteProfile.empty, count: 5);
+
+    // The stated preferences must come FIRST in the candidate order so a
+    // new user's feed is shaped by their taste, not by defaults.
+    expect(candidates.first.seedGenre, anyOf('Romantic', 'Punjabi'));
+    expect(
+      candidates.take(3).map((c) => c.query).join(' ').toLowerCase(),
+      anyOf(
+        contains('romantic'),
+        contains('punjabi'),
+      ),
+    );
   });
 
   test('personalized profile produces similar-artist candidates', () {
