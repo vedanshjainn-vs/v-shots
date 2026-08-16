@@ -32,7 +32,7 @@ class MusicRepository {
 
   /// Detailed search that preserves success/failure distinction.
   Future<({bool success, List<Map<String, dynamic>> tracks, String? error})>
-  searchDetailed(
+      searchDetailed(
     String query, {
     String order = 'relevance',
     int limit = 20,

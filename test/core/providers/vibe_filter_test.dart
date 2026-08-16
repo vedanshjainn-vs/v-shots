@@ -19,38 +19,70 @@ void main() {
 
     // Each vibe's real query and the category every returned result must be in.
     const vibeCases = <(String, String, Set<String>)>{
-      ('Trending Hits', 'trending hits viral songs official audio', {
-        'global',
-        'punjabi',
-        'bollywood',
-      }),
-      ('Romantic & Love', 'romantic love songs official audio hindi', {
-        'bollywood',
-        'indie',
-        'global',
-      }),
-      ('Heartbroken & Sad', 'sad heartbroken emotional songs official audio', {
-        'nostalgia',
-        'indie',
-        'bollywood',
-      }),
+      (
+        'Trending Hits',
+        'trending hits viral songs official audio',
+        {
+          'global',
+          'punjabi',
+          'bollywood',
+        }
+      ),
+      (
+        'Romantic & Love',
+        'romantic love songs official audio hindi',
+        {
+          'bollywood',
+          'indie',
+          'global',
+        }
+      ),
+      (
+        'Heartbroken & Sad',
+        'sad heartbroken emotional songs official audio',
+        {
+          'nostalgia',
+          'indie',
+          'bollywood',
+        }
+      ),
       ('Hindi Indie', 'hindi indie acoustic songs official audio', {'indie'}),
-      ('Punjabi Bangers', 'latest punjabi pop hits official audio', {
-        'punjabi',
-      }),
-      ('Bollywood Hits', 'top bollywood songs official music video', {
-        'bollywood',
-      }),
-      ('Devotional & Bhajans', 'top devotional bhajan aarti songs official audio', {
-        'devotional',
-      }),
-      ('Chill & LoFi', 'chill lofi late night beats official audio', {
-        'ambient',
-      }),
+      (
+        'Punjabi Bangers',
+        'latest punjabi pop hits official audio',
+        {
+          'punjabi',
+        }
+      ),
+      (
+        'Bollywood Hits',
+        'top bollywood songs official music video',
+        {
+          'bollywood',
+        }
+      ),
+      (
+        'Devotional & Bhajans',
+        'top devotional bhajan aarti songs official audio',
+        {
+          'devotional',
+        }
+      ),
+      (
+        'Chill & LoFi',
+        'chill lofi late night beats official audio',
+        {
+          'ambient',
+        }
+      ),
       ('Workout', 'workout gym motivation hype songs official', {'workout'}),
-      ('International Pop', 'billboard top global pop hits official audio', {
-        'global',
-      }),
+      (
+        'International Pop',
+        'billboard top global pop hits official audio',
+        {
+          'global',
+        }
+      ),
       ('Hip-Hop', 'hip hop rap songs official audio', {'workout', 'global'}),
     };
 

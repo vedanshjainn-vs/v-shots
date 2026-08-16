@@ -1273,8 +1273,7 @@ class YouTubeDataApiClient {
         cleanQuery.contains('sangeet')) {
       // Wedding & Sangeet → Bollywood celebration tracks.
       matchedCategory = 'bollywood';
-    } else if (cleanQuery.contains('monsoon') ||
-        cleanQuery.contains('rain')) {
+    } else if (cleanQuery.contains('monsoon') || cleanQuery.contains('rain')) {
       // Monsoon Vibes → Hindi romantic Bollywood.
       multiCategories = ['bollywood', 'indie'];
     } else if (cleanQuery.contains('motivational') ||

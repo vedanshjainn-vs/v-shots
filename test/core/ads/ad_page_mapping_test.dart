@@ -18,6 +18,7 @@ bool isAdPage(int page) {
   return (page - AdConfig.discoveryAdEvery) % (AdConfig.discoveryAdEvery + 1) ==
       0;
 }
+
 int songIndexForPage(int page) =>
     page - (page ~/ (AdConfig.discoveryAdEvery + 1));
 int pageForSongIndex(int songIndex) =>

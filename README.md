@@ -15,7 +15,7 @@ A compliant, high-performance Android Flutter music discovery & social streaming
 
 - **App Name:** `V Shots`
 - **Package Name:** `com.vshots.live`
-- **Version:** `5.4.0 (Build 13)`
+- **Version:** `5.8.0 (Build 20)`
 - **Design System:** `V Shots Nova UI` (Dark-first `#070A12` with purple, cyan, and pink accents)
 
 ---
@@ -39,12 +39,11 @@ A compliant, high-performance Android Flutter music discovery & social streaming
 4. **Hybrid Provider Architecture (`ProviderManager`):**
    - Clean separation between **YouTubeProvider** (official IFrame foreground player + Data API v3 metadata) and **LicensedMusicProvider / UGC** (authorized media streams via `just_audio` + `audio_service` for background playback, lock-screen controls, and Bluetooth).
 
-5. **5-Tab Navigation System (`BottomTabBar`):**
-   - **Home (0):** Hero branding, Creator "+ Create" button, Top Artists Carousel (Arijit Singh, Diljit Dosanjh, Shreya Ghoshal, AP Dhillon, Anuv Jain, Pritam), and trending music sections.
-   - **Discover (1):** Centered artwork, interactive vibe/mood selector pill, and YouTube player launch.
-   - **Search (2):** 300ms debounced search, category filters, and recent searches history.
-   - **Inbox (3):** Activity notifications and community updates.
-   - **Profile (4):** Music-first profile with Liked Songs, Playlists, Recently Played, and Creator Studio Hub.
+5. **4-Tab Navigation System (`BottomTabBar`):**
+   - **Home (0):** Data-driven personalized feed — Continue Listening, Made For You, Because You Listened To, Trending, and catalog shelves powered by the recommendation engine (official YouTube player for playback).
+   - **Discover (1):** Vertical full-screen reels-style swipe feed with autoplay, next-item preloading, and a mood/category chip rail.
+   - **Search (2):** 300ms debounced search, category filters, recent searches history, and result pagination.
+   - **Profile (3):** Music-first profile with Liked Songs, Playlists, Recently Played, and Creator Studio Hub.
 
 6. **Dynamic Creator Gating:**
    - Dynamic check via `profiles.is_creator` in Supabase.

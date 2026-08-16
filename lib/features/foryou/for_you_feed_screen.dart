@@ -283,8 +283,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       debugPrint('[ForYouFeed] Category fetch failed, falling back: $e');
     }
     try {
+      // "For You" (and any category with an empty query) is personalized:
+      // full hybrid mix of the recommendation engine.
       final scored = await recommendationEngine.generateFeed(
-        intent: FeedIntent.discoverSomethingNew,
+        intent: FeedIntent.forYou,
         excludeIds: _seenIds,
         count: 12,
       );
@@ -385,20 +387,29 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         onMoodSelected: (label, query) {
           Navigator.pop(ctx);
           final cat = discoveryCategoryByLabel(label);
-          setState(() {
-            // Replace results entirely (never merge with the previous
-            // category's list). Reset to index 0. (Section 1 point 5)
-            _activeCategory = cat ?? _defaultCategory;
-            _initialLoading = true;
-            _items.clear();
-            _seenIds.clear();
-            _currentIndex = 0;
-          });
-          forYouFeedService.setMood(label, query);
-          _loadInitialBatch();
+          _selectCategory(cat ?? _defaultCategory);
         },
       ),
     );
+  }
+
+  /// Single code path for changing the active Discovery category — used by
+  /// both the inline chip rail and the full mood-picker sheet, so the two
+  /// can never drift apart. Replaces results entirely (never merges with the
+  /// previous category's list), resets to index 0, and starts fresh so the
+  /// new category genuinely changes the candidate pool.
+  void _selectCategory(DiscoveryCategory cat) {
+    if (!mounted) return;
+    if (cat.label == _currentVibeLabel) return;
+    setState(() {
+      _activeCategory = cat;
+      _initialLoading = true;
+      _items.clear();
+      _seenIds.clear();
+      _currentIndex = 0;
+    });
+    forYouFeedService.setMood(cat.label, cat.query);
+    _loadInitialBatch();
   }
 
   @override
@@ -501,58 +512,52 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             },
           ),
 
-          // Top Floating Mood & Vibe Selector Pill
+          // Top Floating Mood & Vibe Selector — horizontal chip rail
+          // (TikTok/Reels-style). One tap switches the candidate pool;
+          // the trailing "More" chip opens the full category sheet.
           Positioned(
-            top: 50,
-            left: 20,
+            top: 0,
+            left: 0,
+            right: 0,
             child: SafeArea(
-              child: GestureDetector(
-                onTap: _showMoodPicker,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.65),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AppColors.accent.withValues(alpha: 0.5),
-                      width: 1.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                      ),
+              bottom: false,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.85),
+                      Colors.black.withValues(alpha: 0.0),
                     ],
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.tune_rounded,
-                        color: AppColors.accent,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _currentVibeLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: AppColors.accent,
-                        size: 18,
-                      ),
-                    ],
-                  ),
+                ),
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  itemCount: RemoteConfigService.instance.categories.length + 1,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) {
+                    final cats = RemoteConfigService.instance.categories;
+                    if (i == cats.length) {
+                      return _VibeChip(
+                        emoji: null,
+                        label: 'More',
+                        icon: Icons.tune_rounded,
+                        isSelected: false,
+                        onTap: _showMoodPicker,
+                      );
+                    }
+                    final cat = cats[i];
+                    return _VibeChip(
+                      emoji: cat.icon,
+                      label: cat.label,
+                      icon: null,
+                      isSelected: cat.label == _currentVibeLabel,
+                      onTap: () => _selectCategory(cat),
+                    );
+                  },
                 ),
               ),
             ),
@@ -582,6 +587,67 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+}
+
+/// A single chip in the Discovery category rail.
+class _VibeChip extends StatelessWidget {
+  const _VibeChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+    this.emoji,
+    this.icon,
+  });
+
+  final String label;
+  final String? emoji;
+  final IconData? icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary
+              : Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.primaryLight
+                : Colors.white.withValues(alpha: 0.25),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (emoji != null) ...[
+              Text(emoji!, style: const TextStyle(fontSize: 13)),
+              const SizedBox(width: 5),
+            ] else if (icon != null) ...[
+              Icon(icon, size: 14, color: Colors.white),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

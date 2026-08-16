@@ -30,9 +30,9 @@ import 'core/player/sleep_timer.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/recommendation_engine.dart';
-import 'core/recommendation/recommendation_service.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
+import 'core/recommendation/taste_profile.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
 import 'shared/widgets/animated_equalizer.dart';
@@ -44,7 +44,8 @@ import 'core/storage/local_library.dart';
 import 'features/auth/auth_modal.dart';
 import 'features/foryou/for_you_feed_screen.dart';
 import 'features/foryou/for_you_feed_service.dart';
-import 'features/profile/artist_details_screen.dart';
+import 'features/home/home_feed_service.dart';
+import 'features/home/home_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
@@ -212,6 +213,8 @@ final musicRepository = buildMusicRepository(apiClient: sharedYtApiClient);
 final forYouFeedService = ForYouFeedService(apiClient: sharedYtApiClient);
 final recommendationEngine = RecommendationEngine(musicRepository);
 final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
+final homeFeedService =
+    HomeFeedService(repository: musicRepository, engine: recommendationEngine);
 
 void _log(String message) {
   debugPrint('[VShots] $message');
@@ -1301,1195 +1304,6 @@ Future<void> playTrack(
 }
 
 // ═══════════════════════════════════════════════
-// HOME SCREEN (AUTO-REFRESH & DATA-DRIVEN)
-// ═══════════════════════════════════════════════
-
-enum _SectionStatus { loading, loaded, error }
-
-class _HomeSectionState {
-  _HomeSectionState({
-    required this.query,
-    required this.title,
-    this.order = 'relevance',
-    this.isPersonalized = false,
-    this.isBecauseListened = false,
-    this.maxItems = 15,
-  });
-
-  final String query;
-  final String title;
-  final String order;
-  final bool isPersonalized;
-  final bool isBecauseListened;
-  final int maxItems;
-  _SectionStatus status = _SectionStatus.loading;
-  List<Map<String, dynamic>> tracks = [];
-}
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  final Set<String> _activeFetches = <String>{};
-  Timer? _autoRefreshTimer;
-
-  /// Resolved official YouTube channel avatars, keyed by artist name. Populated
-  /// at startup via the YouTube Data API Channels flow; empty when no API key is
-  /// configured (in which case the existing placeholder image is used as a
-  /// graceful fallback). Real artist imagery only appears once YOUTUBE_DATA_API_KEY
-  /// is configured — never fabricated here.
-  final Map<String, String> _artistAvatars = {};
-
-  Future<void> _resolveArtistAvatars() async {
-    for (final artist in _officialArtists) {
-      final url = await sharedYtApiClient.resolveChannelAvatar(
-        artist['name']!,
-      );
-      if (url != null) _artistAvatars[artist['name']!] = url;
-    }
-    if (mounted && _artistAvatars.isNotEmpty) setState(() {});
-  }
-
-  String? _artistImage(Map<String, String> artist) =>
-      _artistAvatars[artist['name']!] ?? artist['image'];
-
-  static const List<Map<String, String>> _officialArtists = [
-    {
-      'name': 'Arijit Singh',
-      'role': 'Singer & Composer',
-      'image':
-          'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&q=80',
-      'query': 'Arijit Singh top hit songs official audio',
-    },
-    {
-      'name': 'Diljit Dosanjh',
-      'role': 'Punjabi Pop Icon',
-      'image':
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80',
-      'query': 'Diljit Dosanjh hit songs official audio',
-    },
-    {
-      'name': 'Karan Aujla',
-      'role': 'Desi Hip-Hop',
-      'image':
-          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&q=80',
-      'query': 'Karan Aujla new songs official audio',
-    },
-    {
-      'name': 'Shreya Ghoshal',
-      'role': 'Melody Queen',
-      'image':
-          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&q=80',
-      'query': 'Shreya Ghoshal romantic hit songs official audio',
-    },
-    {
-      'name': 'Anuv Jain',
-      'role': 'Acoustic / Indie',
-      'image':
-          'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=400&q=80',
-      'query': 'Anuv Jain songs official audio',
-    },
-    {
-      'name': 'AP Dhillon',
-      'role': 'Punjabi Wave',
-      'image':
-          'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400&q=80',
-      'query': 'AP Dhillon hit songs official audio',
-    },
-    {
-      'name': 'Taylor Swift',
-      'role': 'Global Pop Icon',
-      'image':
-          'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=400&q=80',
-      'query': 'Taylor Swift top songs official audio',
-    },
-    {
-      'name': 'The Weeknd',
-      'role': 'R&B / Synthwave',
-      'image':
-          'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&q=80',
-      'query': 'The Weeknd top hits official audio',
-    },
-  ];
-
-  late List<_HomeSectionState> _sections;
-
-  /// Builds the Home section list from RemoteConfig (Section 3) when present,
-  /// otherwise the compiled defaults. Adding/removing/reordering a row in the
-  /// `home_layout_config` Supabase table changes Home WITHOUT an app update.
-  List<_HomeSectionState> _buildDefaultSections() => [
-        _HomeSectionState(
-          query: 'trending songs official music video 2026',
-          title: 'Trending Now',
-          order: 'viewCount',
-        ),
-        _HomeSectionState(
-          query: 'new music friday official audio 2026',
-          title: 'New Releases',
-          order: 'date',
-        ),
-        _HomeSectionState(
-          query: '__made_for_you__',
-          title: 'Made For You',
-          isPersonalized: true,
-        ),
-        _HomeSectionState(
-          query: '__because_you_listened__',
-          title: 'Because You Listened To',
-          isBecauseListened: true,
-        ),
-        _HomeSectionState(
-          query: 'top bollywood hindi songs official music video',
-          title: 'India Hits (Bollywood)',
-        ),
-        _HomeSectionState(
-          query: 'latest punjabi pop hits official audio',
-          title: 'Punjabi Bangers',
-        ),
-        _HomeSectionState(
-          query: 'hindi indie acoustic songs official audio',
-          title: 'Hindi Indie & Acoustic',
-        ),
-        _HomeSectionState(
-          query: 'billboard top global pop hits official audio',
-          title: 'International Pop 100',
-        ),
-        _HomeSectionState(
-          query: 'chill lofi late night beats official audio',
-          title: 'Chill & Lofi',
-        ),
-      ];
-
-  List<_HomeSectionState> _sectionsFromRemote() {
-    final remote = RemoteConfigService.instance.homeSections;
-    if (remote.isEmpty) return _buildDefaultSections();
-    final result = <_HomeSectionState>[];
-    for (final row in remote) {
-      final title = (row['title'] as String?) ?? '';
-      final query = (row['query'] as String?) ?? '';
-      final maxItems = (row['max_items'] as num?)?.toInt() ?? 15;
-      if (title.isEmpty) continue;
-      result.add(
-        _HomeSectionState(
-          query: query.isEmpty ? title : query,
-          title: title,
-          maxItems: maxItems,
-          isPersonalized:
-              query == '__made_for_you__' || query.contains('made for you'),
-          isBecauseListened:
-              query == '__because_you_listened__' || query.contains('because'),
-        ),
-      );
-    }
-    return result.isEmpty ? _buildDefaultSections() : result;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    // Build sections from remote config (Supabase) with compiled defaults.
-    _sections = _sectionsFromRemote();
-    unawaited(_resolveArtistAvatars());
-    for (final section in _sections) {
-      unawaited(_loadSection(section));
-    }
-    // Auto-refresh periodically (every 20 minutes in foreground)
-    _autoRefreshTimer = Timer.periodic(const Duration(minutes: 20), (_) {
-      unawaited(_refreshAll());
-    });
-  }
-
-  DateTime? _lastRefreshTs;
-  static const Duration _minRefreshInterval = Duration(minutes: 5);
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // Section 6: silent refresh on resume, rate-limited to once per 5 min.
-      final now = DateTime.now();
-      if (_lastRefreshTs == null ||
-          now.difference(_lastRefreshTs!) >= _minRefreshInterval) {
-        unawaited(_silentRefresh());
-      }
-    }
-  }
-
-  /// Silent background refresh: shows existing cached content immediately
-  /// (sections already loaded), then swaps in fresh data — no full-screen
-  /// loading state. Rate-limited.
-  Future<void> _silentRefresh() async {
-    _lastRefreshTs = DateTime.now();
-    for (final section in _sections) {
-      unawaited(_loadSection(section, forceRefresh: true));
-    }
-    unawaited(RemoteConfigService.instance.refresh());
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _autoRefreshTimer?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _refreshAll() async {
-    await Future.wait(
-      _sections.map((s) => _loadSection(s, forceRefresh: true)),
-    );
-  }
-
-  Future<void> _loadSection(
-    _HomeSectionState section, {
-    bool forceRefresh = false,
-  }) async {
-    if (_activeFetches.contains(section.query)) return;
-    _activeFetches.add(section.query);
-
-    final queryKey = section.isPersonalized
-        ? RecommendationService.instance.getPersonalizedHomeQuery()
-        : section.isBecauseListened
-            ? RecommendationService.instance.getBecauseYouListenedQuery()
-            : section.query;
-
-    final cached = forceRefresh ? null : SearchCache.instance.get(queryKey);
-    if (cached != null) {
-      if (mounted) {
-        setState(() {
-          section.tracks = cached;
-          section.status = _SectionStatus.loaded;
-        });
-      }
-      if (SearchCache.instance.isFresh(queryKey)) {
-        _activeFetches.remove(section.query);
-        return;
-      }
-    } else if (mounted) {
-      setState(() => section.status = _SectionStatus.loading);
-    }
-
-    try {
-      // Section 2: exclude songs shown recently (within 24h) for a fresher,
-      // non-repetitive Home feed, and never re-show within the same load.
-      final shownRecently = LocalLibrary.instance.recentlyShownIds;
-      final results = await musicRepository.search(
-        queryKey,
-        order: section.order,
-        limit: section.maxItems,
-        excludeIds: shownRecently,
-      );
-      if (!mounted) return;
-      if (results.isEmpty && cached == null) {
-        setState(() => section.status = _SectionStatus.error);
-        return;
-      }
-      if (results.isNotEmpty) {
-        SearchCache.instance.set(queryKey, results);
-        for (final t in results) {
-          final id = t['id'] as String?;
-          if (id != null) LocalLibrary.instance.recordShownSong(id);
-        }
-        setState(() {
-          section.tracks = results;
-          section.status = _SectionStatus.loaded;
-        });
-      }
-    } catch (_) {
-      if (mounted && cached == null) {
-        setState(() => section.status = _SectionStatus.error);
-      }
-    } finally {
-      _activeFetches.remove(section.query);
-    }
-  }
-
-  void _playArtistSpotlight(Map<String, String> artist) {
-    unawaited(HapticFeedback.selectionClick());
-    unawaited(
-      Navigator.push(
-        context,
-        AppPageRoute<void>(
-          builder: (_) => ArtistDetailsScreen(
-            name: artist['name']!,
-            role: artist['role']!,
-            imageUrl: artist['image']!,
-            query: artist['query']!,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hour = DateTime.now().hour;
-    final greeting = hour < 12
-        ? 'Good morning'
-        : hour < 17
-            ? 'Good afternoon'
-            : 'Good evening';
-
-    return Scaffold(
-      body: RefreshIndicator(
-        color: AppColors.accent,
-        backgroundColor: AppColors.surface,
-        onRefresh: _refreshAll,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverAppBar(
-              floating: true,
-              title: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.bolt_rounded,
-                      size: 20,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'V Shots',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton.icon(
-                  onPressed: () => _handleCreatorUpload(context),
-                  icon: const Icon(
-                    Icons.add_circle_outline_rounded,
-                    color: AppColors.accent,
-                    size: 18,
-                  ),
-                  label: const Text(
-                    'Create',
-                    style: TextStyle(
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      greeting,
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Discover official releases & trending tracks',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            _buildArtistsSpotlightSliver(),
-            for (final section in _sections) _buildSectionSliver(section),
-            // Native ad placement after ~8 organic content sections.
-            _buildAdSliver(),
-            _buildRecentlyPlayedSliver(),
-            _buildMoodGenresSliver(),
-            const SliverToBoxAdapter(child: SizedBox(height: 160)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildArtistsSpotlightSliver() {
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 16, 20, 12),
-            child: Row(
-              children: [
-                Icon(Icons.verified_rounded, size: 18, color: AppColors.accent),
-                SizedBox(width: 6),
-                Text(
-                  'Top Artists',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 124,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              itemCount: _officialArtists.length,
-              itemBuilder: (context, index) {
-                final artist = _officialArtists[index];
-                return GestureDetector(
-                  onTap: () => _playArtistSpotlight(artist),
-                  child: Container(
-                    width: 86,
-                    margin: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 68,
-                          height: 68,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: AppColors.accent.withValues(alpha: 0.6),
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accent.withValues(alpha: 0.25),
-                                blurRadius: 10,
-                              ),
-                            ],
-                          ),
-                          child: ClipOval(
-                            child: AppImage(
-                              _artistImage(artist),
-                              fit: BoxFit.cover,
-                              errorIconColor: AppColors.accent,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          artist['name']!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textMain,
-                          ),
-                        ),
-                        Text(
-                          artist['role']!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionSliver(_HomeSectionState section) {
-    return SliverToBoxAdapter(
-      child: switch (section.status) {
-        _SectionStatus.loading => _skeletonContent(section.title),
-        _SectionStatus.error => _errorContent(section),
-        _SectionStatus.loaded => _tracksContent(section),
-      },
-    );
-  }
-
-  Widget _skeletonContent(String title) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-          child: Shimmer.fromColors(
-            baseColor: AppColors.surface,
-            highlightColor: AppColors.surfaceLight,
-            child: Container(
-              width: 150,
-              height: 22,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(
-          height: 200,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: 5,
-            itemBuilder: (_, __) => Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Shimmer.fromColors(
-                baseColor: AppColors.surface,
-                highlightColor: AppColors.surfaceLight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 150,
-                      height: 150,
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: 120,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      width: 80,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _errorContent(_HomeSectionState section) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.wifi_off, color: Colors.white.withValues(alpha: 0.5)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Couldn\'t load "${section.title}"',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-              ),
-            ),
-            TextButton(
-              onPressed: () => _loadSection(section),
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _tracksContent(_HomeSectionState section) {
-    final isPersonalized = section.title == 'Made For You' ||
-        section.title == 'Because You Listened To';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-          child: Row(
-            children: [
-              if (isPersonalized) ...[
-                const Icon(
-                  Icons.auto_awesome,
-                  size: 18,
-                  color: AppColors.accent,
-                ),
-                const SizedBox(width: 6),
-              ],
-              Text(
-                section.title,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 210,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: section.tracks.length,
-            itemBuilder: (context, i) {
-              final track = section.tracks[i];
-              return StaggeredEntrance(
-                index: i,
-                child: PressableScale(
-                  onTap: () => playTrack(context, track, section.tracks, i),
-                  child: RepaintBoundary(
-                    child: Container(
-                      width: 150,
-                      margin: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AspectRatio(
-                            aspectRatio: 1,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  AppImage(
-                                    (track['artwork'] as String?) ?? '',
-                                    fit: BoxFit.cover,
-                                    width: 150,
-                                    height: 150,
-                                    errorIconColor: AppColors.accent,
-                                  ),
-                                  Positioned(
-                                    right: 8,
-                                    bottom: 8,
-                                    child: ValueListenableBuilder<
-                                        Map<String, dynamic>?>(
-                                      valueListenable: currentTrackNotifier,
-                                      builder: (context, current, _) {
-                                        final isThisPlaying =
-                                            current?['id'] == track['id'];
-                                        return Container(
-                                          width: 36,
-                                          height: 36,
-                                          decoration: BoxDecoration(
-                                            color: isThisPlaying
-                                                ? AppColors.primary
-                                                : AppColors.accent,
-                                            shape: BoxShape.circle,
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: (isThisPlaying
-                                                        ? AppColors.primary
-                                                        : AppColors.accent)
-                                                    .withValues(
-                                                  alpha: 0.4,
-                                                ),
-                                                blurRadius: 8,
-                                              ),
-                                            ],
-                                          ),
-                                          child: Center(
-                                            child: isThisPlaying
-                                                ? const AnimatedEqualizer(
-                                                    size: 16,
-                                                    color: Colors.white,
-                                                  )
-                                                : const Icon(
-                                                    Icons.play_arrow,
-                                                    size: 20,
-                                                    color: Colors.white,
-                                                  ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            (track['title'] as String?) ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                          Text(
-                            (track['artist'] as String?) ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// A native ad placement. Renders a clearly-labeled native ad only when ads
-  /// are enabled (production config present); otherwise empty.
-  Widget _buildAdSliver() {
-    return SliverToBoxAdapter(
-      child: AdConfig.adsEnabled
-          ? const NativeAdWidget()
-          : const SizedBox.shrink(),
-    );
-  }
-
-  Widget _buildRecentlyPlayedSliver() {
-    return SliverToBoxAdapter(
-      child: ValueListenableBuilder<List<Map<String, dynamic>>>(
-        valueListenable: LocalLibrary.instance.recentlyPlayed,
-        builder: (context, recent, _) {
-          if (recent.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.history_rounded,
-                          size: 18, color: AppColors.warning),
-                      SizedBox(width: 6),
-                      Text('Recently Played',
-                          style: TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.border)),
-                    child: Row(
-                      children: [
-                        Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                                color: AppColors.surface2,
-                                borderRadius: BorderRadius.circular(10)),
-                            child: const Icon(Icons.music_note_rounded,
-                                color: AppColors.textMuted)),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                              Text('No recent plays yet',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w600)),
-                              SizedBox(height: 2),
-                              Text('Play any track — it will appear here',
-                                  style: TextStyle(
-                                      color: AppColors.textMuted, fontSize: 12))
-                            ])),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          final display = recent.take(15).toList();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
-                child: Row(
-                  children: [
-                    const Icon(Icons.history_rounded,
-                        size: 18, color: AppColors.warning),
-                    const SizedBox(width: 6),
-                    const Text('Recently Played',
-                        style: TextStyle(
-                            fontSize: 22, fontWeight: FontWeight.w700)),
-                    const Spacer(),
-                    TextButton(
-                        onPressed: () =>
-                            LocalLibrary.instance.clearRecentlyPlayed(),
-                        child: const Text('Clear',
-                            style: TextStyle(
-                                color: AppColors.textMuted, fontSize: 12))),
-                  ],
-                ),
-              ),
-              SizedBox(
-                height: 210,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: display.length,
-                  itemBuilder: (context, i) {
-                    final track = display[i];
-                    return PressableScale(
-                      onTap: () => playTrack(context, track, display, i),
-                      child: Container(
-                        width: 150,
-                        margin: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            AspectRatio(
-                              aspectRatio: 1,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(14),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    AppImage(
-                                        (track['artwork'] as String?) ?? '',
-                                        fit: BoxFit.cover,
-                                        width: 150,
-                                        height: 150),
-                                    Positioned(
-                                        right: 8,
-                                        bottom: 8,
-                                        child: ValueListenableBuilder<
-                                                Map<String, dynamic>?>(
-                                            valueListenable:
-                                                currentTrackNotifier,
-                                            builder: (context, current, _) {
-                                              final isThisPlaying =
-                                                  current?['id'] == track['id'];
-                                              return Container(
-                                                  width: 36,
-                                                  height: 36,
-                                                  decoration: BoxDecoration(
-                                                      color: isThisPlaying
-                                                          ? AppColors.primary
-                                                          : AppColors.accent,
-                                                      shape: BoxShape.circle,
-                                                      boxShadow: [
-                                                        BoxShadow(
-                                                            color: (isThisPlaying
-                                                                    ? AppColors
-                                                                        .primary
-                                                                    : AppColors
-                                                                        .accent)
-                                                                .withValues(
-                                                                    alpha: 0.4),
-                                                            blurRadius: 8)
-                                                      ]),
-                                                  child: Center(
-                                                      child: isThisPlaying
-                                                          ? const AnimatedEqualizer(
-                                                              size: 16,
-                                                              color:
-                                                                  Colors.white)
-                                                          : const Icon(
-                                                              Icons.play_arrow,
-                                                              size: 20,
-                                                              color: Colors
-                                                                  .white)));
-                                            })),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text((track['title'] as String?) ?? '',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 13)),
-                            Text((track['artist'] as String?) ?? '',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildMoodGenresSliver() {
-    final moods = <(String, String, Color, String)>[
-      (
-        'Trending Hits',
-        '🔥',
-        Color(0xFFE91E63),
-        'trending hits viral songs official audio'
-      ),
-      (
-        'Romantic',
-        '💖',
-        Color(0xFFEC4899),
-        'romantic love songs official audio hindi'
-      ),
-      (
-        'Party & Dance',
-        '🎉',
-        Color(0xFF7C3AED),
-        'party dance bollywood punjabi hits'
-      ),
-      (
-        'Chill & Sleep',
-        '😌',
-        Color(0xFF22D3EE),
-        'chill lofi sleep beats official audio'
-      ),
-      ('Workout', '💪', Color(0xFFF59E0B), 'workout gym motivation hype songs'),
-      (
-        'Sad & Emotional',
-        '🌧️',
-        Color(0xFF64748B),
-        'sad heartbroken emotional songs'
-      ),
-      (
-        'Devotional',
-        '🙏',
-        Color(0xFFF59E0B),
-        'devotional bhajan aarti official audio'
-      ),
-      ('Hip-Hop', '🎤', Color(0xFF111827), 'hip hop rap desi english songs'),
-      ('EDM', '🎧', Color(0xFF0891B2), 'edm electronic dance music hits'),
-      (
-        'Bollywood',
-        '🎬',
-        Color(0xFFE91E63),
-        'top bollywood hindi songs official'
-      ),
-      (
-        'Punjabi',
-        '🥁',
-        Color(0xFFFF9800),
-        'latest punjabi pop hits official audio'
-      ),
-      (
-        'English Pop',
-        '🌍',
-        Color(0xFF2196F3),
-        'top english pop billboard hits official'
-      ),
-    ];
-    return SliverToBoxAdapter(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 24, 20, 12),
-            child: Row(
-              children: [
-                Icon(Icons.mood_rounded, size: 18, color: AppColors.accent),
-                SizedBox(width: 6),
-                Text('Mood & Genres',
-                    style:
-                        TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 2.8,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10),
-              itemCount: moods.length,
-              itemBuilder: (context, i) {
-                final (label, emoji, color, query) = moods[i];
-                return GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    Navigator.push(
-                        context,
-                        AppPageRoute<void>(
-                            builder: (_) => _MoodGenreSearchScaffold(
-                                initialQuery: query, title: label)));
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [
-                        color.withValues(alpha: 0.22),
-                        color.withValues(alpha: 0.08)
-                      ], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: color.withValues(alpha: 0.25)),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(emoji, style: const TextStyle(fontSize: 20)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                            child: Text(label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13))),
-                        const Icon(Icons.arrow_forward_ios_rounded,
-                            size: 12, color: AppColors.textMuted),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MoodGenreSearchScaffold extends StatefulWidget {
-  const _MoodGenreSearchScaffold(
-      {required this.initialQuery, required this.title});
-  final String initialQuery;
-  final String title;
-  @override
-  State<_MoodGenreSearchScaffold> createState() =>
-      _MoodGenreSearchScaffoldState();
-}
-
-class _MoodGenreSearchScaffoldState extends State<_MoodGenreSearchScaffold> {
-  List<Map<String, dynamic>> _tracks = [];
-  bool _loading = true;
-  String? _error;
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final res = await musicRepository.search(widget.initialQuery, limit: 20);
-      if (!mounted) return;
-      setState(() {
-        _tracks = res;
-        _loading = false;
-        if (res.isEmpty) _error = 'No tracks found';
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-          backgroundColor: AppColors.surface,
-          title: Text(widget.title,
-              style: const TextStyle(fontWeight: FontWeight.w800)),
-          leading: IconButton(
-              icon: const Icon(Icons.arrow_back_rounded),
-              onPressed: () => Navigator.pop(context)),
-          actions: [
-            IconButton(
-                icon: const Icon(Icons.refresh_rounded), onPressed: _load)
-          ]),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.accent))
-          : _error != null
-              ? Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(_error!,
-                      style: const TextStyle(color: AppColors.textMuted)),
-                  const SizedBox(height: 12),
-                  ElevatedButton(onPressed: _load, child: const Text('Retry'))
-                ]))
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                  itemCount: _tracks.length,
-                  itemBuilder: (c, i) {
-                    final t = _tracks[i];
-                    return ListTile(
-                        leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: AppImage(t['artwork'] as String?,
-                                width: 50, height: 50, fit: BoxFit.cover)),
-                        title: Text((t['title'] as String?) ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 14)),
-                        subtitle: Text((t['artist'] as String?) ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: AppColors.textMuted, fontSize: 12)),
-                        trailing: const Icon(Icons.play_circle_filled_rounded,
-                            color: AppColors.accent),
-                        onTap: () => playTrack(context, t, _tracks, i));
-                  }),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════
 // SEARCH SCREEN
 // ═══════════════════════════════════════════════
 
@@ -3274,6 +2088,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                           const SizedBox(height: 14),
 
+                          // Your Taste — derived live from the recommendation
+                          // engine's taste profile (plays, completions, likes,
+                          // skips), not a static label.
+                          _buildTasteCard(),
+
+                          const SizedBox(height: 14),
+
                           // Action Buttons Row
                           Row(
                             children: [
@@ -3455,6 +2276,132 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildTasteCard() {
+    final taste = TasteProfileBuilder().build();
+    final genres = taste.topGenres.take(5).toList();
+    final artists = taste.topArtists.take(4).toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.auto_awesome,
+                size: 16,
+                color: AppColors.accent,
+              ),
+              SizedBox(width: 6),
+              Text(
+                'Your Taste',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textMain,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (genres.isEmpty && artists.isEmpty)
+            const Text(
+              'Listen to a few songs — your taste profile will build itself here.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            )
+          else ...[
+            if (genres.isNotEmpty) ...[
+              const Text(
+                'Top genres',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: genres.map((g) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Text(
+                      g,
+                      style: const TextStyle(
+                        color: AppColors.primaryLight,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (artists.isNotEmpty) ...[
+              const Text(
+                'Top artists',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 4),
+              ...artists.map(
+                (a) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.person_rounded,
+                        size: 14,
+                        color: AppColors.accent,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          a,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
     );
   }
 
