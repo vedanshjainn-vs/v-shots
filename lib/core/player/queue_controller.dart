@@ -68,6 +68,37 @@ class QueueController {
     }
   }
 
+  /// Pure: returns a new queue with [track] inserted immediately AFTER
+  /// [currentIndex] (i.e. it plays next). An empty queue yields a
+  /// single-track queue. Never mutates the input list.
+  static List<Map<String, dynamic>> insertNext(
+    List<Map<String, dynamic>> queue,
+    int currentIndex,
+    Map<String, dynamic> track,
+  ) {
+    final copy = List<Map<String, dynamic>>.from(queue);
+    if (copy.isEmpty) {
+      copy.add(track);
+      return copy;
+    }
+    var insertAt = currentIndex + 1;
+    if (insertAt < 0) insertAt = 0;
+    if (insertAt > copy.length) insertAt = copy.length;
+    copy.insert(insertAt, track);
+    return copy;
+  }
+
+  /// Pure: returns a new queue with [track] appended to the END. Never
+  /// mutates the input list.
+  static List<Map<String, dynamic>> appendToQueue(
+    List<Map<String, dynamic>> queue,
+    Map<String, dynamic> track,
+  ) {
+    final copy = List<Map<String, dynamic>>.from(queue);
+    copy.add(track);
+    return copy;
+  }
+
   /// The queue index to play for an explicit skip (next: delta=+1,
   /// previous: delta=-1) against the app's GLOBAL queue state. Always
   /// wraps, regardless of repeat mode. Returns null if the queue is

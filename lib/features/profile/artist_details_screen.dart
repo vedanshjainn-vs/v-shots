@@ -9,7 +9,12 @@ import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../main.dart'
-    show musicRepository, playTrack, currentTrackNotifier, audioPlayer;
+    show
+        musicRepository,
+        playTrack,
+        currentTrackNotifier,
+        audioPlayer,
+        sharedYtApiClient;
 
 class ArtistDetailsScreen extends StatefulWidget {
   const ArtistDetailsScreen({
@@ -33,11 +38,25 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
   List<Map<String, dynamic>> _tracks = [];
   bool _isLoading = true;
 
+  /// Resolved official channel avatar (YouTube Data API) when available;
+  /// falls back to the provided artwork — never fabricated.
+  String? _resolvedImageUrl;
+
   @override
   void initState() {
     super.initState();
     _fetchArtistTracks();
+    _resolveAvatar();
   }
+
+  Future<void> _resolveAvatar() async {
+    final url = await sharedYtApiClient.resolveChannelAvatar(widget.name);
+    if (mounted && url != null) {
+      setState(() => _resolvedImageUrl = url);
+    }
+  }
+
+  String get _headerImage => _resolvedImageUrl ?? widget.imageUrl;
 
   Future<void> _fetchArtistTracks() async {
     setState(() => _isLoading = true);
@@ -79,7 +98,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  AppImage(widget.imageUrl, fit: BoxFit.cover),
+                  AppImage(_headerImage, fit: BoxFit.cover),
                   Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(

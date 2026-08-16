@@ -49,6 +49,7 @@ import 'features/home/home_feed_service.dart';
 import 'features/home/home_screen.dart';
 import 'features/morelikethis/more_like_this_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
@@ -131,6 +132,10 @@ final ValueNotifier<bool> isPlayerExpandedNotifier = ValueNotifier<bool>(false);
 /// renders it on every other tab. This prevents two `YoutubePlayer` widgets
 /// sharing the same controller simultaneously.
 final ValueNotifier<int> currentTabIndexNotifier = ValueNotifier<int>(0);
+
+/// Bumped whenever the global queue is mutated (play-next / add-to-queue),
+/// so the full player's "Up Next" list rebuilds against the new queue.
+final ValueNotifier<int> queueVersionNotifier = ValueNotifier<int>(0);
 
 YoutubePlayerController? globalYtController;
 String? globalPlayingVideoId;
@@ -222,6 +227,50 @@ final homeFeedService =
 
 void _log(String message) {
   debugPrint('[VShots] $message');
+}
+
+/// Adds [track] to the END of the global queue. If nothing is queued yet,
+/// it starts playing immediately (same as tapping a song).
+void addToQueueEnd(BuildContext? context, Map<String, dynamic> track) {
+  if (currentQueue.isEmpty) {
+    playTrack(context, track, [track], 0);
+    return;
+  }
+  currentQueue = QueueController.appendToQueue(currentQueue, track);
+  queueVersionNotifier.value++;
+  if (context != null && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added to queue: ${track['title'] ?? ''}'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: AppColors.surface2,
+      ),
+    );
+  }
+}
+
+/// Inserts [track] right after the currently playing track so it plays
+/// next. If nothing is queued yet, it starts playing immediately.
+void playNextInQueue(BuildContext? context, Map<String, dynamic> track) {
+  if (currentQueue.isEmpty) {
+    playTrack(context, track, [track], 0);
+    return;
+  }
+  currentQueue = QueueController.insertNext(
+    currentQueue,
+    currentQueueIndex,
+    track,
+  );
+  queueVersionNotifier.value++;
+  if (context != null && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Up next: ${track['title'] ?? ''}'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: AppColors.surface2,
+      ),
+    );
+  }
 }
 
 /// Plays the next/previous track in the current global queue.
@@ -571,8 +620,15 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
       widget.track['id'] as String? ?? '',
     );
     LocalLibrary.instance.likedSongs.addListener(_onLikedChange);
+    // Rebuild the "Up Next" list when the queue is mutated elsewhere
+    // (play-next / add-to-queue actions).
+    queueVersionNotifier.addListener(_onQueueChanged);
     // Keep the single global engine aligned with the current track's metadata.
     _ensureExpandedPlayerLoaded();
+  }
+
+  void _onQueueChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -603,6 +659,7 @@ class _PersistentPlayerOverlayState extends State<_PersistentPlayerOverlay> {
   @override
   void dispose() {
     LocalLibrary.instance.likedSongs.removeListener(_onLikedChange);
+    queueVersionNotifier.removeListener(_onQueueChanged);
     super.dispose();
   }
 
@@ -2483,29 +2540,48 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
               const SizedBox(height: 4),
               ...artists.map(
-                (a) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.person_rounded,
-                        size: 14,
-                        color: AppColors.accent,
+                (a) => InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => Navigator.push(
+                    context,
+                    AppPageRoute<void>(
+                      builder: (_) => ArtistDetailsScreen(
+                        name: a,
+                        role: 'Artist',
+                        imageUrl: '',
+                        query: '$a top songs official audio',
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          a,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.person_rounded,
+                          size: 14,
+                          color: AppColors.accent,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            a,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 16,
+                          color: AppColors.textSubtle,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -2881,6 +2957,42 @@ void showMoreOptionsSheet(
                       builder: (_) => MoreLikeThisScreen(track: track),
                     ),
                   );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_rounded),
+                title: const Text('View Artist'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final artistName =
+                      (track['artist'] as String?) ?? 'Unknown Artist';
+                  Navigator.push(
+                    context,
+                    AppPageRoute<void>(
+                      builder: (_) => ArtistDetailsScreen(
+                        name: artistName,
+                        role: 'Artist',
+                        imageUrl: (track['artwork'] as String?) ?? '',
+                        query: '$artistName top songs official audio',
+                      ),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.playlist_play_rounded),
+                title: const Text('Play Next'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  playNextInQueue(context, track);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.queue_music_rounded),
+                title: const Text('Add to Queue'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  addToQueueEnd(context, track);
                 },
               ),
               ListTile(
