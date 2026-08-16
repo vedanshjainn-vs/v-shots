@@ -237,8 +237,10 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
             child: ClipRect(
               child: Stack(
                 children: [
-                  // Expanded browser content — kept mounted at full size and
-                  // CLIPPED while collapsed so the WebView keeps playing.
+                  // Expanded browser content — kept MOUNTED while collapsed
+                  // (so the WebView keeps playing) but fully hidden behind the
+                  // opaque mini player: the browser bar fades out and the
+                  // WebView is squeezed + covered, never visible at collapse.
                   Positioned.fill(
                     child: IgnorePointer(
                       ignoring: e < 0.5,
@@ -246,18 +248,19 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                         height: maxH,
                         child: Column(
                           children: [
-                            _buildBrowserBar(),
+                            Opacity(
+                              opacity: e.clamp(0.0, 1.0),
+                              child: _buildBrowserBar(),
+                            ),
                             Expanded(child: _buildBrowserBody()),
                           ],
                         ),
                       ),
                     ),
                   ),
-                  // Collapsed mini player — fades out as the sheet expands.
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 8,
+                  // Collapsed mini player — OPAQUE and fills the whole
+                  // collapsed strip, so nothing behind it peeks through.
+                  Positioned.fill(
                     child: IgnorePointer(
                       ignoring: e > 0.5,
                       child: Opacity(

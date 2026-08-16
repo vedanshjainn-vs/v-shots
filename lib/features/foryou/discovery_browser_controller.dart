@@ -58,11 +58,13 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _isLoading = true;
     _error = null;
     _pagePlaying = null;
+    debugPrint('[DiscoveryBrowser] OPEN videoId=${track['id']} url=$url');
     notifyListeners();
   }
 
   /// Closes the browser entirely and clears the session.
   void close() {
+    debugPrint('[DiscoveryBrowser] CLOSE');
     _isOpen = false;
     _isExpanded = false;
     _isLoading = false;
@@ -75,18 +77,23 @@ class DiscoveryBrowserController extends ChangeNotifier {
   void expand() {
     if (_isExpanded) return;
     _isExpanded = true;
+    debugPrint('[DiscoveryBrowser] EXPANDED');
     notifyListeners();
   }
 
   void minimize() {
     if (!_isExpanded) return;
     _isExpanded = false;
+    debugPrint('[DiscoveryBrowser] MINIMIZED');
     notifyListeners();
   }
 
   void setExpanded(bool value) {
     if (_isExpanded == value) return;
     _isExpanded = value;
+    debugPrint(
+      value ? '[DiscoveryBrowser] EXPANDED' : '[DiscoveryBrowser] MINIMIZED',
+    );
     notifyListeners();
   }
 
