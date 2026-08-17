@@ -17,8 +17,12 @@
 // changes / minimize / expand; only on explicit close().
 //
 // Owns the global QUEUE with shuffle + repeat (pure Dart, unit-tested).
-// NOTE: auto-advance on video END is not implemented — the WebView engine does
-// not emit a reliable "ended" event (documented limitation, not faked).
+//
+// AUTO-ADVANCE: the native WebView emits a real `video.ended` event (JS poll
+// of the official YouTube page's <video> element), surfaced through
+// VShotsBrowserSession → this manager's onVideoEnded(). Idempotent (once per
+// completed video) and respects repeat/shuffle. Works screen-on and screen-off
+// because the foreground media service keeps the engine + JS poll alive.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
@@ -52,6 +56,13 @@ class VShotsPlaybackManager extends ChangeNotifier {
   PlaybackRepeat get repeatMode => _repeat;
   List<int> get shuffleOrder => List.unmodifiable(_shuffleOrder);
 
+  /// Idempotency guard for the native completion event: the last ended
+  /// videoId + when it fired. A duplicate event for the SAME id within a
+  /// short window is ignored; repeat-one reloads the same id, so a legitimate
+  /// re-end (a full song later) is outside the window and passes.
+  String? _lastEndedId;
+  DateTime? _lastEndedAt;
+
   /// Plays a single track in the global session (reusing the same WebView).
   void play(Map<String, dynamic> track, {bool expanded = false}) {
     _queue
@@ -66,8 +77,11 @@ class VShotsPlaybackManager extends ChangeNotifier {
 
   /// Plays [tracks] starting at [startIndex]. [expanded] opens the full
   /// player immediately (explicit taps); Discovery autoplay passes false.
-  void playQueue(List<Map<String, dynamic>> tracks, int startIndex,
-      {bool expanded = false}) {
+  void playQueue(
+    List<Map<String, dynamic>> tracks,
+    int startIndex, {
+    bool expanded = false,
+  }) {
     if (tracks.isEmpty) return;
     _queue
       ..clear()
@@ -99,6 +113,39 @@ class VShotsPlaybackManager extends ChangeNotifier {
     _index = _nextIndex(-1);
     browser.open(_queue[_index]);
     notifyListeners();
+  }
+
+  /// Handles REAL media completion (native `video.ended`). Idempotent, and
+  /// respects repeat/shuffle. Advances exactly once per completed video:
+  ///   repeat ONE → replay the same track (same session, forced reload)
+  ///   repeat ALL → next (wraps, following shuffle order when enabled)
+  ///   repeat OFF → next; stops at the end of the queue (non-shuffle)
+  void onVideoEnded(String videoId) {
+    if (videoId.isEmpty) return;
+    final now = DateTime.now();
+    // Duplicate completion event for the same video (native double-fire)
+    // within a short window → ignored.
+    if (_lastEndedId == videoId &&
+        _lastEndedAt != null &&
+        now.difference(_lastEndedAt!) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastEndedId = videoId;
+    _lastEndedAt = now;
+
+    if (_repeat == PlaybackRepeat.one) {
+      browser.requestReplay();
+      notifyListeners();
+      return;
+    }
+
+    // repeat OFF → stop at end (natural order); shuffle wraps its order.
+    if (_repeat == PlaybackRepeat.off &&
+        !_shuffle &&
+        _index >= _queue.length - 1) {
+      return; // end of queue — leave the finished state
+    }
+    next();
   }
 
   int _nextIndex(int delta) {
@@ -163,12 +210,17 @@ class VShotsPlaybackManager extends ChangeNotifier {
   }
 
   /// Closes the global session: stops playback and disposes the WebView (the
-  /// global player sheet removes itself from the tree when closed).
+  /// global player sheet removes itself from the tree when closed). Resets
+  /// the transient session state (queue/shuffle/repeat/ended guard).
   void close() {
     browser.close();
     _queue.clear();
     _index = 0;
+    _shuffle = false;
+    _repeat = PlaybackRepeat.off;
     _shuffleOrder.clear();
+    _lastEndedId = null;
+    _lastEndedAt = null;
     notifyListeners();
   }
 

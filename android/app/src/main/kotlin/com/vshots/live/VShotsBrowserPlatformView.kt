@@ -42,13 +42,22 @@ private class VShotsBackgroundMediaWebView(
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
             evaluateJavascript(
-                "(function(){var v=document.querySelector('video');if(!v){return 'none';}return v.paused?'paused':'playing';})()",
+                "(function(){var v=document.querySelector('video');if(!v){return 'none';}if(v.ended){return 'ended';}return v.paused?'paused':'playing';})()",
             ) { result ->
-                setMediaPlaying(cleanJsResult(result) == "playing")
+                val state = cleanJsResult(result)
+                setMediaPlaying(state == "playing")
+                if (state == "ended" && !endedReported) {
+                    endedReported = true
+                    events.invokeMethod("videoEnded", null)
+                }
             }
             handler.postDelayed(this, 1000L)
         }
     }
+
+    /** True once the CURRENT load's media has reached its natural end.
+     *  Reset on every new load so each video reports end exactly once. */
+    private var endedReported = false
 
     var mediaPlaying: Boolean = false
         private set
@@ -110,10 +119,12 @@ private class VShotsBackgroundMediaWebView(
 
     fun load(url: String) {
         if (!url.startsWith("https://")) return
+        endedReported = false
         loadUrl(url)
     }
 
     fun reloadCurrent() {
+        endedReported = false
         reload()
     }
 

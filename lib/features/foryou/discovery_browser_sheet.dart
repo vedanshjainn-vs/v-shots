@@ -62,6 +62,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _extent.addListener(_onExtentTick);
     widget.controller.addListener(_onControllerChanged);
     widget.controller.extentCommand.addListener(_onExtentCommand);
+    widget.controller.replayRequest.addListener(_onReplayRequest);
     // The single browser session: owns the native WebView + lifecycle; the
     // sheet is only the UI/interaction layer. Minimizing never destroys the
     // session.
@@ -72,6 +73,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
         widget.controller.setLoading(false);
         widget.controller.setError(message);
       },
+      // Real media completion (native `video.ended`) → auto-advance the queue
+      // through the single global manager (screen on AND screen off).
+      onVideoEnded: VShotsPlaybackManager.instance.onVideoEnded,
     );
     _loadForCurrent();
     // Sync the controller's expanded flag with the initial extent AFTER the
@@ -83,6 +87,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   @override
   void dispose() {
+    widget.controller.replayRequest.removeListener(_onReplayRequest);
     widget.controller.extentCommand.removeListener(_onExtentCommand);
     widget.controller.removeListener(_onControllerChanged);
     _extent.dispose();
@@ -98,6 +103,18 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     } else if (command == 2) {
       _animateTo(1.0);
     }
+  }
+
+  /// Repeat-one: reload the CURRENT url in the same session (the native
+  /// layer resets its per-load ended flag, so the next completion fires
+  /// again). No new WebView.
+  void _onReplayRequest() {
+    final url = widget.controller.url;
+    if (url == null) return;
+    _lastLoadedUrl = url;
+    widget.controller.setLoading(true);
+    widget.controller.setError(null);
+    _session.load(url);
   }
 
   void _onExtentTick() {
@@ -123,8 +140,14 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   /// is low (drag-then-hold, or a slow but firm swipe).
   double _downPixels = 0;
 
+  /// Whether THIS gesture began while the player was EXPANDED. The close
+  /// gesture is only valid from the MINIMIZED state: a downward swipe from
+  /// EXPANDED always minimizes (never closes), fixing the reported bug.
+  bool _startedExpanded = false;
+
   void _onDragStart(DragStartDetails details) {
     _downPixels = 0;
+    _startedExpanded = _extent.value > 0.5;
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
@@ -138,12 +161,15 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   void _onDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    // Dismiss: a deliberate downward fling OR a firm downward pull while
-    // (near-)collapsed closes the browser. A tiny tap or a few pixels of
-    // noise never reaches this.
+    // Dismiss is ONLY valid when the gesture started from MINIMIZED. A
+    // deliberate downward fling OR a firm downward pull then closes the
+    // browser. From EXPANDED, a downward swipe always minimizes — never
+    // closes (state-machine bug fix). Tiny taps/noise never reach this.
     final fastDownFling = velocity > 450;
     final firmDownPull = _downPixels > 80;
-    if ((fastDownFling || firmDownPull) && _extent.value < 0.25) {
+    if (!_startedExpanded &&
+        (fastDownFling || firmDownPull) &&
+        _extent.value < 0.25) {
       _close();
       return;
     }
@@ -462,9 +488,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.4),
                     child: const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.accent,
-                      ),
+                      child: CircularProgressIndicator(color: AppColors.accent),
                     ),
                   ),
                 ),
@@ -547,10 +571,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 ),
               ),
               IconButton(
-                icon: const Icon(
-                  Icons.close_rounded,
-                  color: Colors.white70,
-                ),
+                icon: const Icon(Icons.close_rounded, color: Colors.white70),
                 tooltip: 'Close',
                 onPressed: _close,
               ),
@@ -653,10 +674,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 onPressed: () => showAddToPlaylistSheet(context, track),
               ),
               IconButton(
-                icon: const Icon(
-                  Icons.lyrics_outlined,
-                  color: Colors.white70,
-                ),
+                icon: const Icon(Icons.lyrics_outlined, color: Colors.white70),
                 tooltip: 'Lyrics',
                 onPressed: () => Navigator.push(
                   context,
@@ -666,10 +684,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 ),
               ),
               IconButton(
-                icon: const Icon(
-                  Icons.share_rounded,
-                  color: Colors.white70,
-                ),
+                icon: const Icon(Icons.share_rounded, color: Colors.white70),
                 tooltip: 'Share',
                 onPressed: () => SharePlus.instance.share(
                   ShareParams(

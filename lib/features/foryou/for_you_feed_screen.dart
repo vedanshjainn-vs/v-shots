@@ -86,21 +86,56 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     return page - adsBefore;
   }
 
+  /// Maps a song index to its PageView page index (accounting for ads).
+  int _pageForSongIndex(int songIndex) {
+    if (!_adsEnabled) return songIndex;
+    return songIndex + (songIndex ~/ AdConfig.discoveryAdEvery);
+  }
+
   /// The APPLIED Discovery filter configuration — the only state the feed
   /// actually fetches from. The Explore sheet works on a DRAFT copy and only
   /// commits here on APPLY (see _showExplore).
   DiscoveryFilterConfig _applied = DiscoveryFilterConfig.initial;
 
+  /// True while the PageView is being moved PROGRAMMATICALLY (auto-advance),
+  /// so [_onPageChanged] does not re-trigger playback (no feedback loop).
+  bool _syncingFromManager = false;
+
   @override
   void initState() {
     super.initState();
     _browser.addListener(_onBrowserChanged);
+    VShotsPlaybackManager.instance.addListener(_onManagerChanged);
     currentTabIndexNotifier.addListener(_onTabChanged);
     _loadInitialBatch();
   }
 
   void _onBrowserChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// Auto-advance synchronization: when the manager moves to a NEW track
+  /// (song completed), Discovery swipes to the matching item — the SAME
+  /// currentItem source both directions converge on. Guarded so a manual
+  /// swipe (which also changes the manager) never causes a loop.
+  void _onManagerChanged() {
+    if (!mounted || _syncingFromManager) return;
+    final mgr = VShotsPlaybackManager.instance;
+    if (!mgr.isOpen) return;
+    final currentId = mgr.currentTrack?['id'];
+    if (currentId == null) return;
+    final idx = _items.indexWhere((t) => t['id'] == currentId);
+    if (idx == -1 || idx == _currentIndex) return;
+
+    _syncingFromManager = true;
+    setState(() => _currentIndex = idx);
+    if (_pageController.hasClients) {
+      final page = _pageForSongIndex(idx);
+      _pageController.jumpToPage(page.clamp(0, _pageCount - 1));
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncingFromManager = false;
+    });
   }
 
   void _onTabChanged() {
@@ -119,6 +154,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   @override
   void dispose() {
+    VShotsPlaybackManager.instance.removeListener(_onManagerChanged);
     currentTabIndexNotifier.removeListener(_onTabChanged);
     // The global browser is owned by VShotsPlaybackManager — do NOT dispose
     // it here (it must survive tab switches).
@@ -305,7 +341,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     final track = _items[index];
     setState(() => _currentIndex = index);
 
-    // Swiping Discovery moves playback to the new active item: reuse the ONE
+    // Programmatic move (auto-advance): the manager ALREADY owns playback
+    // for this item — do not re-trigger playQueue (prevents a feedback loop).
+    if (_syncingFromManager) return;
+
+    // Manual swipe: move playback to the new active item — reuse the ONE
     // global in-app browser (switch URL + autoplay) — one playback engine.
     VShotsPlaybackManager.instance.playQueue(List.of(_items), index);
 

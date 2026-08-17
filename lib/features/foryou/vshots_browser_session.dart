@@ -41,11 +41,18 @@ class VShotsBrowserSession {
     required this.onPageStarted,
     required this.onPageFinished,
     required this.onError,
+    this.onVideoEnded,
   });
 
   final void Function() onPageStarted;
   final void Function() onPageFinished;
   final void Function(String message) onError;
+
+  /// Fired by the native WebView when the current video's media reaches its
+  /// natural end (real `video.ended` from the page — not a fake timer).
+  /// Carries the ended video's id (extracted from the loaded URL) so the
+  /// manager can de-duplicate completion events idempotently.
+  final void Function(String videoId)? onVideoEnded;
 
   MethodChannel? _channel;
   String? _lastUrl;
@@ -147,6 +154,10 @@ class VShotsBrowserSession {
         break;
       case 'playbackState':
         _pagePlaying = call.arguments == true;
+        break;
+      case 'videoEnded':
+        final endedId = extractYoutubeVideoId(_lastUrl ?? '') ?? '';
+        onVideoEnded?.call(endedId);
         break;
       case 'error':
         onError(call.arguments?.toString() ?? 'Playback failed — please retry');

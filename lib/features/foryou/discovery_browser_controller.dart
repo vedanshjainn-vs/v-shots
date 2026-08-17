@@ -20,11 +20,7 @@ import '../../shared/utils/youtube_url.dart';
 /// Explicit browser lifecycle states. One source of truth for what the
 /// Discovery browser is doing — prevents "browser visible but player disposed"
 /// / "player playing but browser hidden" bugs.
-enum BrowserState {
-  closed,
-  collapsed,
-  expanded,
-}
+enum BrowserState { closed, collapsed, expanded }
 
 class DiscoveryBrowserController extends ChangeNotifier {
   Map<String, dynamic>? _track;
@@ -146,4 +142,9 @@ class DiscoveryBrowserController extends ChangeNotifier {
 
   /// Requests the sheet to expand its extent (used by the manager).
   void requestExpand() => extentCommand.value = 2;
+
+  /// Requests the sheet to RELOAD the current URL (used by repeat-one).
+  final ValueNotifier<int> replayRequest = ValueNotifier<int>(0);
+
+  void requestReplay() => replayRequest.value++;
 }
