@@ -63,17 +63,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<Map<String, dynamic>> _pages = [
     {
-      'title': 'Experience Next-Gen Shots',
+      'title': 'Discover Your Next Song',
       'subtitle':
-          'Discover trending short videos, viral music, and vibrant visual creators from around the globe.',
-      'icon': Icons.bolt_rounded,
+          'Explore trending music, new releases, timeless hits, and songs picked for your taste — all in one place.',
+      'icon': Icons.music_note_rounded,
       'gradient': AppColors.primaryGradient,
     },
     {
-      'title': 'Create & Share in Seconds',
+      'title': 'Music That Gets You',
       'subtitle':
-          'Upload your moments with high-fidelity streaming, custom audio tags, and seamless cloud sync.',
-      'icon': Icons.auto_awesome_rounded,
+          'V SHOTS learns what you listen to and helps you discover songs, artists, moods, and sounds you\u2019ll actually love.',
+      'icon': Icons.graphic_eq_rounded,
       'gradient': const LinearGradient(
         colors: [AppColors.accent, AppColors.primaryLight],
         begin: Alignment.topLeft,
@@ -81,10 +81,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
     },
     {
-      'title': 'Connect with Creators',
+      'title': 'Explore Without Limits',
       'subtitle':
-          'Like, comment, bookmark, and follow your favorite artists in a privacy-first social ecosystem.',
-      'icon': Icons.people_alt_rounded,
+          'Discover music by mood, language, genre, region, artists, and what\u2019s trending right now.',
+      'icon': Icons.public_rounded,
       'gradient': const LinearGradient(
         colors: [AppColors.hotPink, AppColors.warning],
         begin: Alignment.topLeft,
@@ -308,11 +308,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ],
             ),
             child: Center(
-              child: Icon(
-                p['icon'] as IconData,
-                size: 64,
-                color: Colors.white,
-              ),
+              child: Icon(p['icon'] as IconData, size: 64, color: Colors.white),
             ),
           ),
           const SizedBox(height: 48),
