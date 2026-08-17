@@ -47,6 +47,10 @@ class YoutubeMusicMapper {
       // so we stay honest: unknown → false/null (never guessed).
       isOfficial: false,
       channelId: null,
+      viewCount: video.viewCount,
+      publishedDaysAgo: video.publishedAt == null
+          ? null
+          : DateTime.now().difference(video.publishedAt!).inDays,
     );
   }
 

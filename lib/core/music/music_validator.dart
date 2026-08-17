@@ -1,19 +1,23 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — MusicContentValidator
+// V Shots — MusicContentValidator (multi-signal music confidence)
 // ═════════════════════════════════════════════════════════════════════════════
 //
 // The hard boundary between "random YouTube video" and "music item". Every
 // track that reaches the primary Home/Discovery feed must pass this.
 //
 //   • STRONG non-music signals (gaming / news / sports / podcast / reaction /
-//     tutorial / vlog / meme / comedy / interview / explanation …) REJECT the
-//     item outright (reuse the shared discovery_relevance keyword set).
-//   • Otherwise a deterministic confidence score is computed from real
-//     signals: official/verified badge, artist presence, plausible song
-//     duration, sane title, absence of unofficial-upload signals.
-//   • Items below the threshold are rejected (no generic fallback).
+//     tutorial / vlog / meme / comedy / interview / explanation…) REJECT
+//     outright (shared keyword set from discovery_relevance).
+//   • Otherwise a deterministic multi-signal confidence is computed:
+//         confidence = 0.5*sourceTrust + 0.2*musicEntity
+//                    + 0.2*artistEvidence + 0.1*metadataQuality
+//                    + variantAdjust
+//   • Variant classification (official remix/live vs random cover/karaoke/
+//     slowed/mashup/status) is part of the score — official variants are
+//     legit, random unofficial uploads are penalized (and unknown-uploader
+//     unofficial content is rejected).
 //
-// Not fabricated: confidence only reflects metadata we actually have.
+// Not fabricated: every signal comes from metadata we actually have.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/foundation.dart';
@@ -28,28 +32,15 @@ class MusicContentValidator {
   /// Confidence below which an item is not considered music.
   static const double threshold = 0.35;
 
-  /// Unofficial-upload signals — music-ish but not a canonical release.
-  static const _unofficial = [
-    'lyrics',
-    'lyrical',
-    'karaoke',
-    'slowed',
-    'reverb',
-    'nightcore',
-    'mashup',
-    'status video',
-    'whatsapp status',
-    'full screen status',
-    'sped up',
-    'edit audio',
-    'cover song',
-  ];
-
   MusicValidationResult validate(Map<String, dynamic> track) {
     final title = (track['title'] as String?) ?? '';
     final artist = (track['artist'] as String?) ?? '';
     final duration = track['duration'] as int? ?? 0;
+    final artwork = (track['artwork'] as String?) ?? '';
+    final channelId = track['channelId'] as String?;
     final isOfficial = track['isOfficial'] == true;
+
+    final reasons = <String>[];
 
     // STRONG non-music rejection (shared keyword set).
     if (isIrrelevantContent(title, artist)) {
@@ -58,55 +49,181 @@ class MusicContentValidator {
         confidence: 0.02,
         reasons: ['NON_MUSIC_CREATOR'],
         rejectionReason: 'NON_MUSIC_CREATOR',
+        sourceTrustScore: 0.05,
       );
     }
 
     final lowerTitle = title.toLowerCase();
-    var confidence = 0.25;
+    final variant = _classifyVariant(lowerTitle);
+    final contentType = _classifyContentType(lowerTitle);
 
-    final reasons = <String>[];
+    // ── source trust (0..1) ────────────────────────────────────────────────
+    var sourceTrust = 0.3;
     if (isOfficial) {
-      confidence += 0.35;
+      sourceTrust += 0.4;
       reasons.add('OFFICIAL_VERIFIED');
     }
-    if (artist.isNotEmpty && artist.toLowerCase() != 'unknown artist') {
-      confidence += 0.12;
-      reasons.add('ARTIST_PRESENT');
+    if (channelId != null && channelId.isNotEmpty) {
+      sourceTrust += 0.2;
+      reasons.add('CHANNEL_ID');
     }
+    // A random uploader of clearly-unofficial content is much less trusted.
+    if (_unofficialVariants.contains(variant) && !isOfficial) {
+      sourceTrust *= 0.5;
+      reasons.add('UNOFFICIAL_SOURCE');
+    }
+    sourceTrust = sourceTrust.clamp(0.0, 1.0);
+
+    // ── music entity evidence (0..1) ───────────────────────────────────────
+    var entity = 0.0;
     if (duration >= 45 && duration <= 900) {
-      confidence += 0.10;
+      entity += 0.5;
       reasons.add('SONG_DURATION');
+    } else if (duration > 0 && duration <= 3600) {
+      entity += 0.25; // longer form (mix/concert) is weaker song evidence
     }
     if (title.length >= 2 && title.length <= 110) {
-      confidence += 0.08;
-      reasons.add('TITLE_OK');
+      entity += 0.3;
     }
-    final unofficialHits = _unofficial.where(lowerTitle.contains).toList();
-    if (unofficialHits.isNotEmpty) {
-      confidence -= 0.12 * unofficialHits.length;
-      reasons.add('UNOFFICIAL_SIGNAL');
+    entity = entity.clamp(0.0, 1.0);
+
+    // ── artist evidence (0..1) ─────────────────────────────────────────────
+    final hasArtist =
+        artist.isNotEmpty && artist.toLowerCase() != 'unknown artist';
+    final artistEvidence = hasArtist ? 1.0 : 0.0;
+    if (hasArtist) reasons.add('ARTIST_PRESENT');
+
+    // ── metadata quality (0..1) ────────────────────────────────────────────
+    var metaCount = 0;
+    if (hasArtist) metaCount++;
+    if (artwork.isNotEmpty) metaCount++;
+    if (duration > 0) metaCount++;
+    if (channelId != null && channelId.isNotEmpty) metaCount++;
+    final metadataQuality = metaCount / 4.0;
+
+    // ── variant adjustment ─────────────────────────────────────────────────
+    var variantAdjust = 0.0;
+    if (variant == MusicVariantType.officialRemix ||
+        variant == MusicVariantType.officialLive) {
+      variantAdjust += 0.1;
+      reasons.add('OFFICIAL_VARIANT');
+    } else if (_unofficialVariants.contains(variant)) {
+      variantAdjust -= _variantPenalty[variant] ?? 0.1;
+      reasons.add('${variant.name.toUpperCase()}_VARIANT');
     }
 
+    var confidence = 0.5 * sourceTrust +
+        0.2 * entity +
+        0.2 * artistEvidence +
+        0.1 * metadataQuality +
+        variantAdjust;
     confidence = confidence.clamp(0.0, 1.0);
+
+    final officialityScore =
+        (isOfficial ? 0.85 : (lowerTitle.contains('official') ? 0.5 : 0.3))
+            .clamp(0.0, 1.0);
+
     if (confidence >= threshold) {
       return MusicValidationResult(
         isMusic: true,
         confidence: confidence,
+        officialityScore: officialityScore,
+        metadataQualityScore: metadataQuality,
+        musicEntityScore: entity,
+        sourceTrustScore: sourceTrust,
+        detectedContentType: contentType,
+        variant: variant,
         reasons: reasons,
       );
     }
     return MusicValidationResult(
       isMusic: false,
       confidence: confidence,
+      officialityScore: officialityScore,
+      metadataQualityScore: metadataQuality,
+      musicEntityScore: entity,
+      sourceTrustScore: sourceTrust,
+      detectedContentType: contentType,
+      variant: variant,
       reasons: reasons,
       rejectionReason: 'LOW_MUSIC_CONFIDENCE',
     );
   }
+
+  static const Set<MusicVariantType> _unofficialVariants = {
+    MusicVariantType.cover,
+    MusicVariantType.karaoke,
+    MusicVariantType.slowedReverb,
+    MusicVariantType.mashup,
+    MusicVariantType.fanEdit,
+    MusicVariantType.lyrics,
+  };
+
+  static const Map<MusicVariantType, double> _variantPenalty = {
+    MusicVariantType.cover: 0.20,
+    MusicVariantType.karaoke: 0.25,
+    MusicVariantType.slowedReverb: 0.20,
+    MusicVariantType.mashup: 0.15,
+    MusicVariantType.fanEdit: 0.30,
+    MusicVariantType.lyrics: 0.10,
+  };
+
+  /// Classifies the representation kind from the title. Ordered so official
+  /// variants win before generic ones.
+  static MusicVariantType _classifyVariant(String lowerTitle) {
+    final hasOfficial = lowerTitle.contains('official');
+    if (hasOfficial && lowerTitle.contains('remix')) {
+      return MusicVariantType.officialRemix;
+    }
+    if (hasOfficial &&
+        (lowerTitle.contains('live') || lowerTitle.contains('concert'))) {
+      return MusicVariantType.officialLive;
+    }
+    if (lowerTitle.contains('cover')) return MusicVariantType.cover;
+    if (lowerTitle.contains('karaoke')) return MusicVariantType.karaoke;
+    if (lowerTitle.contains('slowed') ||
+        lowerTitle.contains('reverb') ||
+        lowerTitle.contains('nightcore')) {
+      return MusicVariantType.slowedReverb;
+    }
+    if (lowerTitle.contains('mashup')) return MusicVariantType.mashup;
+    if (lowerTitle.contains('status') ||
+        lowerTitle.contains('edit') ||
+        lowerTitle.contains('sped up')) {
+      return MusicVariantType.fanEdit;
+    }
+    if (lowerTitle.contains('lyrics') || lowerTitle.contains('lyrical')) {
+      return MusicVariantType.lyrics;
+    }
+    if (hasOfficial && lowerTitle.contains('audio')) {
+      return MusicVariantType.officialAudio;
+    }
+    if (hasOfficial &&
+        (lowerTitle.contains('video') || lowerTitle.contains('mv'))) {
+      return MusicVariantType.officialMusicVideo;
+    }
+    if (hasOfficial) return MusicVariantType.official;
+    return MusicVariantType.unknown;
+  }
+
+  static MusicContentType _classifyContentType(String lowerTitle) {
+    if (lowerTitle.contains('full album')) return MusicContentType.album;
+    if (lowerTitle.contains('playlist') || lowerTitle.contains(' mix')) {
+      return MusicContentType.playlist;
+    }
+    if (lowerTitle.contains('official video') ||
+        lowerTitle.contains('music video') ||
+        lowerTitle.contains(' mv') ||
+        lowerTitle.endsWith('mv')) {
+      return MusicContentType.musicVideo;
+    }
+    return MusicContentType.song;
+  }
 }
 
-/// Validates, logs rejections, and returns ONLY the music items from [tracks].
-/// Also canonical-deduplicates (same song → one representation). Used by Home
-/// and Discovery as the single safety gate. Never fabricates content.
+/// Validates, logs rejections, and returns ONLY the music items from [tracks],
+/// canonical-deduplicated (same song → one representation). Used by Home and
+/// Discovery as the single safety gate. Never fabricates content.
 List<Map<String, dynamic>> validateAndFilterMusic(
   List<Map<String, dynamic>> tracks, {
   String label = '',

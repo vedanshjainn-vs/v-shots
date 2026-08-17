@@ -19,6 +19,7 @@ class InnerTubeVideoItem {
     this.viewCount = 0,
     this.isOfficial = false,
     this.channelId,
+    this.publishedDaysAgo,
   });
 
   final String videoId;
@@ -27,6 +28,10 @@ class InnerTubeVideoItem {
   final String thumbnailUrl;
   final int durationSeconds;
   final int viewCount;
+
+  /// Approximate days since upload (parsed from YouTube's relative publish
+  /// text, e.g. "3 years ago"). Real metadata, approximate precision.
+  final int? publishedDaysAgo;
 
   /// True when the uploader carries a YouTube official/verified badge
   /// (OFFICIAL_ARTIST_BADGE / BADGE_STYLE_TYPE_VERIFIED…). Used to prefer

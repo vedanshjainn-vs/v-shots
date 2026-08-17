@@ -11,7 +11,8 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/config/discovery_filters.dart';
-import '../../core/music/music_validator.dart';
+import '../../core/music/music_catalog_service.dart';
+import '../../core/music/music_ranker.dart';
 import '../../core/motion/motion.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
@@ -223,7 +224,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           forceRefresh: true,
         );
         if (scored.isNotEmpty) {
-          return validateAndFilterMusic(
+          return _refineForMode(
+            source,
             scored.map((s) => s.track.toTrackMap()).toList(),
           );
         }
@@ -231,7 +233,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         debugPrint('[ForYouFeed] Engine discover batch failed: $e');
       }
       // Mood/language/region-biased fallback pool.
-      return validateAndFilterMusic(
+      return _refineForMode(
+        source,
         await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12),
       );
     }
@@ -245,14 +248,35 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         excludeIds: _seenIds,
         count: 12,
       );
-      if (batch.isNotEmpty) return validateAndFilterMusic(batch);
+      if (batch.isNotEmpty) return _refineForMode(source, batch);
     }
     // Graceful fallback so a filter never leaves Discovery empty.
     final fallback = await forYouFeedService.fetchNextBatch(
       excludeIds: _seenIds,
       count: 12,
     );
-    return validateAndFilterMusic(fallback);
+    return _refineForMode(source, fallback);
+  }
+
+  /// Catalog gate + mode-specific ranking + diversity + already-seen penalty.
+  /// Each Discover mode therefore produces a genuinely different order.
+  List<Map<String, dynamic>> _refineForMode(
+    DiscoverySource source,
+    List<Map<String, dynamic>> tracks,
+  ) {
+    var refined =
+        const MusicCatalogService().ingest(tracks, label: '.discover').items;
+    const ranker = MusicRanker();
+    refined = switch (source.id) {
+      'trending' => ranker.rankTrending(refined),
+      'new' || 'latest' => ranker.rankNewest(refined),
+      'viral' => ranker.rankViral(refined),
+      'popular' => ranker.rankPopular(refined),
+      _ => refined, // For You: engine order already personalized
+    };
+    refined = ranker.applyAlreadySeenPenalty(refined, _seenIds);
+    refined = ranker.applyDiversity(refined);
+    return refined;
   }
 
   Future<void> _maybeLoadMore() async {

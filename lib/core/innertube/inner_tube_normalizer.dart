@@ -112,6 +112,8 @@ class InnerTubeNormalizer {
       durationSeconds: item.durationSeconds,
       isOfficial: item.isOfficial,
       channelId: item.channelId,
+      viewCount: item.viewCount,
+      publishedDaysAgo: item.publishedDaysAgo,
     );
   }
 

@@ -28,7 +28,8 @@ import '../../core/recommendation/recommendation_cache.dart';
 import '../../core/recommendation/recommendation_engine.dart';
 import '../../core/recommendation/recommendation_scorer.dart';
 import '../../core/recommendation/recommendation_service.dart';
-import '../../core/music/music_validator.dart';
+import '../../core/music/music_catalog_service.dart';
+import '../../core/music/music_ranker.dart';
 import '../../core/recommendation/taste_profile.dart';
 import '../../core/storage/local_library.dart';
 
@@ -380,7 +381,10 @@ class HomeFeedService {
       var tracks = await _fetch(shelf, excludeIds);
       // Music-first safety gate: reject non-music and canonical-deduplicate
       // BEFORE anything reaches the UI.
-      tracks = validateAndFilterMusic(tracks, label: shelf.id);
+      tracks = const MusicCatalogService()
+          .ingest(tracks, label: '.${shelf.id}')
+          .items;
+      tracks = _rankForShelf(shelf, tracks);
       tracks = _enforceArtistDiversity(tracks);
       if (tracks.isEmpty) {
         // "Official Music" (and any high-confidence-only shelf) hides
@@ -475,7 +479,10 @@ class HomeFeedService {
     final seen = <String>{
       ...shelf.tracks.map((t) => t['id'] as String? ?? ''),
     };
-    more = validateAndFilterMusic(more, label: '${shelf.id}.more');
+    more = const MusicCatalogService()
+        .ingest(more, label: '.${shelf.id}.more')
+        .items;
+    more = _rankForShelf(shelf, more);
     final appended = <Map<String, dynamic>>[];
     for (final track in more) {
       final id = track['id'] as String? ?? '';
@@ -636,6 +643,36 @@ class HomeFeedService {
   /// dominant artist can't fill an entire row (the engine does the full
   /// scored diversity pass for personalized shelves; this is the cheap
   /// guarantee for catalog shelves).
+  /// Applies the shelf-appropriate music ranking strategy AFTER validation.
+  /// Catalog/mood shelves keep relevance order; trending/new/popular shelves
+  /// use real views/age signals. When those signals are absent the original
+  /// (relevance) order is preserved — never fabricated.
+  List<Map<String, dynamic>> _rankForShelf(
+    HomeShelf shelf,
+    List<Map<String, dynamic>> tracks,
+  ) {
+    const ranker = MusicRanker();
+    switch (shelf.kind) {
+      case HomeShelfKind.trendingForYou:
+        return ranker.rankTrending(tracks);
+      case HomeShelfKind.discoverSomethingNew:
+        return ranker.rankViral(tracks);
+      case HomeShelfKind.catalog:
+        if (shelf.id == 'trending' || shelf.id == 'popular') {
+          return ranker.rankTrending(tracks);
+        }
+        if (shelf.id == 'new') return ranker.rankNewest(tracks);
+        return tracks; // language/genre/mood shelves: relevance order
+      case HomeShelfKind.officialMusic:
+        return ranker.rankPopular(tracks);
+      case HomeShelfKind.madeForYou:
+      case HomeShelfKind.becauseYouListenedTo:
+      case HomeShelfKind.continueListening:
+      case HomeShelfKind.artistsForYou:
+        return tracks; // engine/offline order is already personalized
+    }
+  }
+
   List<Map<String, dynamic>> _enforceArtistDiversity(
     List<Map<String, dynamic>> tracks,
   ) {

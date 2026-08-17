@@ -275,7 +275,26 @@ class InnerTubeClient {
       viewCount: viewCount,
       isOfficial: _parseOfficialBadge(v['ownerBadges']),
       channelId: _parseChannelId(v['ownerText']),
+      publishedDaysAgo: _parsePublishedDaysAgo(
+        (v['publishedTimeText'] as Map<String, dynamic>?)?['simpleText'],
+      ),
     );
+  }
+
+  /// Approximate days since upload from YouTube's relative text:
+  /// "5 hours ago"→0, "3 days ago"→3, "2 weeks ago"→14, "1 month ago"→30,
+  /// "3 years ago"→1095. Returns null when unparseable.
+  static int? _parsePublishedDaysAgo(dynamic simpleText) {
+    if (simpleText is! String || simpleText.isEmpty) return null;
+    final lower = simpleText.toLowerCase();
+    final num = int.tryParse(RegExp(r'\d+').firstMatch(lower)?.group(0) ?? '');
+    if (num == null) return null;
+    if (lower.contains('hour')) return 0;
+    if (lower.contains('day')) return num;
+    if (lower.contains('week')) return num * 7;
+    if (lower.contains('month')) return num * 30;
+    if (lower.contains('year')) return num * 365;
+    return null;
   }
 
   /// Extracts the uploader channel id (`UC…`) from the owner runs'

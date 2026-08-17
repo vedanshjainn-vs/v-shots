@@ -20,6 +20,7 @@ import 'core/remote_config/remote_config_service.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
+import 'core/music/music_catalog_service.dart';
 import 'core/models/profile_model.dart';
 import 'core/motion/motion.dart';
 import 'core/player/repeat_mode.dart';
@@ -736,7 +737,14 @@ class _SearchScreenState extends State<SearchScreen> {
         merged.addAll(uniqueResults);
       }
 
-      final toShow = merged.isNotEmpty ? merged : uniqueResults;
+      // Music-first search: validate + canonicalize before displaying, so
+      // generic non-music videos never appear as normal search results.
+      final musicResults = const MusicCatalogService()
+          .ingest(merged.isNotEmpty ? merged : uniqueResults, label: '.search')
+          .items;
+      final toShow = musicResults.isNotEmpty
+          ? musicResults
+          : (merged.isNotEmpty ? merged : uniqueResults);
       if (toShow.isNotEmpty) {
         SearchCache.instance.set(query, toShow);
       }

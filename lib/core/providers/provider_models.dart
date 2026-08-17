@@ -37,6 +37,8 @@ class ProviderTrack {
     this.providerId = ProviderId.youtube,
     this.isOfficial = false,
     this.channelId,
+    this.viewCount,
+    this.publishedDaysAgo,
   });
 
   final String id;
@@ -54,6 +56,12 @@ class ProviderTrack {
   /// Uploader channel id (YouTube `UC...`) when available, else null.
   final String? channelId;
 
+  /// Real view count when the source provides one (InnerTube/Data API).
+  final int? viewCount;
+
+  /// Approximate days since upload, when the source provides a publish time.
+  final int? publishedDaysAgo;
+
   /// Converts to the app's existing `Map<String, dynamic>` track shape
   /// — this is what actually flows into `currentQueue`, `LocalLibrary`,
   /// `playTrack()`, etc. Field names/values are UNCHANGED from what
@@ -68,6 +76,8 @@ class ProviderTrack {
         'duration': durationSeconds,
         if (isOfficial) 'isOfficial': true,
         if (channelId != null && channelId!.isNotEmpty) 'channelId': channelId,
+        if (viewCount != null) 'views': viewCount,
+        if (publishedDaysAgo != null) 'ageDays': publishedDaysAgo,
       };
 
   /// Builds a [ProviderTrack] from the app's existing
@@ -88,6 +98,8 @@ class ProviderTrack {
       providerId: providerId,
       isOfficial: map['isOfficial'] == true,
       channelId: map['channelId'] as String?,
+      viewCount: map['views'] is int ? map['views'] as int : null,
+      publishedDaysAgo: map['ageDays'] is int ? map['ageDays'] as int : null,
     );
   }
 }
