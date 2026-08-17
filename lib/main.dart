@@ -28,6 +28,7 @@ import 'core/player/sleep_timer.dart';
 import 'core/playback/vshots_playback_manager.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
+import 'core/recommendation/music_recommendation_engine.dart';
 import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
@@ -146,10 +147,14 @@ final YouTubeDataApiClient sharedYtApiClient = YouTubeDataApiClient();
 final musicRepository = buildMusicRepository(apiClient: sharedYtApiClient);
 final forYouFeedService = ForYouFeedService(repository: musicRepository);
 final recommendationEngine = RecommendationEngine(musicRepository);
+final musicRecommendationEngine = MusicRecommendationEngine.withRepository(
+  musicRepository,
+);
 final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
 final homeFeedService = HomeFeedService(
   repository: musicRepository,
   engine: recommendationEngine,
+  musicEngine: musicRecommendationEngine,
 );
 
 void _log(String message) {
@@ -1514,10 +1519,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(
-              Icons.history_rounded,
-              color: AppColors.textMain,
-            ),
+            icon: const Icon(Icons.history_rounded, color: AppColors.textMain),
             tooltip: 'Listening History',
             onPressed: () => Navigator.push(
               context,

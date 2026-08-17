@@ -25,6 +25,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/recommendation/recommendation_cache.dart';
+import '../../core/recommendation/music_recommendation_engine.dart';
 import '../../core/recommendation/recommendation_engine.dart';
 import '../../core/recommendation/recommendation_scorer.dart';
 import '../../core/recommendation/recommendation_service.dart';
@@ -103,12 +104,17 @@ class HomeShelf {
 }
 
 class HomeFeedService {
-  HomeFeedService({MusicRepository? repository, RecommendationEngine? engine})
-      : _repository = repository,
-        _engine = engine;
+  HomeFeedService({
+    MusicRepository? repository,
+    RecommendationEngine? engine,
+    MusicRecommendationEngine? musicEngine,
+  })  : _repository = repository,
+        _engine = engine,
+        _musicEngine = musicEngine;
 
   final MusicRepository? _repository;
   final RecommendationEngine? _engine;
+  final MusicRecommendationEngine? _musicEngine;
 
   /// The ordered, data-driven shelf plan. Ordering here is the product
   /// decision of what Home emphasizes; the CONTENT of each shelf is decided
@@ -332,12 +338,8 @@ class HomeFeedService {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(
         chunk.map(
-          (s) => _loadShelf(
-            s,
-            {...baseExclude},
-            force: force,
-            onUpdate: onUpdate,
-          ),
+          (s) =>
+              _loadShelf(s, {...baseExclude}, force: force, onUpdate: onUpdate),
         ),
       );
     }
@@ -476,9 +478,7 @@ class HomeFeedService {
       return false;
     }
 
-    final seen = <String>{
-      ...shelf.tracks.map((t) => t['id'] as String? ?? ''),
-    };
+    final seen = <String>{...shelf.tracks.map((t) => t['id'] as String? ?? '')};
     more = const MusicCatalogService()
         .ingest(more, label: '.${shelf.id}.more')
         .items;
@@ -515,6 +515,20 @@ class HomeFeedService {
       case HomeShelfKind.becauseYouListenedTo:
       case HomeShelfKind.trendingForYou:
       case HomeShelfKind.discoverSomethingNew:
+        // "Made For You" goes through MUSIC INTELLIGENCE V3 (taste → candidate
+        // → rank → diversity → exploration) with the existing engine as
+        // fallback.
+        if (shelf.kind == HomeShelfKind.madeForYou && _musicEngine != null) {
+          try {
+            final music = await _musicEngine.generateForYou(
+              excludeIds: excludeIds,
+              count: shelf.limit,
+            );
+            if (music.isNotEmpty) return music;
+          } catch (e) {
+            debugPrint('[HomeFeedService] music engine failed: $e');
+          }
+        }
         final intent = switch (shelf.kind) {
           HomeShelfKind.madeForYou => FeedIntent.madeForYou,
           HomeShelfKind.becauseYouListenedTo => FeedIntent.becauseYouListenedTo,

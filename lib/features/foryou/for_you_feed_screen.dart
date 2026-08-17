@@ -25,6 +25,7 @@ import '../../main.dart'
     show
         currentTabIndexNotifier,
         forYouFeedService,
+        musicRecommendationEngine,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
@@ -245,13 +246,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       'moods=${_applied.moods.length} query="$query"',
     );
 
-    // "For You" (null source query) → personalized recommendation engine.
-    // forceRefresh so APPLY genuinely reshapes the feed (never the stale
-    // cached forYou feed).
+    // "For You" (null source query) → MUSIC INTELLIGENCE V3 pipeline:
+    // user taste → candidate pools → ranking → diversity → exploration.
     if (source.query == null) {
       final primaryMood =
           _applied.moods.isNotEmpty ? _applied.moods.first : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
+      try {
+        final music = await musicRecommendationEngine.generateForYou(
+          excludeIds: _seenIds,
+          count: 12,
+          languages: _applied.languages.map((l) => l.token).toList(),
+          moods: _applied.moods.map((m) => m.query).toList(),
+          regions: _applied.regions.map((r) => r.token).toList(),
+        );
+        if (music.isNotEmpty) return _refineForMode(source, music);
+      } catch (e) {
+        debugPrint('[ForYouFeed] Music engine failed, falling back: $e');
+      }
+      // Fallback: existing personalized engine, then mood-biased pool.
       try {
         final scored = await recommendationEngine.generateFeed(
           intent: FeedIntent.forYou,
@@ -268,7 +281,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       } catch (e) {
         debugPrint('[ForYouFeed] Engine discover batch failed: $e');
       }
-      // Mood/language/region-biased fallback pool.
       return _refineForMode(
         source,
         await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12),
