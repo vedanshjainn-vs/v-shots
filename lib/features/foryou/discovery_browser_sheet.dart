@@ -24,6 +24,7 @@ import 'package:flutter/material.dart';
 
 import 'package:share_plus/share_plus.dart';
 
+import '../../core/browser/vshots_content_blocker.dart';
 import '../../core/playback/vshots_playback_manager.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
@@ -47,6 +48,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   late final AnimationController _extent;
   late final VShotsBrowserSession _session;
   String? _lastLoadedUrl;
+
+  /// Rebuilds the shield indicator when the blocker is toggled.
+  final ValueNotifier<int> _blockerRefresh = ValueNotifier<int>(0);
 
   static const double _miniHeight = 84;
   static const double _maxFraction = 0.92;
@@ -76,6 +80,18 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       // Real media completion (native `video.ended`) → auto-advance the queue
       // through the single global manager (screen on AND screen off).
       onVideoEnded: VShotsPlaybackManager.instance.onVideoEnded,
+      // Player-essential hosts are ALWAYS allowed, so the general content
+      // blocker can never break video/audio/thumbnail delivery.
+      contentBlocker: VShotsContentBlocker(essentialHosts: const [
+        'youtube.com',
+        'youtu.be',
+        'googlevideo.com',
+        'ytimg.com',
+        'gstatic.com',
+        'ggpht.com',
+        'google.com',
+        'googleapis.com',
+      ]),
     );
     _loadForCurrent();
     // Sync the controller's expanded flag with the initial extent AFTER the
@@ -91,6 +107,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     widget.controller.extentCommand.removeListener(_onExtentCommand);
     widget.controller.removeListener(_onControllerChanged);
     _extent.dispose();
+    _blockerRefresh.dispose();
     _session.dispose();
     super.dispose();
   }
@@ -332,6 +349,25 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                   fontSize: 12,
                 ),
               ),
+            ),
+            ValueListenableBuilder<int>(
+              valueListenable: _blockerRefresh,
+              builder: (context, _, __) {
+                final on = _session.contentBlocker.enabled;
+                return IconButton(
+                  icon: Icon(
+                    on ? Icons.shield_rounded : Icons.shield_outlined,
+                    color: on ? AppColors.accent : Colors.white38,
+                    size: 20,
+                  ),
+                  tooltip: on ? 'Ad blocking ON' : 'Ad blocking OFF',
+                  onPressed: () async {
+                    await _session.contentBlocker.setEnabled(!on);
+                    await _session.applyContentBlocker();
+                    _blockerRefresh.value++;
+                  },
+                );
+              },
             ),
             IconButton(
               icon: const Icon(

@@ -11,6 +11,8 @@ import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import java.io.ByteArrayInputStream
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import io.flutter.plugin.common.MethodCall
@@ -38,6 +40,14 @@ private class VShotsBackgroundMediaWebView(
 
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
+
+    // ── General content blocker (domain-agnostic) ─────────────────────────
+    // Populated from Dart via "setContentBlocker". Host-exact + suffix
+    // matching only — no regex, no website-specific rules. Essential/allow
+    // hosts always pass (media must never be blocked).
+    private var blockerEnabled = true
+    private val blockedHosts = mutableSetOf<String>()
+    private val essentialHosts = mutableSetOf<String>()
     private val playbackPoll = object : Runnable {
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
@@ -94,6 +104,25 @@ private class VShotsBackgroundMediaWebView(
                 }
             }
 
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?,
+            ): WebResourceResponse? {
+                val url = request?.url ?: return null
+                if (!blockerEnabled) return null
+                val host = url.host?.lowercase(Locale.US) ?: return null
+                // First-party safety + player-essential media: never block.
+                if (matchesAny(host, essentialHosts)) return null
+                if (!matchesAny(host, blockedHosts)) return null
+                // Block with an empty response; report to Dart for stats.
+                events.invokeMethod("blocked", host)
+                return WebResourceResponse(
+                    "text/plain",
+                    "utf-8",
+                    ByteArrayInputStream(ByteArray(0)),
+                )
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?,
@@ -101,6 +130,15 @@ private class VShotsBackgroundMediaWebView(
                 return request?.url?.host?.let(::isAllowedHost) != true
             }
         }
+    }
+
+    /** Host == rule or endsWith ".rule" (e.g. "doubleclick.net" also matches
+     *  "ad.doubleclick.net"). Conservative: no substring matching. */
+    private fun matchesAny(host: String, rules: Set<String>): Boolean {
+        for (rule in rules) {
+            if (host == rule || host.endsWith(".$rule")) return true
+        }
+        return false
     }
 
     private fun isAllowedHost(host: String): Boolean {
@@ -121,6 +159,20 @@ private class VShotsBackgroundMediaWebView(
         if (!url.startsWith("https://")) return
         endedReported = false
         loadUrl(url)
+    }
+
+    /** Applies the compiled blocker configuration from Dart. Cheap sets only —
+     *  no regex, no list reloads. Does NOT recreate the WebView. */
+    fun setContentBlocker(
+        enabled: Boolean,
+        blocked: List<String>,
+        essential: List<String>,
+    ) {
+        blockerEnabled = enabled
+        blockedHosts.clear()
+        blockedHosts.addAll(blocked.map { it.lowercase(Locale.US) })
+        essentialHosts.clear()
+        essentialHosts.addAll(essential.map { it.lowercase(Locale.US) })
     }
 
     fun reloadCurrent() {
@@ -293,6 +345,14 @@ private class VShotsBrowserPlatformView(
                     ) { value ->
                         webView.setMediaPlaying(clean(value) == "playing")
                     }
+                    result.success(null)
+                }
+                "setContentBlocker" -> {
+                    val args = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
+                    val enabled = (args["enabled"] as? Boolean) ?: true
+                    val blocked = (args["blocked"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                    val essential = (args["essential"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                    webView.setContentBlocker(enabled, blocked, essential)
                     result.success(null)
                 }
                 "dispose" -> {

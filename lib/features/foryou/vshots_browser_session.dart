@@ -19,6 +19,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/browser/vshots_content_blocker.dart';
 import '../../shared/utils/youtube_url.dart';
 
 /// Pure host policy — approved YouTube/Google infrastructure only.
@@ -42,7 +43,8 @@ class VShotsBrowserSession {
     required this.onPageFinished,
     required this.onError,
     this.onVideoEnded,
-  });
+    VShotsContentBlocker? contentBlocker,
+  }) : contentBlocker = contentBlocker ?? VShotsContentBlocker();
 
   final void Function() onPageStarted;
   final void Function() onPageFinished;
@@ -53,6 +55,10 @@ class VShotsBrowserSession {
   /// Carries the ended video's id (extracted from the loaded URL) so the
   /// manager can de-duplicate completion events idempotently.
   final void Function(String videoId)? onVideoEnded;
+
+  /// The general-purpose content blocker for this browser session. Owned here
+  /// (NOT by the playback manager) — independent from playback.
+  final VShotsContentBlocker contentBlocker;
 
   MethodChannel? _channel;
   String? _lastUrl;
@@ -132,11 +138,36 @@ class VShotsBrowserSession {
     );
   }
 
+  /// Pushes the compiled blocker configuration to the native WebView once
+  /// (cheap sets; no per-request regex, no WebView recreation). Toggling
+  /// on/off only affects SUBSEQUENT requests.
+  Future<void> _pushContentBlocker(MethodChannel channel) async {
+    await contentBlocker.initialize();
+    try {
+      await channel.invokeMethod<void>('setContentBlocker', {
+        'enabled': contentBlocker.enabled,
+        'blocked': contentBlocker.blockedHosts,
+        'essential': contentBlocker.essentialHosts,
+      });
+    } catch (_) {
+      // Older native view / not ready — non-fatal.
+    }
+  }
+
+  /// Applies a blocker toggle to the LIVE session (next requests) without
+  /// recreating the WebView or interrupting playback.
+  Future<void> applyContentBlocker() async {
+    final channel = _channel;
+    if (channel == null) return;
+    await _pushContentBlocker(channel);
+  }
+
   void _attachPlatformView(int viewId) {
     if (_disposed) return;
     final channel = MethodChannel('vshots/browser/$viewId');
     _channel = channel;
     channel.setMethodCallHandler(_handleNativeEvent);
+    unawaited(_pushContentBlocker(channel));
     final pending = _pendingUrl;
     if (pending != null) {
       unawaited(load(pending));
@@ -158,6 +189,9 @@ class VShotsBrowserSession {
       case 'videoEnded':
         final endedId = extractYoutubeVideoId(_lastUrl ?? '') ?? '';
         onVideoEnded?.call(endedId);
+        break;
+      case 'blocked':
+        contentBlocker.recordBlocked(call.arguments?.toString() ?? '');
         break;
       case 'error':
         onError(call.arguments?.toString() ?? 'Playback failed — please retry');
