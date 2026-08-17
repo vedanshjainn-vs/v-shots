@@ -108,19 +108,27 @@ private class VShotsBackgroundMediaWebView(
                 view: WebView?,
                 request: WebResourceRequest?,
             ): WebResourceResponse? {
-                val url = request?.url ?: return null
-                if (!blockerEnabled) return null
-                val host = url.host?.lowercase(Locale.US) ?: return null
-                // First-party safety + player-essential media: never block.
-                if (matchesAny(host, essentialHosts)) return null
-                if (!matchesAny(host, blockedHosts)) return null
-                // Block with an empty response; report to Dart for stats.
-                events.invokeMethod("blocked", host)
-                return WebResourceResponse(
-                    "text/plain",
-                    "utf-8",
-                    ByteArrayInputStream(ByteArray(0)),
-                )
+                // shouldInterceptRequest runs on a BACKGROUND thread — never
+                // touch the MethodChannel here directly (that crashes the app).
+                // A blocker error must NEVER crash the WebView either.
+                return try {
+                    val url = request?.url ?: return null
+                    if (!blockerEnabled) return null
+                    val host = url.host?.lowercase(Locale.US) ?: return null
+                    // First-party safety + player-essential media: never block.
+                    if (matchesAny(host, essentialHosts)) return null
+                    if (!matchesAny(host, blockedHosts)) return null
+                    // Report the block to Dart on the MAIN thread (stats only).
+                    val hostCopy = host
+                    handler.post { events.invokeMethod("blocked", hostCopy) }
+                    WebResourceResponse(
+                        "text/plain",
+                        "utf-8",
+                        ByteArrayInputStream(ByteArray(0)),
+                    )
+                } catch (t: Throwable) {
+                    null
+                }
             }
 
             override fun shouldOverrideUrlLoading(
@@ -348,12 +356,17 @@ private class VShotsBrowserPlatformView(
                     result.success(null)
                 }
                 "setContentBlocker" -> {
-                    val args = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
-                    val enabled = (args["enabled"] as? Boolean) ?: true
-                    val blocked = (args["blocked"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-                    val essential = (args["essential"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-                    webView.setContentBlocker(enabled, blocked, essential)
-                    result.success(null)
+                    try {
+                        val args = call.arguments as? Map<*, *> ?: emptyMap<Any, Any>()
+                        val enabled = (args["enabled"] as? Boolean) ?: true
+                        val blocked = (args["blocked"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                        val essential = (args["essential"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                        webView.setContentBlocker(enabled, blocked, essential)
+                        result.success(null)
+                    } catch (t: Throwable) {
+                        // A blocker-config error must never take the browser down.
+                        result.success(null)
+                    }
                 }
                 "dispose" -> {
                     webView.disposeMedia()
