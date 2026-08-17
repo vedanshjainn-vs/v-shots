@@ -248,8 +248,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       if (batch.isNotEmpty) return validateAndFilterMusic(batch);
     }
     // Graceful fallback so a filter never leaves Discovery empty.
-    final fallback =
-        await forYouFeedService.fetchNextBatch(excludeIds: _seenIds, count: 12);
+    final fallback = await forYouFeedService.fetchNextBatch(
+      excludeIds: _seenIds,
+      count: 12,
+    );
     return validateAndFilterMusic(fallback);
   }
 
@@ -463,8 +465,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                           color: Colors.black.withValues(alpha: 0.55),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color:
-                                AppColors.primaryLight.withValues(alpha: 0.6),
+                            color: AppColors.primaryLight.withValues(
+                              alpha: 0.6,
+                            ),
                             width: 1,
                           ),
                           boxShadow: [
@@ -719,48 +722,56 @@ class _ExploreSheetState extends State<_ExploreSheet> {
               _sectionLabel('Discover'),
               _chipWrap(
                 kDiscoverySources
-                    .map((s) => (
-                          label: s.label,
-                          icon: s.icon,
-                          selected: s.id == _draftSource.id,
-                          onTap: () => setState(() => _draftSource = s),
-                        ))
+                    .map(
+                      (s) => (
+                        label: s.label,
+                        icon: s.icon,
+                        selected: s.id == _draftSource.id,
+                        onTap: () => setState(() => _draftSource = s),
+                      ),
+                    )
                     .toList(),
               ),
               const SizedBox(height: 18),
               _sectionLabel('Moods'),
               _chipWrap(
                 kDiscoveryMoods
-                    .map((m) => (
-                          label: m.label,
-                          icon: m.icon,
-                          selected: _draftMoods.any((x) => x.id == m.id),
-                          onTap: () => _toggleMood(m),
-                        ))
+                    .map(
+                      (m) => (
+                        label: m.label,
+                        icon: m.icon,
+                        selected: _draftMoods.any((x) => x.id == m.id),
+                        onTap: () => _toggleMood(m),
+                      ),
+                    )
                     .toList(),
               ),
               const SizedBox(height: 18),
               _sectionLabel('Language'),
               _chipWrap(
                 kDiscoveryLanguages
-                    .map((l) => (
-                          label: l.label,
-                          icon: '',
-                          selected: _draftLanguages.any((x) => x.id == l.id),
-                          onTap: () => _toggleLanguage(l),
-                        ))
+                    .map(
+                      (l) => (
+                        label: l.label,
+                        icon: '',
+                        selected: _draftLanguages.any((x) => x.id == l.id),
+                        onTap: () => _toggleLanguage(l),
+                      ),
+                    )
                     .toList(),
               ),
               const SizedBox(height: 18),
               _sectionLabel('Region / Culture'),
               _chipWrap(
                 kDiscoveryRegions
-                    .map((r) => (
-                          label: r.label,
-                          icon: '',
-                          selected: _draftRegions.any((x) => x.id == r.id),
-                          onTap: () => _toggleRegion(r),
-                        ))
+                    .map(
+                      (r) => (
+                        label: r.label,
+                        icon: '',
+                        selected: _draftRegions.any((x) => x.id == r.id),
+                        onTap: () => _toggleRegion(r),
+                      ),
+                    )
                     .toList(),
               ),
               const SizedBox(height: 22),
@@ -968,8 +979,32 @@ class _ForYouCardState extends State<_ForYouCard>
   Animation<double>? _heartScale;
   Animation<double>? _heartOpacity;
 
+  /// Slow Ken Burns controller for the animated blurred backdrop (only runs
+  /// while this card is the active one).
+  late final AnimationController _bgCtl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 11),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isActive) _bgCtl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ForYouCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !_bgCtl.isAnimating) {
+      _bgCtl.repeat(reverse: true);
+    } else if (!widget.isActive && _bgCtl.isAnimating) {
+      _bgCtl.stop();
+    }
+  }
+
   @override
   void dispose() {
+    _bgCtl.dispose();
     _heartCtl?.dispose();
     super.dispose();
   }
@@ -1001,24 +1036,83 @@ class _ForYouCardState extends State<_ForYouCard>
     final artist = (track['artist'] as String?) ?? '';
     final trackId = track['id'] as String? ?? '';
     final artwork = (track['artwork'] as String?) ?? '';
+    // Square cover side: scales with screen, capped for large phones.
+    final coverSide = (MediaQuery.of(context).size.width * 0.70).clamp(
+      200.0,
+      330.0,
+    );
 
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Cinematic blurred-artwork backdrop — Discovery no longer renders the
-        // full-screen IFrame; each card shows its own premium visual.
+        // Cinematic ANIMATED blurred-artwork backdrop — a slow Ken Burns
+        // (pan + zoom) with two drifting ambient glows. Runs only while the
+        // card is active; never resized/detached (pure visual layer).
         Positioned.fill(
-          child: artwork.isNotEmpty
-              ? ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
-                  child: Transform.scale(
-                    scale: 1.25,
-                    child: AppImage(artwork, fit: BoxFit.cover),
-                  ),
-                )
-              : Container(color: const Color(0xFF0A0D16)),
+          child: IgnorePointer(
+            child: AnimatedBuilder(
+              animation: _bgCtl,
+              builder: (context, _) {
+                final t = _bgCtl.value;
+                final scale = 1.12 + 0.16 * t;
+                final dx = (t - 0.5) * 34;
+                final dy = (t - 0.5) * -20;
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (artwork.isNotEmpty)
+                      ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                        child: Transform.translate(
+                          offset: Offset(dx, dy),
+                          child: Transform.scale(
+                            scale: scale,
+                            child: AppImage(artwork, fit: BoxFit.cover),
+                          ),
+                        ),
+                      )
+                    else
+                      Container(color: const Color(0xFF0A0D16)),
+                    // Drifting ambient glow (primary → hot pink).
+                    Align(
+                      alignment: Alignment(0.6 - t, 0.15),
+                      child: Container(
+                        width: 280,
+                        height: 280,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              AppColors.primary.withValues(alpha: 0.26),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment(-0.5 + t, -0.28),
+                      child: Container(
+                        width: 230,
+                        height: 230,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              AppColors.hotPink.withValues(alpha: 0.20),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
-        // Dark scrim keeps text readable over the blurred artwork.
+        // Dark scrim keeps text readable over the animated backdrop.
         IgnorePointer(
           child: Container(
             decoration: BoxDecoration(
@@ -1037,36 +1131,102 @@ class _ForYouCardState extends State<_ForYouCard>
           ),
         ),
 
-        // Clear Play interaction over the video when the active video is cued
-        // but not yet playing (YouTube/Android can block autoplay-with-sound).
-        // First tap starts playback.
+        // Tap-to-play layer (active card, cued): transparent, so the square
+        // cover stays the visual hero while the whole screen is tappable.
         if (isActive && !isPlaying)
-          GestureDetector(
-            onTap: onPlayPauseToggle,
-            behavior: HitTestBehavior.opaque,
-            child: Center(
-              child: Container(
-                width: 78,
-                height: 78,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.black.withValues(alpha: 0.5),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 20,
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: onPlayPauseToggle,
+              behavior: HitTestBehavior.opaque,
+            ),
+          ),
+
+        // ── CENTER SQUARE COVER ART ─────────────────────────────────────
+        // The sharp, square cover of the playing song — the Discovery hero.
+        // Crossfades + scales in when the swipe changes the track.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: SafeArea(
+              bottom: false,
+              child: Align(
+                alignment: const Alignment(0, -0.12),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 340),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(
+                        begin: 0.94,
+                        end: 1.0,
+                      ).animate(animation),
+                      child: child,
                     ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 46,
+                  ),
+                  child: Container(
+                    key: ValueKey('cover-$trackId'),
+                    width: coverSide,
+                    height: coverSide,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          blurRadius: 40,
+                          offset: const Offset(0, 14),
+                        ),
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.22),
+                          blurRadius: 30,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (artwork.isNotEmpty)
+                            AppImage(artwork, fit: BoxFit.cover)
+                          else
+                            Container(color: AppColors.surface),
+                          // Small play affordance on the cover.
+                          Positioned(
+                            right: 12,
+                            bottom: 12,
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: AppColors.primaryGradient,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primary.withValues(
+                                      alpha: 0.45,
+                                    ),
+                                    blurRadius: 12,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.play_arrow_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
+        ),
 
         // Double-tap like heart burst (premium). Triggered from the safe
         // metadata region BELOW the video, never from the YouTube surface.
