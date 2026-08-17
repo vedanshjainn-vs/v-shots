@@ -90,6 +90,7 @@ private class VShotsBackgroundMediaWebView(
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 events.invokeMethod("pageFinished", null)
+                applyCosmeticBlocking()
                 startPlaybackPolling()
                 attemptAutoplayWithAudio()
             }
@@ -138,6 +139,41 @@ private class VShotsBackgroundMediaWebView(
                 return request?.url?.host?.let(::isAllowedHost) != true
             }
         }
+    }
+
+    /**
+     * Generic cosmetic blocking: hides well-known advertising containers by
+     * ATTRIBUTE/CLASS only (AdSense/DFP markers + common ad-slot patterns).
+     * No website-specific selectors — the same rules apply across sites.
+     * Runs once per finished page, only when blocking is enabled. Never
+     * touches video/audio/nav/login/content elements.
+     */
+    private fun applyCosmeticBlocking() {
+        if (!blockerEnabled) return
+        evaluateJavascript(
+            "(function(){try{" +
+            "var s=document.createElement('style');" +
+            "s.setAttribute('id','vshots-adblock');" +
+            "s.textContent='" +
+            "[data-google-query-id]," +
+            "ins.adsbygoogle," +
+            "div[id^=google_ads_]," +
+            "iframe[src*=doubleclick]," +
+            "iframe[src*=googlesyndication]," +
+            "iframe[src*=googleadservices]," +
+            "div[class*=ad-slot]," +
+            "div[class*=adslot]," +
+            "div[class*=ad-container]," +
+            "div[id*=ad-container]," +
+            "aside[class*=advert]," +
+            "div[data-ad]," +
+            "div[data-ad-client]," +
+            "div[id^=div-gpt-ad]" +
+            "{display:none!important;height:0!important;min-height:0!important;}' ;" +
+            "document.head.appendChild(s);" +
+            "}catch(e){}})()",
+            null,
+        )
     }
 
     /** Host == rule or endsWith ".rule" (e.g. "doubleclick.net" also matches

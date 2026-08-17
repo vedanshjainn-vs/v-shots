@@ -32,7 +32,7 @@ android {
         applicationId "com.vshots.live"
         minSdk 24
         targetSdk 36
-        versionCode 21
+        versionCode 42
         versionName "5.8.0"
         multiDexEnabled true
     }

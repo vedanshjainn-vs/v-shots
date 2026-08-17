@@ -185,7 +185,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   Future<void> _fetchMoreThenJump(int page) async {
     if (_isLoadingMore) return;
     _isLoadingMore = true;
-    final batch = await _fetchDiscoverBatch();
+    var batch = await _fetchDiscoverBatch();
+    if (batch.isEmpty) {
+      // Same endless rotation as _maybeLoadMore: never leave the user stuck
+      // at the end of the feed.
+      _seenIds.clear();
+      batch = await _fetchDiscoverBatch();
+    }
     _isLoadingMore = false;
     if (!mounted) return;
     if (batch.isNotEmpty) {
@@ -331,8 +337,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_isLoadingMore) return;
     if (_items.length - _currentIndex > 3) return;
     _isLoadingMore = true;
-    final batch = await _fetchDiscoverBatch();
-    if (mounted) {
+
+    // ENDLESS: retry a few times; if the provider returns nothing (rate-limit
+    // or every candidate already seen), rotate the session seen-ids and try
+    // again so the feed NEVER runs out while the network is up.
+    var batch = <Map<String, dynamic>>[];
+    for (var attempt = 0; attempt < 3 && batch.isEmpty; attempt++) {
+      batch = await _fetchDiscoverBatch();
+      if (batch.isEmpty && attempt < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+    }
+    if (batch.isEmpty) {
+      // Session dedupe rotation: old ids were only session-level; clearing
+      // them lets fresh pages come through rather than stalling the feed.
+      _seenIds.clear();
+      batch = await _fetchDiscoverBatch();
+    }
+
+    if (mounted && batch.isNotEmpty) {
       setState(() {
         _items.addAll(batch);
         _seenIds.addAll(batch.map((t) => t['id'] as String));

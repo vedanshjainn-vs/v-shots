@@ -122,6 +122,9 @@ class VShotsPlaybackManager extends ChangeNotifier {
   ///   repeat OFF → next; stops at the end of the queue (non-shuffle)
   void onVideoEnded(String videoId) {
     if (videoId.isEmpty) return;
+    // Identity guard: only auto-advance when the ended video IS the current
+    // track (a stale 'ended' from a previous load must never skip the queue).
+    if ((browser.track?['id'] as String?) != videoId) return;
     final now = DateTime.now();
     // Duplicate completion event for the same video (native double-fire)
     // within a short window → ignored.

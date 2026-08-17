@@ -389,10 +389,15 @@ class HomeFeedService {
       tracks = _rankForShelf(shelf, tracks);
       tracks = _enforceArtistDiversity(tracks);
       if (tracks.isEmpty) {
+        // Offline, history-derived shelves hide when there is no data —
+        // a fresh install must NOT show a "couldn't load" Continue Listening.
+        if (shelf.kind == HomeShelfKind.continueListening) {
+          shelf.status = HomeShelfStatus.hidden;
+        }
         // "Official Music" (and any high-confidence-only shelf) hides
         // gracefully instead of showing an error when too few candidates
         // qualify — never padded with random uploads.
-        if (shelf.kind == HomeShelfKind.officialMusic) {
+        else if (shelf.kind == HomeShelfKind.officialMusic) {
           shelf.status = HomeShelfStatus.hidden;
         } else {
           shelf.status = HomeShelfStatus.error;
