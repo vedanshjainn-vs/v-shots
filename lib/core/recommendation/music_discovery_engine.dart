@@ -1,9 +1,5 @@
 // V Shots — Music Discovery Engine V4
-//
-// Metrolist-inspired discovery orchestration implemented natively for V Shots.
-// It combines provider-native recommendation/trending surfaces with V Shots'
-// own taste profile, canonical song identity, ranking, diversity, exploration
-// and decaying seen memory. Playback is not involved here.
+// Metrolist-inspired multi-source discovery for V Shots.
 
 import 'dart:async';
 import 'dart:math';
@@ -14,6 +10,7 @@ import '../music/music_entity_resolver.dart';
 import '../music/music_validator.dart';
 import '../providers/music_repository.dart';
 import '../providers/provider_models.dart';
+import '../storage/local_library.dart';
 import 'music_recommendation_config.dart';
 import 'music_recommendation_context.dart';
 import 'music_seen_store.dart';
@@ -48,8 +45,6 @@ class MusicDiscoveryEngine {
     _initialized = true;
   }
 
-  /// Produces a fresh Discovery batch from multiple independent candidate
-  /// pools. Provider results are treated as candidates, not final ranking.
   Future<List<Map<String, dynamic>>> generate({
     required Set<String> excludeIds,
     int count = 12,
@@ -107,9 +102,6 @@ class MusicDiscoveryEngine {
     scored.sort((a, b) => b.score.compareTo(a.score));
     final diversified = const MusicDiversity().diversify(scored);
 
-    // Force a meaningful amount of exploration even when the user's taste is
-    // highly concentrated. This prevents Discovery becoming a clone of the
-    // listening history.
     final exploration = diversified
         .where((s) => _isExploration(s.candidate, profile))
         .toList();
@@ -142,7 +134,6 @@ class MusicDiscoveryEngine {
       unawaited(_seenStore.record(candidate.songId));
       if (result.length >= count) break;
     }
-
     return result;
   }
 
@@ -155,16 +146,30 @@ class MusicDiscoveryEngine {
   }) async {
     final tasks = <Future<List<MusicCandidate>>>[];
 
-    // Provider-native personalized recommendations are preferred over guessing
-    // recommendation relationships from text search alone.
+    // Provider-native personalized recommendations.
     tasks.add(_fromTracks(
       () => _repository.getRecommendations(excludeIds: excludeIds, limit: 20),
       source: 'provider_recommendation',
       excludeIds: excludeIds,
     ));
 
-    // Taste/search pools provide stable fallbacks and add diversity around the
-    // provider-native recommendation surface.
+    // Metrolist-style related-content seeds: use the actual provider video IDs
+    // from V Shots' local listening history. Canonical song IDs are not passed
+    // to the provider because they are intentionally not video IDs.
+    final recentLocal = LocalLibrary.instance.recentlyPlayed.value;
+    final relatedIds = <String>{};
+    for (final entry in recentLocal.take(6)) {
+      final id = entry['id'] as String? ?? '';
+      if (id.isNotEmpty && relatedIds.add(id)) {
+        tasks.add(_fromTracks(
+          () => _repository.getRelated(id, limit: 10),
+          source: 'related_recent',
+          excludeIds: excludeIds,
+        ));
+      }
+    }
+
+    // Taste/search pools provide stable fallbacks and adjacent discovery.
     final artists = {
       ...profile.recentArtists.take(4),
       ...profile.topArtists.take(4),
@@ -210,15 +215,15 @@ class MusicDiscoveryEngine {
       ));
     }
 
-    // Fresh/trending candidates are intentionally always present.
+    // Always retain a global trend lane.
     tasks.add(_fromTracks(
       () => _repository.getTrending(limit: 20),
       source: 'trending',
       excludeIds: excludeIds,
     ));
 
-    // Rotate exploration queries on each refresh so pull-to-refresh does not
-    // merely reshuffle the same results.
+    // Rotate exploration queries on each refresh so pull-to-refresh is not a
+    // simple shuffle of the same result set.
     const explorationQueries = [
       'new music official audio',
       'rising artists official songs',
@@ -312,7 +317,7 @@ class MusicDiscoveryEngine {
           album: '',
         ));
       } catch (_) {
-        // A malformed provider item must never kill the Discovery batch.
+        // One malformed provider item must never kill Discovery.
       }
     }
     return out;
