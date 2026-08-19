@@ -28,6 +28,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'vshots_youtube_ad_blocker.dart';
+
 /// Centralized ad-blocking engine.
 /// Every V Shots browser WebView MUST use this engine.
 class VShotsAdBlockEngine {
@@ -766,11 +768,12 @@ class VShotsAdBlockEngine {
   ///
   /// Order of checks:
   /// 1. If blocker disabled → ALLOW
-  /// 2. If essential host → ALLOW
+  /// 2. If essential host → ALLOW (except YouTube ads)
   /// 3. If user allowlisted → ALLOW
-  /// 4. If host in blocklist → BLOCK
-  /// 5. If URL matches ad pattern → BLOCK
-  /// 6. Otherwise → ALLOW (conservative)
+  /// 4. If YouTube ad → BLOCK
+  /// 5. If host in blocklist → BLOCK
+  /// 6. If URL matches ad pattern → BLOCK
+  /// 7. Otherwise → ALLOW (conservative)
   bool shouldBlock(String url) {
     if (!_enabled) return false;
 
@@ -780,11 +783,17 @@ class VShotsAdBlockEngine {
     final host = _normalizeHost(uri.host);
     if (host.isEmpty) return false;
 
-    // Essential hosts are NEVER blocked
-    if (essentialHosts.contains(host)) return false;
+    // User allowlist wins (but NOT for YouTube ads)
+    if (_userAllow.contains(host) && !_isYouTubeDomain(host)) return false;
 
-    // User allowlist wins
-    if (_userAllow.contains(host)) return false;
+    // YouTube-specific ad blocking (even on essential hosts)
+    if (VShotsYouTubeAdBlocker.shouldBlock(url)) {
+      blockedVideoAds++;
+      return true;
+    }
+
+    // Essential hosts are NEVER blocked (except YouTube ads handled above)
+    if (essentialHosts.contains(host)) return false;
 
     // Host-based blocking
     if (_matchesAnyHost(host, _compiledBlocked)) return true;
@@ -792,6 +801,30 @@ class VShotsAdBlockEngine {
     // URL pattern blocking (only for non-essential hosts)
     if (_matchesAdPattern(url, uri)) return true;
 
+    return false;
+  }
+
+  /// Check if host is a YouTube domain.
+  static bool _isYouTubeDomain(String host) {
+    const youtubeDomains = [
+      'youtube.com',
+      'youtu.be',
+      'youtube-nocookie.com',
+      'googlevideo.com',
+      'ytimg.com',
+      'yt3.ggpht.com',
+      'yt3.googleusercontent.com',
+      'youtube-ui.l.google.com',
+      'youtubeembedded-pa.googleapis.com',
+      'youtube.googleapis.com',
+      's.youtube.com',
+    ];
+
+    for (final domain in youtubeDomains) {
+      if (host == domain || host.endsWith('.$domain')) {
+        return true;
+      }
+    }
     return false;
   }
 
