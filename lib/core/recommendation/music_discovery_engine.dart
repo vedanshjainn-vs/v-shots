@@ -13,6 +13,7 @@ import '../providers/provider_models.dart';
 import '../storage/local_library.dart';
 import 'music_recommendation_config.dart';
 import 'music_recommendation_context.dart';
+import 'music_recommendation_engine.dart';
 import 'music_seen_store.dart';
 import 'music_session_state.dart';
 import 'music_user_profile.dart';
@@ -23,11 +24,10 @@ class MusicDiscoveryEngine {
     required MusicRepository repository,
     MusicSeenStore? seenStore,
     MusicSessionState? session,
-    MusicRecommendationConfig config = MusicRecommendationConfig.defaultConfig,
+    this.config = MusicRecommendationConfig.defaultConfig,
   })  : _repository = repository,
         _seenStore = seenStore ?? MusicSeenStore(),
-        _session = session ?? MusicSessionState(),
-        config = config;
+        _session = session ?? MusicSessionState();
 
   final MusicRepository _repository;
   final MusicSeenStore _seenStore;
@@ -78,7 +78,8 @@ class MusicDiscoveryEngine {
 
     final unique = <String, MusicCandidate>{};
     for (final candidate in candidates) {
-      if (candidate.track.id.isEmpty || excludeIds.contains(candidate.track.id)) {
+      if (candidate.track.id.isEmpty ||
+          excludeIds.contains(candidate.track.id)) {
         continue;
       }
       unique.putIfAbsent(candidate.songId, () => candidate);
@@ -102,9 +103,8 @@ class MusicDiscoveryEngine {
     scored.sort((a, b) => b.score.compareTo(a.score));
     final diversified = const MusicDiversity().diversify(scored);
 
-    final exploration = diversified
-        .where((s) => _isExploration(s.candidate, profile))
-        .toList();
+    final exploration =
+        diversified.where((s) => _isExploration(s.candidate, profile)).toList();
     final familiar = diversified
         .where((s) => !_isExploration(s.candidate, profile))
         .toList();
@@ -113,9 +113,9 @@ class MusicDiscoveryEngine {
     final targetExploration = max(1, (count * config.explorationRatio).round());
     var e = 0;
     var f = 0;
-    while (mixed.length < count && (e < exploration.length || f < familiar.length)) {
-      final shouldExplore =
-          e < exploration.length &&
+    while (mixed.length < count &&
+        (e < exploration.length || f < familiar.length)) {
+      final shouldExplore = e < exploration.length &&
           (e < targetExploration || f >= familiar.length);
       if (shouldExplore) {
         mixed.add(exploration[e++]);
@@ -325,7 +325,8 @@ class MusicDiscoveryEngine {
 
   bool _isExploration(MusicCandidate candidate, MusicUserProfile profile) {
     final artist = candidate.artist.toLowerCase();
-    final knownArtist = profile.topArtists.any((a) => a.toLowerCase() == artist);
+    final knownArtist =
+        profile.topArtists.any((a) => a.toLowerCase() == artist);
     final genre = candidate.genre.toLowerCase();
     final knownGenre = profile.topGenres.any((g) => g.toLowerCase() == genre);
     return !knownArtist && !knownGenre;
