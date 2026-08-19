@@ -1,9 +1,9 @@
 // V Shots — Music Discovery Engine V4
 //
 // Metrolist-inspired discovery orchestration implemented natively for V Shots.
-// It combines provider-native related/recommendation/trending surfaces with
-// V Shots' own taste profile, canonical song identity, ranking, diversity,
-// exploration and decaying seen memory. Playback is not involved here.
+// It combines provider-native recommendation/trending surfaces with V Shots'
+// own taste profile, canonical song identity, ranking, diversity, exploration
+// and decaying seen memory. Playback is not involved here.
 
 import 'dart:async';
 import 'dart:math';
@@ -13,6 +13,7 @@ import '../music/music_diversity.dart';
 import '../music/music_entity_resolver.dart';
 import '../music/music_validator.dart';
 import '../providers/music_repository.dart';
+import '../providers/provider_models.dart';
 import 'music_recommendation_config.dart';
 import 'music_recommendation_context.dart';
 import 'music_seen_store.dart';
@@ -47,13 +48,8 @@ class MusicDiscoveryEngine {
     _initialized = true;
   }
 
-  /// Produces a fresh Discovery batch.
-  ///
-  /// Candidate sources are deliberately redundant:
-  /// related tracks → provider recommendations → trending → taste searches →
-  /// exploratory searches. If one source fails, the others still produce a
-  /// feed. The final order is always V Shots ranking + diversity, rather than
-  /// provider order.
+  /// Produces a fresh Discovery batch from multiple independent candidate
+  /// pools. Provider results are treated as candidates, not final ranking.
   Future<List<Map<String, dynamic>>> generate({
     required Set<String> excludeIds,
     int count = 12,
@@ -80,7 +76,6 @@ class MusicDiscoveryEngine {
     final candidates = await _collectCandidates(
       profile: profile,
       excludeIds: excludeIds,
-      count: max(count * 3, 36),
       languages: languages,
       moods: moods,
       regions: regions,
@@ -154,15 +149,13 @@ class MusicDiscoveryEngine {
   Future<List<MusicCandidate>> _collectCandidates({
     required MusicUserProfile profile,
     required Set<String> excludeIds,
-    required int count,
     required List<String> languages,
     required List<String> moods,
     required List<String> regions,
   }) async {
     final tasks = <Future<List<MusicCandidate>>>[];
 
-    // 1) Provider-native recommendations. This is the closest equivalent to
-    // a server-generated personalized surface and is preferred over guessing
+    // Provider-native personalized recommendations are preferred over guessing
     // recommendation relationships from text search alone.
     tasks.add(_fromTracks(
       () => _repository.getRecommendations(excludeIds: excludeIds, limit: 20),
@@ -170,18 +163,13 @@ class MusicDiscoveryEngine {
       excludeIds: excludeIds,
     ));
 
-    // 2) Related tracks from the user's recent listening seeds.
-    final recent = profile.recentSongs.take(4).toList();
-    final recentArtists = profile.recentArtists.take(4).toList();
-    for (var i = 0; i < recent.length; i++) {
-      // recentSongs are canonical IDs, not provider video IDs, so we also use
-      // artist/search seeds below. Provider-related is added for tracks that
-      // can be resolved from the recent local-library record.
-    }
-
-    // 3) Recent/top artist searches create a robust fallback when a provider
-    // cannot return related results for a particular seed.
-    for (final artist in {...recentArtists, ...profile.topArtists.take(4)}) {
+    // Taste/search pools provide stable fallbacks and add diversity around the
+    // provider-native recommendation surface.
+    final artists = {
+      ...profile.recentArtists.take(4),
+      ...profile.topArtists.take(4),
+    };
+    for (final artist in artists) {
       tasks.add(_search(
         '$artist songs official audio',
         source: 'taste_artist',
@@ -189,7 +177,6 @@ class MusicDiscoveryEngine {
       ));
     }
 
-    // 4) User's top genres/languages.
     for (final genre in profile.topGenres.take(3)) {
       tasks.add(_search(
         '$genre songs official audio',
@@ -198,14 +185,16 @@ class MusicDiscoveryEngine {
         excludeIds: excludeIds,
       ));
     }
-    for (final language in {...profile.topLanguages.take(2), ...languages.take(2)}) {
+    for (final language in {
+      ...profile.topLanguages.take(2),
+      ...languages.take(2),
+    }) {
       tasks.add(_search(
         '$language songs official audio',
         source: 'taste_language',
         excludeIds: excludeIds,
       ));
     }
-
     for (final mood in {...profile.topMoods.take(2), ...moods.take(2)}) {
       tasks.add(_search(
         '$mood songs official audio',
@@ -221,15 +210,15 @@ class MusicDiscoveryEngine {
       ));
     }
 
-    // 5) Fresh/trending candidates are intentionally always present.
+    // Fresh/trending candidates are intentionally always present.
     tasks.add(_fromTracks(
       () => _repository.getTrending(limit: 20),
       source: 'trending',
       excludeIds: excludeIds,
     ));
 
-    // 6) Exploration candidates. Rotate the query family on each refresh so
-    // pull-to-refresh is not just a shuffle of the same results.
+    // Rotate exploration queries on each refresh so pull-to-refresh does not
+    // merely reshuffle the same results.
     const explorationQueries = [
       'new music official audio',
       'rising artists official songs',
@@ -253,7 +242,6 @@ class MusicDiscoveryEngine {
     final flattened = <MusicCandidate>[];
     for (final group in groups) {
       flattened.addAll(group);
-      if (flattened.length >= count) break;
     }
     return flattened;
   }
@@ -321,7 +309,7 @@ class MusicDiscoveryEngine {
           artist: track.artist,
           genre: resolved.genre ?? seedGenre ?? '',
           language: resolved.language ?? '',
-          album: resolved.album ?? '',
+          album: '',
         ));
       } catch (_) {
         // A malformed provider item must never kill the Discovery batch.
