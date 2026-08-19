@@ -148,6 +148,7 @@ class VShotsBrowserSession {
         'enabled': contentBlocker.enabled,
         'blocked': contentBlocker.blockedHosts,
         'essential': contentBlocker.essentialHosts,
+        'patterns': contentBlocker.adUrlPatterns,
       });
     } catch (_) {
       // Older native view / not ready — non-fatal.

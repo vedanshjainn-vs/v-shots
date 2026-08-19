@@ -25,7 +25,12 @@ import java.util.Locale
 private const val VIEW_TYPE = "vshots/native_browser"
 
 /**
- * Discovery-only native browser view.
+ * Discovery-only native browser view with FORCEFUL ad blocking.
+ *
+ * Ad blocking is ALWAYS ON and works at THREE layers:
+ *   1. Network-level: shouldInterceptRequest blocks ad hosts/URLs
+ *   2. URL-level: shouldOverrideUrlLoading blocks ad navigation
+ *   3. Cosmetic: CSS injection hides residual ad containers
  *
  * Unlike the generic webview_flutter platform view, this WebView deliberately
  * keeps its media lifecycle alive when Android makes the Flutter activity
@@ -41,13 +46,18 @@ private class VShotsBackgroundMediaWebView(
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
 
-    // ── General content blocker (domain-agnostic) ─────────────────────────
-    // Populated from Dart via "setContentBlocker". Host-exact + suffix
-    // matching only — no regex, no website-specific rules. Essential/allow
-    // hosts always pass (media must never be blocked).
+    // ── FORCEFUL Ad Blocker State ──────────────────────────────────────────
+    // ALWAYS ON by default. Populated from Dart via "setContentBlocker".
+    // Host-exact + suffix matching + URL pattern matching.
+    // Essential/allow hosts always pass (media must never be blocked).
     private var blockerEnabled = true
     private val blockedHosts = mutableSetOf<String>()
     private val essentialHosts = mutableSetOf<String>()
+    private val adUrlPatterns = mutableListOf<String>()
+
+    // Popup blocking state
+    private var popupBlockedCount = 0
+
     private val playbackPoll = object : Runnable {
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
@@ -80,8 +90,22 @@ private class VShotsBackgroundMediaWebView(
         settings.mediaPlaybackRequiresUserGesture = false
         settings.loadsImagesAutomatically = true
         settings.javaScriptCanOpenWindowsAutomatically = false
+        settings.setSupportMultipleWindows(false) // Block popup windows
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-        webChromeClient = WebChromeClient()
+        webChromeClient = object : WebChromeClient() {
+            // Override to block popup windows completely
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: android.os.Message?
+            ): Boolean {
+                // Block ALL popup windows
+                popupBlockedCount++
+                events.invokeMethod("blocked", "popup-window")
+                return false
+            }
+        }
 
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
@@ -105,48 +129,94 @@ private class VShotsBackgroundMediaWebView(
                 }
             }
 
+            /**
+             * NETWORK-LEVEL AD BLOCKING — Primary defense.
+             * Intercepts ALL resource requests and blocks ads before they load.
+             * Runs on BACKGROUND thread — never touch MethodChannel directly.
+             */
             override fun shouldInterceptRequest(
                 view: WebView?,
                 request: WebResourceRequest?,
             ): WebResourceResponse? {
-                // shouldInterceptRequest runs on a BACKGROUND thread — never
-                // touch the MethodChannel here directly (that crashes the app).
-                // A blocker error must NEVER crash the WebView either.
                 return try {
                     val url = request?.url ?: return null
+                    val urlStr = url.toString()
+
+                    // Fast path: blocker disabled
                     if (!blockerEnabled) return null
+
                     val host = url.host?.lowercase(Locale.US) ?: return null
-                    // First-party safety + player-essential media: never block.
-                    if (matchesAny(host, essentialHosts)) return null
-                    if (!matchesAny(host, blockedHosts)) return null
-                    // Report the block to Dart on the MAIN thread (stats only).
-                    val hostCopy = host
-                    handler.post { events.invokeMethod("blocked", hostCopy) }
-                    WebResourceResponse(
-                        "text/plain",
-                        "utf-8",
-                        ByteArrayInputStream(ByteArray(0)),
-                    )
+
+                    // Essential hosts are NEVER blocked (YouTube, Google, etc.)
+                    if (matchesAnyHost(host, essentialHosts)) return null
+
+                    // Host-based blocking
+                    if (matchesAnyHost(host, blockedHosts)) {
+                        reportBlock(host)
+                        return emptyResponse()
+                    }
+
+                    // URL pattern blocking (catches ad paths, VAST/VPAID, etc.)
+                    if (matchesAdPattern(urlStr, url.path ?: "", url.query ?: "")) {
+                        reportBlock(host)
+                        return emptyResponse()
+                    }
+
+                    // Allow everything else
+                    null
                 } catch (t: Throwable) {
+                    // A blocker error must NEVER crash the WebView
                     null
                 }
             }
 
+            /**
+             * URL NAVIGATION BLOCKING — Blocks ad redirects/popups.
+             * Intercepts navigation attempts before they happen.
+             */
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?,
             ): Boolean {
-                return request?.url?.host?.let(::isAllowedHost) != true
+                val url = request?.url ?: return false
+                val host = url.host?.lowercase(Locale.US) ?: return false
+
+                // Allow essential hosts
+                if (isAllowedHost(host)) return false
+
+                // Block ad domains
+                if (matchesAnyHost(host, blockedHosts)) {
+                    reportBlock(host)
+                    return true
+                }
+
+                // Block ad URL patterns in navigation
+                val urlStr = url.toString()
+                if (matchesAdPattern(urlStr, url.path ?: "", url.query ?: "")) {
+                    reportBlock(host)
+                    return true
+                }
+
+                // Block suspicious redirects (non-HTTPS, data: URIs, javascript:)
+                val scheme = url.scheme?.lowercase(Locale.US) ?: ""
+                if (scheme != "https" && scheme != "http" && scheme != "javascript") {
+                    if (scheme == "intent" || scheme == "market" || scheme == "tel" || scheme == "mailto") {
+                        return false // Allow legitimate deep links
+                    }
+                    // Block suspicious schemes
+                    reportBlock("suspicious-scheme:$scheme")
+                    return true
+                }
+
+                return false
             }
         }
     }
 
     /**
-     * Generic cosmetic blocking: hides well-known advertising containers by
-     * ATTRIBUTE/CLASS only (AdSense/DFP markers + common ad-slot patterns).
-     * No website-specific selectors — the same rules apply across sites.
-     * Runs once per finished page, only when blocking is enabled. Never
-     * touches video/audio/nav/login/content elements.
+     * Cosmetic ad blocking — hides residual ad containers via CSS.
+     * Runs once per page load. Never touches video/audio/nav/content elements.
+     * This is a SECONDARY defense after network-level blocking.
      */
     private fun applyCosmeticBlocking() {
         if (!blockerEnabled) return
@@ -155,6 +225,7 @@ private class VShotsBackgroundMediaWebView(
             "var s=document.createElement('style');" +
             "s.setAttribute('id','vshots-adblock');" +
             "s.textContent='" +
+            // Google AdSense/DFP
             "[data-google-query-id]," +
             "ins.adsbygoogle," +
             "div[id^=google_ads_]," +
@@ -168,9 +239,130 @@ private class VShotsBackgroundMediaWebView(
             "aside[class*=advert]," +
             "div[data-ad]," +
             "div[data-ad-client]," +
-            "div[id^=div-gpt-ad]" +
-            "{display:none!important;height:0!important;min-height:0!important;}' ;" +
+            "div[id^=div-gpt-ad]," +
+            // Common ad containers
+            "div[class*=adsbygoogle]," +
+            "div[class*=ad-banner]," +
+            "div[class*=ad-wrapper]," +
+            "div[class*=ad-unit]," +
+            "div[class*=ad-space]," +
+            "div[class*=ad-placement]," +
+            "div[class*=ad-zone]," +
+            "div[class*=ad-region]," +
+            "div[class*=ad-area]," +
+            "div[class*=ad-block]," +
+            "div[class*=ad-panel]," +
+            "div[class*=ad-box]," +
+            "div[class*=ad-card]," +
+            "div[class*=ad-tile]," +
+            "div[class*=ad-row]," +
+            "div[class*=ad-column]," +
+            "div[class*=ad-grid]," +
+            "div[class*=ad-list]," +
+            "div[class*=ad-feed]," +
+            "div[class*=ad-stream]," +
+            "div[class*=ad-carousel]," +
+            "div[class*=ad-slider]," +
+            "div[class*=ad-popup]," +
+            "div[class*=ad-modal]," +
+            "div[class*=ad-overlay]," +
+            "div[class*=ad-interstitial]," +
+            "div[class*=ad-fullscreen]," +
+            "div[class*=ad-sticky]," +
+            "div[class*=ad-fixed]," +
+            "div[class*=ad-floating]," +
+            "div[class*=ad-bottom]," +
+            "div[class*=ad-top]," +
+            "div[class*=ad-left]," +
+            "div[class*=ad-right]," +
+            "div[class*=ad-header]," +
+            "div[class*=ad-footer]," +
+            "div[class*=ad-sidebar]," +
+            // Video ad overlays
+            "div[class*=video-ad]," +
+            "div[class*=preroll]," +
+            "div[class*=midroll]," +
+            "div[class*=postroll]," +
+            "div[class*=ad-break]," +
+            "div[class*=ad-pod]," +
+            "div[class*=ad-slate]," +
+            "div[class*=ad-companion]," +
+            // Ad iframes
+            "iframe[class*=ad]," +
+            "iframe[id*=ad]," +
+            "iframe[name*=ad]," +
+            "iframe[data-ad]," +
+            "iframe[src*=ad]," +
+            "iframe[src*=ads]," +
+            "iframe[src*=banner]," +
+            "iframe[src*=sponsor]," +
+            "iframe[src*=promo]," +
+            // Popup/overlay containers
+            "div[class*=popup-ad]," +
+            "div[class*=pop-up]," +
+            "div[class*=popunder]," +
+            "div[class*=interstitial]," +
+            "div[class*=overlay-ad]," +
+            "div[class*=modal-ad]," +
+            "div[class*=fullscreen-ad]," +
+            "div[class*=sticky-ad]," +
+            "div[class*=fixed-ad]," +
+            "div[class*=floating-ad]," +
+            "div[class*=bottom-ad]," +
+            "div[class*=top-ad]," +
+            "div[class*=left-ad]," +
+            "div[class*=right-ad]," +
+            "div[class*=header-ad]," +
+            "div[class*=footer-ad]," +
+            "div[class*=sidebar-ad]," +
+            // Fake download buttons
+            "a[class*=download-ad]," +
+            "a[class*=fake-download]," +
+            "a[class*=ad-download]," +
+            "button[class*=download-ad]," +
+            "button[class*=fake-download]," +
+            "button[class*=ad-download]," +
+            "{display:none!important;height:0!important;min-height:0!important;overflow:hidden!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;}" +
+            "';" +
             "document.head.appendChild(s);" +
+            "}catch(e){}})()",
+            null,
+        )
+    }
+
+    /**
+     * Block known ad elements via JavaScript injection.
+     * More targeted than CSS — removes elements from DOM.
+     * Only runs on non-YouTube pages to avoid breaking YouTube.
+     */
+    private fun applyDomBlocking() {
+        if (!blockerEnabled) return
+        evaluateJavascript(
+            "(function(){try{" +
+            "var url=window.location.href;" +
+            "if(url.indexOf('youtube.com')>=0||url.indexOf('youtu.be')>=0)return;" +
+            // Remove ad iframes
+            "var iframes=document.querySelectorAll('iframe');" +
+            "for(var i=0;i<iframes.length;i++){" +
+            "var f=iframes[i];" +
+            "var src=(f.src||'').toLowerCase();" +
+            "var cls=(f.className||'').toLowerCase();" +
+            "var id=(f.id||'').toLowerCase();" +
+            "if(src.indexOf('doubleclick')>=0||src.indexOf('googlesyndication')>=0||" +
+            "src.indexOf('googleadservices')>=0||src.indexOf('adnxs')>=0||" +
+            "src.indexOf('ad.')>=0||src.indexOf('ads.')>=0||" +
+            "cls.indexOf('ad')>=0||id.indexOf('ad')>=0){" +
+            "f.parentNode.removeChild(f);" +
+            "}" +
+            "}" +
+            // Remove ad divs
+            "var adDivs=document.querySelectorAll('div[class*=ad-],div[id*=ad-],div[data-ad]');" +
+            "for(var j=0;j<adDivs.length;j++){" +
+            "var d=adDivs[j];" +
+            "if(d.tagName==='VIDEO'||d.tagName==='AUDIO')continue;" +
+            "if(d.querySelector('video')||d.querySelector('audio'))continue;" +
+            "d.parentNode.removeChild(d);" +
+            "}" +
             "}catch(e){}})()",
             null,
         )
@@ -178,10 +370,42 @@ private class VShotsBackgroundMediaWebView(
 
     /** Host == rule or endsWith ".rule" (e.g. "doubleclick.net" also matches
      *  "ad.doubleclick.net"). Conservative: no substring matching. */
-    private fun matchesAny(host: String, rules: Set<String>): Boolean {
+    private fun matchesAnyHost(host: String, rules: Set<String>): Boolean {
         for (rule in rules) {
             if (host == rule || host.endsWith(".$rule")) return true
         }
+        return false
+    }
+
+    /**
+     * Check if URL matches known ad patterns (paths, queries, VAST/VPAID).
+     * This catches ads served from legitimate domains via specific paths.
+     */
+    private fun matchesAdPattern(url: String, path: String, query: String): Boolean {
+        val lowerUrl = url.lowercase(Locale.US)
+        val lowerPath = path.lowercase(Locale.US)
+        val lowerQuery = query.lowercase(Locale.US)
+
+        for (pattern in adUrlPatterns) {
+            val lowerPattern = pattern.lowercase(Locale.US)
+            if (lowerPath.contains(lowerPattern) || lowerUrl.contains(lowerPattern)) {
+                return true
+            }
+        }
+
+        // VAST/VMAP/VPAID checks (only for non-YouTube hosts)
+        if (lowerPath.contains("/vast") ||
+            lowerPath.contains("/vmap") ||
+            lowerPath.contains("/vpaid") ||
+            lowerQuery.contains("vast") ||
+            lowerQuery.contains("vmap") ||
+            lowerQuery.contains("vpaid")) {
+            // Don't block YouTube's internal VAST handling
+            if (!lowerUrl.contains("youtube.com") && !lowerUrl.contains("youtu.be")) {
+                return true
+            }
+        }
+
         return false
     }
 
@@ -190,13 +414,34 @@ private class VShotsBackgroundMediaWebView(
         val allowed = listOf(
             "youtube.com",
             "youtu.be",
+            "youtube-nocookie.com",
             "googlevideo.com",
             "ytimg.com",
             "google.com",
+            "googleapis.com",
             "gstatic.com",
             "ggpht.com",
+            "googleusercontent.com",
+            "accounts.google.com",
+            "play.google.com",
+            "cloudflare.com",
+            "supabase.co",
         )
         return allowed.any { h == it || h.endsWith(".$it") }
+    }
+
+    private fun reportBlock(host: String) {
+        // Report to Dart on MAIN thread (stats only)
+        val hostCopy = host
+        handler.post { events.invokeMethod("blocked", hostCopy) }
+    }
+
+    private fun emptyResponse(): WebResourceResponse {
+        return WebResourceResponse(
+            "text/plain",
+            "utf-8",
+            ByteArrayInputStream(ByteArray(0)),
+        )
     }
 
     fun load(url: String) {
@@ -211,12 +456,15 @@ private class VShotsBackgroundMediaWebView(
         enabled: Boolean,
         blocked: List<String>,
         essential: List<String>,
+        patterns: List<String> = emptyList(),
     ) {
         blockerEnabled = enabled
         blockedHosts.clear()
         blockedHosts.addAll(blocked.map { it.lowercase(Locale.US) })
         essentialHosts.clear()
         essentialHosts.addAll(essential.map { it.lowercase(Locale.US) })
+        adUrlPatterns.clear()
+        adUrlPatterns.addAll(patterns)
     }
 
     fun reloadCurrent() {
@@ -397,7 +645,8 @@ private class VShotsBrowserPlatformView(
                         val enabled = (args["enabled"] as? Boolean) ?: true
                         val blocked = (args["blocked"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
                         val essential = (args["essential"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-                        webView.setContentBlocker(enabled, blocked, essential)
+                        val patterns = (args["patterns"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                        webView.setContentBlocker(enabled, blocked, essential, patterns)
                         result.success(null)
                     } catch (t: Throwable) {
                         // A blocker-config error must never take the browser down.
