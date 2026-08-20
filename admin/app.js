@@ -6,7 +6,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Production GitHub Pages URL. Keep this explicit so OAuth never falls back
 // to a local development URL when the dashboard is opened from production.
-const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/';
+const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/admin/';
+
+// Authorized Google accounts for CMS access
+const AUTHORIZED_EMAILS = [
+  'lovesongs1106@gmail.com',
+  'vedanshjainn@gmail.com',
+  'mrvedansh11@gmail.com',
+];
 
 const state = { sections: [], authenticated: false, admin: false };
 const $ = id => document.getElementById(id);
@@ -18,6 +25,21 @@ async function ensureAdmin(){
   const { data: { user } } = await supabase.auth.getUser();
   state.authenticated = !!user;
   if (!user) return false;
+  
+  // Check if the user's email is in the authorized list
+  const email = (user.email || '').toLowerCase().trim();
+  const isAuthorized = AUTHORIZED_EMAILS.some(
+    authorized => authorized.toLowerCase().trim() === email
+  );
+  
+  if (!isAuthorized) {
+    // Sign out unauthorized users immediately
+    await supabase.auth.signOut();
+    state.authenticated = false;
+    state.admin = false;
+    return false;
+  }
+  
   const { data, error } = await supabase.rpc('claim_home_admin');
   if (error) throw error;
   state.admin = data === true;
@@ -38,7 +60,7 @@ async function load(){
   try {
     const ok = await ensureAdmin();
     if (!state.authenticated) { render(); status('Sign in with Google to manage Home.'); return; }
-    if (!ok) { render(); status('This Google account is not authorized as the V Shots Home admin.', true); return; }
+    if (!ok) { render(); status('This Google account is not authorized. Only approved accounts can access the CMS.', true); return; }
     const { data, error } = await supabase.from('home_layout_config').select('*').order('sort_order', { ascending: true });
     if (error) throw error;
     state.sections = data || [];
