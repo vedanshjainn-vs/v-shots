@@ -63,11 +63,21 @@ class DiscoveryBrowserController extends ChangeNotifier {
   String? get title => _track?['title'] as String?;
   String? get artist => _track?['artist'] as String?;
   String? get artwork => _track?['artwork'] as String?;
+  String get playbackSource => _track?['playbackSource'] as String? ?? 'youtube';
 
-  /// Canonical YouTube watch URL for the current video, or null when closed.
+  /// Canonical playback URL for the current track, or null when closed.
+  /// Supports both YouTube and JioSaavn URLs.
   String? get url {
     final id = videoId;
     if (id == null || id.isEmpty) return null;
+    
+    // Check if track has a direct URL (JioSaavn, etc.)
+    final directUrl = _track?['url'] as String? ?? _track?['webUrl'] as String?;
+    if (directUrl != null && directUrl.isNotEmpty) {
+      return directUrl;
+    }
+    
+    // Default to YouTube
     return youtubeWatchUrl(id);
   }
 

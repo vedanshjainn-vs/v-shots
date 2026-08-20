@@ -745,6 +745,7 @@ private class VShotsBackgroundMediaWebView(
     private fun isAllowedHost(host: String): Boolean {
         val h = host.lowercase(Locale.US)
         val allowed = listOf(
+            // YouTube/Google
             "youtube.com",
             "youtu.be",
             "youtube-nocookie.com",
@@ -759,6 +760,10 @@ private class VShotsBackgroundMediaWebView(
             "play.google.com",
             "cloudflare.com",
             "supabase.co",
+            // JioSaavn
+            "jiosaavn.com",
+            "saavn.com",
+            "jio.com",
         )
         return allowed.any { h == it || h.endsWith(".$it") }
     }

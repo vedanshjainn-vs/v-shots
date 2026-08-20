@@ -26,6 +26,7 @@ import 'core/motion/motion.dart';
 import 'core/player/repeat_mode.dart';
 import 'core/player/sleep_timer.dart';
 import 'core/playback/vshots_playback_manager.dart';
+import 'core/playback/playback_router.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/music_recommendation_engine.dart';
@@ -612,12 +613,27 @@ Future<void> playTrack(
   _log('Track: ${track['title']} (${track['id']})');
   unawaited(HapticFeedback.selectionClick());
 
-  // ONE global playback engine: route through VShotsPlaybackManager (native
-  // YouTube WebView). Explicit taps open the full player (expanded).
-  VShotsPlaybackManager.instance.playQueue(queue, index, expanded: true);
+  // Resolve playback URL via PlaybackRouter (supports YouTube + JioSaavn)
+  final target = await PlaybackRouter.instance.resolvePlayback(track);
+  _log('Playback source: ${target.source.name}, URL: ${target.url}');
 
-  currentTrack = track;
-  currentTrackNotifier.value = track;
+  // Add resolved URL to track for browser to use
+  final resolvedTrack = Map<String, dynamic>.from(track);
+  resolvedTrack['url'] = target.url;
+  resolvedTrack['playbackSource'] = target.source.name;
+
+  // Route through VShotsPlaybackManager (native WebView)
+  VShotsPlaybackManager.instance.playQueue(
+    queue.map((t) {
+      if (t['id'] == track['id']) return resolvedTrack;
+      return t;
+    }).toList(),
+    index,
+    expanded: true,
+  );
+
+  currentTrack = resolvedTrack;
+  currentTrackNotifier.value = resolvedTrack;
   currentQueue = List<Map<String, dynamic>>.from(queue);
   currentQueueIndex = index;
 
