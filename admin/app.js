@@ -4,6 +4,10 @@ const SUPABASE_URL = 'https://jzxtxqjheggyoqwohqjg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6eHR4cWpobGVnZ3lvd3FvaGpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxODM4OTcsImV4cCI6MjEwMTc1OTg5N30.fD6pKQ4VRG-AoF-nLdpU9iMK1qWz4N-diqMUOJESVw8';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// Production GitHub Pages URL. Keep this explicit so OAuth never falls back
+// to a local development URL when the dashboard is opened from production.
+const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/';
+
 const state = { sections: [], authenticated: false, admin: false };
 const $ = id => document.getElementById(id);
 function status(t, error = false){ $('status').textContent = t; $('status').dataset.error = error ? 'true' : 'false'; }
@@ -21,8 +25,11 @@ async function ensureAdmin(){
 }
 
 async function signIn(){
-  const redirectTo = window.location.href.split('#')[0];
-  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } });
+  const redirectTo = PRODUCTION_REDIRECT_URL;
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo },
+  });
   if (error) status(`Google sign-in failed: ${error.message}`, true);
 }
 async function signOut(){ await supabase.auth.signOut(); state.sections=[]; state.authenticated=false; state.admin=false; render(); status('Signed out.'); }
