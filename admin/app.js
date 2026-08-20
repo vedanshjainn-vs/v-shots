@@ -6,7 +6,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Production GitHub Pages URL. Keep this explicit so OAuth never falls back
 // to a local development URL when the dashboard is opened from production.
-const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/admin/';
+// NOTE: GitHub Pages deploys the admin/ directory as the ROOT of the site.
+const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/';
 
 // Authorized Google accounts for CMS access
 const AUTHORIZED_EMAILS = [
