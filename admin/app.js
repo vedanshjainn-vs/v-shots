@@ -532,35 +532,18 @@ async function init() {
   console.log('[INIT] Starting initialization...');
   console.log('[INIT] Current URL:', window.location.href);
   
-  const isAdmin = await checkAuth();
-  console.log('[INIT] Is admin:', isAdmin);
-  
-  if (isAdmin) {
-    console.log('[INIT] Rendering admin panel');
-    renderAdmin();
-  } else {
-    console.log('[INIT] Rendering login screen');
-    renderLogin();
-  }
+  // Direct access — no login required
+  state.admin = true;
+  state.user = { email: 'admin@vshots.live', id: 'direct-access' };
+  console.log('[INIT] Direct access mode — rendering admin panel');
+  renderAdmin();
 }
 
-// Listen for auth changes — handles OAuth callback
-// IMPORTANT: Set up listener BEFORE init() to catch SIGNED_IN events
+// Auth listener kept for future use but not required for access
 supabase.auth.onAuthStateChange((event, session) => {
   console.log('[AUTH] State change event:', event);
-  console.log('[AUTH] Session:', session ? 'Present' : 'None');
-  
-  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-    console.log('[AUTH] Signed in detected, re-initializing...');
-    setTimeout(init, 200);
-  } else if (event === 'SIGNED_OUT') {
-    console.log('[AUTH] Signed out detected');
-    state.user = null;
-    state.admin = false;
-    renderLogin();
-  }
 });
 
-// Start — also checks for existing session on page load
+// Start — direct access to admin panel
 console.log('[APP] Starting V Shots Admin...');
 init();
