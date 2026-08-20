@@ -22,10 +22,11 @@ import 'package:flutter/services.dart';
 import '../../core/browser/vshots_content_blocker.dart';
 import '../../shared/utils/youtube_url.dart';
 
-/// Pure host policy — approved YouTube/Google infrastructure only.
+/// Pure host policy — approved YouTube/Google and JioSaavn infrastructure.
 bool isAllowedBrowserHost(String host) {
   final h = host.toLowerCase();
   const allowed = [
+    // YouTube/Google
     'youtube.com',
     'youtu.be',
     'googlevideo.com',
@@ -33,6 +34,10 @@ bool isAllowedBrowserHost(String host) {
     'google.com',
     'gstatic.com',
     'ggpht.com',
+    // JioSaavn
+    'jiosaavn.com',
+    'saavn.com',
+    'jio.com',
   ];
   return allowed.any((a) => h == a || h.endsWith('.$a'));
 }

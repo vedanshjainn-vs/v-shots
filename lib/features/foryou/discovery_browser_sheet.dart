@@ -452,7 +452,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                       ),
                     ),
                   ),
-                const Positioned(left: 4, bottom: 4, child: _YoutubeBadge()),
+                Positioned(
+                  left: 4,
+                  bottom: 4,
+                  child: _YoutubeBadge(
+                    provider: widget.controller.playbackSource,
+                  ),
+                ),
               ],
             ),
             const SizedBox(width: 12),
@@ -850,25 +856,31 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   }
 }
 
-/// Small red "YouTube" badge for the mini-player thumbnail.
+/// Small provider badge for the mini-player thumbnail.
 class _YoutubeBadge extends StatelessWidget {
-  const _YoutubeBadge();
+  const _YoutubeBadge({this.provider = 'youtube'});
+  
+  final String provider;
 
   @override
   Widget build(BuildContext context) {
+    final isJioSaavn = provider.contains('jiosaavn') || provider.contains('saavn');
+    final color = isJioSaavn ? const Color(0xFF1DB954) : const Color(0xE6FF0000);
+    final label = isJioSaavn ? 'JioSaavn' : 'YouTube';
+    
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
       decoration: BoxDecoration(
-        color: const Color(0xE6FF0000),
+        color: color,
         borderRadius: BorderRadius.circular(3),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.play_arrow_rounded, size: 8, color: Colors.white),
+          const Icon(Icons.play_arrow_rounded, size: 8, color: Colors.white),
           Text(
-            'YouTube',
-            style: TextStyle(
+            label,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 7,
               fontWeight: FontWeight.w800,
