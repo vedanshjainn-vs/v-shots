@@ -8,7 +8,13 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/';
 const AUTHORIZED_EMAILS = ['lovesongs1106@gmail.com','vedanshjainn@gmail.com','mrvedansh11@gmail.com'];
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
@@ -508,7 +514,17 @@ async function init() {
 }
 
 // Listen for auth changes
-supabase.auth.onAuthStateChange(() => setTimeout(init, 100));
+// Listen for auth changes — handles OAuth callback
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    // Session detected from OAuth callback or token refresh
+    setTimeout(init, 100);
+  } else if (event === 'SIGNED_OUT') {
+    state.user = null;
+    state.admin = false;
+    renderLogin();
+  }
+});
 
-// Start
+// Start — also checks for existing session on page load
 init();
