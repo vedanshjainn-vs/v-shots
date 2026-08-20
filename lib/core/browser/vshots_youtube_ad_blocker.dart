@@ -17,8 +17,6 @@
 // Some ads may slip through if YouTube changes its delivery mechanism.
 // ═════════════════════════════════════════════════════════════════════════════
 
-import 'package:flutter/foundation.dart';
-
 /// Specialized YouTube ad blocking logic.
 /// Works alongside VShotsAdBlockEngine for comprehensive coverage.
 class VShotsYouTubeAdBlocker {

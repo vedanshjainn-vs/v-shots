@@ -22,8 +22,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'vshots_ad_block_engine.dart';
 
-import 'vshots_ad_block_engine.dart';
-
 /// What KIND of resource a rule targets.
 enum AdBlockRuleType { network, script, image, iframe, stylesheet, tracking }
 
@@ -50,7 +48,6 @@ class VShotsContentBlocker {
   VShotsContentBlocker({List<String> essentialHosts = const []})
       : _additionalEssentialHosts = essentialHosts;
 
-  static const _kEnabled = 'v_shots.content_blocker.enabled.v1';
   static const _kUserAllow = 'v_shots.content_blocker.user_allow.v1';
 
   final List<String> _additionalEssentialHosts;
