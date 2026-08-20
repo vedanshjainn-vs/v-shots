@@ -46,12 +46,36 @@ function toast(msg, type='success') {
 // AUTH
 // ═══════════════════════════════════════════════════════════════
 async function checkAuth() {
-  const { data: { user } } = await supabase.auth.getUser();
+  console.log('[AUTH] Checking authentication...');
+  
+  // First check if there's a session in the URL (OAuth callback)
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  console.log('[AUTH] Session from URL/localStorage:', session ? 'Found' : 'None');
+  if (sessionError) console.log('[AUTH] Session error:', sessionError);
+  
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  console.log('[AUTH] User:', user ? user.email : 'None');
+  if (userError) console.log('[AUTH] User error:', userError);
+  
   state.user = user;
-  if (!user) { state.admin = false; return false; }
+  if (!user) { 
+    state.admin = false; 
+    console.log('[AUTH] No user found, returning false');
+    return false; 
+  }
+  
   const email = (user.email || '').toLowerCase().trim();
+  console.log('[AUTH] User email:', email);
+  console.log('[AUTH] Authorized emails:', AUTHORIZED_EMAILS);
+  
   state.admin = AUTHORIZED_EMAILS.some(a => a.toLowerCase().trim() === email);
-  if (!state.admin) { await supabase.auth.signOut(); state.user = null; }
+  console.log('[AUTH] Is admin:', state.admin);
+  
+  if (!state.admin) { 
+    console.log('[AUTH] Not authorized, signing out');
+    await supabase.auth.signOut(); 
+    state.user = null; 
+  }
   return state.admin;
 }
 
@@ -505,21 +529,32 @@ function renderSettings(el) {
 // INIT
 // ═══════════════════════════════════════════════════════════════
 async function init() {
+  console.log('[INIT] Starting initialization...');
+  console.log('[INIT] Current URL:', window.location.href);
+  
   const isAdmin = await checkAuth();
+  console.log('[INIT] Is admin:', isAdmin);
+  
   if (isAdmin) {
+    console.log('[INIT] Rendering admin panel');
     renderAdmin();
   } else {
+    console.log('[INIT] Rendering login screen');
     renderLogin();
   }
 }
 
-// Listen for auth changes
 // Listen for auth changes — handles OAuth callback
+// IMPORTANT: Set up listener BEFORE init() to catch SIGNED_IN events
 supabase.auth.onAuthStateChange((event, session) => {
+  console.log('[AUTH] State change event:', event);
+  console.log('[AUTH] Session:', session ? 'Present' : 'None');
+  
   if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-    // Session detected from OAuth callback or token refresh
-    setTimeout(init, 100);
+    console.log('[AUTH] Signed in detected, re-initializing...');
+    setTimeout(init, 200);
   } else if (event === 'SIGNED_OUT') {
+    console.log('[AUTH] Signed out detected');
     state.user = null;
     state.admin = false;
     renderLogin();
@@ -527,4 +562,5 @@ supabase.auth.onAuthStateChange((event, session) => {
 });
 
 // Start — also checks for existing session on page load
+console.log('[APP] Starting V Shots Admin...');
 init();
