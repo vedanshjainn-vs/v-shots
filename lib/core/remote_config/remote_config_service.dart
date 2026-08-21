@@ -16,6 +16,34 @@ import '../backend/supabase_service.dart';
 import '../config/discovery_categories.dart';
 import 'home_cms_models.dart';
 
+/// Defaults for the Discover feed algorithm (admin-overridable via the
+/// `discover_settings` Supabase row). Percent-style weights are normalized
+/// by the engine, so any positive numbers work.
+abstract final class DiscoverSettingsDefaults {
+  static const Map<String, dynamic> value = {
+    'weights': {
+      'personal': 50,
+      'trending': 25,
+      'fresh': 15,
+      'exploration': 10,
+    },
+    'enabled': {
+      'personalization': true,
+      'trending': true,
+      'fresh': true,
+      'exploration': true,
+    },
+    'region': 'IN',
+    'explore_queries': [
+      'punjabi hit songs official audio',
+      'telugu hit songs official audio',
+      'english indie songs official audio',
+      'lofi chill beats official audio',
+      'hip hop rap official audio',
+    ],
+  };
+}
+
 class RemoteConfigService {
   RemoteConfigService._();
 
@@ -61,6 +89,13 @@ class RemoteConfigService {
 
   Map<String, bool> _flags = const {};
   Map<String, bool> get featureFlags => _flags;
+
+  /// Discover algorithm settings (remote `discover_settings` row). Weights
+  /// (personal/trending/fresh/exploration), bucket toggles, region and
+  /// taste-adjacent exploration queries. Safe defaults when the row is
+  /// missing or Supabase is unreachable.
+  Map<String, dynamic> _discoverSettings = DiscoverSettingsDefaults.value;
+  Map<String, dynamic> get discoverSettings => _discoverSettings;
 
   /// When false, Home uses compiled default shelves even if CMS rows exist.
   bool get enableRemoteHome => _flags['enable_remote_home'] ?? true;
@@ -212,6 +247,39 @@ class RemoteConfigService {
         _itemsBySection = grouped;
       } catch (e) {
         debugPrint('[RemoteConfig] items fetch skipped: $e');
+      }
+
+      try {
+        final settingsRows =
+            await db.from('discover_settings').select().limit(1);
+        if (settingsRows.isNotEmpty) {
+          final map = cmsAsMap(settingsRows.first);
+          if (map != null) {
+            final config = cmsAsMap(map['config']);
+            if (config != null) {
+              final merged = <String, dynamic>{
+                ...DiscoverSettingsDefaults.value,
+                ...config,
+              };
+              // Ensure nested defaults survive partial remote rows.
+              merged['weights'] = {
+                ...((DiscoverSettingsDefaults.value['weights'] as Map)
+                    .cast<String, dynamic>()),
+                ...((config['weights'] as Map?)?.cast<String, dynamic>() ??
+                    const <String, dynamic>{}),
+              };
+              merged['enabled'] = {
+                ...((DiscoverSettingsDefaults.value['enabled'] as Map)
+                    .cast<String, dynamic>()),
+                ...((config['enabled'] as Map?)?.cast<String, dynamic>() ??
+                    const <String, dynamic>{}),
+              };
+              _discoverSettings = merged;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[RemoteConfig] discover settings skipped: $e');
       }
 
       try {

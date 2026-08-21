@@ -29,10 +29,12 @@ import '../../main.dart'
         currentTabIndexNotifier,
         forYouFeedService,
         musicRecommendationEngine,
+        musicRepository,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
         showAddToPlaylistSheet;
+import '../../core/discover/discover_feed_engine.dart';
 import 'discovery_browser_controller.dart';
 import '../../core/playback/vshots_playback_manager.dart';
 
@@ -106,6 +108,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// so [_onPageChanged] does not re-trigger playback (no feedback loop).
   bool _syncingFromManager = false;
 
+  /// The V Shots Discover algorithm engine: adaptive bucket weights,
+  /// Discover Score ranking, artist/genre fatigue and dynamic re-ranking.
+  /// Session-scoped — swipe behaviour immediately reshapes the next batch.
+  late final DiscoverFeedEngine _discoverEngine;
+
+  /// Swipe-time tracking: how long the previous card was on screen.
+  DateTime? _cardShownAt;
+  Map<String, dynamic>? _prevCard;
+
   @override
   void initState() {
     super.initState();
@@ -114,6 +125,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       rows: RemoteConfigService.instance.categoryRows,
     );
     _applied = DiscoveryFilterConfig(source: _catalog.sources.first);
+    _discoverEngine = DiscoverFeedEngine(
+      repository: musicRepository,
+      recommendationEngine: recommendationEngine,
+      musicEngine: musicRecommendationEngine,
+    );
     _browser.addListener(_onBrowserChanged);
     VShotsPlaybackManager.instance.addListener(_onManagerChanged);
     currentTabIndexNotifier.addListener(_onTabChanged);
@@ -136,6 +152,17 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (currentId == null) return;
     final idx = _items.indexWhere((t) => t['id'] == currentId);
     if (idx == -1 || idx == _currentIndex) return;
+
+    // Auto-advance means the PREVIOUS card finished playing — record the
+    // strongest positive signal (completed) for the engine.
+    if (_currentIndex >= 0 && _currentIndex < _items.length) {
+      _discoverEngine.recordSwipe(
+        _items[_currentIndex],
+        outcome: DiscoverSwipeOutcome.completed,
+      );
+      _cardShownAt = DateTime.now();
+      _prevCard = _items[idx];
+    }
 
     _syncingFromManager = true;
     setState(() => _currentIndex = idx);
@@ -277,12 +304,26 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       'moods=${_applied.moods.length} query="$query"',
     );
 
-    // "For You" (null source query) → MUSIC INTELLIGENCE V3 pipeline:
-    // user taste → candidate pools → ranking → diversity → exploration.
+    // "For You" (null source query) → V SHOTS DISCOVER ALGORITHM:
+    // adaptive buckets (personal/trending/fresh/exploration) → Discover
+    // Score ranking → fatigue/diversity guards → dynamic re-rank per swipe.
     if (source.query == null) {
       final primaryMood =
           _applied.moods.isNotEmpty ? _applied.moods.first : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
+      try {
+        final batch = await _discoverEngine.nextBatch(
+          excludeIds: _seenIds,
+          count: 12,
+          languages: _applied.languages.map((l) => l.token).toList(),
+          moods: _applied.moods.map((m) => m.query).toList(),
+          regions: _applied.regions.map((r) => r.token).toList(),
+          config: RemoteConfigService.instance.discoverSettings,
+        );
+        if (batch.isNotEmpty) return _refineForMode(source, batch);
+      } catch (e) {
+        debugPrint('[ForYouFeed] Discover engine failed, falling back: $e');
+      }
       try {
         final music = await musicRecommendationEngine.generateForYou(
           excludeIds: _seenIds,
@@ -399,6 +440,27 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (index < 0 || index >= _items.length) return;
     unawaited(HapticFeedback.selectionClick());
     final track = _items[index];
+
+    // Record the swipe outcome for the PREVIOUS card — the Discover engine
+    // re-ranks the next batch from this signal (TikTok-style behaviour).
+    final prev = _prevCard;
+    if (prev != null) {
+      final shownFor = _cardShownAt == null
+          ? 0
+          : DateTime.now().difference(_cardShownAt!).inSeconds;
+      final duration = (prev['duration'] as num?)?.toInt() ?? 0;
+      final outcome = duration > 0 && shownFor >= duration * 0.9
+          ? DiscoverSwipeOutcome.completed
+          : shownFor >= 45
+              ? DiscoverSwipeOutcome.listenedLong
+              : shownFor >= 15
+                  ? DiscoverSwipeOutcome.listenedShort
+                  : DiscoverSwipeOutcome.skippedImmediately;
+      _discoverEngine.recordSwipe(prev, outcome: outcome);
+    }
+    _cardShownAt = DateTime.now();
+    _prevCard = track;
+
     setState(() => _currentIndex = index);
 
     // Programmatic move (auto-advance): the manager ALREADY owns playback

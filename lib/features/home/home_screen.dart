@@ -31,6 +31,7 @@ import '../../shared/widgets/app_avatar.dart';
 import '../../shared/widgets/app_image.dart';
 import '../profile/artist_details_screen.dart';
 import 'home_feed_service.dart';
+import 'playlist_page_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -55,7 +56,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // automatically (no manual pull-to-refresh needed).
     RemoteConfigService.instance.revision.addListener(_onRemoteConfigApplied);
     _shelves = homeFeedService.buildShelfDescriptors();
+    _scrollController.addListener(_onScrollForLazyLoad);
     unawaited(_load(forceRefresh: false));
+  }
+
+  /// Lazy shelf loading: with 50+ CMS shelves the initial Home load fetches
+  /// only the first [_initialShelfCount] shelves; the rest load in batches
+  /// as the user scrolls near the bottom (fast first paint + no wasted
+  /// network for shelves nobody has reached yet).
+  static const int _initialShelfCount = 10;
+  static const int _lazyBatchSize = 8;
+  int _maxLoadedShelves = _initialShelfCount;
+  bool _loadingMoreShelves = false;
+  final ScrollController _scrollController = ScrollController();
+
+  void _onScrollForLazyLoad() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter > 1600) return;
+    if (_loadingMoreShelves || _maxLoadedShelves >= _shelves.length) return;
+    final end = (_maxLoadedShelves + _lazyBatchSize).clamp(0, _shelves.length);
+    _loadingMoreShelves = true;
+    unawaited(
+      homeFeedService.loadShelfRange(_shelves, _maxLoadedShelves, end,
+          onUpdate: () {
+        if (mounted) setState(() {});
+      }).whenComplete(() {
+        _maxLoadedShelves = end;
+        _loadingMoreShelves = false;
+        if (mounted) setState(() {});
+      }),
+    );
   }
 
   bool _reloading = false;
@@ -87,6 +117,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);
     RemoteConfigService.instance.revision
         .removeListener(_onRemoteConfigApplied);
+    _scrollController.removeListener(_onScrollForLazyLoad);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -113,6 +145,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       await RemoteConfigService.instance.refresh();
     }
     _shelves = homeFeedService.buildShelfDescriptors();
+    if (_maxLoadedShelves > _shelves.length) {
+      _maxLoadedShelves = _shelves.length;
+    }
     debugPrint(
       '[Home] shelves built in ${sw.elapsedMilliseconds}ms '
       '(${_shelves.length} shelves, CMS=${_shelves.any((s) => s.sourceType != null && s.sourceType!.isNotEmpty) ? 'remote' : 'default'})',
@@ -120,6 +155,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await homeFeedService.loadShelves(
       _shelves,
       forceRefresh: forceRefresh,
+      maxShelves: _maxLoadedShelves,
       onUpdate: () {
         if (mounted) setState(() {});
       },
@@ -139,6 +175,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           backgroundColor: AppColors.surface2,
           onRefresh: () => _load(forceRefresh: true),
           child: CustomScrollView(
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               _buildHeroHeader(),
@@ -647,6 +684,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
+          if (shelf.sourceType == 'youtube_playlist')
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.push(
+                context,
+                AppPageRoute<void>(
+                  builder: (_) => PlaylistPageScreen(
+                    sectionId: shelf.id,
+                    title: shelf.title,
+                    subtitle: shelf.subtitle,
+                    sourceValue: shelf.sourceValue ?? '',
+                    initialTracks: shelf.tracks,
+                  ),
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'View all',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 18, color: AppColors.accent),
+                ],
+              ),
+            ),
           SizedBox(
             height: 206,
             // Lazy per-shelf pagination: scrolling near the end fetches the
@@ -670,7 +738,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: shelf.tracks.length,
-                itemBuilder: (context, i) => _buildTrackCard(shelf.tracks, i),
+                itemBuilder: (context, i) => _buildTrackCard(shelf, i),
               ),
             ),
           ),
@@ -679,12 +747,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildTrackCard(List<Map<String, dynamic>> tracks, int i) {
+  Widget _buildTrackCard(HomeShelf shelf, int i) {
+    final tracks = shelf.tracks;
     final track = tracks[i];
     return StaggeredEntrance(
       index: i,
       child: PressableScale(
-        onTap: () => playTrack(context, track, tracks, i),
+        onTap: () {
+          // YouTube playlists open as a FULL page (owner request) — the
+          // whole list with Play All and auto-advance queue.
+          if (shelf.sourceType == 'youtube_playlist') {
+            Navigator.push(
+              context,
+              AppPageRoute<void>(
+                builder: (_) => PlaylistPageScreen(
+                  sectionId: shelf.id,
+                  title: shelf.title,
+                  subtitle: shelf.subtitle,
+                  sourceValue: shelf.sourceValue ?? '',
+                  initialTracks: shelf.tracks,
+                ),
+              ),
+            );
+            return;
+          }
+          playTrack(context, track, tracks, i);
+        },
         child: RepaintBoundary(
           child: Container(
             width: 150,

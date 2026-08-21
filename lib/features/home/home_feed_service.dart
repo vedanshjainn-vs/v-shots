@@ -570,10 +570,35 @@ class HomeFeedService {
   final Map<String, String?> _shelfTokens = {};
   final Map<String, bool> _shelfExhausted = {};
 
+  /// In-memory catalog cache (30 min TTL). With 50+ CMS shelves the same
+  /// provider results (queries, trending, playlists) are reused across
+  /// shelves and the Playlist page — big cold-start win, no disk needed.
+  final Map<String, ({List<Map<String, dynamic>> tracks, DateTime at})>
+      _catalogCache = {};
+  static const Duration _catalogCacheTtl = Duration(minutes: 30);
+
+  List<Map<String, dynamic>>? _cachedCatalog(
+    String key,
+  ) {
+    final entry = _catalogCache[key];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.at) > _catalogCacheTtl) {
+      _catalogCache.remove(key);
+      return null;
+    }
+    return List.of(entry.tracks);
+  }
+
+  void _storeCatalog(String key, List<Map<String, dynamic>> tracks) {
+    if (tracks.isEmpty) return;
+    _catalogCache[key] = (tracks: List.of(tracks), at: DateTime.now());
+  }
+
   Future<void> loadShelves(
     List<HomeShelf> shelves, {
     bool forceRefresh = false,
     void Function()? onUpdate,
+    int? maxShelves,
   }) async {
     if (forceRefresh) {
       // New listening/like/skip signals must be visible on the next Home
@@ -581,6 +606,7 @@ class HomeFeedService {
       RecommendationCache.instance.invalidateAll();
       _shelfTokens.clear();
       _shelfExhausted.clear();
+      _catalogCache.clear();
     }
 
     // Per-shelf exclusion: each shelf starts from the SESSION recently-shown
@@ -606,10 +632,13 @@ class HomeFeedService {
       'artists_for_you',
     };
     final phaseOne = shelves.where((s) => phaseOneIds.contains(s.id)).toList();
-    final phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
+    var phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
+    if (maxShelves != null && phaseTwo.length > maxShelves) {
+      phaseTwo = phaseTwo.take(maxShelves).toList();
+    }
 
     // Load in small chunks (not a full parallel burst): InnerTube/YouTube
-    // throttle a burst of ~11 simultaneous discovery requests. 3-at-a-time
+    // throttle a burst of ~11 simultaneous discovery requests. 4-at-a-time
     // keeps Home fast without tripping rate limits.
     await _loadInChunks(
       phaseOne,
@@ -626,13 +655,37 @@ class HomeFeedService {
     onUpdate?.call();
   }
 
+  /// Scroll-driven lazy load: fetch a slice of shelves (inclusive start,
+  /// exclusive end) as the user scrolls — the initial Home load stays fast
+  /// with 50+ CMS shelves.
+  Future<void> loadShelfRange(
+    List<HomeShelf> shelves,
+    int start,
+    int end, {
+    bool forceRefresh = false,
+    void Function()? onUpdate,
+  }) async {
+    final baseExclude = LocalLibrary.instance.recentlyShownIds;
+    final slice = shelves.sublist(
+      start.clamp(0, shelves.length),
+      end.clamp(0, shelves.length),
+    );
+    await _loadInChunks(
+      slice,
+      baseExclude,
+      force: forceRefresh,
+      onUpdate: onUpdate,
+    );
+    onUpdate?.call();
+  }
+
   Future<void> _loadInChunks(
     List<HomeShelf> shelves,
     Set<String> baseExclude, {
     required bool force,
     void Function()? onUpdate,
   }) async {
-    const chunkSize = 3;
+    const chunkSize = 4;
     for (var i = 0; i < shelves.length; i += chunkSize) {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(
@@ -907,11 +960,17 @@ class HomeFeedService {
           // Real regional trending via the provider chain (InnerTube
           // FEtrending with region gl; falls back to search internally).
           final region = (shelf.regionCode ?? '').trim();
+          final cacheKey = 'tr:$region|${shelf.limit}';
+          final cached = _cachedCatalog(cacheKey);
+          if (cached != null) return cached;
           final trending = await repo.getTrending(
             limit: shelf.limit,
             region: region,
           );
-          if (trending.isNotEmpty) return trending;
+          if (trending.isNotEmpty) {
+            _storeCatalog(cacheKey, trending);
+            return trending;
+          }
           if (shelf.query != null && shelf.query!.isNotEmpty) {
             return _fetchWithReplenishment(shelf, excludeIds);
           }
@@ -920,8 +979,19 @@ class HomeFeedService {
         if (src == 'youtube_playlist') {
           final id = extractYoutubePlaylistId(shelf.sourceValue ?? '');
           if (id == null) return const [];
+          final cacheKey = 'pl:$id|${shelf.limit}';
+          final cached = _cachedCatalog(cacheKey);
+          if (cached != null) {
+            return cached
+                .where((t) => !excludeIds.contains(t['id'] as String? ?? ''))
+                .take(shelf.limit)
+                .toList();
+          }
           final tracks = await repo.getPlaylistTracks(id, limit: shelf.limit);
-          if (tracks.isNotEmpty) return tracks;
+          if (tracks.isNotEmpty) {
+            _storeCatalog(cacheKey, tracks);
+            return tracks;
+          }
           if (shelf.query != null && shelf.query!.isNotEmpty) {
             return _fetchWithReplenishment(shelf, excludeIds);
           }
@@ -930,8 +1000,14 @@ class HomeFeedService {
         if (src == 'youtube_channel') {
           final id = extractYoutubeChannelId(shelf.sourceValue ?? '');
           if (id == null) return const [];
+          final cacheKey = 'ch:$id|${shelf.limit}';
+          final cached = _cachedCatalog(cacheKey);
+          if (cached != null) return cached;
           final tracks = await repo.getChannelTracks(id, limit: shelf.limit);
-          if (tracks.isNotEmpty) return tracks;
+          if (tracks.isNotEmpty) {
+            _storeCatalog(cacheKey, tracks);
+            return tracks;
+          }
           if (shelf.query != null && shelf.query!.isNotEmpty) {
             return _fetchWithReplenishment(shelf, excludeIds);
           }
@@ -959,6 +1035,18 @@ class HomeFeedService {
       ...shelf.fallbackQueries,
     ];
 
+    // Catalog cache: identical queries across the 50+ CMS shelves and the
+    // Playlist page resolve from memory instead of re-hitting providers.
+    final cacheKey = 'q:${queries.join('|')}|${shelf.order}|${shelf.limit}';
+    final cached = _cachedCatalog(cacheKey);
+    if (cached != null) {
+      final kept = cached
+          .where((t) => !excludeIds.contains(t['id'] as String? ?? ''))
+          .take(shelf.limit)
+          .toList();
+      if (kept.length >= 3) return kept;
+    }
+
     final result = <Map<String, dynamic>>[];
     final seen = <String>{...excludeIds};
     for (final q in queries) {
@@ -976,6 +1064,7 @@ class HomeFeedService {
       }
       if (result.length >= shelf.limit) break;
     }
+    if (result.isNotEmpty) _storeCatalog(cacheKey, result);
     return result;
   }
 

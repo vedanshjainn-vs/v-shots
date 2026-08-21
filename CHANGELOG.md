@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased] — PHASE 17.8: fast Home, playlist pages, Discover algorithm (2026-08-21)
+
+### Performance
+- Home: catalog cache (30-min TTL) + 4-at-a-time shelf loading + LAZY shelf
+  loading (first 10 shelves on launch, +8 batches as you scroll) — 50+ CMS
+  shelves no longer slow the cold start.
+- CMS pickup: refresh_minutes capped at 60 (admin edits visible within the hour).
+
+### Features
+- Playlist FULL PAGE: tapping any YouTube playlist section (card or "View
+  all") opens the complete list with Play All — the list becomes the queue,
+  so songs AUTO-ADVANCE on completion (no manual next).
+- Discover algorithm (V Shots Discover): adaptive bucket weights
+  (personal/trending/fresh/exploration by interaction maturity), Discover
+  Score (taste/recent/affinity/trending/freshness/popularity/completion/
+  diversity/exploration), artist+genre fatigue, session re-ranking from
+  swipe signals (skip <3s vs listen 15s/45s/complete), cold-start mix,
+  "why this song" reason on every card. Home CMS stays editorial.
+- Admin Discover page: global algorithm controls (weight %, bucket
+  toggles, region, exploration queries) → `discover_settings` row
+  (public read/write, content-only).
+- Swipe behaviour feeds the engine: immediate skips are negative; long
+  listens/completions enter the session window and reshape the next batch.
+- Auto-advance: Discover feed auto-swipes to the next song when the current
+  one finishes (existing manager sync + completion signal).
+- JioSaavn playlist/song cards: app-side support shipped (opens the
+  official page in the WebView); visible with the flag ON.
+
+### Tests
+- +14 Discover engine tests (adaptive tiers, scoring, fatigue, dedupe,
+  reasons, cold start, exploration, swipe signals). 408/408 green.
+
+
 All notable changes to Project Lyra will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
