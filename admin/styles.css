@@ -237,3 +237,9 @@ code{background:var(--surface2);padding:1px 6px;border-radius:6px;font-size:.85e
 
 /* ── Print / reduced motion ──────────────────────────────────────────────── */
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* Public-mode label button is purely informational — hide on very narrow
+   screens so the topbar never overflows at 320px. */
+@media(max-width:380px){
+  .topbar #logout-btn{display:none}
+}
