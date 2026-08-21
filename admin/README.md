@@ -39,3 +39,12 @@ defaults.
 cd admin
 python3 -m http.server 8090   # then open http://localhost:8090/?demo=1
 ```
+
+## Access mode (2026-08-21)
+
+**Public mode is ON** — no login required (owner decision). Anyone with the
+URL can view and publish Home content. Only content tables are writable
+(home_layout_config, home_section_items, feature_flags, home_config,
+discovery_categories) — no user data is exposed. Writes go through the anon
+key; RLS was relaxed via `supabase/migrations/20260821000007_public_admin_mode.sql`
+(revert SQL included in that file to restore login-only writes).

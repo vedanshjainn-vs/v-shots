@@ -295,7 +295,9 @@ function renderAdmin() {
     $('logout-btn').textContent = 'Exit demo';
     $('logout-btn').onclick = () => { location.search = ''; };
   } else {
-    $('logout-btn').onclick = signOut;
+    // Public mode — no sign-out, just a label.
+    $('logout-btn').textContent = 'Public mode';
+    $('logout-btn').disabled = true;
   }
   loadPage();
 }
@@ -442,6 +444,7 @@ async function renderHomeCMS(el) {
   const live = sections.filter((x) => x.visible !== false && x.published !== false).length;
 
   el.innerHTML = `
+    <div class="banner">🌐 Public mode — no login required (owner-approved). Anyone with this URL can view and publish Home content.</div>
     ${state.dirty ? '<div class="banner">⚠️ Unsaved changes — edits are live in the app only after you <b>Publish Home</b>.</div>' : ''}
     <div class="card">
       <div class="card-header">
@@ -1072,8 +1075,12 @@ async function doPublish(el) {
       if (error) throw error;
     }
     await supabase.from('home_config').upsert({
-      id: 'current', version: Date.now(), status: 'published',
-      published_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      id: 'current',
+      // version is an INTEGER column — epoch SECONDS (Date.now()/1000), not ms.
+      version: Math.floor(Date.now() / 1000),
+      status: 'published',
+      published_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     });
     state.data.sections = rows;
     state.dirty = false;
@@ -1311,15 +1318,15 @@ async function renderFlags(el) {
 function renderUsers(el) {
   el.innerHTML = `
     <div class="card">
-      <div class="card-title">Authorized admins</div>
-      <p class="muted small mt8">Writes are restricted by Supabase RLS to these Google accounts (after <code>claim_home_admin()</code>).</p>
-      <div class="mt12">
-        ${AUTHORIZED_EMAILS.map((e) => `
-          <div class="row-card"><div class="row-card-head">
-            <span class="grow" style="font-weight:600">${esc(e)}</span>
-            <span class="badge badge-green">Allowlisted</span>
-          </div></div>`).join('')}
-      </div>
+      <div class="card-title">Access mode</div>
+      <p class="muted small mt8" style="line-height:1.6">
+        <b style="color:var(--text)">Public mode is ON</b> — the panel does not require login
+        (owner decision, 2026-08-21). Anyone with this URL can view and publish Home content.
+        Only content tables are writable (Home layout, section items, flags, config version,
+        Discover categories) — <b>no user data</b> is exposed. To restore login-only access,
+        re-apply the <code>is_home_admin()</code> RLS policies (see migration
+        <code>20260821000007_public_admin_mode.sql</code>).
+      </p>
     </div>`;
 }
 
@@ -1335,7 +1342,8 @@ function renderSettings(el) {
       <div class="card-title">Security & legal boundary</div>
       <p class="muted small mt8" style="line-height:1.6">
         This page uses the publishable anon key only. Database password, service-role key, GitHub tokens and
-        BrowserStack keys must never be placed here. JioSaavn integration opens <b>public JioSaavn webpages</b> only
+        BrowserStack keys must never be placed here. <b>Access mode:</b> public (no login) — content-only
+        tables are writable; no user data is exposed. JioSaavn integration opens <b>public JioSaavn webpages</b> only
         (permalink or search page) in the app's WebView — no unofficial API, no audio extraction, no media URLs,
         no ad blocking on JioSaavn. YouTube playback uses the official webpage/player — no stream extraction,
         no ad circumvention.
@@ -1352,11 +1360,15 @@ async function init() {
     renderAdmin();
     return;
   }
-  const ok = await checkAuth();
-  if (!ok && new URLSearchParams(location.search).has('error')) {
-    renderLogin('Google sign-in was cancelled or failed.');
-    return;
-  }
+  // ── PUBLIC MODE (owner decision 2026-08-21) ─────────────────────────────
+  // No login gate. Anyone with this URL can view, edit and publish CMS
+  // content (content-only tables — no user data). Writes go through the
+  // anon key; Supabase RLS was relaxed for these tables via migration
+  // 20260821000007_public_admin_mode.sql.
+  // To restore login: revert to the checkAuth() flow and re-apply the
+  // is_home_admin() RLS policies (revert SQL is in that migration).
+  state.admin = true;
+  state.user = { email: 'public-access', id: 'public' };
   render();
 }
 
