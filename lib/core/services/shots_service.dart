@@ -13,103 +13,15 @@ class ShotsService {
   static final ShotsService instance = ShotsService._();
 
   // In-memory fallback / mock shots for offline or initial demo experience
-  final List<ShotModel> _localShots = <ShotModel>[
-    ShotModel(
-      id: 'mock-1',
-      userId: 'mock-creator-1',
-      caption:
-          '🚀 Building the next-gen Nova UI for V Shots! Smooth 60fps animations & dark gradient aesthetics. #vshots #nova #flutter',
-      videoUrl:
-          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-      thumbnailUrl:
-          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
-      durationSeconds: 15,
-      likeCount: 1420,
-      commentCount: 88,
-      isLiked: false,
-      isBookmarked: false,
-      audioTitle: 'Cyberpunk Synthwave',
-      audioArtist: 'Nova Soundlab',
-      tags: ['vshots', 'nova', 'flutter', 'ui'],
-      creator: const ProfileModel(
-        id: 'mock-creator-1',
-        username: 'novadesign',
-        fullName: 'Nova Studio',
-        avatarUrl:
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80',
-        bio: 'Designing futuristic interfaces.',
-        followersCount: 12400,
-        followingCount: 320,
-        shotsCount: 45,
-      ),
-      createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-    ),
-    ShotModel(
-      id: 'mock-2',
-      userId: 'mock-creator-2',
-      caption:
-          '🎧 Late night studio session vibes. Fresh beat dropping this Friday! What do you think of this synth line? 🔥',
-      videoUrl:
-          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyBlazes.mp4',
-      thumbnailUrl:
-          'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&q=80',
-      durationSeconds: 28,
-      likeCount: 3890,
-      commentCount: 215,
-      isLiked: true,
-      isBookmarked: false,
-      audioTitle: 'Midnight Echoes (Original)',
-      audioArtist: 'Aria Luna',
-      tags: ['music', 'producer', 'synth', 'studio'],
-      creator: const ProfileModel(
-        id: 'mock-creator-2',
-        username: 'arialuna',
-        fullName: 'Aria Luna',
-        avatarUrl:
-            'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&q=80',
-        bio: 'Music producer & sound designer.',
-        followersCount: 48900,
-        followingCount: 512,
-        shotsCount: 128,
-      ),
-      createdAt: DateTime.now().subtract(const Duration(hours: 7)),
-    ),
-    ShotModel(
-      id: 'mock-3',
-      userId: 'mock-creator-3',
-      caption:
-          'Neon city lights timelapse from the 42nd floor 🌆 Tokyo rain reflections never get old.',
-      videoUrl:
-          'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
-      thumbnailUrl:
-          'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=800&q=80',
-      durationSeconds: 20,
-      likeCount: 924,
-      commentCount: 42,
-      isLiked: false,
-      isBookmarked: true,
-      audioTitle: 'Tokyo Rain Lo-Fi',
-      audioArtist: 'Cityscape Beats',
-      tags: ['tokyo', 'timelapse', 'aesthetic', 'cyberpunk'],
-      creator: const ProfileModel(
-        id: 'mock-creator-3',
-        username: 'neonpulse',
-        fullName: 'Kenji Sato',
-        avatarUrl:
-            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&q=80',
-        bio: 'Visual storyteller in Tokyo.',
-        followersCount: 8900,
-        followingCount: 140,
-        shotsCount: 62,
-      ),
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-    ),
-  ];
+  // Offline echo buffer only — starts empty, never ships fabricated
+  // demo shots (removed 2026-08-21 for honesty).
+  final List<ShotModel> _localShots = <ShotModel>[];
 
-  /// Fetch primary feed of public shots
+  /// Fetch primary feed of public shots. Returns an honest empty list when
+  /// Supabase is unavailable or has no rows — never demo/mock shots.
   Future<List<ShotModel>> fetchFeed({int limit = 20, int offset = 0}) async {
     if (!SupabaseService.isAvailable) {
-      return List<ShotModel>.from(_localShots);
+      return const [];
     }
 
     try {
@@ -122,8 +34,8 @@ class ShotsService {
           .range(offset, offset + limit - 1);
 
       final data = response as List<dynamic>;
-      if (data.isEmpty && offset == 0) {
-        return List<ShotModel>.from(_localShots);
+      if (data.isEmpty) {
+        return const [];
       }
 
       final shots = <ShotModel>[];
@@ -169,9 +81,7 @@ class ShotsService {
   /// Fetch shots created by a specific user
   Future<List<ShotModel>> fetchUserShots(String userId) async {
     if (!SupabaseService.isAvailable) {
-      return _localShots
-          .where((s) => s.userId == userId || userId == 'self')
-          .toList();
+      return const [];
     }
 
     try {

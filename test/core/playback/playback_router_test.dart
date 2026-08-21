@@ -138,4 +138,78 @@ void main() {
       expect(target.url, contains('dQw4w9WgXcQ'));
     });
   });
+
+  group('wired flags (PHASE 15)', () {
+    test('enable_youtube_web_playback OFF + no JioSaavn → unavailable',
+        () async {
+      final target = await PlaybackRouter(
+        policy: const PlaybackPolicy(
+          jiosaavnWebPlayback: false,
+          jiosaavnSearchFallback: false,
+          youtubeWebPlayback: false,
+        ),
+      ).resolvePlayback(track(id: 'dQw4w9WgXcQ'));
+      expect(target.isUnavailable, isTrue);
+      expect(
+          target.unavailableReason, contains('YouTube playback is turned off'));
+    });
+
+    test(
+        'enable_youtube_web_playback OFF + jio permalink → JioSaavn still works',
+        () async {
+      final target = await PlaybackRouter(
+        policy: const PlaybackPolicy(
+          jiosaavnWebPlayback: true,
+          jiosaavnSearchFallback: true,
+          youtubeWebPlayback: false,
+        ),
+      ).resolvePlayback(
+        track(jiosaavnUrl: permalink, id: 'dQw4w9WgXcQ'),
+      );
+      expect(target.source, PlaybackSource.jiosaavn);
+      expect(target.url, permalink);
+    });
+
+    test('enable_jiosaavn_exact_urls OFF → permalink skipped, search used',
+        () async {
+      final target = await PlaybackRouter(
+        policy: const PlaybackPolicy(
+          jiosaavnWebPlayback: true,
+          jiosaavnSearchFallback: true,
+          jiosaavnExactUrls: false,
+        ),
+      ).resolvePlayback(
+        track(
+          jiosaavnUrl: permalink,
+          title: 'Kesariya',
+          artist: 'Arijit Singh',
+        ),
+      );
+      expect(target.source, PlaybackSource.jiosaavn);
+      expect(target.url, isNot(permalink));
+      expect(target.url, contains('/search/songs/'));
+    });
+
+    test('enable_jiosaavn_exact_urls OFF + search OFF → unavailable', () async {
+      final target = await PlaybackRouter(
+        policy: const PlaybackPolicy(
+          jiosaavnWebPlayback: true,
+          jiosaavnSearchFallback: false,
+          jiosaavnExactUrls: false,
+        ),
+      ).resolvePlayback(track(jiosaavnUrl: permalink));
+      expect(target.isUnavailable, isTrue);
+    });
+
+    test('flags ON (defaults) → permalink honored', () async {
+      final target = await PlaybackRouter(
+        policy: const PlaybackPolicy(
+          jiosaavnWebPlayback: true,
+          jiosaavnSearchFallback: true,
+        ),
+      ).resolvePlayback(track(jiosaavnUrl: permalink, id: 'dQw4w9WgXcQ'));
+      expect(target.source, PlaybackSource.jiosaavn);
+      expect(target.url, permalink);
+    });
+  });
 }

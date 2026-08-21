@@ -15,10 +15,20 @@ class PlaybackPolicy {
   const PlaybackPolicy({
     this.jiosaavnWebPlayback = false,
     this.jiosaavnSearchFallback = false,
+    this.youtubeWebPlayback = true,
+    this.jiosaavnExactUrls = true,
   });
 
   final bool jiosaavnWebPlayback;
   final bool jiosaavnSearchFallback;
+
+  /// Master switch for YouTube webpage playback. Defaults to ON; turning it
+  /// OFF in Supabase makes the router report YouTube targets as unavailable.
+  final bool youtubeWebPlayback;
+
+  /// Whether exact JioSaavn permalinks from CMS items are honored. When OFF
+  /// the router skips permalinks (search fallback still applies if enabled).
+  final bool jiosaavnExactUrls;
 }
 
 class RemoteFeatureFlags {
@@ -30,6 +40,8 @@ class RemoteFeatureFlags {
     'enable_remote_home': true,
     'enable_jiosaavn_web_playback': false,
     'enable_jiosaavn_search_fallback': false,
+    'enable_jiosaavn_exact_urls': true,
+    'enable_youtube_web_playback': true,
     'enable_discovery_remote_categories': false,
     'enable_social': false,
   };
@@ -60,6 +72,12 @@ class RemoteFeatureFlags {
   bool get enableJioSaavnSearchFallback =>
       value('enable_jiosaavn_search_fallback', defaultValue: false);
 
+  bool get enableJioSaavnExactUrls =>
+      value('enable_jiosaavn_exact_urls', defaultValue: true);
+
+  bool get enableYouTubeWebPlayback =>
+      value('enable_youtube_web_playback', defaultValue: true);
+
   bool get enableDiscoveryRemoteCategories =>
       value('enable_discovery_remote_categories', defaultValue: false);
 
@@ -68,5 +86,7 @@ class RemoteFeatureFlags {
   PlaybackPolicy get playbackPolicy => PlaybackPolicy(
         jiosaavnWebPlayback: enableJioSaavnWebPlayback,
         jiosaavnSearchFallback: enableJioSaavnSearchFallback,
+        youtubeWebPlayback: enableYouTubeWebPlayback,
+        jiosaavnExactUrls: enableJioSaavnExactUrls,
       );
 }

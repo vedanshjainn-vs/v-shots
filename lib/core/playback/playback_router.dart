@@ -104,7 +104,9 @@ class PlaybackRouter {
 
   PlaybackTarget _resolveAuto(Map<String, dynamic> track) {
     final permalink = _permalinkOf(track);
-    if (policy.jiosaavnWebPlayback && permalink != null) {
+    if (policy.jiosaavnWebPlayback &&
+        policy.jiosaavnExactUrls &&
+        permalink != null) {
       return _jiosaavnTarget(track, permalink);
     }
     final youtube = _resolveYouTube(track);
@@ -125,8 +127,10 @@ class PlaybackRouter {
       // for JioSaavn get a real error rather than a silent YouTube play.
       return PlaybackTarget.unavailable('JioSaavn playback is turned off');
     }
-    final permalink = _permalinkOf(track);
-    if (permalink != null) return _jiosaavnTarget(track, permalink);
+    if (policy.jiosaavnExactUrls) {
+      final permalink = _permalinkOf(track);
+      if (permalink != null) return _jiosaavnTarget(track, permalink);
+    }
     if (policy.jiosaavnSearchFallback) {
       final search = _searchUrlOf(track);
       if (search != null) return _jiosaavnTarget(track, search);
@@ -139,6 +143,9 @@ class PlaybackRouter {
   }
 
   PlaybackTarget _resolveYouTube(Map<String, dynamic> track) {
+    if (!policy.youtubeWebPlayback) {
+      return PlaybackTarget.unavailable('YouTube playback is turned off');
+    }
     final id = youtubeIdOf(track);
     if (id == null || id.isEmpty) {
       return PlaybackTarget.unavailable('No YouTube video id');

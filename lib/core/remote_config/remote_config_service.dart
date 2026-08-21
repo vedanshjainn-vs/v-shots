@@ -27,6 +27,24 @@ class RemoteConfigService {
   static const _cacheKeyItems = 'rc_home_items';
   static const _cacheKeyFlags = 'rc_feature_flags';
   static const _cacheKeyTs = 'rc_timestamp';
+  static const _cacheKeyExpiry = 'rc_cache_expiry';
+
+  /// Honors the CMS `refresh_minutes` column: cache freshness = the smallest
+  /// refresh_minutes among published sections, clamped to [5, 1440] minutes.
+  /// Falls back to [fallback] when no section carries a usable value.
+  static Duration computeHomeCacheTtl(
+    List<Map<String, dynamic>> sections, {
+    Duration fallback = const Duration(hours: 1),
+  }) {
+    var minutes = 0;
+    for (final row in sections) {
+      final m = cmsAsInt(row['refresh_minutes'], 0);
+      if (m > 0 && (minutes == 0 || m < minutes)) minutes = m;
+    }
+    if (minutes <= 0) return fallback;
+    final clamped = minutes.clamp(5, 1440);
+    return Duration(minutes: clamped);
+  }
 
   List<DiscoveryCategory> _categories = kDiscoveryCategories;
   List<DiscoveryCategory> get categories => _categories;
@@ -45,6 +63,11 @@ class RemoteConfigService {
 
   /// When false, Home uses compiled default shelves even if CMS rows exist.
   bool get enableRemoteHome => _flags['enable_remote_home'] ?? true;
+
+  /// Bumped every time a remote refresh successfully applies new config.
+  /// Screens (Home) listen to this so freshly fetched CMS rows are reflected
+  /// on a cold start without requiring a manual pull-to-refresh.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   bool _loaded = false;
 
@@ -74,7 +97,14 @@ class RemoteConfigService {
         _flags = _decodeFlags(flagsJson);
       }
 
-      if (age > _cacheTtl.inMilliseconds || ts == 0) {
+      // Freshness is driven by the CMS refresh_minutes value stored at the
+      // last successful refresh (see computeHomeCacheTtl). Missing expiry
+      // falls back to the previous age-based 1-hour behavior.
+      final expiry = prefs.getInt(_cacheKeyExpiry);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (expiry != null) {
+        if (now >= expiry) await refresh();
+      } else if (age > _cacheTtl.inMilliseconds || ts == 0) {
         await refresh();
       }
     } catch (e) {
@@ -185,10 +215,16 @@ class RemoteConfigService {
       await prefs.setString(_cacheKeyItems, jsonEncode(_itemsBySection));
       await prefs.setString(_cacheKeyFlags, jsonEncode(_flags));
       await prefs.setInt(_cacheKeyTs, DateTime.now().millisecondsSinceEpoch);
+      final ttl = computeHomeCacheTtl(_homeSections);
+      await prefs.setInt(
+        _cacheKeyExpiry,
+        DateTime.now().add(ttl).millisecondsSinceEpoch,
+      );
       debugPrint(
         '[RemoteConfig] Refreshed: ${_homeSections.length} home sections, '
         '${_categories.length} categories',
       );
+      revision.value++;
     } catch (e) {
       debugPrint('[RemoteConfig] refresh error (keeping cache): $e');
     }

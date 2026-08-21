@@ -41,14 +41,15 @@ const PERSONALIZED_KEYS = [
   { id: 'official_music', title: 'Official Music', engine: 'Verified/official uploads filter' },
 ];
 
-/* Flags the Flutter app actually reads (RemoteFeatureFlags) + ops flags. */
+/* Flags the Flutter app actually reads (RemoteFeatureFlags).
+   Only these keys are shown/toggled in this panel — flags the app never
+   reads are not displayed, so no toggle here is a no-op. */
 const KNOWN_FLAGS = [
   { key: 'enable_remote_home', description: 'Home fetches layout from Supabase CMS. OFF = compiled defaults only.', appReads: true },
-  { key: 'enable_home_cms', description: 'Remote Home CMS (dashboard indicator / ops)', appReads: false },
   { key: 'enable_jiosaavn_web_playback', description: 'Allow JioSaavn webpage playback in the in-app WebView. Safe default: OFF.', appReads: true },
   { key: 'enable_jiosaavn_search_fallback', description: 'If no exact permalink, open the JioSaavn search page.', appReads: true },
-  { key: 'enable_jiosaavn_exact_urls', description: 'Allow exact JioSaavn permalinks from CMS items.', appReads: false },
-  { key: 'enable_youtube_web_playback', description: 'YouTube webpage playback.', appReads: false },
+  { key: 'enable_jiosaavn_exact_urls', description: 'Honor exact JioSaavn permalinks from CMS items (PlaybackRouter).', appReads: true },
+  { key: 'enable_youtube_web_playback', description: 'Master switch for YouTube webpage playback (PlaybackRouter). OFF = YouTube targets unavailable.', appReads: true },
   { key: 'enable_discovery_remote_categories', description: 'Discover mood list comes from Supabase categories.', appReads: true },
   { key: 'enable_social', description: 'Comments / creator / UGC surfaces.', appReads: true },
 ];
@@ -1245,10 +1246,13 @@ async function renderProviders(el) {
 async function renderFlags(el) {
   const { data, error } = await supabase.from('feature_flags').select('*').order('key');
   if (error) { el.innerHTML = `<div class="card"><p class="login-error">${esc(error.message)}</p></div>`; return; }
+  // Only flags the app actually reads are displayed — unknown/ops-only rows
+  // (e.g. enable_home_cms) stay in the DB but are not toggled here, so no
+  // control in this panel is a cosmetic no-op.
   const byKey = {};
   (data || []).forEach((f) => { byKey[f.key] = f; });
   KNOWN_FLAGS.forEach((known) => { if (!byKey[known.key]) byKey[known.key] = { key: known.key, value: false, description: known.description }; });
-  state.data.flags = Object.values(byKey).sort((a, b) => a.key.localeCompare(b.key));
+  state.data.flags = KNOWN_FLAGS.map((known) => byKey[known.key]).sort((a, b) => a.key.localeCompare(b.key));
   el.innerHTML = `
     <div class="card">
       <div class="card-header">

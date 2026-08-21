@@ -5,6 +5,38 @@ All notable changes to Project Lyra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/docs/spec/v2.0.0.html).
 
+## [Unreleased] — PHASE 15: production completion + real-device verification (2026-08-21)
+
+### Fixed
+- **Cold-start CMS apply bug (found via real-device test):** Home built its
+  shelves before the remote CMS fetch completed and never rebuilt, so a fresh
+  install showed compiled defaults instead of the published CMS. Added a
+  config `revision` notifier — Home now rebuilds automatically the moment
+  fresh rows arrive (Admin publish → next app open works without APK update
+  and without manual pull-to-refresh).
+- **Feature flags no longer cosmetic:** `enable_youtube_web_playback` and
+  `enable_jiosaavn_exact_urls` are now actually read by `PlaybackRouter`
+  (YouTube master switch; exact-permalink honoring) with safe defaults ON.
+  Admin flags page now shows ONLY flags the app reads (ops-only rows like
+  `enable_home_cms` are no longer displayed as toggles).
+- **Honest data:** notifications and shots services no longer fall back to
+  fabricated demo/mock content — empty backends now show empty states.
+- **`refresh_minutes` CMS column now consumed:** remote-config cache TTL is
+  driven by the smallest section `refresh_minutes` (clamped 5 min–24 h).
+
+### Verified on a real Android device (BrowserStack, Google Pixel 7 / Android 13)
+- APK installs and launches; onboarding skip works.
+- Home renders live personalized + catalog shelves (Made For You, Trending
+  Now, …) with real YouTube metadata; mood navigation (Sad → real tracks).
+- Scrolling Home reveals the full compiled catalog (Bollywood, Punjabi,
+  Hip-Hop, Romantic, 90s Classics, …).
+- Full suite: 382 tests green, analyze + format clean.
+
+### Controlled JioSaavn test setup (live Supabase)
+- `jiosaavn_test` section published with ONE real permalink item
+  (`https://www.jiosaavn.com/song/kesariya/BRpGZEd7ZAs`, verified HTTP 200)
+  and `enable_jiosaavn_web_playback` enabled for the test.
+
 ## [Unreleased] — CMS + Mobile Admin + Home catalog parity (2026-08-21)
 
 ### Added

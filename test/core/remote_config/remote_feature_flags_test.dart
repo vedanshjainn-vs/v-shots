@@ -42,11 +42,28 @@ void main() {
       'enable_remote_home',
       'enable_jiosaavn_web_playback',
       'enable_jiosaavn_search_fallback',
+      'enable_jiosaavn_exact_urls',
+      'enable_youtube_web_playback',
       'enable_discovery_remote_categories',
       'enable_social',
     ];
     for (final key in required) {
       expect(RemoteFeatureFlags.defaults.containsKey(key), isTrue);
     }
+  });
+
+  test('playback policy carries the wired flag values', () {
+    RemoteFeatureFlags.instance.debugOverride({
+      'enable_jiosaavn_web_playback': true,
+      'enable_jiosaavn_search_fallback': true,
+      'enable_jiosaavn_exact_urls': false,
+      'enable_youtube_web_playback': false,
+    });
+    final policy = RemoteFeatureFlags.instance.playbackPolicy;
+    expect(policy.jiosaavnWebPlayback, isTrue);
+    expect(policy.jiosaavnSearchFallback, isTrue);
+    expect(policy.jiosaavnExactUrls, isFalse);
+    expect(policy.youtubeWebPlayback, isFalse);
+    RemoteFeatureFlags.instance.debugOverride(null);
   });
 }

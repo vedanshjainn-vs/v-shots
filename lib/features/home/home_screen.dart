@@ -50,8 +50,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);
+    // Cold start: the remote CMS fetch may complete AFTER the first build.
+    // The revision notifier makes Home rebuild from freshly fetched rows
+    // automatically (no manual pull-to-refresh needed).
+    RemoteConfigService.instance.revision.addListener(_onRemoteConfigApplied);
     _shelves = homeFeedService.buildShelfDescriptors();
     unawaited(_load(forceRefresh: false));
+  }
+
+  bool _reloading = false;
+
+  void _onRemoteConfigApplied() {
+    if (!mounted || _reloading) return;
+    _reloading = true;
+    unawaited(
+      _load(forceRefresh: false).whenComplete(() => _reloading = false),
+    );
   }
 
   @override
@@ -71,6 +85,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);
+    RemoteConfigService.instance.revision
+        .removeListener(_onRemoteConfigApplied);
     super.dispose();
   }
 
