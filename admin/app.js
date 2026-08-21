@@ -616,7 +616,14 @@ async function renderHomeCMS(el) {
   };
   $('add-personalized').onclick = () => {
     const used = new Set(sections.map((x) => x.section_key));
-    const next = PERSONALIZED_KEYS.find((k) => !used.has(k.id)) || PERSONALIZED_KEYS[1];
+    // Default to Made For You (the flagship shelf). Continue Listening is
+    // auto-inserted by the app anyway, so it should NOT be the default pick
+    // (this default previously made every new personalized section a
+    // "Continue Listening", confusing editors).
+    const next =
+      PERSONALIZED_KEYS.find((k) => k.id === 'made_for_you' && !used.has(k.id)) ||
+      PERSONALIZED_KEYS.find((k) => k.id !== 'continue_listening' && !used.has(k.id)) ||
+      PERSONALIZED_KEYS[1];
     sections.push({
       id: next.id === 'continue_listening' ? `continue_${Date.now()}` : next.id,
       section_key: next.id, title: next.title, subtitle: '',
@@ -967,9 +974,19 @@ function openSectionEditor(sec, index) {
       if (pk && pk.id !== 'continue_listening') draft.title = draft.title || pk.title;
     } else if (isManualSource(draft.source_type)) {
       draft.section_type = 'home_section';
+      // FIX (Phase 17.5): a stale personalized section_key (e.g.
+      // 'continue_listening' left over from the personalized engine picker)
+      // made the APP render every edited section as Continue Listening.
+      // Any non-personalized type must never carry a personalized key.
+      if (PERSONALIZED_KEYS.some((k) => k.id === draft.section_key)) {
+        draft.section_key = `home_${Date.now().toString(36)}`;
+      }
     } else {
       draft.section_type = 'home_section';
       draft.query = draft.source_value || '';
+      if (PERSONALIZED_KEYS.some((k) => k.id === draft.section_key)) {
+        draft.section_key = `home_${Date.now().toString(36)}`;
+      }
     }
     /* validate */
     let bad = false;
@@ -1143,9 +1160,17 @@ async function doPublish(el) {
       const provider = normalize(sec.provider, 'auto');
       const playback = normalize(sec.playback_provider, provider);
       const fallback = normalize(sec.fallback_provider, 'none');
+      // PUBLISH-TIME GUARD (Phase 17.5): non-personalized rows must never
+      // ship a personalized section_key — even stale drafts/legacy rows.
+      // The app renders by source type, and a leftover 'continue_listening'
+      // key made every section behave as Continue Listening.
+      let sectionKey = sec.section_key;
+      if (!personalized && PERSONALIZED_KEYS.some((k) => k.id === sectionKey)) {
+        sectionKey = `home_${Date.now().toString(36)}${i}`;
+      }
       return {
         id,
-        section_key: sec.section_key || (personalized ? id : `home_${id}`),
+        section_key: sectionKey || (personalized ? id : `home_${id}`),
         title: (sec.title || 'New section').trim(),
         subtitle: (sec.subtitle || '').trim() || null,
         section_type: personalized ? 'personalized' : (sec.section_type || 'home_section'),

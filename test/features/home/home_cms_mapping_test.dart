@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/features/home/home_feed_service.dart';
 
 void main() {
+  staleKeyRegressionTests();
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Home CMS mapping', () {
@@ -16,8 +17,9 @@ void main() {
               'id': 'made_for_you',
               'section_key': 'made_for_you',
               'title': 'Made For You',
-              'section_type': 'category',
-              'source_type': 'youtube_search',
+              'section_type': 'personalized',
+              'source_type': 'personalized',
+              'source_value': 'made_for_you',
               'query': 'made for you personalized',
               'visible': true,
               'published': true,
@@ -28,8 +30,9 @@ void main() {
               'id': 'because_listened',
               'section_key': 'because_listened',
               'title': 'Because You Listened To',
-              'section_type': 'category',
-              'source_type': 'youtube_search',
+              'section_type': 'personalized',
+              'source_type': 'personalized',
+              'source_value': 'because_listened',
               'query': 'because you listened to',
               'visible': true,
               'published': true,
@@ -255,6 +258,114 @@ void main() {
       );
       final shelf = shelves.firstWhere((s) => s.id == 'jiosaavn_test');
       expect(shelf.manualItems, isEmpty);
+    });
+  });
+}
+
+// ── PHASE 17.5 REGRESSION: stale personalized keys must NOT hijack shelves ──
+void staleKeyRegressionTests() {
+  group('stale personalized keys (production bug regression)', () {
+    test('youtube_playlist with key continue_listening stays a playlist shelf',
+        () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        cmsSections: [
+          {
+            'id': 'continue_123',
+            'section_key': 'continue_listening',
+            'title': 'My Playlist',
+            'section_type': 'home_section',
+            'source_type': 'youtube_playlist',
+            'source_value': 'https://youtube.com/playlist?list=PLabc123xyz',
+            'visible': true,
+            'published': true,
+            'max_items': 10,
+          },
+        ],
+      );
+      final shelf = shelves.singleWhere((s) => s.id == 'continue_123');
+      expect(shelf.kind, HomeShelfKind.catalog,
+          reason: 'playlist type must win over the stale key');
+      expect(shelf.sourceType, 'youtube_playlist');
+      expect(shelf.query, isNull);
+      // The auto-inserted Continue Listening is the ONLY continue shelf.
+      expect(
+        shelves.where((s) => s.kind == HomeShelfKind.continueListening).length,
+        1,
+      );
+    });
+
+    test('youtube_search with key made_for_you stays a catalog shelf', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        cmsSections: [
+          {
+            'id': 'made_for_you',
+            'section_key': 'made_for_you',
+            'title': 'Made For You',
+            'section_type': 'home_section',
+            'source_type': 'youtube_search',
+            'source_value': 'arijit singh songs',
+            'query': 'arijit singh songs',
+            'visible': true,
+            'published': true,
+            'max_items': 12,
+          },
+        ],
+      );
+      final shelf = shelves.singleWhere((s) => s.id == 'made_for_you');
+      expect(shelf.kind, HomeShelfKind.catalog);
+      expect(shelf.query, 'arijit singh songs');
+    });
+
+    test('jiosaavn_manual with key continue_listening is not continue', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        jiosaavnEnabled: true,
+        cmsSections: [
+          {
+            'id': 'jsv_123',
+            'section_key': 'continue_listening',
+            'title': 'JioSaavn Picks',
+            'section_type': 'home_section',
+            'source_type': 'jiosaavn_manual',
+            'source_value': '',
+            'visible': true,
+            'published': true,
+            'max_items': 5,
+          },
+        ],
+      );
+      expect(
+        shelves.where((s) => s.kind == HomeShelfKind.continueListening).length,
+        1,
+        reason: 'only the auto-inserted Continue Listening may exist',
+      );
+    });
+
+    test('personalized sections still map by key (no regression)', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        cmsSections: [
+          {
+            'id': 'trending_now',
+            'section_key': 'continue_listening',
+            'title': 'Continue Listening 💖',
+            'section_type': 'personalized',
+            'source_type': 'personalized',
+            'source_value': 'continue_listening',
+            'visible': true,
+            'published': true,
+            'max_items': 15,
+          },
+        ],
+      );
+      final shelf = shelves.singleWhere((s) => s.id == 'trending_now');
+      expect(shelf.kind, HomeShelfKind.continueListening);
     });
   });
 }

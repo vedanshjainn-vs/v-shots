@@ -191,6 +191,15 @@ class HomeFeedService {
     return null;
   }
 
+  /// A section is routed to the recommendation engine ONLY when its type is
+  /// actually 'personalized'. Stale personalized keys (e.g. a section whose
+  /// type was changed to youtube_playlist but kept section_key
+  /// 'continue_listening') must NOT hijack the shelf — the source type wins.
+  /// (Bug found in production: every edited section rendered as Continue
+  /// Listening because the key map ran before any type check.)
+  bool _isPersonalizedSection(HomeCmsSection s) =>
+      s.sourceType == 'personalized' || s.sectionType == 'personalized';
+
   List<HomeShelf> _buildFromCms(
     List<Map<String, dynamic>> sections,
     Map<String, List<Map<String, dynamic>>> itemsBySection, {
@@ -250,12 +259,14 @@ class HomeFeedService {
         continue;
       }
 
-      final personalized = _personalizedKind(
-        id: s.id,
-        sectionKey: s.sectionKey,
-        sectionType: s.sectionType,
-        sourceType: s.sourceType,
-      );
+      final personalized = _isPersonalizedSection(s)
+          ? _personalizedKind(
+              id: s.id,
+              sectionKey: s.sectionKey,
+              sectionType: s.sectionType,
+              sourceType: s.sourceType,
+            )
+          : null;
       if (personalized != null) {
         if (personalized == HomeShelfKind.continueListening) {
           hasContinue = true;
