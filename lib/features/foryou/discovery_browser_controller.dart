@@ -63,9 +63,13 @@ class DiscoveryBrowserController extends ChangeNotifier {
   String? get title => _track?['title'] as String?;
   String? get artist => _track?['artist'] as String?;
   String? get artwork => _track?['artwork'] as String?;
+  String? get playbackSource => _track?['playbackSource'] as String?;
 
-  /// Canonical YouTube watch URL for the current video, or null when closed.
+  /// URL for the current track. Uses pre-resolved URL from PlaybackRouter
+  /// if available, otherwise falls back to YouTube watch URL.
   String? get url {
+    final resolvedUrl = _track?['url'] as String?;
+    if (resolvedUrl != null && resolvedUrl.isNotEmpty) return resolvedUrl;
     final id = videoId;
     if (id == null || id.isEmpty) return null;
     return youtubeWatchUrl(id);

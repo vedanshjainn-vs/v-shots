@@ -24,8 +24,11 @@ void main() {
       ];
 
       final groups = groupHistoryByDay(history, now: now);
-      expect(groups.map((g) => g.label).toList(),
-          ['Today', 'Yesterday', 'Earlier']);
+      expect(groups.map((g) => g.label).toList(), [
+        'Today',
+        'Yesterday',
+        'Earlier',
+      ]);
       expect(groups[0].items.map((t) => t['id']).toList(), ['a']);
       expect(groups[1].items.map((t) => t['id']).toList(), ['b']);
       expect(groups[2].items.map((t) => t['id']).toList(), ['c']);

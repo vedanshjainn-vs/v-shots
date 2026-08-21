@@ -33,6 +33,7 @@ import '../../core/music/music_catalog_service.dart';
 import '../../core/music/music_ranker.dart';
 import '../../core/recommendation/taste_profile.dart';
 import '../../core/storage/local_library.dart';
+import '../../core/remote_config/remote_config_service.dart';
 
 /// What kind of content a shelf is built from.
 enum HomeShelfKind {
@@ -116,10 +117,38 @@ class HomeFeedService {
   final RecommendationEngine? _engine;
   final MusicRecommendationEngine? _musicEngine;
 
-  /// The ordered, data-driven shelf plan. Ordering here is the product
-  /// decision of what Home emphasizes; the CONTENT of each shelf is decided
-  /// by the data (taste profile + live catalog), not hardcoded here.
-  List<HomeShelf> buildShelfDescriptors() => <HomeShelf>[
+  /// Builds shelves from CMS config if available, otherwise defaults.
+  List<HomeShelf> buildShelfDescriptors() {
+    final cmsSections = RemoteConfigService.instance.homeSections;
+    if (cmsSections.isNotEmpty) return _buildFromCms(cmsSections);
+    return _buildDefaultShelves();
+  }
+
+  List<HomeShelf> _buildFromCms(List<Map<String, dynamic>> sections) {
+    final shelves = <HomeShelf>[
+      HomeShelf(
+        id: 'continue', title: 'Continue Listening',
+        subtitle: 'Pick up where you left off',
+        kind: HomeShelfKind.continueListening, limit: 15,
+      ),
+    ];
+    for (final s in sections) {
+      if (s['visible'] == false) continue;
+      final id = s['id'] as String? ?? s['section_key'] as String? ?? '';
+      if (id.isEmpty) continue;
+      shelves.add(HomeShelf(
+        id: id,
+        title: s['title'] as String? ?? 'Untitled',
+        subtitle: s['subtitle'] as String? ?? 'Curated for you',
+        kind: HomeShelfKind.catalog,
+        query: s['query'] as String? ?? s['source_value'] as String?,
+        limit: s['max_items'] as int? ?? 15,
+      ));
+    }
+    return shelves;
+  }
+
+  List<HomeShelf> _buildDefaultShelves() => <HomeShelf>[
         HomeShelf(
           id: 'continue',
           title: 'Continue Listening',

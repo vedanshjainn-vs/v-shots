@@ -34,8 +34,11 @@ void main() {
     final sameBrowser = m.browser;
     m.next();
     expect(m.currentTrack?['id'], 'c');
-    expect(m.browser, sameBrowser,
-        reason: 'next() must reuse the SAME browser session, never a new one');
+    expect(
+      m.browser,
+      sameBrowser,
+      reason: 'next() must reuse the SAME browser session, never a new one',
+    );
     expect(m.isOpen, isTrue);
 
     m.next();

@@ -80,7 +80,8 @@ class RemoteConfigService {
   Future<void> refresh() async {
     if (!SupabaseService.isAvailable) {
       debugPrint(
-          '[RemoteConfig] Supabase unavailable — keeping cached/defaults');
+        '[RemoteConfig] Supabase unavailable — keeping cached/defaults',
+      );
       return;
     }
     try {
@@ -129,7 +130,9 @@ class RemoteConfigService {
       // Persist cache.
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
-          _cacheKeyCategories, _encodeCategories(_categories));
+        _cacheKeyCategories,
+        _encodeCategories(_categories),
+      );
       await prefs.setString(_cacheKeyHome, jsonEncode(_homeSections));
       await prefs.setInt(_cacheKeyTs, DateTime.now().millisecondsSinceEpoch);
       debugPrint('[RemoteConfig] Refreshed: ${_categories.length} categories');

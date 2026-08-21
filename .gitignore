@@ -57,3 +57,6 @@ coverage/
 *.p12
 *.key
 local.properties
+flutter/
+flutter/
+flutter/

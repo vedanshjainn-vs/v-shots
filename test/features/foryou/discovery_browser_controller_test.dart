@@ -84,15 +84,21 @@ void main() {
       expect(c.state, BrowserState.closed);
 
       c.open(_track('abcDEF12345'));
-      expect(c.state, BrowserState.collapsed,
-          reason: 'open() must land in the collapsed state');
+      expect(
+        c.state,
+        BrowserState.collapsed,
+        reason: 'open() must land in the collapsed state',
+      );
 
       c.expand();
       expect(c.state, BrowserState.expanded);
 
       c.minimize();
-      expect(c.state, BrowserState.collapsed,
-          reason: 'minimize must NOT close — just collapse');
+      expect(
+        c.state,
+        BrowserState.collapsed,
+        reason: 'minimize must NOT close — just collapse',
+      );
 
       c.close();
       expect(c.state, BrowserState.closed);
@@ -107,16 +113,21 @@ void main() {
       expect(c.isExpanded, isFalse);
     });
 
-    test('collapse (minimize) keeps isOpen true and preserves the track/url',
-        () {
-      final c = DiscoveryBrowserController();
-      c.open(_track('abcDEF12345'));
-      final urlBefore = c.url;
-      c.expand();
-      c.minimize();
-      expect(c.isOpen, isTrue);
-      expect(c.url, urlBefore,
-          reason: 'collapsing must not reset or reload the URL');
-    });
+    test(
+      'collapse (minimize) keeps isOpen true and preserves the track/url',
+      () {
+        final c = DiscoveryBrowserController();
+        c.open(_track('abcDEF12345'));
+        final urlBefore = c.url;
+        c.expand();
+        c.minimize();
+        expect(c.isOpen, isTrue);
+        expect(
+          c.url,
+          urlBefore,
+          reason: 'collapsing must not reset or reload the URL',
+        );
+      },
+    );
   });
 }

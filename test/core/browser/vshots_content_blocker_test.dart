@@ -32,8 +32,10 @@ void main() {
   });
 
   test('known tracker domain → BLOCK', () {
-    expect(blocker.shouldBlock('https://www.google-analytics.com/collect'),
-        isTrue);
+    expect(
+      blocker.shouldBlock('https://www.google-analytics.com/collect'),
+      isTrue,
+    );
     expect(blocker.shouldBlock('https://connect.facebook.net/pixel'), isTrue);
   });
 
@@ -49,9 +51,13 @@ void main() {
 
   test('media resource → ALLOW', () {
     expect(
-        blocker.shouldBlock('https://googlevideo.com/videoplayback'), isFalse);
+      blocker.shouldBlock('https://googlevideo.com/videoplayback'),
+      isFalse,
+    );
     expect(
-        blocker.shouldBlock('https://ytimg.com/vi/abc/hqdefault.jpg'), isFalse);
+      blocker.shouldBlock('https://ytimg.com/vi/abc/hqdefault.jpg'),
+      isFalse,
+    );
   });
 
   test('essential host → ALLOW even if listed', () {
@@ -75,8 +81,10 @@ void main() {
   test('blocker OFF → everything allowed', () async {
     await blocker.setEnabled(false);
     expect(blocker.shouldBlock('https://ad.doubleclick.net/pixel'), isFalse);
-    expect(blocker.shouldBlock('https://www.google-analytics.com/collect'),
-        isFalse);
+    expect(
+      blocker.shouldBlock('https://www.google-analytics.com/collect'),
+      isFalse,
+    );
   });
 
   test('rule matching is host-exact/suffix, not substring', () {

@@ -78,10 +78,7 @@ class _MoreLikeThisScreenState extends State<MoreLikeThisScreen> {
           style: TextStyle(fontWeight: FontWeight.w800),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _load,
-          ),
+          IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load),
         ],
       ),
       body: _loading
@@ -99,9 +96,7 @@ class _MoreLikeThisScreenState extends State<MoreLikeThisScreen> {
                       ),
                       const SizedBox(height: 12),
                       ElevatedButton(
-                        onPressed: _load,
-                        child: const Text('Retry'),
-                      ),
+                          onPressed: _load, child: const Text('Retry')),
                     ],
                   ),
                 )

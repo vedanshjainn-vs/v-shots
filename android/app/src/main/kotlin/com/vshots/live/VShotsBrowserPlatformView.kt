@@ -116,7 +116,6 @@ private class VShotsBackgroundMediaWebView(
             override fun onPageFinished(view: WebView?, url: String?) {
                 events.invokeMethod("pageFinished", null)
                 applyCosmeticBlocking()
-                applyYouTubeAdSkip()
                 startPlaybackPolling()
                 attemptAutoplayWithAudio()
             }
@@ -583,85 +582,12 @@ private class VShotsBackgroundMediaWebView(
             "{display:none!important;height:0!important;min-height:0!important;overflow:hidden!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;}" +
             "';" +
             "document.head.appendChild(s);" +
-            // Also apply YouTube ad skip JavaScript
-            "applyYouTubeAdSkip();" +
             "}catch(e){}})()",
             null,
         )
     }
 
-    /**
-     * YouTube ad skip JavaScript — attempts to skip ads automatically.
-     * Runs after cosmetic blocking. Safe for YouTube pages.
-     */
-    private fun applyYouTubeAdSkip() {
-        if (!blockerEnabled) return
-        evaluateJavascript(
-            "(function(){try{" +
-            "function skipVideoAd(){" +
-            "var skipButtons=document.querySelectorAll('.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button,[class*=skip] button');" +
-            "for(var i=0;i<skipButtons.length;i++){" +
-            "var btn=skipButtons[i];" +
-            "if(btn.offsetParent!==null){btn.click();return true;}" +
-            "}" +
-            "var allButtons=document.querySelectorAll('button');" +
-            "for(var j=0;j<allButtons.length;j++){" +
-            "var b=allButtons[j];" +
-            "var text=(b.textContent||'').toLowerCase();" +
-            "var ariaLabel=(b.getAttribute('aria-label')||'').toLowerCase();" +
-            "if(text.indexOf('skip')>=0||ariaLabel.indexOf('skip')>=0){" +
-            "if(b.offsetParent!==null){b.click();return true;}" +
-            "}" +
-            "}" +
-            "return false;" +
-            "}" +
-            "function closeAdOverlays(){" +
-            "var overlays=document.querySelectorAll('.ytp-ad-overlay-container,.ytp-ad-text-overlay,.ytp-ad-image-overlay,.ytp-ad-button-overlay');" +
-            "for(var i=0;i<overlays.length;i++){" +
-            "var overlay=overlays[i];" +
-            "if(overlay.offsetParent!==null){" +
-            "overlay.style.display='none';" +
-            "overlay.style.visibility='hidden';" +
-            "overlay.style.opacity='0';" +
-            "overlay.style.height='0';" +
-            "overlay.style.overflow='hidden';" +
-            "}" +
-            "}" +
-            "}" +
-            "function removeAdContainers(){" +
-            "var adSelectors=['.ytp-ad-overlay-container','.ytp-ad-text-overlay','.ytp-ad-image-overlay','.ytp-ad-button-overlay','.ytp-ad-player-overlay','.ytp-ad-player-overlay-instream-info','.ytd-display-ad-renderer','.ytd-statement-banner-renderer','.ytd-ad-slot-renderer','.ytd-in-feed-ad-layout-renderer','.ytd-banner-promo-renderer','.ytd-video-masthead-ad-v3-renderer','.ytd-promoted-sparkles-web-renderer','.ytd-promoted-video-renderer','.ytd-primetime-promo-renderer','.ytd-brand-video-singleton-renderer','.ytd-brand-video-shelf-renderer','.ytd-merch-shelf-renderer','.ytd-carousel-ad-renderer','[id^=player_ads]','[id^=ad_]','[class*=ad-]','[class*=ads-]','[data-ad]','[data-ad-slot]','[data-ad-unit]'];" +
-            "for(var i=0;i<adSelectors.length;i++){" +
-            "var elements=document.querySelectorAll(adSelectors[i]);" +
-            "for(var j=0;j<elements.length;j++){" +
-            "var el=elements[j];" +
-            "if(el.tagName==='VIDEO'||el.tagName==='AUDIO')continue;" +
-            "if(el.querySelector('video')||el.querySelector('audio'))continue;" +
-            "if(el.closest('#movie_player')&&!el.closest('[class*=ad]'))continue;" +
-            "el.remove();" +
-            "}" +
-            "}" +
-            "}" +
-            "function autoSkipAd(){" +
-            "var video=document.querySelector('video');" +
-            "if(video&&video.closest('[class*=ad]')){" +
-            "video.currentTime=video.duration||0;" +
-            "video.playbackRate=16;" +
-            "}" +
-            "}" +
-            "skipVideoAd();" +
-            "closeAdOverlays();" +
-            "removeAdContainers();" +
-            "autoSkipAd();" +
-            "var observer=new MutationObserver(function(mutations){" +
-            "skipVideoAd();" +
-            "closeAdOverlays();" +
-            "});" +
-            "var player=document.querySelector('#movie_player');" +
-            "if(player){observer.observe(player,{childList:true,subtree:true});}" +
-            "}catch(e){}})()",
-            null,
-        )
-    }
+    // YouTube ad skip/speed manipulation REMOVED for YouTube ToS compliance.
 
     /**
      * Block known ad elements via JavaScript injection.
@@ -759,6 +685,12 @@ private class VShotsBackgroundMediaWebView(
             "play.google.com",
             "cloudflare.com",
             "supabase.co",
+            "jiosaavn.com",
+            "www.jiosaavn.com",
+            "saavn.com",
+            "www.saavn.com",
+            "static.saavncdn.com",
+            "c.saavncdn.com",
         )
         return allowed.any { h == it || h.endsWith(".$it") }
     }

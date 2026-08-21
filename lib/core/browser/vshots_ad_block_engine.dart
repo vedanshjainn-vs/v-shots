@@ -99,6 +99,13 @@ class VShotsAdBlockEngine {
     'supabase.co',
     'supabase.in',
     'supabase.io',
+    // JioSaavn official domains (webpage playback — never block)
+    'jiosaavn.com',
+    'www.jiosaavn.com',
+    'saavn.com',
+    'www.saavn.com',
+    'static.saavncdn.com',
+    'c.saavncdn.com',
   ]);
 
   // ══════════════════════════════════════════════════════════════════════════

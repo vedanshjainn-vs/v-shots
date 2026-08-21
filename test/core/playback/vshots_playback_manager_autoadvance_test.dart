@@ -35,8 +35,11 @@ void main() {
     test('stops at the end of the queue (repeat off, no shuffle)', () {
       mgr.playQueue([_t('a'), _t('b')], 1);
       mgr.onVideoEnded('b'); // b completed → end of queue
-      expect(mgr.currentTrack?['id'], 'b',
-          reason: 'repeat off must not wrap past the queue end');
+      expect(
+        mgr.currentTrack?['id'],
+        'b',
+        reason: 'repeat off must not wrap past the queue end',
+      );
     });
 
     test('repeat all wraps to the first item', () {
@@ -51,10 +54,16 @@ void main() {
       mgr.setRepeat(PlaybackRepeat.one);
       final before = mgr.browser.replayRequest.value;
       mgr.onVideoEnded('a');
-      expect(mgr.currentTrack?['id'], 'a',
-          reason: 'repeat one keeps the same track');
-      expect(mgr.browser.replayRequest.value, before + 1,
-          reason: 'repeat one must request a reload of the same URL');
+      expect(
+        mgr.currentTrack?['id'],
+        'a',
+        reason: 'repeat one keeps the same track',
+      );
+      expect(
+        mgr.browser.replayRequest.value,
+        before + 1,
+        reason: 'repeat one must request a reload of the same URL',
+      );
     });
 
     test('shuffle ON advances via the shuffle order', () {
@@ -63,8 +72,11 @@ void main() {
       final order = mgr.shuffleOrder; // current kept first at [0]
       expect(order.first, 0);
       mgr.onVideoEnded('a');
-      expect(mgr.currentIndex, order[1],
-          reason: 'auto-advance must follow shuffle order');
+      expect(
+        mgr.currentIndex,
+        order[1],
+        reason: 'auto-advance must follow shuffle order',
+      );
     });
 
     test('manual next() after completion continues cleanly', () {

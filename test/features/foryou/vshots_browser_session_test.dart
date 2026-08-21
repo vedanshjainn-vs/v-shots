@@ -19,8 +19,11 @@ void main() {
     test('blocks arbitrary external hosts', () {
       expect(isAllowedBrowserHost('evil.example.com'), isFalse);
       expect(isAllowedBrowserHost('example.com'), isFalse);
-      expect(isAllowedBrowserHost('youtube.com.evil.com'), isFalse,
-          reason: 'suffix trick must not pass');
+      expect(
+        isAllowedBrowserHost('youtube.com.evil.com'),
+        isFalse,
+        reason: 'suffix trick must not pass',
+      );
       expect(isAllowedBrowserHost(''), isFalse);
     });
 

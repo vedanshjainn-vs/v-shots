@@ -33,19 +33,28 @@ void main() {
 
     test('handles youtu.be short links', () {
       expect(
-          extractYoutubeVideoId('https://youtu.be/abcDEF12345'), 'abcDEF12345');
+        extractYoutubeVideoId('https://youtu.be/abcDEF12345'),
+        'abcDEF12345',
+      );
     });
 
     test('handles /shorts, /embed, /live, /v', () {
       expect(
-          extractYoutubeVideoId('https://www.youtube.com/shorts/abcDEF12345'),
-          'abcDEF12345');
-      expect(extractYoutubeVideoId('https://www.youtube.com/embed/abcDEF12345'),
-          'abcDEF12345');
-      expect(extractYoutubeVideoId('https://www.youtube.com/live/abcDEF12345'),
-          'abcDEF12345');
-      expect(extractYoutubeVideoId('https://www.youtube.com/v/abcDEF12345'),
-          'abcDEF12345');
+        extractYoutubeVideoId('https://www.youtube.com/shorts/abcDEF12345'),
+        'abcDEF12345',
+      );
+      expect(
+        extractYoutubeVideoId('https://www.youtube.com/embed/abcDEF12345'),
+        'abcDEF12345',
+      );
+      expect(
+        extractYoutubeVideoId('https://www.youtube.com/live/abcDEF12345'),
+        'abcDEF12345',
+      );
+      expect(
+        extractYoutubeVideoId('https://www.youtube.com/v/abcDEF12345'),
+        'abcDEF12345',
+      );
     });
 
     test('accepts a bare video id', () {
