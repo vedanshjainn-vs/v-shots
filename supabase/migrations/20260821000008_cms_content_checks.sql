@@ -92,6 +92,15 @@ alter table public.home_section_items
   );
 
 -- ── discovery_categories ────────────────────────────────────────────────────
+-- The live table drifted from the original migration: kind/token/
+-- ranking_order/visible never existed there, yet the Admin panel writes them
+-- (which made Discover saves fail with UndefinedColumn). Add them idempotently.
+alter table public.discovery_categories
+  add column if not exists kind text default 'source',
+  add column if not exists token text,
+  add column if not exists ranking_order text default 'relevance',
+  add column if not exists visible boolean not null default true;
+
 alter table public.discovery_categories
   drop constraint if exists discovery_categories_kind_check;
 alter table public.discovery_categories
