@@ -76,6 +76,8 @@ const state = {
   dirty: false,
   busy: false,
   sync: null, // { ok, error, at, sections, items } — set by loadHome()
+  homeLoaded: false, // server rows loaded; renderHomeCMS must NOT refetch
+                      // while a draft is being edited (was wiping edits!)
   data: { sections: [], items: {}, categories: [], flags: [] },
 };
 
@@ -308,6 +310,8 @@ async function loadPage() {
   const item = NAV_ITEMS.find((n) => n.id === state.page);
   $('page-title').textContent = item?.label || 'Dashboard';
   content.innerHTML = '<div style="text-align:center;padding:60px"><div class="spinner"></div></div>';
+  // Entering Home Management from nav = fresh entry (discard any draft).
+  if (state.page === 'home-cms') { state.homeLoaded = false; state.dirty = false; }
   try {
     switch (state.page) {
       case 'dashboard': await renderDashboard(content); break;
@@ -326,7 +330,11 @@ async function loadPage() {
 
 /* ── Data loading ─────────────────────────────────────────────────────────── */
 async function loadHome() {
-  if (state.demo) { state.data = demoData(); return; }
+  if (state.demo) {
+    state.data = demoData();
+    state.sync = { ok: true, error: null, at: new Date().toISOString(), sections: state.data.sections.length, items: 2 };
+    return;
+  }
   const { data: sections, error } = await supabase
     .from('home_layout_config').select('*').order('sort_order');
   if (error) {
@@ -452,17 +460,23 @@ async function renderHomeCMS(el) {
       <div class="spinner"></div>
       <div class="muted small mt12">Loading Home sections…</div>
     </div>`;
-  try { await loadHome(); } catch (e) {
-    // 2) ERROR state — real reason + Retry. NEVER "No sections yet" here.
-    const reason = e?.message || String(e);
-    el.innerHTML = `<div class="card">
-      <div class="card-title">Couldn't load Home sections</div>
-      <p class="login-error mt8">Supabase request failed: ${esc(reason)}</p>
-      <p class="muted small mt8">Project: ${SUPABASE_URL.replace('https://', '')} — if this persists, check the network or Supabase status.</p>
-      <button class="btn btn-primary mt12" id="retry-load">↻ Retry</button>
-    </div>`;
-    $('retry-load').onclick = () => renderHomeCMS(el);
-    return;
+  // CRITICAL: fetch from the server ONLY on entry/reload. While the user is
+  // editing a draft, re-renders must keep the in-memory draft — a refetch
+  // here silently discarded every edit (the real "changes not saving" bug).
+  if (!state.homeLoaded) {
+    try { await loadHome(); } catch (e) {
+      // 2) ERROR state — real reason + Retry. NEVER "No sections yet" here.
+      const reason = e?.message || String(e);
+      el.innerHTML = `<div class="card">
+        <div class="card-title">Couldn't load Home sections</div>
+        <p class="login-error mt8">Supabase request failed: ${esc(reason)}</p>
+        <p class="muted small mt8">Project: ${SUPABASE_URL.replace('https://', '')} — if this persists, check the network or Supabase status.</p>
+        <button class="btn btn-primary mt12" id="retry-load">↻ Retry</button>
+      </div>`;
+      $('retry-load').onclick = () => renderHomeCMS(el);
+      return;
+    }
+    state.homeLoaded = true;
   }
   const sections = state.data.sections;
   const live = sections.filter((x) => x.visible !== false && x.published !== false).length;
@@ -609,7 +623,7 @@ async function renderHomeCMS(el) {
     toast('JioSaavn section added — paste real /song/ permalinks, then publish. Search fallback needs the flag ON.', 'warn');
   };
   $('preview-home').onclick = () => openPreview(null);
-  $('reload-home').onclick = () => { state.dirty = false; renderHomeCMS(el); toast('Reloaded from Supabase'); };
+  $('reload-home').onclick = () => { state.dirty = false; state.homeLoaded = false; renderHomeCMS(el); toast('Reloaded from Supabase'); };
   $('publish-home').onclick = () => validateAndPublish(el);
 
   initDragReorder(list);
