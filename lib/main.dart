@@ -2442,6 +2442,27 @@ void _showSleepTimerDialog(BuildContext context) {
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
+            title: const Text('1 minute'),
+            onTap: () {
+              SleepTimer.instance.start(const Duration(minutes: 1));
+              Navigator.pop(ctx);
+            },
+          ),
+          ListTile(
+            title: const Text('5 minutes'),
+            onTap: () {
+              SleepTimer.instance.start(const Duration(minutes: 5));
+              Navigator.pop(ctx);
+            },
+          ),
+          ListTile(
+            title: const Text('10 minutes'),
+            onTap: () {
+              SleepTimer.instance.start(const Duration(minutes: 10));
+              Navigator.pop(ctx);
+            },
+          ),
+          ListTile(
             title: const Text('15 minutes'),
             onTap: () {
               SleepTimer.instance.start(const Duration(minutes: 15));

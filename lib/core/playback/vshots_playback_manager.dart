@@ -155,8 +155,8 @@ class VShotsPlaybackManager extends ChangeNotifier {
     if (_shuffle && _shuffleOrder.length == _queue.length) {
       final pos = _shuffleOrder.indexOf(_index);
       final safePos = pos == -1 ? 0 : pos;
-      return _shuffleOrder[
-          (safePos + delta + _shuffleOrder.length) % _shuffleOrder.length];
+      return _shuffleOrder[(safePos + delta + _shuffleOrder.length) %
+          _shuffleOrder.length];
     }
     return (_index + delta + _queue.length) % _queue.length;
   }
@@ -224,6 +224,12 @@ class VShotsPlaybackManager extends ChangeNotifier {
     _shuffleOrder.clear();
     _lastEndedId = null;
     _lastEndedAt = null;
+    notifyListeners();
+  }
+
+  /// Pauses the native WebView (sleep timer / lock). Does not close the session.
+  void pause() {
+    browser.requestPause();
     notifyListeners();
   }
 

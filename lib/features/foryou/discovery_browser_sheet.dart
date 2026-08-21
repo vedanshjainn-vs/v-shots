@@ -67,6 +67,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     widget.controller.addListener(_onControllerChanged);
     widget.controller.extentCommand.addListener(_onExtentCommand);
     widget.controller.replayRequest.addListener(_onReplayRequest);
+    widget.controller.pauseRequest.addListener(_onPauseRequest);
     // The single browser session: owns the native WebView + lifecycle; the
     // sheet is only the UI/interaction layer. Minimizing never destroys the
     // session.
@@ -105,6 +106,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   @override
   void dispose() {
+    widget.controller.pauseRequest.removeListener(_onPauseRequest);
     widget.controller.replayRequest.removeListener(_onReplayRequest);
     widget.controller.extentCommand.removeListener(_onExtentCommand);
     widget.controller.removeListener(_onControllerChanged);
@@ -127,6 +129,11 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   /// Repeat-one: reload the CURRENT url in the same session (the native
   /// layer resets its per-load ended flag, so the next completion fires
   /// again). No new WebView.
+  void _onPauseRequest() {
+    _session.pause();
+    widget.controller.setPagePlaying(false);
+  }
+
   void _onReplayRequest() {
     final url = widget.controller.url;
     if (url == null) return;
@@ -241,13 +248,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   void _close() {
     _extent
         .animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeIn,
-    )
+          0.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeIn,
+        )
         .then((_) {
-      if (mounted) widget.controller.close();
-    });
+          if (mounted) widget.controller.close();
+        });
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -726,7 +733,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 tooltip: 'Share',
                 onPressed: () => SharePlus.instance.share(
                   ShareParams(
-                    text: 'Listen to "$title" by $artist on V Shots: '
+                    text:
+                        'Listen to "$title" by $artist on V Shots: '
                         'https://www.youtube.com/watch?v=$trackId',
                   ),
                 ),
@@ -785,11 +793,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color:
-                            isCurrent ? AppColors.accent : AppColors.textMain,
+                        color: isCurrent
+                            ? AppColors.accent
+                            : AppColors.textMain,
                         fontSize: 13,
-                        fontWeight:
-                            isCurrent ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: isCurrent
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                     subtitle: Text(

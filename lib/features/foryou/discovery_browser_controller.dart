@@ -151,4 +151,9 @@ class DiscoveryBrowserController extends ChangeNotifier {
   final ValueNotifier<int> replayRequest = ValueNotifier<int>(0);
 
   void requestReplay() => replayRequest.value++;
+
+  /// Requests the sheet to pause the native WebView (sleep timer).
+  final ValueNotifier<int> pauseRequest = ValueNotifier<int>(0);
+
+  void requestPause() => pauseRequest.value++;
 }

@@ -114,6 +114,15 @@ class VShotsBrowserSession {
     }
   }
 
+  Future<void> pause() async {
+    final channel = _channel;
+    if (channel == null) return;
+    try {
+      await channel.invokeMethod<void>('pause');
+      _pagePlaying = false;
+    } catch (_) {}
+  }
+
   Future<void> play() async {
     final channel = _channel;
     if (channel == null) return;

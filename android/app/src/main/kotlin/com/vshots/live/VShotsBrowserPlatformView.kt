@@ -576,6 +576,21 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
+    fun pauseMedia() {
+        evaluateJavascript(
+            """
+            (function(){
+              var v=document.querySelector('video');
+              if(!v){return 'none';}
+              if(!v.paused){ v.pause(); }
+              return 'paused';
+            })()
+            """.trimIndent(),
+        ) { result ->
+            setMediaPlaying(false)
+        }
+    }
+
     fun togglePlayback() {
         evaluateJavascript(
             """
@@ -690,6 +705,10 @@ private class VShotsBrowserPlatformView(
                 }
                 "toggle" -> {
                     webView.togglePlayback()
+                    result.success(null)
+                }
+                "pause" -> {
+                    webView.pauseMedia()
                     result.success(null)
                 }
                 "play" -> {
