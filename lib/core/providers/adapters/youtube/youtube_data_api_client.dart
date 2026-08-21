@@ -53,7 +53,8 @@ class YouTubeVideoItem {
     final high = thumbnails['high']?['url'] as String?;
     final medium = thumbnails['medium']?['url'] as String?;
     final def = thumbnails['default']?['url'] as String?;
-    final thumb = maxres ??
+    final thumb =
+        maxres ??
         high ??
         medium ??
         def ??
@@ -119,8 +120,8 @@ class PaginatedSearchResult {
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
   YouTubeDataApiClient({http.Client? httpClient, String? apiKey})
-      : _http = httpClient ?? http.Client(),
-        _customApiKey = apiKey;
+    : _http = httpClient ?? http.Client(),
+      _customApiKey = apiKey;
 
   final http.Client _http;
   final String? _customApiKey;
@@ -250,13 +251,16 @@ class YouTubeDataApiClient {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       if (items.isEmpty) return null;
-      final snippet = (items.first as Map<String, dynamic>)['snippet']
-          as Map<String, dynamic>?;
+      final snippet =
+          (items.first as Map<String, dynamic>)['snippet']
+              as Map<String, dynamic>?;
       if (snippet == null) return null;
       final thumbs = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
-      final url = (thumbs['high']?['url'] ??
-          thumbs['medium']?['url'] ??
-          thumbs['default']?['url']) as String?;
+      final url =
+          (thumbs['high']?['url'] ??
+                  thumbs['medium']?['url'] ??
+                  thumbs['default']?['url'])
+              as String?;
       return (url == null || url.isEmpty) ? null : url;
     } catch (e) {
       debugPrint('[YouTubeDataApiClient] resolveChannelAvatar error: $e');
@@ -300,8 +304,9 @@ class YouTubeDataApiClient {
       if (pageToken != null && pageToken.isNotEmpty) {
         params['pageToken'] = pageToken;
       }
-      final uri =
-          Uri.parse('$_baseUrl/search').replace(queryParameters: params);
+      final uri = Uri.parse(
+        '$_baseUrl/search',
+      ).replace(queryParameters: params);
       final response = await _http.get(uri).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) {
         debugPrint(
@@ -1313,11 +1318,15 @@ class YouTubeDataApiClient {
       }
       if (multiMatches.isNotEmpty) {
         if (order == 'viewCount') {
-          multiMatches
-              .sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
+          multiMatches.sort(
+            (a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0),
+          );
         } else if (order == 'date') {
-          multiMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020))
-              .compareTo(a.publishedAt ?? DateTime(2020)));
+          multiMatches.sort(
+            (a, b) => (b.publishedAt ?? DateTime(2020)).compareTo(
+              a.publishedAt ?? DateTime(2020),
+            ),
+          );
         }
         // NO cross-category fallback.
         return multiMatches.take(maxResults).toList();
@@ -1332,11 +1341,15 @@ class YouTubeDataApiClient {
       if (catMatches.isNotEmpty) {
         // Apply order sorting simulation for fallback determinism
         if (order == 'viewCount') {
-          catMatches
-              .sort((a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0));
+          catMatches.sort(
+            (a, b) => (b.viewCount ?? 0).compareTo(a.viewCount ?? 0),
+          );
         } else if (order == 'date') {
-          catMatches.sort((a, b) => (b.publishedAt ?? DateTime(2020))
-              .compareTo(a.publishedAt ?? DateTime(2020)));
+          catMatches.sort(
+            (a, b) => (b.publishedAt ?? DateTime(2020)).compareTo(
+              a.publishedAt ?? DateTime(2020),
+            ),
+          );
         } else {
           catMatches.shuffle();
         }

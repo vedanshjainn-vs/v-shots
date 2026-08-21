@@ -14,23 +14,32 @@ import 'package:v_shots/core/providers/adapters/youtube/youtube_data_api_client.
 
 void main() {
   group('Discovery Category Config', () {
-    test(
-        'For You is first and personalized; other categories have distinct, '
+    test('For You is first and personalized; other categories have distinct, '
         'non-empty queries', () {
       // "For You" is the personalized entry: empty query signals the feed to
       // build from the RecommendationEngine instead of a fixed query.
       expect(kDiscoveryCategories.first.id, 'for_you');
-      expect(kDiscoveryCategories.first.query.trim().isEmpty, isTrue,
-          reason: 'For You must use the empty-query personalized path');
+      expect(
+        kDiscoveryCategories.first.query.trim().isEmpty,
+        isTrue,
+        reason: 'For You must use the empty-query personalized path',
+      );
 
-      final queryCategories =
-          kDiscoveryCategories.where((c) => c.id != 'for_you').toList();
+      final queryCategories = kDiscoveryCategories
+          .where((c) => c.id != 'for_you')
+          .toList();
       final queries = queryCategories.map((c) => c.query).toSet();
-      expect(queries.length, queryCategories.length,
-          reason: 'each non-personalized category must have a DISTINCT query');
+      expect(
+        queries.length,
+        queryCategories.length,
+        reason: 'each non-personalized category must have a DISTINCT query',
+      );
       for (final c in queryCategories) {
-        expect(c.query.trim().isNotEmpty, isTrue,
-            reason: 'category ${c.label} has empty query');
+        expect(
+          c.query.trim().isNotEmpty,
+          isTrue,
+          reason: 'category ${c.label} has empty query',
+        );
       }
     });
 
@@ -49,27 +58,34 @@ void main() {
       expect(discoveryCategoryById('does-not-exist'), isNull);
     });
 
-    test('selecting different categories produces different fallback content',
-        () async {
-      // Without an API key, the fallback catalog is used. Different category
-      // queries must map to different (non-identical) result sets so filters
-      // actually change the feed. (The empty-query "For You" category is
-      // excluded — it's personalized via the engine, not the catalog.)
-      final client = YouTubeDataApiClient();
-      final seenQueries = <String, List<String>>{};
-      for (final c in kDiscoveryCategories.where((c) => c.query.isNotEmpty)) {
-        final results = await client.searchMusicVideos(
-          c.query,
-          maxResults: 8,
-        );
-        seenQueries[c.label] = results.map((v) => v.id).toList();
-      }
-      // At least a majority of categories should yield distinct content.
-      final distinctSets =
-          seenQueries.values.map((ids) => ids.join(',')).toSet().length;
-      expect(distinctSets, greaterThanOrEqualTo(seenQueries.length ~/ 2),
+    test(
+      'selecting different categories produces different fallback content',
+      () async {
+        // Without an API key, the fallback catalog is used. Different category
+        // queries must map to different (non-identical) result sets so filters
+        // actually change the feed. (The empty-query "For You" category is
+        // excluded — it's personalized via the engine, not the catalog.)
+        final client = YouTubeDataApiClient();
+        final seenQueries = <String, List<String>>{};
+        for (final c in kDiscoveryCategories.where((c) => c.query.isNotEmpty)) {
+          final results = await client.searchMusicVideos(
+            c.query,
+            maxResults: 8,
+          );
+          seenQueries[c.label] = results.map((v) => v.id).toList();
+        }
+        // At least a majority of categories should yield distinct content.
+        final distinctSets = seenQueries.values
+            .map((ids) => ids.join(','))
+            .toSet()
+            .length;
+        expect(
+          distinctSets,
+          greaterThanOrEqualTo(seenQueries.length ~/ 2),
           reason:
-              'most categories must return distinct content from the fallback catalog');
-    });
+              'most categories must return distinct content from the fallback catalog',
+        );
+      },
+    );
   });
 }

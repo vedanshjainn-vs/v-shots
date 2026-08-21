@@ -19,16 +19,15 @@ InnerTubeVideoItem _item(
   int duration = 200,
   bool isOfficial = false,
   String? channelId,
-}) =>
-    InnerTubeVideoItem(
-      videoId: id,
-      title: title,
-      channelName: channel,
-      thumbnailUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-      durationSeconds: duration,
-      isOfficial: isOfficial,
-      channelId: channelId,
-    );
+}) => InnerTubeVideoItem(
+  videoId: id,
+  title: title,
+  channelName: channel,
+  thumbnailUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+  durationSeconds: duration,
+  isOfficial: isOfficial,
+  channelId: channelId,
+);
 
 void main() {
   const normalizer = InnerTubeNormalizer();
@@ -85,8 +84,7 @@ void main() {
       },
     );
 
-    test(
-        'accepts official original songs (no longer drops compilations by '
+    test('accepts official original songs (no longer drops compilations by '
         'title — duration cap handles long ones)', () {
       expect(
         normalizer.isPlayableMusic(_item('8', title: 'Tum Hi Ho')),
@@ -143,11 +141,7 @@ void main() {
 
     test('passes official + channelId metadata into ProviderTrack', () {
       final track = normalizer.toProviderTrack(
-        _item(
-          'vid4',
-          isOfficial: true,
-          channelId: 'UC_official_123',
-        ),
+        _item('vid4', isOfficial: true, channelId: 'UC_official_123'),
       );
       expect(track.isOfficial, isTrue);
       expect(track.channelId, 'UC_official_123');

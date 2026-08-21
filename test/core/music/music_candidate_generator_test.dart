@@ -38,20 +38,24 @@ MusicSearch _fakeSearch() {
 }
 
 void main() {
-  test('cold start generates trending/new/regional/exploration pools',
-      () async {
-    final generator = MusicCandidateGenerator(search: _fakeSearch());
-    final context = MusicRecommendationContext(
-      mode: 'for_you',
-      count: 12,
-      regions: ['bollywood'],
-    );
-    final candidates =
-        await generator.generate(profile: _emptyProfile, context: context);
-    expect(candidates, isNotEmpty);
-    final sources = candidates.map((c) => c.source).toSet();
-    expect(sources, containsAll(['trending', 'new_release', 'regional']));
-  });
+  test(
+    'cold start generates trending/new/regional/exploration pools',
+    () async {
+      final generator = MusicCandidateGenerator(search: _fakeSearch());
+      final context = MusicRecommendationContext(
+        mode: 'for_you',
+        count: 12,
+        regions: ['bollywood'],
+      );
+      final candidates = await generator.generate(
+        profile: _emptyProfile,
+        context: context,
+      );
+      expect(candidates, isNotEmpty);
+      final sources = candidates.map((c) => c.source).toSet();
+      expect(sources, containsAll(['trending', 'new_release', 'regional']));
+    },
+  );
 
   test('personalized profile generates artist/genre/language pools', () async {
     const profile = MusicUserProfile(
@@ -67,8 +71,10 @@ void main() {
     );
     final generator = MusicCandidateGenerator(search: _fakeSearch());
     final context = MusicRecommendationContext(mode: 'for_you', count: 12);
-    final candidates =
-        await generator.generate(profile: profile, context: context);
+    final candidates = await generator.generate(
+      profile: profile,
+      context: context,
+    );
     final sources = candidates.map((c) => c.source).toSet();
     expect(sources, contains('favorite_artist'));
     expect(sources, contains('favorite_genre'));
@@ -81,8 +87,10 @@ void main() {
       count: 12,
       excludeIds: {'vid-1'},
     );
-    final candidates =
-        await generator.generate(profile: _emptyProfile, context: context);
+    final candidates = await generator.generate(
+      profile: _emptyProfile,
+      context: context,
+    );
     expect(candidates.any((c) => c.track.id == 'vid-1'), isFalse);
   });
 }

@@ -110,7 +110,8 @@ class RecommendationScorer {
     // InnerTube badge metadata only — never guessed from channel names).
     final officialBoost = track.isOfficial ? 1.0 : 0.0;
 
-    final total = config.weightUserAffinity * userAffinity +
+    final total =
+        config.weightUserAffinity * userAffinity +
         config.weightArtistAffinity * artistAffinity +
         config.weightRecency * recency +
         config.weightSimilarity * similarity +
@@ -179,8 +180,9 @@ class RecommendationScorer {
           (e.type == SignalType.completed || e.type == SignalType.skip),
     );
     if (relevant.isEmpty) return 0.5;
-    final completions =
-        relevant.where((e) => e.type == SignalType.completed).length;
+    final completions = relevant
+        .where((e) => e.type == SignalType.completed)
+        .length;
     return completions / relevant.length;
   }
 

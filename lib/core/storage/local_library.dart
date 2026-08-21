@@ -71,8 +71,10 @@ class LocalLibrary {
   void recordShownSong(String videoId) {
     if (videoId.isEmpty) return;
     _shownSongIds.removeWhere((e) => e.id == videoId);
-    _shownSongIds.insert(
-        0, (id: videoId, shownAt: DateTime.now().millisecondsSinceEpoch));
+    _shownSongIds.insert(0, (
+      id: videoId,
+      shownAt: DateTime.now().millisecondsSinceEpoch,
+    ));
     if (_shownSongIds.length > _maxShownSongs) {
       _shownSongIds.removeRange(_maxShownSongs, _shownSongIds.length);
     }

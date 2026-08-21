@@ -11,7 +11,7 @@ Map<String, dynamic> _t(String id, String artist, {int views = 0, int? age}) =>
       'title': 'T $id',
       'artist': artist,
       'views': views,
-      if (age != null) 'ageDays': age
+      if (age != null) 'ageDays': age,
     };
 
 void main() {
@@ -31,8 +31,11 @@ void main() {
       final recent = _t('recent', 'X', views: 1000, age: 2);
       final old = _t('old', 'Y', views: 1500, age: 365);
       final r = ranker.rankTrending([old, recent]);
-      expect(r.first['id'], 'recent',
-          reason: 'a 2-year-old high-view song must not beat a fresh one');
+      expect(
+        r.first['id'],
+        'recent',
+        reason: 'a 2-year-old high-view song must not beat a fresh one',
+      );
     });
 
     test('newest sorts by age ascending, unknown last', () {
@@ -70,14 +73,16 @@ void main() {
       expect(aCount, 3);
     });
 
-    test('applyAlreadySeenPenalty moves seen items to the end (never drops)',
-        () {
-      final r = ranker.applyAlreadySeenPenalty(
-        [_t('a', 'X'), _t('b', 'Y'), _t('c', 'Z')],
-        {'b'},
-      );
-      expect(r.map((t) => t['id']).toList(), ['a', 'c', 'b']);
-    });
+    test(
+      'applyAlreadySeenPenalty moves seen items to the end (never drops)',
+      () {
+        final r = ranker.applyAlreadySeenPenalty(
+          [_t('a', 'X'), _t('b', 'Y'), _t('c', 'Z')],
+          {'b'},
+        );
+        expect(r.map((t) => t['id']).toList(), ['a', 'c', 'b']);
+      },
+    );
 
     test('mixExploration interleaves exploration at the configured ratio', () {
       final primary = List.generate(8, (i) => _t('p$i', 'A'));

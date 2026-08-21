@@ -43,7 +43,10 @@ void main() {
     expect(store.penalty('song-3', now: now), closeTo(0.125, 0.01));
 
     store.debugSetLastSeen('song-4', now.subtract(const Duration(days: 7)));
-    expect(store.penalty('song-4', now: now), lessThan(0.05),
-        reason: 'a song seen 7 days ago is nearly free');
+    expect(
+      store.penalty('song-4', now: now),
+      lessThan(0.05),
+      reason: 'a song seen 7 days ago is nearly free',
+    );
   });
 }

@@ -68,8 +68,11 @@ class MusicRanker {
     for (final t in tracks) {
       (_age(t) == null ? withoutAge : withAge).add(t);
     }
-    final sorted =
-        _stableSortBy(withAge, (t) => _age(t)!.toDouble(), descending: false);
+    final sorted = _stableSortBy(
+      withAge,
+      (t) => _age(t)!.toDouble(),
+      descending: false,
+    );
     return [...sorted, ...withoutAge];
   }
 

@@ -9,20 +9,20 @@ import 'package:v_shots/core/music/music_shelf_builder.dart';
 import 'package:v_shots/core/providers/provider_models.dart';
 
 List<MusicCandidate> _items(int n, String artist) => List.generate(
-      n,
-      (i) => MusicCandidate(
-        track: ProviderTrack(
-          id: '$artist-$i',
-          title: '$artist Song $i',
-          artist: artist,
-          artworkUrl: '',
-          durationSeconds: 200,
-        ),
-        songId: '$artist-$i',
-        source: 'trending',
-        artist: artist,
-      ),
-    );
+  n,
+  (i) => MusicCandidate(
+    track: ProviderTrack(
+      id: '$artist-$i',
+      title: '$artist Song $i',
+      artist: artist,
+      artworkUrl: '',
+      durationSeconds: 200,
+    ),
+    songId: '$artist-$i',
+    source: 'trending',
+    artist: artist,
+  ),
+);
 
 void main() {
   const builder = MusicShelfBuilder();
@@ -45,8 +45,10 @@ void main() {
     };
     final shelves = builder.build(pools);
     final order = shelves.map((s) => s.type).toList();
-    expect(order.indexOf(HomeShelfType.forYou),
-        lessThan(order.indexOf(HomeShelfType.popular)));
+    expect(
+      order.indexOf(HomeShelfType.forYou),
+      lessThan(order.indexOf(HomeShelfType.popular)),
+    );
   });
 
   test('never fabricates items to fill an empty pool', () {

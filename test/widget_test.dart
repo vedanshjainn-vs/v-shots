@@ -34,72 +34,72 @@ void main() {
       await advancePastSplash(tester);
     });
 
-    testWidgets(
-      'first launch (not onboarded) shows onboarding after splash',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({});
-        await PersonalizationStore.instance.reset();
-        await PersonalizationStore.instance.initialize();
+    testWidgets('first launch (not onboarded) shows onboarding after splash', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await PersonalizationStore.instance.reset();
+      await PersonalizationStore.instance.initialize();
 
-        await tester.pumpWidget(const VShotsApp());
-        await advancePastSplash(tester);
+      await tester.pumpWidget(const VShotsApp());
+      await advancePastSplash(tester);
 
-        expect(find.byType(OnboardingScreen), findsOneWidget);
-        expect(find.text('Personalize your feed'), findsNothing,
-            reason: 'personalize is the last page, not the first');
-      },
-    );
+      expect(find.byType(OnboardingScreen), findsOneWidget);
+      expect(
+        find.text('Personalize your feed'),
+        findsNothing,
+        reason: 'personalize is the last page, not the first',
+      );
+    });
 
-    testWidgets(
-      'returning user (onboarded) goes straight to the 4-tab shell',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({});
-        await PersonalizationStore.instance.reset();
-        await PersonalizationStore.instance.initialize();
-        await PersonalizationStore.instance.completeOnboarding(
-          languages: ['Hindi'],
-          genres: ['Romantic'],
-        );
+    testWidgets('returning user (onboarded) goes straight to the 4-tab shell', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await PersonalizationStore.instance.reset();
+      await PersonalizationStore.instance.initialize();
+      await PersonalizationStore.instance.completeOnboarding(
+        languages: ['Hindi'],
+        genres: ['Romantic'],
+      );
 
-        await tester.pumpWidget(const VShotsApp());
-        await advancePastSplash(tester);
+      await tester.pumpWidget(const VShotsApp());
+      await advancePastSplash(tester);
 
-        // MainShell shows the Nova BottomTabBar with 4 destinations
-        expect(find.byType(BottomTabBar), findsOneWidget);
-        expect(find.text('Home'), findsWidgets);
-        expect(find.byType(OnboardingScreen), findsNothing);
-      },
-    );
+      // MainShell shows the Nova BottomTabBar with 4 destinations
+      expect(find.byType(BottomTabBar), findsOneWidget);
+      expect(find.text('Home'), findsWidgets);
+      expect(find.byType(OnboardingScreen), findsNothing);
+    });
 
-    testWidgets(
-      'completing onboarding lands on the 4-tab shell',
-      (tester) async {
-        SharedPreferences.setMockInitialValues({});
-        await PersonalizationStore.instance.reset();
-        await PersonalizationStore.instance.initialize();
+    testWidgets('completing onboarding lands on the 4-tab shell', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      await PersonalizationStore.instance.reset();
+      await PersonalizationStore.instance.initialize();
 
-        await tester.pumpWidget(const VShotsApp());
-        await advancePastSplash(tester);
+      await tester.pumpWidget(const VShotsApp());
+      await advancePastSplash(tester);
 
-        expect(find.byType(OnboardingScreen), findsOneWidget);
+      expect(find.byType(OnboardingScreen), findsOneWidget);
 
-        // Swipe through to the personalize page and tap Get Started.
-        final onGetStarted = find.text('Get Started');
-        for (var i = 0; i < 4 && onGetStarted.evaluate().isEmpty; i++) {
-          await tester.tap(find.text('Continue'));
-          await tester.pumpAndSettle();
-        }
+      // Swipe through to the personalize page and tap Get Started.
+      final onGetStarted = find.text('Get Started');
+      for (var i = 0; i < 4 && onGetStarted.evaluate().isEmpty; i++) {
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+      }
 
-        await tester.tap(onGetStarted);
-        // Home's shimmer/equalizer animate continuously, so pumpAndSettle
-        // would never settle — use fixed pumps for the route transition.
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(onGetStarted);
+      // Home's shimmer/equalizer animate continuously, so pumpAndSettle
+      // would never settle — use fixed pumps for the route transition.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
-        expect(find.byType(BottomTabBar), findsOneWidget);
-        expect(PersonalizationStore.instance.onboarded, isTrue);
-      },
-    );
+      expect(find.byType(BottomTabBar), findsOneWidget);
+      expect(PersonalizationStore.instance.onboarded, isTrue);
+    });
   });
 }
 

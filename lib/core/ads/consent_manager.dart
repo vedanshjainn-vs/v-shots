@@ -24,9 +24,9 @@ class ConsentManager {
 
   /// Builds the AdRequest honoring the current consent decision.
   AdRequest buildAdRequest() => AdRequest(
-        keywords: const ['music'],
-        nonPersonalizedAds: !canRequestPersonalizedAds,
-      );
+    keywords: const ['music'],
+    nonPersonalizedAds: !canRequestPersonalizedAds,
+  );
 
   /// Resets consent (testing / user-initiated privacy options).
   Future<void> reset() async {
@@ -53,12 +53,12 @@ class ConsentManager {
           debugPrint('[AdConsent] Status=$_status');
           // If a decision is still required, show the form automatically.
           if (_status == ConsentStatus.required) {
-            await ConsentForm.loadAndShowConsentFormIfRequired(
-              (FormError? _) async {
-                _status = await ConsentInformation.instance.getConsentStatus();
-                debugPrint('[AdConsent] Dismissed. Status=$_status');
-              },
-            );
+            await ConsentForm.loadAndShowConsentFormIfRequired((
+              FormError? _,
+            ) async {
+              _status = await ConsentInformation.instance.getConsentStatus();
+              debugPrint('[AdConsent] Dismissed. Status=$_status');
+            });
           }
         },
         (FormError error) {

@@ -82,16 +82,18 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       onVideoEnded: VShotsPlaybackManager.instance.onVideoEnded,
       // Player-essential hosts are ALWAYS allowed, so the general content
       // blocker can never break video/audio/thumbnail delivery.
-      contentBlocker: VShotsContentBlocker(essentialHosts: const [
-        'youtube.com',
-        'youtu.be',
-        'googlevideo.com',
-        'ytimg.com',
-        'gstatic.com',
-        'ggpht.com',
-        'google.com',
-        'googleapis.com',
-      ]),
+      contentBlocker: VShotsContentBlocker(
+        essentialHosts: const [
+          'youtube.com',
+          'youtu.be',
+          'googlevideo.com',
+          'ytimg.com',
+          'gstatic.com',
+          'ggpht.com',
+          'google.com',
+          'googleapis.com',
+        ],
+      ),
     );
     _loadForCurrent();
     // Sync the controller's expanded flag with the initial extent AFTER the
@@ -239,13 +241,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   void _close() {
     _extent
         .animateTo(
-      0.0,
-      duration: const Duration(milliseconds: 140),
-      curve: Curves.easeIn,
-    )
+          0.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeIn,
+        )
         .then((_) {
-      if (mounted) widget.controller.close();
-    });
+          if (mounted) widget.controller.close();
+        });
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -724,7 +726,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 tooltip: 'Share',
                 onPressed: () => SharePlus.instance.share(
                   ShareParams(
-                    text: 'Listen to "$title" by $artist on V Shots: '
+                    text:
+                        'Listen to "$title" by $artist on V Shots: '
                         'https://www.youtube.com/watch?v=$trackId',
                   ),
                 ),
@@ -783,11 +786,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color:
-                            isCurrent ? AppColors.accent : AppColors.textMain,
+                        color: isCurrent
+                            ? AppColors.accent
+                            : AppColors.textMain,
                         fontSize: 13,
-                        fontWeight:
-                            isCurrent ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: isCurrent
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                       ),
                     ),
                     subtitle: Text(

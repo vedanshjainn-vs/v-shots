@@ -115,8 +115,7 @@ class KeywordProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getRelated(
     String trackId, {
     int limit = 10,
-  }) async =>
-      ProviderResult.failure('not supported');
+  }) async => ProviderResult.failure('not supported');
 
   @override
   Future<ProviderResult<String>> getStream(String id) async =>
@@ -131,8 +130,7 @@ class KeywordProvider implements MusicProvider {
     required String trackName,
     required String artistName,
     int? durationSeconds,
-  }) async =>
-      ProviderResult.failure('unused');
+  }) async => ProviderResult.failure('unused');
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15}) =>
@@ -142,8 +140,7 @@ class KeywordProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getRecommendations({
     required Set<String> excludeIds,
     int limit = 10,
-  }) =>
-      search('recommendations', limit: limit);
+  }) => search('recommendations', limit: limit);
 
   @override
   Future<void> dispose() async {}
@@ -169,8 +166,7 @@ void main() {
   });
 
   group('Recommendation -> Home pipeline', () {
-    test(
-        'cold start: personalized shelves fall back, '
+    test('cold start: personalized shelves fall back, '
         '"Because You Listened To" hidden', () async {
       final repo = buildFakeRepository();
       final engine = RecommendationEngine(repo);
@@ -181,12 +177,18 @@ void main() {
 
       final mfy = shelves.firstWhere((s) => s.id == 'mfy');
       expect(mfy.status, HomeShelfStatus.loaded);
-      expect(mfy.tracks, isNotEmpty,
-          reason: 'Made For You must never be empty on cold start');
+      expect(
+        mfy.tracks,
+        isNotEmpty,
+        reason: 'Made For You must never be empty on cold start',
+      );
 
       final byld = shelves.firstWhere((s) => s.id == 'byld');
-      expect(byld.status, HomeShelfStatus.hidden,
-          reason: 'no history yet -> no "Because You Listened To" row');
+      expect(
+        byld.status,
+        HomeShelfStatus.hidden,
+        reason: 'no history yet -> no "Because You Listened To" row',
+      );
     });
 
     test('listen -> signal -> profile -> candidate -> Home result', () async {
@@ -261,8 +263,11 @@ void main() {
       );
 
       final byld = shelves.firstWhere((s) => s.id == 'byld');
-      expect(byld.status, HomeShelfStatus.loaded,
-          reason: 'with history, "Because You Listened To" becomes visible');
+      expect(
+        byld.status,
+        HomeShelfStatus.loaded,
+        reason: 'with history, "Because You Listened To" becomes visible',
+      );
       expect(byld.subtitle.toLowerCase(), contains('arijit'));
     });
 
@@ -276,8 +281,11 @@ void main() {
       await service.loadShelves(shelves1);
       final mfy1 = shelves1.firstWhere((s) => s.id == 'mfy');
       final before = mfy1.tracks.any((t) => t['artist'] == 'Arijit Singh');
-      expect(before, isFalse,
-          reason: 'before any Arijit signals, Home should not feature Arijit');
+      expect(
+        before,
+        isFalse,
+        reason: 'before any Arijit signals, Home should not feature Arijit',
+      );
 
       // The user then listens to a lot of Arijit Singh (>=3 signals so the
       // engine crosses its personalization threshold).
@@ -315,48 +323,59 @@ void main() {
       await service.loadShelves(shelves2, forceRefresh: true);
       final mfy2 = shelves2.firstWhere((s) => s.id == 'mfy');
       final after = mfy2.tracks.any((t) => t['artist'] == 'Arijit Singh');
-      expect(after, isTrue,
-          reason: 'Home must actually change after meaningful listening');
-    });
-
-    test('within-shelf dedup is hard; cross-shelf duplication is allowed',
-        () async {
-      final repo = buildFakeRepository();
-      final engine = RecommendationEngine(repo);
-      final service = HomeFeedService(repository: repo, engine: engine);
-
-      final shelves = service.buildShelfDescriptors();
-      await service.loadShelves(shelves);
-
-      // Within a shelf: no duplicate ids (hard).
-      for (final s
-          in shelves.where((x) => x.status == HomeShelfStatus.loaded)) {
-        final ids = s.tracks.map((t) => t['id'] as String? ?? '').toList();
-        expect(ids.toSet().length, ids.length,
-            reason: 'shelf ${s.id} must never contain duplicate ids');
-      }
-    });
-
-    test('catalog shelves replenish from fallback queries when sparse',
-        () async {
-      final repo = buildFakeRepository();
-      final engine = RecommendationEngine(repo);
-      final service = HomeFeedService(repository: repo, engine: engine);
-
-      // A custom catalog shelf with fallback queries.
-      final shelf = HomeShelf(
-        id: 'test-catalog',
-        title: 'Test',
-        subtitle: 'sub',
-        kind: HomeShelfKind.catalog,
-        query: 'bollywood songs',
-        limit: 12,
-        fallbackQueries: ['punjabi songs', 'hindi songs'],
+      expect(
+        after,
+        isTrue,
+        reason: 'Home must actually change after meaningful listening',
       );
-      await service.loadShelves([shelf]);
-      expect(shelf.status, HomeShelfStatus.loaded);
-      expect(shelf.tracks, isNotEmpty);
     });
+
+    test(
+      'within-shelf dedup is hard; cross-shelf duplication is allowed',
+      () async {
+        final repo = buildFakeRepository();
+        final engine = RecommendationEngine(repo);
+        final service = HomeFeedService(repository: repo, engine: engine);
+
+        final shelves = service.buildShelfDescriptors();
+        await service.loadShelves(shelves);
+
+        // Within a shelf: no duplicate ids (hard).
+        for (final s in shelves.where(
+          (x) => x.status == HomeShelfStatus.loaded,
+        )) {
+          final ids = s.tracks.map((t) => t['id'] as String? ?? '').toList();
+          expect(
+            ids.toSet().length,
+            ids.length,
+            reason: 'shelf ${s.id} must never contain duplicate ids',
+          );
+        }
+      },
+    );
+
+    test(
+      'catalog shelves replenish from fallback queries when sparse',
+      () async {
+        final repo = buildFakeRepository();
+        final engine = RecommendationEngine(repo);
+        final service = HomeFeedService(repository: repo, engine: engine);
+
+        // A custom catalog shelf with fallback queries.
+        final shelf = HomeShelf(
+          id: 'test-catalog',
+          title: 'Test',
+          subtitle: 'sub',
+          kind: HomeShelfKind.catalog,
+          query: 'bollywood songs',
+          limit: 12,
+          fallbackQueries: ['punjabi songs', 'hindi songs'],
+        );
+        await service.loadShelves([shelf]);
+        expect(shelf.status, HomeShelfStatus.loaded);
+        expect(shelf.tracks, isNotEmpty);
+      },
+    );
 
     test('artist repetition within a shelf is capped', () async {
       final repo = buildFakeRepository();
@@ -366,8 +385,9 @@ void main() {
       final shelves = service.buildShelfDescriptors();
       await service.loadShelves(shelves);
 
-      for (final s
-          in shelves.where((x) => x.status == HomeShelfStatus.loaded)) {
+      for (final s in shelves.where(
+        (x) => x.status == HomeShelfStatus.loaded,
+      )) {
         final counts = <String, int>{};
         for (final t in s.tracks) {
           counts[t['artist'] as String? ?? ''] =

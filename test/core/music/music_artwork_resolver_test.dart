@@ -29,8 +29,10 @@ void main() {
   });
 
   test('skips empty strings (never returns an empty url)', () {
-    expect(resolver.resolve(albumArtwork: '', videoThumbnail: 'thumb.jpg'),
-        'thumb.jpg');
+    expect(
+      resolver.resolve(albumArtwork: '', videoThumbnail: 'thumb.jpg'),
+      'thumb.jpg',
+    );
   });
 
   test('returns null when nothing is available (no fabrication)', () {

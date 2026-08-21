@@ -47,10 +47,7 @@ void main() {
     expect(candidates.first.seedGenre, anyOf('Romantic', 'Punjabi'));
     expect(
       candidates.take(3).map((c) => c.query).join(' ').toLowerCase(),
-      anyOf(
-        contains('romantic'),
-        contains('punjabi'),
-      ),
+      anyOf(contains('romantic'), contains('punjabi')),
     );
   });
 

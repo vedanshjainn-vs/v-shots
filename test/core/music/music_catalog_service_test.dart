@@ -8,17 +8,22 @@ import 'package:v_shots/core/music/music_canonicalizer.dart';
 import 'package:v_shots/core/music/music_models.dart';
 import 'package:v_shots/core/music/music_validator.dart';
 
-Map<String, dynamic> _t(String id, String title, String artist,
-        {int duration = 200, bool official = false, String? channelId}) =>
-    {
-      'id': id,
-      'title': title,
-      'artist': artist,
-      'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-      'duration': duration,
-      if (official) 'isOfficial': true,
-      if (channelId != null) 'channelId': channelId,
-    };
+Map<String, dynamic> _t(
+  String id,
+  String title,
+  String artist, {
+  int duration = 200,
+  bool official = false,
+  String? channelId,
+}) => {
+  'id': id,
+  'title': title,
+  'artist': artist,
+  'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+  'duration': duration,
+  if (official) 'isOfficial': true,
+  if (channelId != null) 'channelId': channelId,
+};
 
 void main() {
   const validator = MusicContentValidator();
@@ -26,19 +31,26 @@ void main() {
   group('officiality / metadata / variant scores', () {
     test('officialityScore: badge > title-official > none', () {
       final badged = validator.validate(
-          _t('1', 'Song X', 'Artist', official: true, channelId: 'UC1'));
-      final titleOfficial =
-          validator.validate(_t('2', 'Song X (Official)', 'Artist'));
+        _t('1', 'Song X', 'Artist', official: true, channelId: 'UC1'),
+      );
+      final titleOfficial = validator.validate(
+        _t('2', 'Song X (Official)', 'Artist'),
+      );
       final plain = validator.validate(_t('3', 'Song X', 'Artist'));
       expect(
-          badged.officialityScore, greaterThan(titleOfficial.officialityScore));
+        badged.officialityScore,
+        greaterThan(titleOfficial.officialityScore),
+      );
       expect(
-          titleOfficial.officialityScore, greaterThan(plain.officialityScore));
+        titleOfficial.officialityScore,
+        greaterThan(plain.officialityScore),
+      );
     });
 
     test('metadataQualityScore reflects completeness', () {
       final full = validator.validate(
-          _t('1', 'Song X', 'Artist', official: true, channelId: 'UC1'));
+        _t('1', 'Song X', 'Artist', official: true, channelId: 'UC1'),
+      );
       expect(full.metadataQualityScore, 1.0);
       final bare = validator.validate({'id': '2', 'title': 'T'});
       expect(bare.metadataQualityScore, lessThan(full.metadataQualityScore));
@@ -75,14 +87,25 @@ void main() {
     });
 
     test('official remix/live accepted; random karaoke rejected', () {
-      final remix = validator.validate(_t('f', 'Song X (Official Remix)', 'A',
-          official: true, channelId: 'UC1'));
+      final remix = validator.validate(
+        _t(
+          'f',
+          'Song X (Official Remix)',
+          'A',
+          official: true,
+          channelId: 'UC1',
+        ),
+      );
       expect(remix.isMusic, isTrue);
 
-      final karaoke =
-          validator.validate(_t('g', 'Song X Karaoke', 'RandomFan'));
-      expect(karaoke.isMusic, isFalse,
-          reason: 'random-uploader karaoke must not reach primary shelves');
+      final karaoke = validator.validate(
+        _t('g', 'Song X Karaoke', 'RandomFan'),
+      );
+      expect(
+        karaoke.isMusic,
+        isFalse,
+        reason: 'random-uploader karaoke must not reach primary shelves',
+      );
     });
   });
 
@@ -100,8 +123,11 @@ void main() {
       final video = _t('2', 'Song X (Official Video)', 'A', official: true);
       final result = deduplicateMusicItems([audio, video]);
       expect(result, hasLength(1));
-      expect(result.single['id'], '2',
-          reason: 'official music video preferred over audio');
+      expect(
+        result.single['id'],
+        '2',
+        reason: 'official music video preferred over audio',
+      );
     });
   });
 
@@ -122,13 +148,19 @@ void main() {
       final forYou = musicCatalogCacheKey(mode: 'for_you');
       final trending = musicCatalogCacheKey(mode: 'trending');
       final trendingHindi = musicCatalogCacheKey(
-          mode: 'trending', languages: ['hindi'], moods: ['romantic']);
+        mode: 'trending',
+        languages: ['hindi'],
+        moods: ['romantic'],
+      );
       expect(forYou, isNot(trending));
       expect(trending, isNot(trendingHindi));
       expect(
         trendingHindi,
         musicCatalogCacheKey(
-            mode: 'trending', languages: ['hindi'], moods: ['romantic']),
+          mode: 'trending',
+          languages: ['hindi'],
+          moods: ['romantic'],
+        ),
       );
     });
   });

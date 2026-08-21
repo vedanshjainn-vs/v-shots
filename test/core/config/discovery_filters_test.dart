@@ -51,20 +51,25 @@ void main() {
       expect(q, contains('romantic'));
     });
 
-    test('moods alone (For You) compose a mood-biased query with music intent',
-        () {
-      final sad = kDiscoveryMoods.firstWhere((m) => m.id == 'sad');
-      final q =
-          buildDiscoveryQuery(source: kDiscoverySources.first, moods: [sad]);
-      expect(q, contains('sad'));
-      expect(q, contains('official music'));
-    });
+    test(
+      'moods alone (For You) compose a mood-biased query with music intent',
+      () {
+        final sad = kDiscoveryMoods.firstWhere((m) => m.id == 'sad');
+        final q = buildDiscoveryQuery(
+          source: kDiscoverySources.first,
+          moods: [sad],
+        );
+        expect(q, contains('sad'));
+        expect(q, contains('official music'));
+      },
+    );
 
     test('multiple languages + regions append their tokens', () {
       final hindi = kDiscoveryLanguages.firstWhere((l) => l.id == 'hindi');
       final english = kDiscoveryLanguages.firstWhere((l) => l.id == 'english');
-      final bollywood =
-          kDiscoveryRegions.firstWhere((r) => r.id == 'bollywood');
+      final bollywood = kDiscoveryRegions.firstWhere(
+        (r) => r.id == 'bollywood',
+      );
       final q = buildDiscoveryQuery(
         source: kDiscoverySources[2],
         languages: [hindi, english],

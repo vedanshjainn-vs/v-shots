@@ -8,12 +8,12 @@ import 'package:v_shots/core/music/music_diversity.dart';
 import 'package:v_shots/core/providers/provider_models.dart';
 
 ProviderTrack _track(String id, String artist, String genre) => ProviderTrack(
-      id: id,
-      title: 'T $id',
-      artist: artist,
-      artworkUrl: '',
-      durationSeconds: 200,
-    );
+  id: id,
+  title: 'T $id',
+  artist: artist,
+  artworkUrl: '',
+  durationSeconds: 200,
+);
 
 ScoredMusicCandidate _c(String id, String artist, String genre, double score) =>
     ScoredMusicCandidate(
@@ -52,8 +52,11 @@ void main() {
         counts[s.candidate.artist] = (counts[s.candidate.artist] ?? 0) + 1;
       }
       for (final entry in counts.entries) {
-        expect(entry.value, lessThanOrEqualTo(2),
-            reason: 'artist ${entry.key} repeats too much in window $i');
+        expect(
+          entry.value,
+          lessThanOrEqualTo(2),
+          reason: 'artist ${entry.key} repeats too much in window $i',
+        );
       }
     }
   });
@@ -66,7 +69,9 @@ void main() {
       _c('4', 'C', 'Jazz', 7),
     ];
     final result = diversity.diversify(candidates);
-    expect(result.map((s) => s.candidate.track.id).toSet(),
-        candidates.map((s) => s.candidate.track.id).toSet());
+    expect(
+      result.map((s) => s.candidate.track.id).toSet(),
+      candidates.map((s) => s.candidate.track.id).toSet(),
+    );
   });
 }

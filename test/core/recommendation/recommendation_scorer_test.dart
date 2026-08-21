@@ -236,9 +236,14 @@ void main() {
       isTrendingOrNewSource: false,
     );
 
-    expect(officialScore.score, greaterThan(plainScore.score),
-        reason: 'official content must rank above identical non-official');
-    expect(officialScore.score - plainScore.score,
-        closeTo(RecommendationScorer().config.weightOfficialBoost, 0.0001));
+    expect(
+      officialScore.score,
+      greaterThan(plainScore.score),
+      reason: 'official content must rank above identical non-official',
+    );
+    expect(
+      officialScore.score - plainScore.score,
+      closeTo(RecommendationScorer().config.weightOfficialBoost, 0.0001),
+    );
   });
 }

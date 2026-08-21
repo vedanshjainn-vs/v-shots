@@ -26,10 +26,19 @@ import '../../shared/utils/youtube_url.dart';
 bool isAllowedBrowserHost(String host) {
   final h = host.toLowerCase();
   const allowed = [
-    'youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com',
-    'google.com', 'gstatic.com', 'ggpht.com',
-    'jiosaavn.com', 'www.jiosaavn.com', 'saavn.com', 'www.saavn.com',
-    'static.saavncdn.com', 'c.saavncdn.com',
+    'youtube.com',
+    'youtu.be',
+    'googlevideo.com',
+    'ytimg.com',
+    'google.com',
+    'gstatic.com',
+    'ggpht.com',
+    'jiosaavn.com',
+    'www.jiosaavn.com',
+    'saavn.com',
+    'www.saavn.com',
+    'static.saavncdn.com',
+    'c.saavncdn.com',
   ];
   return allowed.any((a) => h == a || h.endsWith('.$a'));
 }

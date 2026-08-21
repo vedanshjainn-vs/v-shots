@@ -108,19 +108,39 @@ const List<DiscoverySource> kDiscoverySources = [
 
 const List<DiscoveryMood> kDiscoveryMoods = [
   DiscoveryMood(
-      id: 'romantic', label: 'Romantic', icon: '❤️', query: 'romantic'),
+    id: 'romantic',
+    label: 'Romantic',
+    icon: '❤️',
+    query: 'romantic',
+  ),
   DiscoveryMood(id: 'sad', label: 'Sad', icon: '😢', query: 'sad'),
   DiscoveryMood(id: 'chill', label: 'Chill', icon: '😌', query: 'chill'),
   DiscoveryMood(
-      id: 'energetic', label: 'Energetic', icon: '⚡', query: 'energetic'),
+    id: 'energetic',
+    label: 'Energetic',
+    icon: '⚡',
+    query: 'energetic',
+  ),
   DiscoveryMood(id: 'party', label: 'Party', icon: '💃', query: 'party'),
   DiscoveryMood(id: 'workout', label: 'Workout', icon: '🔥', query: 'workout'),
   DiscoveryMood(
-      id: 'latenight', label: 'Late Night', icon: '🌙', query: 'late night'),
+    id: 'latenight',
+    label: 'Late Night',
+    icon: '🌙',
+    query: 'late night',
+  ),
   DiscoveryMood(
-      id: 'feelgood', label: 'Feel Good', icon: '✨', query: 'feel good'),
+    id: 'feelgood',
+    label: 'Feel Good',
+    icon: '✨',
+    query: 'feel good',
+  ),
   DiscoveryMood(
-      id: 'peaceful', label: 'Peaceful', icon: '🧘', query: 'peaceful'),
+    id: 'peaceful',
+    label: 'Peaceful',
+    icon: '🧘',
+    query: 'peaceful',
+  ),
 ];
 
 const List<DiscoveryFilterOption> kDiscoveryLanguages = [
@@ -135,20 +155,35 @@ const List<DiscoveryFilterOption> kDiscoveryLanguages = [
   DiscoveryFilterOption(id: 'bhojpuri', label: 'Bhojpuri', token: 'bhojpuri'),
   DiscoveryFilterOption(id: 'haryanvi', label: 'Haryanvi', token: 'haryanvi'),
   DiscoveryFilterOption(
-      id: 'malayalam', label: 'Malayalam', token: 'malayalam'),
+    id: 'malayalam',
+    label: 'Malayalam',
+    token: 'malayalam',
+  ),
   DiscoveryFilterOption(id: 'kannada', label: 'Kannada', token: 'kannada'),
 ];
 
 const List<DiscoveryFilterOption> kDiscoveryRegions = [
   DiscoveryFilterOption(
-      id: 'bollywood', label: 'Bollywood', token: 'bollywood'),
+    id: 'bollywood',
+    label: 'Bollywood',
+    token: 'bollywood',
+  ),
   DiscoveryFilterOption(id: 'punjabi', label: 'Punjabi', token: 'punjabi hits'),
   DiscoveryFilterOption(
-      id: 'south', label: 'South Indian', token: 'south indian'),
+    id: 'south',
+    label: 'South Indian',
+    token: 'south indian',
+  ),
   DiscoveryFilterOption(
-      id: 'indie', label: 'Indie India', token: 'hindi indie'),
+    id: 'indie',
+    label: 'Indie India',
+    token: 'hindi indie',
+  ),
   DiscoveryFilterOption(
-      id: 'international', label: 'International', token: 'international hits'),
+    id: 'international',
+    label: 'International',
+    token: 'international hits',
+  ),
 ];
 
 /// The committed/applied Discovery filter configuration — a value object so
@@ -185,13 +220,12 @@ class DiscoveryFilterConfig {
     List<DiscoveryMood>? moods,
     List<DiscoveryFilterOption>? languages,
     List<DiscoveryFilterOption>? regions,
-  }) =>
-      DiscoveryFilterConfig(
-        source: source ?? this.source,
-        moods: moods ?? this.moods,
-        languages: languages ?? this.languages,
-        regions: regions ?? this.regions,
-      );
+  }) => DiscoveryFilterConfig(
+    source: source ?? this.source,
+    moods: moods ?? this.moods,
+    languages: languages ?? this.languages,
+    regions: regions ?? this.regions,
+  );
 }
 
 /// Builds the final YouTube discovery query from the applied filters.

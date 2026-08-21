@@ -49,24 +49,24 @@ class MusicShelfBuilder {
   }
 
   static String _titleFor(HomeShelfType type) => switch (type) {
-        HomeShelfType.forYou => 'Made For You',
-        HomeShelfType.continueListening => 'Continue Listening',
-        HomeShelfType.quickMix => 'Quick Mix',
-        HomeShelfType.trending => 'Trending Music',
-        HomeShelfType.newReleases => 'New Releases',
-        HomeShelfType.becauseYouListened => 'Because You Listened',
-        HomeShelfType.favoriteArtists => 'From Your Favorite Artists',
-        HomeShelfType.freshDiscoveries => 'Fresh Discoveries',
-        HomeShelfType.moods => 'Mood',
-        HomeShelfType.regional => 'Regional',
-        HomeShelfType.international => 'International',
-        HomeShelfType.popular => 'Popular',
-      };
+    HomeShelfType.forYou => 'Made For You',
+    HomeShelfType.continueListening => 'Continue Listening',
+    HomeShelfType.quickMix => 'Quick Mix',
+    HomeShelfType.trending => 'Trending Music',
+    HomeShelfType.newReleases => 'New Releases',
+    HomeShelfType.becauseYouListened => 'Because You Listened',
+    HomeShelfType.favoriteArtists => 'From Your Favorite Artists',
+    HomeShelfType.freshDiscoveries => 'Fresh Discoveries',
+    HomeShelfType.moods => 'Mood',
+    HomeShelfType.regional => 'Regional',
+    HomeShelfType.international => 'International',
+    HomeShelfType.popular => 'Popular',
+  };
 
   static String? _subtitleFor(HomeShelfType type) => switch (type) {
-        HomeShelfType.forYou => 'Personalized from your listening',
-        HomeShelfType.trending => 'What the world is playing now',
-        HomeShelfType.newReleases => 'Fresh official releases',
-        _ => null,
-      };
+    HomeShelfType.forYou => 'Personalized from your listening',
+    HomeShelfType.trending => 'What the world is playing now',
+    HomeShelfType.newReleases => 'Fresh official releases',
+    _ => null,
+  };
 }

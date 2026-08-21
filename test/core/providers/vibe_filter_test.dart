@@ -22,66 +22,44 @@ void main() {
       (
         'Trending Hits',
         'trending hits viral songs official audio',
-        {
-          'global',
-          'punjabi',
-          'bollywood',
-        }
+        {'global', 'punjabi', 'bollywood'},
       ),
       (
         'Romantic & Love',
         'romantic love songs official audio hindi',
-        {
-          'bollywood',
-          'indie',
-          'global',
-        }
+        {'bollywood', 'indie', 'global'},
       ),
       (
         'Heartbroken & Sad',
         'sad heartbroken emotional songs official audio',
-        {
-          'nostalgia',
-          'indie',
-          'bollywood',
-        }
+        {'nostalgia', 'indie', 'bollywood'},
       ),
       ('Hindi Indie', 'hindi indie acoustic songs official audio', {'indie'}),
       (
         'Punjabi Bangers',
         'latest punjabi pop hits official audio',
-        {
-          'punjabi',
-        }
+        {'punjabi'},
       ),
       (
         'Bollywood Hits',
         'top bollywood songs official music video',
-        {
-          'bollywood',
-        }
+        {'bollywood'},
       ),
       (
         'Devotional & Bhajans',
         'top devotional bhajan aarti songs official audio',
-        {
-          'devotional',
-        }
+        {'devotional'},
       ),
       (
         'Chill & LoFi',
         'chill lofi late night beats official audio',
-        {
-          'ambient',
-        }
+        {'ambient'},
       ),
       ('Workout', 'workout gym motivation hype songs official', {'workout'}),
       (
         'International Pop',
         'billboard top global pop hits official audio',
-        {
-          'global',
-        }
+        {'global'},
       ),
       ('Hip-Hop', 'hip hop rap songs official audio', {'workout', 'global'}),
     };
@@ -108,8 +86,11 @@ void main() {
         maxResults: 20,
       );
       for (final r in results) {
-        expect(badCategories.contains(r.category), isFalse,
-            reason: 'Heartbroken & Sad leaked ${r.category}: ${r.title}');
+        expect(
+          badCategories.contains(r.category),
+          isFalse,
+          reason: 'Heartbroken & Sad leaked ${r.category}: ${r.title}',
+        );
       }
     });
 
@@ -119,8 +100,11 @@ void main() {
         maxResults: 20,
       );
       for (final r in results) {
-        expect(r.category, 'punjabi',
-            reason: 'Punjabi leaked ${r.category}: ${r.title}');
+        expect(
+          r.category,
+          'punjabi',
+          reason: 'Punjabi leaked ${r.category}: ${r.title}',
+        );
       }
     });
   });

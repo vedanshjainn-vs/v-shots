@@ -57,10 +57,10 @@ class RecommendationEngine {
     RecommendationScorer? scorer,
     DiversityFilter? diversityFilter,
     TasteProfileBuilder? profileBuilder,
-  })  : _candidates = candidateGenerator ?? CandidateGenerator(config: config),
-        _scorer = scorer ?? RecommendationScorer(config: config),
-        _diversity = diversityFilter ?? DiversityFilter(config: config),
-        _profileBuilder = profileBuilder ?? TasteProfileBuilder(config: config);
+  }) : _candidates = candidateGenerator ?? CandidateGenerator(config: config),
+       _scorer = scorer ?? RecommendationScorer(config: config),
+       _diversity = diversityFilter ?? DiversityFilter(config: config),
+       _profileBuilder = profileBuilder ?? TasteProfileBuilder(config: config);
 
   final MusicRepository _repository;
   final RecommendationConfig config;
@@ -136,8 +136,9 @@ class RecommendationEngine {
     final cacheKey = '${intent.name}:$count';
     if (!forceRefresh && RecommendationCache.instance.isFeedFresh(cacheKey)) {
       final cached = RecommendationCache.instance.getFeed(cacheKey)!;
-      final filtered =
-          cached.where((t) => !excludeIds.contains(t.track.id)).toList();
+      final filtered = cached
+          .where((t) => !excludeIds.contains(t.track.id))
+          .toList();
       if (filtered.length >= count) return filtered.take(count).toList();
       // else: fall through and generate fresh (cache is fresh but
       // exhausted by excludeIds — e.g. the user has already scrolled
@@ -157,7 +158,8 @@ class RecommendationEngine {
     final seenIds = <String>{...excludeIds};
 
     for (final candidate in candidateQueries) {
-      final isPopularitySource = candidate.source == CandidateSource.trending ||
+      final isPopularitySource =
+          candidate.source == CandidateSource.trending ||
           candidate.source == CandidateSource.newContent;
       final tracks = await _repository.search(
         candidate.query,
@@ -230,8 +232,9 @@ class RecommendationEngine {
     final cacheKey = 'related:$seedTrackId:$count';
     if (!forceRefresh && RecommendationCache.instance.isFeedFresh(cacheKey)) {
       final cached = RecommendationCache.instance.getFeed(cacheKey)!;
-      final filtered =
-          cached.where((t) => !excludeIds.contains(t.track.id)).toList();
+      final filtered = cached
+          .where((t) => !excludeIds.contains(t.track.id))
+          .toList();
       if (filtered.length >= count) return filtered.take(count).toList();
     }
 
@@ -288,9 +291,9 @@ class RecommendationEngine {
         .toSet();
 
     final explorationSlots = (count * config.explorationRate).round().clamp(
-          0,
-          count,
-        );
+      0,
+      count,
+    );
     final nonExploration = <ScoredTrack>[];
     final exploration = <ScoredTrack>[];
 
@@ -300,7 +303,8 @@ class RecommendationEngine {
       // approximation (we don't carry the originating query per-track
       // through scoring), documented here as an honest simplification
       // rather than silently pretending perfect attribution.
-      final isExploration = track.genreTags.isNotEmpty &&
+      final isExploration =
+          track.genreTags.isNotEmpty &&
           explorationQueries.any(
             (q) =>
                 q.toLowerCase().contains(track.genreTags.first.toLowerCase()),
@@ -352,8 +356,9 @@ class RecommendationEngine {
             .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.moreLikeThis:
-        final filtered =
-            all.where((c) => c.source == CandidateSource.genreTag).toList();
+        final filtered = all
+            .where((c) => c.source == CandidateSource.genreTag)
+            .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.madeForYou:
         final filtered = all
@@ -365,8 +370,9 @@ class RecommendationEngine {
             .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.trendingForYou:
-        final filtered =
-            all.where((c) => c.source == CandidateSource.trending).toList();
+        final filtered = all
+            .where((c) => c.source == CandidateSource.trending)
+            .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.continueListening:
         final filtered = all
@@ -374,8 +380,9 @@ class RecommendationEngine {
             .toList();
         return filtered.isEmpty ? all : filtered;
       case FeedIntent.discoverSomethingNew:
-        final filtered =
-            all.where((c) => c.source == CandidateSource.exploration).toList();
+        final filtered = all
+            .where((c) => c.source == CandidateSource.exploration)
+            .toList();
         return filtered.isEmpty ? all : filtered;
     }
   }

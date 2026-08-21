@@ -41,11 +41,11 @@ class RelatedFakeProvider implements MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-        ProviderCapability.search,
-        ProviderCapability.getRelated,
-        ProviderCapability.getTrending,
-        ProviderCapability.getRecommendations,
-      };
+    ProviderCapability.search,
+    ProviderCapability.getRelated,
+    ProviderCapability.getTrending,
+    ProviderCapability.getRecommendations,
+  };
 
   @override
   bool supports(ProviderCapability capability) =>
@@ -59,12 +59,12 @@ class RelatedFakeProvider implements MusicProvider {
       const ProviderHealth(healthy: true);
 
   ProviderTrack _track(String id, String artist) => ProviderTrack(
-        id: id,
-        title: '$artist — $id',
-        artist: artist,
-        artworkUrl: '',
-        durationSeconds: 200,
-      );
+    id: id,
+    title: '$artist — $id',
+    artist: artist,
+    artworkUrl: '',
+    durationSeconds: 200,
+  );
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> search(
@@ -128,8 +128,7 @@ class RelatedFakeProvider implements MusicProvider {
     required String trackName,
     required String artistName,
     int? durationSeconds,
-  }) async =>
-      ProviderResult.failure('unused');
+  }) async => ProviderResult.failure('unused');
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15}) =>
@@ -139,8 +138,7 @@ class RelatedFakeProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getRecommendations({
     required Set<String> excludeIds,
     int limit = 10,
-  }) =>
-      search('recommendations', limit: limit);
+  }) => search('recommendations', limit: limit);
 
   @override
   Future<void> dispose() async {}
@@ -177,15 +175,26 @@ void main() {
         forceRefresh: true,
       );
 
-      expect(provider.relatedCallCount, 1,
-          reason: 'a seeded moreLikeThis must hit the related endpoint');
-      expect(provider.searchCallCount, 0,
-          reason: 'related candidates must come from getRelated, not search');
-      expect(feed, isNotEmpty);
-      expect(feed.every((s) => s.track.artist == 'Related Artist'), isTrue,
-          reason: 'the feed must be built from related candidates');
       expect(
-          feed.every((s) => s.track.id.startsWith('related-seed1-')), isTrue);
+        provider.relatedCallCount,
+        1,
+        reason: 'a seeded moreLikeThis must hit the related endpoint',
+      );
+      expect(
+        provider.searchCallCount,
+        0,
+        reason: 'related candidates must come from getRelated, not search',
+      );
+      expect(feed, isNotEmpty);
+      expect(
+        feed.every((s) => s.track.artist == 'Related Artist'),
+        isTrue,
+        reason: 'the feed must be built from related candidates',
+      );
+      expect(
+        feed.every((s) => s.track.id.startsWith('related-seed1-')),
+        isTrue,
+      );
     });
 
     test('never includes the seed track itself', () async {
@@ -207,25 +216,33 @@ void main() {
       );
     });
 
-    test('falls back to query-based generation when related is empty',
-        () async {
-      final provider = RelatedFakeProvider(emptyRelated: true);
-      final engine = RecommendationEngine(_repository(provider));
+    test(
+      'falls back to query-based generation when related is empty',
+      () async {
+        final provider = RelatedFakeProvider(emptyRelated: true);
+        final engine = RecommendationEngine(_repository(provider));
 
-      final feed = await engine.generateFeed(
-        intent: FeedIntent.moreLikeThis,
-        excludeIds: const {},
-        seedTrackId: 'seed1',
-        count: 10,
-        forceRefresh: true,
-      );
+        final feed = await engine.generateFeed(
+          intent: FeedIntent.moreLikeThis,
+          excludeIds: const {},
+          seedTrackId: 'seed1',
+          count: 10,
+          forceRefresh: true,
+        );
 
-      expect(provider.relatedCallCount, 1);
-      expect(provider.searchCallCount, greaterThan(0),
-          reason: 'empty related must fall through to query-based search');
-      expect(feed, isNotEmpty,
-          reason: 'a seeded moreLikeThis must never return a blank feed');
-    });
+        expect(provider.relatedCallCount, 1);
+        expect(
+          provider.searchCallCount,
+          greaterThan(0),
+          reason: 'empty related must fall through to query-based search',
+        );
+        expect(
+          feed,
+          isNotEmpty,
+          reason: 'a seeded moreLikeThis must never return a blank feed',
+        );
+      },
+    );
 
     test('a non-seeded moreLikeThis uses query-based generation', () async {
       final provider = RelatedFakeProvider();
@@ -238,8 +255,11 @@ void main() {
         forceRefresh: true,
       );
 
-      expect(provider.relatedCallCount, 0,
-          reason: 'without a seed there is nothing to call related() on');
+      expect(
+        provider.relatedCallCount,
+        0,
+        reason: 'without a seed there is nothing to call related() on',
+      );
       expect(feed, isNotEmpty);
     });
 
@@ -256,8 +276,11 @@ void main() {
       );
 
       expect(
-        feed.any((s) =>
-            s.track.id == 'related-seed1-0' || s.track.id == 'related-seed1-1'),
+        feed.any(
+          (s) =>
+              s.track.id == 'related-seed1-0' ||
+              s.track.id == 'related-seed1-1',
+        ),
         isFalse,
       );
     });
