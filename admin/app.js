@@ -622,8 +622,13 @@ async function renderHomeCMS(el) {
     // "Continue Listening", confusing editors).
     const next =
       PERSONALIZED_KEYS.find((k) => k.id === 'made_for_you' && !used.has(k.id)) ||
-      PERSONALIZED_KEYS.find((k) => k.id !== 'continue_listening' && !used.has(k.id)) ||
-      PERSONALIZED_KEYS[1];
+      PERSONALIZED_KEYS.find((k) => k.id !== 'continue_listening' && !used.has(k.id));
+    if (!next) {
+      // All personalized engines already have a section. Adding another
+      // would duplicate the id and break Publish (PostgREST 21000).
+      toast('All personalized sections already exist — edit an existing one instead.', 'warn');
+      return;
+    }
     sections.push({
       id: next.id === 'continue_listening' ? `continue_${Date.now()}` : next.id,
       section_key: next.id, title: next.title, subtitle: '',
@@ -1151,6 +1156,24 @@ async function doPublish(el) {
     const { data: existing, error: existingErr } = await supabase.from('home_layout_config').select('id');
     if (existingErr) throw existingErr;
     const keep = new Set();
+    // Deduplicate draft ids BEFORE upsert: PostgREST rejects an upsert whose
+    // payload contains the same id twice (error 21000 — 'ON CONFLICT DO
+    // UPDATE command cannot affect row a second time'). The duplicate is
+    // reported instead of silently breaking the whole publish.
+    const seenIds = new Set();
+    const dupIds = new Set();
+    for (const sec of sections) {
+      const id = sec.id || '';
+      if (id && seenIds.has(id)) dupIds.add(id);
+      seenIds.add(id);
+    }
+    if (dupIds.size) {
+      throw new Error(
+        `Duplicate section id(s) in draft: ${[...dupIds].join(', ')}. ` +
+        `Remove or rename the duplicate section, then publish again.`,
+      );
+    }
+
     const rows = sections.map((sec, i) => {
       const id = sec.id || uid();
       keep.add(id);
