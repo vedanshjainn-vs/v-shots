@@ -199,7 +199,16 @@ class HomeFeedService {
     final shelves = <HomeShelf>[];
     var hasContinue = false;
 
-    for (final raw in sections) {
+    // Sort defensively: the app must honor sort_order itself, not trust the
+    // row order delivered by the network/cache.
+    final ordered = List<Map<String, dynamic>>.from(sections)
+      ..sort((a, b) {
+        final sa = cmsAsInt(a['sort_order'], 0);
+        final sb = cmsAsInt(b['sort_order'], 0);
+        return sa.compareTo(sb);
+      });
+
+    for (final raw in ordered) {
       final s = HomeCmsSection.fromMap(raw);
       if (s.id.isEmpty) continue;
       if (!s.visible || !s.published) continue;
@@ -246,7 +255,14 @@ class HomeFeedService {
           )) {
             continue;
           }
-          tracks.add(item.toTrackMap(jiosaavnEnabled: jiosaavnEnabled));
+          tracks.add(
+            item.toTrackMap(
+              jiosaavnEnabled: jiosaavnEnabled,
+              // Section-level provider cascades only to items left on AUTO.
+              providerOverride: s.provider,
+              playbackProviderOverride: s.playbackProvider,
+            ),
+          );
         }
         shelves.add(
           HomeShelf(

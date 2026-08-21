@@ -3,7 +3,39 @@
 All notable changes to Project Lyra will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project adheres to [Semantic Versioning](https://semver.org/docs/spec/v2.0.0.html).
+
+## [Unreleased] — CMS + Mobile Admin + Home catalog parity (2026-08-21)
+
+### Added
+- Admin panel: full mobile-first responsive redesign (drawer nav, card-based
+  pages, bottom-sheet modals, sticky publish bar, touch targets ≥40px,
+  drag-reorder with touch support, phone-frame Home preview, per-section
+  visible/published toggles, inline field validation, busy/loading states).
+- Admin panel: fixed runtime bugs — `inspectJioSaavnUrl` / `extractYoutubeId` /
+  `KNOWN_FLAGS` are now defined (Home CMS + Flags pages crashed before),
+  removed duplicated tail block (double `init()`), wired the JioSaavn section
+  button, manual-item editor now shows for `jiosaavn_manual` too.
+- Admin panel: JioSaavn URL validation now mirrors the app exactly
+  (jiosaavn.com hosts only, `/song/` permalinks, `/search/songs/` pages,
+  media/CDN/API URLs rejected). Demo mode via `?demo=1` for layout preview.
+- Admin panel: section-level provider / playback / fallback selectors
+  (Auto / YouTube / JioSaavn) written to `home_layout_config`.
+- DB migration `20260821000006_home_catalog_parity.sql`: seeds the 8 compiled
+  Home categories missing from CMS (Trending For You, Artists For You,
+  Official Music, Discover Something New, Hip-Hop, Romantic, 90s Classics) as
+  `visible=false` so live Home is unchanged until opted in from Admin.
+- App: `HomeCmsSection` now reads section-level provider columns; manual items
+  left on AUTO inherit the section provider (explicit item choice wins).
+- App: `_buildFromCms` now sorts CMS rows by `sort_order` itself instead of
+  trusting row order from the network/cache.
+
+### Tests
+- Added `home_catalog_parity_test.dart` (compiled-default ↔ CMS key parity,
+  semantic-kind preservation, ordering, visibility, fallback).
+- Added `home_cms_provider_cascade_test.dart` (provider cascade, PlaybackRouter
+  AUTO/YOUTUBE/JIOSAAVN paths, flag ON/OFF, no-media-URL guarantees).
+- Full suite: 370 tests green, `flutter analyze` clean, `dart format` clean.
 
 ## [5.20.0-baseline] - 2026-08-16
 

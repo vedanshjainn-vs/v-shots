@@ -54,6 +54,9 @@ class HomeCmsSection {
     this.regionCode,
     this.categoryId,
     this.refreshMinutes = 60,
+    this.provider = 'auto',
+    this.playbackProvider = 'auto',
+    this.fallbackProvider = 'none',
   });
 
   final String id;
@@ -72,12 +75,19 @@ class HomeCmsSection {
   final String? categoryId;
   final int refreshMinutes;
 
+  /// Section-level playback routing (auto / youtube / jiosaavn). Cascades to
+  /// manual items that do not set their own provider.
+  final String provider;
+  final String playbackProvider;
+  final String fallbackProvider;
+
   factory HomeCmsSection.fromMap(Map<String, dynamic> row) {
     final id = cmsAsString(row['id'], cmsAsString(row['section_key']));
     final sourceValue = cmsAsString(
       row['source_value'],
       cmsAsString(row['query']),
     );
+    final provider = normalizeCmsProvider(row['provider']);
     return HomeCmsSection(
       id: id,
       sectionKey: cmsAsString(row['section_key'], id),
@@ -98,6 +108,12 @@ class HomeCmsSection {
           ? null
           : cmsAsString(row['category_id']),
       refreshMinutes: cmsAsInt(row['refresh_minutes'], 60),
+      provider: provider,
+      playbackProvider: normalizeCmsProvider(
+        row['playback_provider'],
+        fallback: provider,
+      ),
+      fallbackProvider: normalizeCmsFallback(row['fallback_provider']),
     );
   }
 
@@ -117,6 +133,9 @@ class HomeCmsSection {
         'region_code': regionCode,
         'category_id': categoryId,
         'refresh_minutes': refreshMinutes,
+        'provider': provider,
+        'playback_provider': playbackProvider,
+        'fallback_provider': fallbackProvider,
       };
 }
 
@@ -229,11 +248,29 @@ class HomeCmsItem {
   }
 
   /// Normalized track consumed by Home / PlaybackRouter / WebView.
-  Map<String, dynamic> toTrackMap({bool jiosaavnEnabled = true}) {
+  ///
+  /// [providerOverride] / [playbackProviderOverride] come from the parent
+  /// [HomeCmsSection] and apply only when this item left its own provider on
+  /// `auto` — an explicit per-item choice always wins.
+  Map<String, dynamic> toTrackMap({
+    bool jiosaavnEnabled = true,
+    String? providerOverride,
+    String? playbackProviderOverride,
+  }) {
     final jio =
         (jiosaavnEnabled && jiosaavnUrl != null && jiosaavnUrl!.isNotEmpty)
             ? jiosaavnUrl
             : null;
+    final effectiveProvider = provider == 'auto' &&
+            providerOverride != null &&
+            providerOverride != 'auto'
+        ? providerOverride
+        : provider;
+    final effectivePlayback = playbackProvider == 'auto' &&
+            playbackProviderOverride != null &&
+            playbackProviderOverride != 'auto'
+        ? playbackProviderOverride
+        : playbackProvider;
     final trackId = youtubeVideoId.isNotEmpty
         ? youtubeVideoId
         : (contentId.isNotEmpty
@@ -247,8 +284,8 @@ class HomeCmsItem {
       'duration': 0,
       'youtubeId': youtubeVideoId,
       if (jio != null) 'jiosaavnUrl': jio,
-      'playbackSource': jiosaavnEnabled ? playbackProvider : 'youtube',
-      'provider': jiosaavnEnabled ? provider : 'youtube',
+      'playbackSource': jiosaavnEnabled ? effectivePlayback : 'youtube',
+      'provider': jiosaavnEnabled ? effectiveProvider : 'youtube',
       'fallbackSource': fallbackProvider,
       'url': youtubeVideoId.isEmpty
           ? ''

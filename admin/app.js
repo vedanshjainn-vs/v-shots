@@ -1,791 +1,1376 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   V Shots Admin — Home CMS / Discover / Feature flags
+   Mobile-first SPA. Draft-then-publish model: edits stay local until
+   "Publish Home" (the only network write for Home content).
+   Legal boundary mirrors the Flutter app:
+     • JioSaavn: ONLY public webpage URLs (permalink / search). No media URLs,
+       no stream extraction, no unofficial API.
+     • YouTube: ONLY public watch URLs / video IDs. No media URLs.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// ═══════════════════════════════════════════════════════════════
-// CONFIG
-// ═══════════════════════════════════════════════════════════════
+/* ── Constants ────────────────────────────────────────────────────────────── */
 const SUPABASE_URL = 'https://jzxtxqjheggyoqwohqjg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6eHR4cWpoZWdneW9xd29ocWpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxODM4OTcsImV4cCI6MjEwMTc1OTg5N30.fD6pKQ4VRG-AoF-nLdpU9iMK1qWz4N-diqMUOJESVw8';
-const AUTHORIZED_EMAILS = ['lovesongs1106@gmail.com','vedanshjainn@gmail.com','mrvedansh11@gmail.com'];
+const PRODUCTION_REDIRECT_URL = 'https://vedanshjainn-vs.github.io/v-shots/';
+const AUTHORIZED_EMAILS = [
+  'lovesongs1106@gmail.com',
+  'vedanshjainn@gmail.com',
+  'mrvedansh11@gmail.com',
+];
+
+const SOURCE_TYPES = [
+  { id: 'youtube_search', label: 'YouTube Search', hint: 'Search query, e.g. trending punjabi songs official audio' },
+  { id: 'youtube_playlist', label: 'YouTube Playlist', hint: 'Playlist URL or PL… id' },
+  { id: 'youtube_channel', label: 'YouTube Channel', hint: 'Channel URL, UC… id, or @handle' },
+  { id: 'youtube_trending', label: 'YouTube Trending', hint: 'Optional region code (IN, US) — blank = global' },
+  { id: 'youtube_manual', label: 'Manual (YouTube)', hint: 'Pin exact YouTube videos below' },
+  { id: 'jiosaavn_manual', label: 'Manual (JioSaavn)', hint: 'Paste exact https://www.jiosaavn.com/song/... permalinks. Never invent IDs.' },
+  { id: 'personalized', label: 'Personalized (app engine)', hint: 'Uses the on-device recommendation engine — no query needed' },
+];
+
+/* Stable personalized keys — matches HomeFeedService._personalizedKeys in the app. */
+const PERSONALIZED_KEYS = [
+  { id: 'continue_listening', title: 'Continue Listening', engine: 'Recently played (offline)' },
+  { id: 'made_for_you', title: 'Made For You', engine: 'Music Intelligence V3' },
+  { id: 'because_listened', title: 'Because You Listened To', engine: 'Recommendation engine (seeded)' },
+  { id: 'trending_for_you', title: 'Trending For You', engine: 'Recommendation engine' },
+  { id: 'discover_something_new', title: 'Discover Something New', engine: 'Recommendation engine (viral)' },
+  { id: 'artists_for_you', title: 'Artists For You', engine: 'Taste profile top artists' },
+  { id: 'official_music', title: 'Official Music', engine: 'Verified/official uploads filter' },
+];
+
+/* Flags the Flutter app actually reads (RemoteFeatureFlags) + ops flags. */
+const KNOWN_FLAGS = [
+  { key: 'enable_remote_home', description: 'Home fetches layout from Supabase CMS. OFF = compiled defaults only.', appReads: true },
+  { key: 'enable_home_cms', description: 'Remote Home CMS (dashboard indicator / ops)', appReads: false },
+  { key: 'enable_jiosaavn_web_playback', description: 'Allow JioSaavn webpage playback in the in-app WebView. Safe default: OFF.', appReads: true },
+  { key: 'enable_jiosaavn_search_fallback', description: 'If no exact permalink, open the JioSaavn search page.', appReads: true },
+  { key: 'enable_jiosaavn_exact_urls', description: 'Allow exact JioSaavn permalinks from CMS items.', appReads: false },
+  { key: 'enable_youtube_web_playback', description: 'YouTube webpage playback.', appReads: false },
+  { key: 'enable_discovery_remote_categories', description: 'Discover mood list comes from Supabase categories.', appReads: true },
+  { key: 'enable_social', description: 'Comments / creator / UGC surfaces.', appReads: true },
+];
+
+const NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: '📊', section: 'main' },
+  { id: 'home-cms', label: 'Home Management', icon: '🏠', section: 'content' },
+  { id: 'discover', label: 'Discover categories', icon: '🔍', section: 'content' },
+  { id: 'providers', label: 'Providers', icon: '🔌', section: 'content' },
+  { id: 'feature-flags', label: 'Feature flags', icon: '🚩', section: 'system' },
+  { id: 'users', label: 'Admins', icon: '👥', section: 'system' },
+  { id: 'settings', label: 'Settings', icon: '⚙️', section: 'system' },
+];
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true }
+  auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true },
 });
 
-// ═══════════════════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════════════════
 const state = {
-  user: null, admin: false, page: 'home-cms',
-  sections: [], items: {}, flags: {},
-  expandedSection: null, editingItem: null,
-  saving: false, loading: true,
+  user: null,
+  admin: false,
+  page: 'home-cms',
+  demo: new URLSearchParams(location.search).has('demo'),
+  dirty: false,
+  busy: false,
+  data: { sections: [], items: {}, categories: [], flags: [] },
 };
 
-const $ = id => document.getElementById(id);
-const esc = x => String(x ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+/* ── Utils ────────────────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const esc = (x) => String(x ?? '')
+  .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const uid = () => crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-function toast(msg, type='success') {
+function toast(msg, type = 'success') {
+  let wrap = document.querySelector('.toast-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'toast-wrap';
+    document.body.appendChild(wrap);
+  }
   const t = document.createElement('div');
   t.className = `toast ${type}`;
   t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3000);
+  wrap.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 3200);
+  setTimeout(() => t.remove(), 3600);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SOURCE TYPE → DISPLAY MAPPING
-// ═══════════════════════════════════════════════════════════════
-const SOURCE_TYPES = {
-  youtube_search:     { label: 'YouTube Search',  icon: '🔍', kind: 'catalog' },
-  youtube_trending:   { label: 'YouTube Trending', icon: '📈', kind: 'catalog' },
-  youtube_playlist:   { label: 'YouTube Playlist', icon: '📋', kind: 'catalog' },
-  youtube_channel:    { label: 'YouTube Channel',  icon: '📺', kind: 'catalog' },
-  personalized:       { label: 'Personalized',     icon: '✨', kind: 'personalized' },
-  manual:             { label: 'Manual Items',     icon: '📌', kind: 'manual' },
-  youtube_manual:     { label: 'Manual Items',     icon: '📌', kind: 'manual' },
-  jiosaavn_manual:    { label: 'Manual Items',     icon: '📌', kind: 'manual' },
-};
-
-function sourceInfo(type) {
-  return SOURCE_TYPES[type] || { label: type || 'Unknown', icon: '❓', kind: 'catalog' };
-}
-
-function isPersonalized(type) {
-  return sourceInfo(type).kind === 'personalized';
-}
-
-function isManual(type) {
-  return sourceInfo(type).kind === 'manual';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// DATA LOADING
-// ═══════════════════════════════════════════════════════════════
-async function loadAll() {
-  state.loading = true;
-  try {
-    const [secRes, itemRes, flagRes] = await Promise.all([
-      supabase.from('home_layout_config').select('*').order('sort_order'),
-      supabase.from('home_section_items').select('*').order('sort_order'),
-      supabase.from('feature_flags').select('*'),
-    ]);
-    state.sections = secRes.data || [];
-    // Group items by section_id
-    state.items = {};
-    for (const item of (itemRes.data || [])) {
-      const sid = item.section_id;
-      if (!state.items[sid]) state.items[sid] = [];
-      state.items[sid].push(item);
-    }
-    state.flags = {};
-    for (const f of (flagRes.data || [])) {
-      state.flags[f.key] = f.value;
-    }
-  } catch (e) {
-    console.error('Load error:', e);
-    toast('Failed to load data', 'error');
+function setBusy(btn, busy, busyText) {
+  if (!btn) return;
+  if (busy) {
+    btn.dataset.original = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('btn-busy');
+    btn.innerHTML = `<span class="spinner"></span> ${esc(busyText || 'Saving…')}`;
+  } else {
+    btn.disabled = false;
+    btn.classList.remove('btn-busy');
+    if (btn.dataset.original) btn.innerHTML = btn.dataset.original;
   }
-  state.loading = false;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NAV
-// ═══════════════════════════════════════════════════════════════
-const NAV = [
-  { id: 'home-cms', label: 'Home Builder', icon: '🏠', section: 'Content' },
-  { id: 'feature-flags', label: 'Feature Flags', icon: '🚩', section: 'System' },
-  { id: 'providers', label: 'Providers', icon: '🔌', section: 'System' },
-  { id: 'settings', label: 'Settings', icon: '⚙️', section: 'System' },
-];
+/* ── URL validation (legal boundary — mirrors the Flutter app) ────────────── */
+const MEDIA_EXT_RE = /\.(mp3|m4a|m3u8|mp4|aac|ogg|wav|flac|webm|mpd)([?#].*)?$/i;
+const FORBIDDEN_HOST_RE = /(api\.|cdn|stream|download|media|saavn\.me)/i;
+/* Mirrors the Flutter app's JioSaavnWebProvider.pageHosts exactly. */
+const JIOSAAVN_HOSTS = ['jiosaavn.com', 'www.jiosaavn.com'];
 
-// ═══════════════════════════════════════════════════════════════
-// RENDER — MAIN LAYOUT
-// ═══════════════════════════════════════════════════════════════
-function renderLayout() {
-  const app = $('app');
-  app.innerHTML = `
+function isForbiddenMediaUrl(url) {
+  const v = String(url || '').trim();
+  if (!v) return { ok: true };
+  if (!/^https:\/\//i.test(v)) return { ok: false, text: 'Must be an HTTPS URL' };
+  try {
+    const u = new URL(v);
+    if (MEDIA_EXT_RE.test(u.pathname)) return { ok: false, text: 'Direct media/stream URLs are not allowed (.mp3/.m4a/.m3u8/…) — no extraction' };
+    if (FORBIDDEN_HOST_RE.test(u.hostname)) return { ok: false, text: 'CDN / media-host URLs are not allowed' };
+    return { ok: true };
+  } catch (_) {
+    return { ok: false, text: 'Not a valid URL' };
+  }
+}
+
+function extractYoutubeId(input) {
+  const v = String(input || '').trim();
+  if (!v) return null;
+  if (/^(javascript|data|file):/i.test(v)) return null;
+  if (MEDIA_EXT_RE.test(v)) return null;
+  const bare = v.match(/^[A-Za-z0-9_-]{11}$/);
+  if (bare) return v;
+  const m = v.match(/(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function inspectYoutubeInput(input) {
+  const v = String(input || '').trim();
+  if (!v) return { ok: true, id: null, text: '' };
+  const bad = isForbiddenMediaUrl(v);
+  if (!bad.ok) return { ok: false, id: null, text: bad.text };
+  const id = extractYoutubeId(v);
+  if (id) return { ok: true, id, text: `✓ Video ${id}` };
+  return { ok: false, id: null, text: 'Not a YouTube video URL / ID' };
+}
+
+function inspectJioSaavnUrl(url) {
+  const v = String(url || '').trim();
+  if (!v) return { ok: true, text: '' };
+  const bad = isForbiddenMediaUrl(v);
+  if (!bad.ok) return { ok: false, text: bad.text };
+  try {
+    const u = new URL(v);
+    if (!JIOSAAVN_HOSTS.includes(u.hostname.toLowerCase())) {
+      return { ok: false, text: 'Must be a jiosaavn.com URL (the app only opens jiosaavn.com pages)' };
+    }
+    if (u.pathname.startsWith('/song/') && u.pathname.split('/').filter(Boolean).length >= 3) {
+      return { ok: true, text: '✓ Exact song permalink' };
+    }
+    if (u.pathname.startsWith('/search/songs/')) {
+      return { ok: true, text: 'Search URL (used only when search fallback is enabled)' };
+    }
+    return { ok: false, text: 'Must be a /song/ permalink or /search/songs/ page' };
+  } catch (_) {
+    return { ok: false, text: 'Not a valid URL' };
+  }
+}
+
+/* ── Auth ─────────────────────────────────────────────────────────────────── */
+function redirectUrl() {
+  if (location.hostname.includes('github.io')) return PRODUCTION_REDIRECT_URL;
+  return `${location.origin}${location.pathname}`;
+}
+
+function isAuthorizedEmail(email) {
+  return AUTHORIZED_EMAILS.includes((email || '').toLowerCase().trim());
+}
+
+async function checkAuth() {
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user || null;
+  state.user = user;
+  if (!user) { state.admin = false; return false; }
+  if (!isAuthorizedEmail(user.email)) {
+    await supabase.auth.signOut();
+    state.admin = false;
+    return false;
+  }
+  try { await supabase.rpc('claim_home_admin'); } catch (e) {
+    console.warn('[AUTH] claim_home_admin:', e);
+  }
+  state.admin = true;
+  return true;
+}
+
+async function signIn() {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: redirectUrl(), queryParams: { prompt: 'select_account' } },
+  });
+  if (error) renderLogin(error.message);
+}
+
+async function signOut() {
+  await supabase.auth.signOut();
+  state.admin = false;
+  state.user = null;
+  renderLogin();
+}
+
+function renderLogin(errorMsg) {
+  document.title = 'V Shots Admin';
+  $('app').innerHTML = `
+    <div class="login-screen">
+      <div class="login-card">
+        <div class="login-logo">V</div>
+        <div class="login-title">V Shots Admin</div>
+        <div class="login-subtitle">Sign in with an authorized Google account to manage Home, Discover and feature flags.</div>
+        <button class="login-btn" id="login-btn">
+          <svg width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Sign in with Google
+        </button>
+        ${errorMsg ? `<div class="login-error">${esc(errorMsg)}</div>` : ''}
+        <p class="muted small mt16">Authorized accounts: lovesongs1106@gmail.com · vedanshjainn@gmail.com · mrvedansh11@gmail.com</p>
+      </div>
+    </div>`;
+  $('login-btn').onclick = signIn;
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+function renderAdmin() {
+  document.title = 'V Shots Admin';
+  $('app').innerHTML = `
     <div class="admin-layout">
-      <div class="overlay" id="overlay"></div>
+      <div class="backdrop" id="backdrop"></div>
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
           <div class="sidebar-logo">V</div>
-          <div><div class="sidebar-title">V Shots Admin</div><div class="sidebar-subtitle">Home CMS</div></div>
+          <div>
+            <div class="sidebar-title">V Shots Admin</div>
+            <div class="sidebar-subtitle">Remote Home CMS</div>
+          </div>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav"></nav>
+        ${state.demo ? '<div class="banner" style="margin:8px 12px">🧪 Demo mode — network writes disabled.</div>' : ''}
       </aside>
       <div class="main">
         <header class="topbar">
-          <div style="display:flex;align-items:center;gap:10px;min-width:0">
-            <button class="btn btn-icon menu-btn" id="menu-btn">☰</button>
-            <div class="topbar-title" id="page-title">Home Builder</div>
+          <div class="topbar-left">
+            <button class="btn btn-icon menu-btn" id="menu-btn" aria-label="Open menu">☰</button>
+            <div class="topbar-title" id="page-title">Home Management</div>
           </div>
           <div class="topbar-actions">
-            <div class="topbar-status"></div>
-            <span class="topbar-email">${esc(state.user?.email || '')}</span>
+            <div class="topbar-status" title="Supabase connected"></div>
+            <span class="topbar-email">${esc(state.user?.email || (state.demo ? 'demo' : ''))}</span>
+            <button class="btn btn-sm" id="logout-btn">Sign out</button>
           </div>
         </header>
-        <div class="content" id="content">
-          <div style="text-align:center;padding:60px"><div class="spinner"></div></div>
-        </div>
+        <div class="content" id="content"><div style="text-align:center;padding:60px"><div class="spinner"></div></div></div>
       </div>
-    </div>
-  `;
+    </div>`;
 
-  // Sidebar nav
   const nav = $('sidebar-nav');
-  let curSection = '';
-  for (const item of NAV) {
-    if (item.section !== curSection) {
-      curSection = item.section;
-      nav.innerHTML += `<div class="nav-section">${item.section}</div>`;
+  let section = '';
+  NAV_ITEMS.forEach((item) => {
+    if (item.section !== section) {
+      section = item.section;
+      const label = section === 'content' ? 'Content' : section === 'system' ? 'System' : '';
+      if (label) nav.innerHTML += `<div class="nav-section">${label}</div>`;
     }
-    nav.innerHTML += `<div class="nav-item${state.page===item.id?' active':''}" data-page="${item.id}"><span class="icon">${item.icon}</span>${item.label}</div>`;
-  }
-
-  // Events
-  $('menu-btn').onclick = () => {
-    $('sidebar').classList.toggle('open');
-    $('overlay').classList.toggle('open');
-  };
-  $('overlay').onclick = () => {
-    $('sidebar').classList.remove('open');
-    $('overlay').classList.remove('open');
-  };
-  nav.querySelectorAll('.nav-item').forEach(el => {
+    nav.innerHTML += `<div class="nav-item${state.page === item.id ? ' active' : ''}" data-page="${item.id}"><span class="icon">${item.icon}</span>${item.label}</div>`;
+  });
+  const closeDrawer = () => { $('sidebar').classList.remove('open'); $('backdrop').classList.remove('show'); };
+  $('menu-btn').onclick = () => { $('sidebar').classList.toggle('open'); $('backdrop').classList.toggle('show'); };
+  $('backdrop').onclick = closeDrawer;
+  nav.querySelectorAll('.nav-item').forEach((el) => {
     el.onclick = () => {
       state.page = el.dataset.page;
-      $('sidebar').classList.remove('open');
-      $('overlay').classList.remove('open');
-      renderLayout();
+      closeDrawer();
+      renderAdmin();
     };
   });
-
+  if (state.demo) {
+    $('logout-btn').textContent = 'Exit demo';
+    $('logout-btn').onclick = () => { location.search = ''; };
+  } else {
+    $('logout-btn').onclick = signOut;
+  }
   loadPage();
 }
 
 async function loadPage() {
   const content = $('content');
-  const title = $('page-title');
-  const item = NAV.find(n => n.id === state.page);
-  title.textContent = item?.label || 'Dashboard';
-
-  switch(state.page) {
-    case 'home-cms': await renderHomeCMS(content); break;
-    case 'feature-flags': renderFeatureFlags(content); break;
-    case 'providers': renderProviders(content); break;
-    case 'settings': renderSettings(content); break;
-    default: await renderHomeCMS(content);
+  const item = NAV_ITEMS.find((n) => n.id === state.page);
+  $('page-title').textContent = item?.label || 'Dashboard';
+  content.innerHTML = '<div style="text-align:center;padding:60px"><div class="spinner"></div></div>';
+  try {
+    switch (state.page) {
+      case 'dashboard': await renderDashboard(content); break;
+      case 'home-cms': await renderHomeCMS(content); break;
+      case 'discover': await renderDiscover(content); break;
+      case 'providers': await renderProviders(content); break;
+      case 'feature-flags': await renderFlags(content); break;
+      case 'users': renderUsers(content); break;
+      default: renderSettings(content); break;
+    }
+  } catch (e) {
+    content.innerHTML = `<div class="card"><div class="card-title">Could not load this page</div><p class="login-error mt8">${esc(e.message || e)}</p>
+      <button class="btn mt12" onclick="location.reload()">Reload</button></div>`;
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// HOME CMS — MAIN SCREEN
-// ═══════════════════════════════════════════════════════════════
-async function renderHomeCMS(el) {
-  await loadAll();
-  const sections = state.sections;
+/* ── Data loading ─────────────────────────────────────────────────────────── */
+async function loadHome() {
+  if (state.demo) { state.data = demoData(); return; }
+  const { data: sections, error } = await supabase
+    .from('home_layout_config').select('*').order('sort_order');
+  if (error) throw error;
+  state.data.sections = sections || [];
+  const { data: items } = await supabase
+    .from('home_section_items').select('*').order('sort_order');
+  const grouped = {};
+  (items || []).forEach((row) => { (grouped[row.section_id] ||= []).push(row); });
+  state.data.items = grouped;
+}
 
-  el.innerHTML = `
-    <div class="card" style="padding:12px 14px">
-      <div class="card-header" style="margin-bottom:8px">
-        <div>
-          <div class="card-title">🏠 Home Page Builder</div>
-          <div class="card-subtitle">${sections.length} sections • Changes live after publish</div>
-        </div>
-        <div class="btn-group">
-          <button class="btn btn-primary btn-sm" id="add-section">+ Add</button>
-          <button class="btn btn-success btn-sm" id="publish-all">🚀 Publish</button>
-        </div>
-      </div>
-    </div>
-    <div id="sections-list"></div>
-  `;
-
-  const list = $('sections-list');
-
-  if (sections.length === 0) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">🏠</div><div class="title">No sections</div><div class="desc">Tap "+ Add" to create your first Home section.</div></div>`;
-  } else {
-    sections.forEach((s, i) => {
-      const src = sourceInfo(s.source_type);
-      const items = state.items[s.id] || [];
-      const expanded = state.expandedSection === s.id;
-      const provClass = s.provider === 'jiosaavn' ? 'provider-jiosaavn' : s.provider === 'youtube' ? 'provider-youtube' : 'provider-auto';
-      const provLabel = s.provider === 'jiosaavn' ? 'JioSaavn' : s.provider === 'youtube' ? 'YouTube' : 'Auto';
-
-      const d = document.createElement('div');
-      d.className = 'section-card';
-      d.innerHTML = `
-        <div class="section-card-header" data-toggle="${s.id}">
-          <span class="section-drag">☰</span>
-          <div class="section-info">
-            <div class="section-title">${src.icon} ${esc(s.title)}</div>
-            <div class="section-meta">
-              <span class="provider-badge ${provClass}">${provLabel}</span>
-              <span>${src.label}</span>
-              ${s.visible === false ? '<span class="badge badge-red">Hidden</span>' : ''}
-              ${s.published === false ? '<span class="badge badge-yellow">Draft</span>' : ''}
-              ${isManual(s.source_type) ? `<span>${items.length} items</span>` : ''}
-            </div>
-          </div>
-          <div class="section-actions">
-            <button class="btn btn-sm btn-icon" data-up="${i}" ${i===0?'disabled':''}>↑</button>
-            <button class="btn btn-sm btn-icon" data-down="${i}" ${i===sections.length-1?'disabled':''}>↓</button>
-          </div>
-        </div>
-        <div class="section-body${expanded?' open':''}" id="body-${s.id}">
-          ${renderSectionForm(s, items)}
-        </div>
-      `;
-
-      // Toggle expand
-      d.querySelector(`[data-toggle="${s.id}"]`).onclick = (e) => {
-        if (e.target.closest('[data-up]') || e.target.closest('[data-down]')) return;
-        state.expandedSection = state.expandedSection === s.id ? null : s.id;
-        renderHomeCMS(el);
-      };
-
-      // Reorder
-      d.querySelector(`[data-up="${i}"]`)?.onclick = () => {
-        if (i > 0) { [sections[i], sections[i-1]] = [sections[i-1], sections[i]]; renderHomeCMS(el); }
-      };
-      d.querySelector(`[data-down="${i}"]`)?.onclick = () => {
-        if (i < sections.length-1) { [sections[i], sections[i+1]] = [sections[i+1], sections[i]]; renderHomeCMS(el); }
-      };
-
-      list.appendChild(d);
-    });
-  }
-
-  // Add section
-  $('add-section').onclick = () => {
-    sections.push({
-      id: uid(), section_key: `home_${Date.now()}`, title: 'New Section',
-      subtitle: '', section_type: 'home_section', source_type: 'youtube_search',
-      source_value: '', query: '', max_items: 15, visible: true, published: false,
-      sort_order: sections.length, provider: 'youtube', playback_provider: 'youtube_web',
-      fallback_provider: 'youtube_web', refresh_minutes: 60,
-    });
-    state.expandedSection = sections[sections.length-1].id;
-    renderHomeCMS(el);
+function demoData() {
+  const sections = [
+    s('trending_now', 'trending_now', 'Trending Now', 'What the world is playing', 'youtube_search', 'trending songs official music video 2026', 15, true, true, 'auto'),
+    s('new_releases', 'new_releases', 'New Releases', 'Fresh drops this week', 'youtube_search', 'new music releases official audio 2026', 15, true, true, 'auto'),
+    s('made_for_you', 'made_for_you', 'Made For You', '', 'personalized', 'made_for_you', 12, true, true, 'auto'),
+    s('because_listened', 'because_listened', 'Because You Listened To', '', 'personalized', 'because_listened', 12, true, true, 'auto'),
+    s('india_hits', 'india_hits', 'India Hits', 'Hindi cinema favourites', 'youtube_search', 'top bollywood hindi songs official music video', 15, true, true, 'auto'),
+    s('punjabi', 'punjabi', 'Punjabi Bangers', 'Desi energy', 'youtube_search', 'latest punjabi pop hits official audio', 15, true, true, 'auto'),
+    s('hindi_indie', 'hindi_indie', 'Hindi Indie', '', 'youtube_search', 'hindi indie songs official audio', 15, true, true, 'auto'),
+    s('chill_lofi', 'chill_lofi', 'Chill & LoFi', 'Late night focus', 'youtube_search', 'chill lofi late night beats official audio', 15, true, true, 'auto'),
+    s('editors_picks', 'editors_picks', 'Editor Picks', 'Hand-pinned', 'youtube_manual', '', 8, true, true, 'jiosaavn'),
+    s('trending_for_you', 'trending_for_you', 'Trending For You', '', 'personalized', 'trending_for_you', 12, false, true, 'auto'),
+  ];
+  const items = {
+    editors_picks: [
+      { id: uid(), section_id: 'editors_picks', content_id: 'dQw4w9WgXcQ', youtube_video_id: 'dQw4w9WgXcQ', title: 'Never Gonna Give You Up', artist: 'Rick Astley', artwork_url: '', jiosaavn_url: '', provider: 'auto', playback_provider: 'auto', fallback_provider: 'none', sort_order: 0, is_enabled: true },
+      { id: uid(), section_id: 'editors_picks', content_id: 'jsv_demo', youtube_video_id: '', title: 'Tum Hi Ho', artist: 'Arijit Singh', artwork_url: '', jiosaavn_url: 'https://www.jiosaavn.com/song/tum-hi-ho/RTdzdkFmQWs', provider: 'jiosaavn', playback_provider: 'jiosaavn', fallback_provider: 'youtube', sort_order: 1, is_enabled: true },
+    ],
   };
-
-  // Publish
-  $('publish-all').onclick = () => publishAll(el);
-
-  // Bind form changes
-  bindSectionForms(el);
+  return { sections, items, categories: [], flags: KNOWN_FLAGS.map((f) => ({ key: f.key, value: f.key === 'enable_remote_home' || f.key === 'enable_jiosaavn_search_fallback', description: f.description })) };
+}
+function s(id, key, title, subtitle, sourceType, sourceValue, maxItems, visible, published, provider) {
+  return {
+    id, section_key: key, title, subtitle, section_type: sourceType === 'personalized' ? 'personalized' : 'home_section',
+    source_type: sourceType, source_value: sourceValue, query: sourceValue, sort_order: 0,
+    max_items: maxItems, visible, published, region_code: null, category_id: null, refresh_minutes: 60,
+    provider, playback_provider: provider === 'jiosaavn' ? 'jiosaavn' : 'auto', fallback_provider: 'none',
+  };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SECTION FORM (expanded view)
-// ═══════════════════════════════════════════════════════════════
-function renderSectionForm(s, items) {
-  const src = sourceInfo(s.source_type);
-  const personalized = isPersonalized(s.source_type);
-  const manual = isManual(s.source_type);
+/* ── Helpers ──────────────────────────────────────────────────────────────── */
+function sourceById(id) { return SOURCE_TYPES.find((t) => t.id === id) || SOURCE_TYPES[0]; }
+function personalizedById(id) { return PERSONALIZED_KEYS.find((k) => k.id === id); }
+function isManualSource(type) { return type === 'youtube_manual' || type === 'jiosaavn_manual' || type === 'manual'; }
+function isPersonalizedSource(type) { return type === 'personalized'; }
 
-  let html = `
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Title</label>
-        <input class="form-input" value="${esc(s.title)}" data-field="title" data-id="${s.id}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Subtitle</label>
-        <input class="form-input" value="${esc(s.subtitle || '')}" placeholder="Auto-generated" data-field="subtitle" data-id="${s.id}">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Source Type</label>
-        <select class="form-select" data-field="source_type" data-id="${s.id}">
-          ${Object.entries(SOURCE_TYPES).map(([k,v]) => `<option value="${k}" ${s.source_type===k?'selected':''}>${v.icon} ${v.label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Max Items</label>
-        <input class="form-input" type="number" min="1" max="100" value="${s.max_items || 15}" data-field="max_items" data-id="${s.id}">
-      </div>
-    </div>
-  `;
-
-  if (!personalized) {
-    html += `
-      <div class="form-group">
-        <label class="form-label">Search Query / Source Value</label>
-        <input class="form-input" value="${esc(s.source_value || s.query || '')}" placeholder="e.g. trending songs 2026" data-field="source_value" data-id="${s.id}">
-      </div>
-    `;
-  } else {
-    html += `<div class="source-hint">${src.icon} <strong>${src.label}</strong> — Content is generated by the recommendation engine based on user listening history. No search query needed.</div>`;
+function kindBadge(sec) {
+  const t = sec.source_type || 'youtube_search';
+  if (t === 'personalized') {
+    const pk = personalizedById(sec.section_key || sec.id);
+    if (pk?.id === 'continue_listening') return '<span class="badge badge-green">Continue</span>';
+    return '<span class="badge badge-purple">Personalized</span>';
   }
+  if (isManualSource(t)) return '<span class="badge badge-pink">Manual</span>';
+  return '<span class="badge badge-blue">Catalog</span>';
+}
 
-  html += `
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Playback Provider</label>
-        <select class="form-select" data-field="provider" data-id="${s.id}">
-          <option value="youtube" ${s.provider==='youtube'?'selected':''}>▶️ YouTube</option>
-          <option value="jiosaavn" ${s.provider==='jiosaavn'?'selected':''}>🎵 JioSaavn</option>
-          <option value="auto" ${s.provider==='auto'?'selected':''}>🔄 Auto</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Fallback Provider</label>
-        <select class="form-select" data-field="fallback_provider" data-id="${s.id}">
-          <option value="youtube_web" ${s.fallback_provider==='youtube_web'?'selected':''}>YouTube</option>
-          <option value="none" ${s.fallback_provider==='none'?'selected':''}>None</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-check">
-          <input type="checkbox" ${s.visible !== false ? 'checked' : ''} data-field="visible" data-id="${s.id}">
-          <span>Visible on Home</span>
-        </label>
-      </div>
-      <div class="form-group">
-        <label class="form-check">
-          <input type="checkbox" ${s.published !== false ? 'checked' : ''} data-field="published" data-id="${s.id}">
-          <span>Published</span>
-        </label>
-      </div>
-    </div>
-    <div class="btn-group" style="margin-top:8px">
-      <button class="btn btn-danger btn-sm" data-delete="${s.id}">🗑 Delete</button>
-    </div>
-  `;
+function sourceLabel(sec) {
+  const t = sec.source_type || 'youtube_search';
+  if (t === 'personalized') {
+    const pk = personalizedById(sec.section_key || sec.id);
+    return pk ? `Engine: ${pk.engine}` : 'Recommendation engine';
+  }
+  return sourceById(t).label;
+}
 
-  // Manual items section
-  if (manual) {
-    html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <span style="font-size:13px;font-weight:700">📌 Manual Items (${items.length})</span>
-        <button class="btn btn-sm btn-primary" data-add-item="${s.id}">+ Add Item</button>
-      </div>
-      <div id="items-${s.id}">
-        ${items.map((item, idx) => renderItemCard(s.id, item, idx)).join('')}
-        ${items.length === 0 ? '<div class="source-hint">No items yet. Tap "+ Add Item" to add songs.</div>' : ''}
+function providerChip(sec) {
+  const p = (sec.provider || 'auto').toLowerCase();
+  const label = p.includes('jiosaavn') ? 'JioSaavn' : p.includes('youtube') ? 'YouTube' : 'Auto';
+  const cls = p.includes('jiosaavn') ? 'badge-green' : p.includes('youtube') ? 'badge-red' : 'badge-gray';
+  return `<span class="badge ${cls}">▶ ${label}</span>`;
+}
+
+/* ══ DASHBOARD ═══════════════════════════════════════════════════════════════ */
+async function renderDashboard(el) {
+  try { await loadHome(); } catch (_) {}
+  const sections = state.data.sections;
+  const live = sections.filter((x) => x.visible !== false && x.published !== false).length;
+  const hidden = sections.length - live;
+  const manualCount = Object.values(state.data.items).reduce((n, arr) => n + arr.length, 0);
+  el.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Home sections</div><div class="stat-value">${sections.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Live (visible + published)</div><div class="stat-value" style="color:var(--green)">${live}</div></div>
+      <div class="stat-card"><div class="stat-label">Hidden / unpublished</div><div class="stat-value" style="color:var(--yellow)">${hidden}</div></div>
+      <div class="stat-card"><div class="stat-label">Manual items</div><div class="stat-value" style="color:var(--pink)">${manualCount}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">How Home CMS works</div>
+      <p class="muted mt8" style="font-size:14px;line-height:1.6">
+        Edit shelves here, then <b style="color:var(--text)">Publish Home</b>. The V Shots app fetches
+        <code>home_layout_config</code> + <code>home_section_items</code> on launch (1-hour cache, pull-to-refresh
+        forces it) and rebuilds Home without a Play Store update. Personalized rows keep the on-device
+        recommendation engine. Catalog rows use YouTube search / playlist / channel / trending / pinned videos.
+        JioSaavn rows open the real JioSaavn webpage in the app's WebView — never an unofficial API.
+        If Supabase is unreachable, the app falls back to compiled defaults.
+      </p>
+      <div class="btn-group mt12">
+        <button class="btn btn-primary" id="go-cms">Open Home Management</button>
+        <button class="btn" id="go-preview">Preview Home</button>
       </div>
     </div>`;
-  }
-
-  return html;
+  $('go-cms').onclick = () => { state.page = 'home-cms'; renderAdmin(); };
+  $('go-preview').onclick = () => openPreview(null);
 }
 
-function renderItemCard(sectionId, item, idx) {
-  const provClass = item.provider === 'jiosaavn' ? 'provider-jiosaavn' : item.provider === 'youtube' ? 'provider-youtube' : 'provider-auto';
-  const provLabel = item.provider === 'jiosaavn' ? 'JioSaavn' : item.provider === 'youtube' ? 'YouTube' : 'Auto';
-  return `
-    <div class="item-card">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="min-width:0;flex:1">
-          <div class="item-card-title">${esc(item.title)}</div>
-          <div class="item-card-meta">${esc(item.artist || '')} <span class="provider-badge ${provClass}">${provLabel}</span></div>
+/* ══ HOME MANAGEMENT ════════════════════════════════════════════════════════ */
+async function renderHomeCMS(el) {
+  try { await loadHome(); } catch (e) {
+    el.innerHTML = `<div class="card"><div class="card-title">Could not load Home</div><p class="login-error mt8">${esc(e.message)}</p>
+      <button class="btn mt12" onclick="location.reload()">Reload</button></div>`;
+    return;
+  }
+  const sections = state.data.sections;
+  const live = sections.filter((x) => x.visible !== false && x.published !== false).length;
+
+  el.innerHTML = `
+    ${state.dirty ? '<div class="banner">⚠️ Unsaved changes — edits are live in the app only after you <b>Publish Home</b>.</div>' : ''}
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Home Management</div>
+          <div class="card-subtitle">Order is top-to-bottom in the app. Continue Listening is auto-added at the top by the app if you do not include it.</div>
         </div>
         <div class="btn-group">
-          <button class="btn btn-sm" data-edit-item="${sectionId}:${idx}">✏️</button>
-          <button class="btn btn-sm btn-danger" data-del-item="${sectionId}:${idx}">✕</button>
+          <button class="btn" id="add-catalog">+ Catalog</button>
+          <button class="btn" id="add-personalized">+ Personalized</button>
+          <button class="btn" id="add-jiosaavn">+ JioSaavn section</button>
+          <button class="btn" id="preview-home">👁 Preview</button>
         </div>
       </div>
+      <div class="sections-list" id="sections-list"></div>
     </div>
-  `;
+    <div class="publish-bar">
+      <div class="publish-summary">
+        ${state.dirty ? '<span class="dirty-dot"></span>' : ''}
+        <b>${sections.length}</b> sections · <b style="color:var(--green)">${live}</b> live ·
+        <b style="color:var(--yellow)">${sections.length - live}</b> hidden/unpublished ·
+        ${Object.values(state.data.items).reduce((n, a) => n + a.length, 0)} manual items
+      </div>
+      <button class="btn" id="reload-home">Reload</button>
+      <button class="btn btn-success" id="publish-home">📡 Publish Home</button>
+    </div>`;
+
+  const list = $('sections-list');
+  if (!sections.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">🏠</div><div class="title">No sections yet</div>
+      <div class="desc">Add a catalog, personalized or JioSaavn section, then Publish.</div></div>`;
+  } else {
+    sections.forEach((sec, i) => {
+      const items = state.data.items[sec.id] || [];
+      const isPersonalized = isPersonalizedSource(sec.source_type);
+      const isManual = isManualSource(sec.source_type);
+      const published = sec.published !== false;
+      const visible = sec.visible !== false;
+      const d = document.createElement('div');
+      d.className = 'section-card';
+      d.dataset.index = i;
+      d.innerHTML = `
+        <div class="section-top">
+          <div class="drag-handle" data-drag aria-label="Drag to reorder" title="Drag to reorder">⠿</div>
+          <div class="section-order">${i + 1}</div>
+          <div class="section-title-inline">${esc(sec.title || 'Untitled')}</div>
+          <div class="section-badges">
+            ${kindBadge(sec)}
+            <span class="chip key-chip" title="Stable key">${esc(sec.section_key || sec.id)}</span>
+          </div>
+        </div>
+        <div class="section-meta">
+          <div class="meta-line"><span class="label">Source:</span><span class="value">${esc(sourceLabel(sec))}</span> ${providerChip(sec)}</div>
+          ${!isPersonalized && !isManual ? `<div class="meta-line"><span class="label">Query:</span><span class="value">${esc(sec.source_value || sec.query || '—')}</span></div>` : ''}
+          ${isPersonalized ? `<div class="meta-line"><span class="label">Type:</span><span class="value">Personalized · ${esc(personalizedById(sec.section_key || sec.id)?.engine || 'Recommendation engine')}</span></div>` : ''}
+          ${isManual ? `<div class="meta-line"><span class="label">Items:</span><span class="value">${items.length} pinned</span></div>` : ''}
+          <div class="meta-line"><span class="label">Max items:</span><span class="value">${sec.max_items || 15}</span></div>
+        </div>
+        <div class="section-toggles">
+          <label class="toggle-label"><span class="switch"><input type="checkbox" data-toggle="visible" ${visible ? 'checked' : ''}><span class="slider"></span></span> Show in app</label>
+          <label class="toggle-label"><span class="switch"><input type="checkbox" data-toggle="published" ${published ? 'checked' : ''}><span class="slider"></span></span> Published</label>
+          <span class="badge ${published ? 'badge-green' : 'badge-yellow'}" data-pub-badge>${published ? 'Published' : 'Unpublished'}</span>
+        </div>
+        <div class="section-actions">
+          <button class="btn btn-sm" data-action="edit">✏️ Edit</button>
+          <button class="btn btn-sm" data-action="preview">👁 Preview</button>
+          <span class="spacer"></span>
+          <button class="btn btn-sm btn-icon" data-action="up" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+          <button class="btn btn-sm btn-icon" data-action="down" ${i === sections.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+          <button class="btn btn-sm btn-danger" data-action="delete">Delete</button>
+        </div>`;
+      list.appendChild(d);
+
+      d.querySelector('[data-action="edit"]').onclick = () => openSectionEditor(sec, i);
+      d.querySelector('[data-action="preview"]').onclick = () => openPreview(sec);
+      d.querySelector('[data-action="up"]').onclick = () => {
+        if (i > 0) { [sections[i], sections[i - 1]] = [sections[i - 1], sections[i]]; state.dirty = true; renderHomeCMS(el); }
+      };
+      d.querySelector('[data-action="down"]').onclick = () => {
+        if (i < sections.length - 1) { [sections[i], sections[i + 1]] = [sections[i + 1], sections[i]]; state.dirty = true; renderHomeCMS(el); }
+      };
+      d.querySelector('[data-action="delete"]').onclick = () => {
+        if (!confirm(`Delete "${sec.title}"? This takes effect on next Publish.`)) return;
+        sections.splice(i, 1);
+        delete state.data.items[sec.id];
+        state.dirty = true;
+        renderHomeCMS(el);
+      };
+      d.querySelectorAll('[data-toggle]').forEach((chk) => {
+        chk.onchange = () => {
+          sec[chk.dataset.toggle] = chk.checked;
+          state.dirty = true;
+          const badge = d.querySelector('[data-pub-badge]');
+          if (badge) {
+            badge.textContent = sec.published !== false ? 'Published' : 'Unpublished';
+            badge.className = `badge ${sec.published !== false ? 'badge-green' : 'badge-yellow'}`;
+          }
+          $('publish-home') && renderHomeCMS(el); // refresh summary counts
+        };
+      });
+    });
+  }
+
+  $('add-catalog').onclick = () => {
+    sections.push({
+      id: uid(), section_key: `home_${Date.now()}`, title: 'New section', subtitle: '',
+      section_type: 'home_section', source_type: 'youtube_search', source_value: '', query: '',
+      max_items: 15, visible: true, published: true, region_code: '', category_id: null, refresh_minutes: 60,
+      provider: 'auto', playback_provider: 'auto', fallback_provider: 'none',
+    });
+    state.dirty = true;
+    openSectionEditor(sections[sections.length - 1], sections.length - 1);
+  };
+  $('add-personalized').onclick = () => {
+    const used = new Set(sections.map((x) => x.section_key));
+    const next = PERSONALIZED_KEYS.find((k) => !used.has(k.id)) || PERSONALIZED_KEYS[1];
+    sections.push({
+      id: next.id === 'continue_listening' ? `continue_${Date.now()}` : next.id,
+      section_key: next.id, title: next.title, subtitle: '',
+      section_type: 'personalized', source_type: 'personalized', source_value: next.id, query: '',
+      max_items: 12, visible: true, published: true, region_code: '', category_id: null, refresh_minutes: 60,
+      provider: 'auto', playback_provider: 'auto', fallback_provider: 'none',
+    });
+    state.dirty = true;
+    renderHomeCMS(el);
+    toast(`Added "${next.title}" (draft — publish to apply)`);
+  };
+  $('add-jiosaavn').onclick = () => {
+    sections.push({
+      id: uid(), section_key: `jiosaavn_${Date.now()}`, title: 'JioSaavn Section', subtitle: '',
+      section_type: 'home_section', source_type: 'jiosaavn_manual', source_value: '', query: '',
+      max_items: 8, visible: false, published: false, region_code: '', category_id: null, refresh_minutes: 60,
+      provider: 'jiosaavn', playback_provider: 'jiosaavn', fallback_provider: 'youtube',
+    });
+    state.data.items[sections[sections.length - 1].id] = [];
+    state.dirty = true;
+    openSectionEditor(sections[sections.length - 1], sections.length - 1);
+    toast('JioSaavn section added — paste real /song/ permalinks, then publish. Search fallback needs the flag ON.', 'warn');
+  };
+  $('preview-home').onclick = () => openPreview(null);
+  $('reload-home').onclick = () => { state.dirty = false; renderHomeCMS(el); toast('Reloaded from Supabase'); };
+  $('publish-home').onclick = () => validateAndPublish(el);
+
+  initDragReorder(list);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ITEM EDITOR (bottom sheet)
-// ═══════════════════════════════════════════════════════════════
-function showItemEditor(sectionId, itemIdx) {
-  const items = state.items[sectionId] || [];
-  const isNew = itemIdx === -1;
-  const item = isNew ? {
-    title: '', artist: '', artwork_url: '', youtube_video_id: '',
-    jiosaavn_url: '', provider: 'auto', content_id: uid(),
-  } : { ...items[itemIdx] };
+/* ── Touch + mouse drag reorder ───────────────────────────────────────────── */
+function initDragReorder(listEl) {
+  let active = null, startY = 0, moved = false, lastTarget = null;
+  listEl.querySelectorAll('.drag-handle').forEach((handle) => {
+    handle.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      active = handle.closest('.section-card');
+      startY = e.clientY; moved = false; lastTarget = null;
+      active.classList.add('dragging');
+      try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if (!active) return;
+      if (!moved && Math.abs(e.clientY - startY) < 6) return;
+      moved = true;
+      const found = document.elementFromPoint(e.clientX, e.clientY);
+      const card = found ? found.closest('.section-card') : null;
+      if (card && card !== active && card.parentElement === listEl) {
+        if (lastTarget && lastTarget !== card) lastTarget.classList.remove('drag-over');
+        card.classList.add('drag-over');
+        lastTarget = card;
+      }
+    });
+    const finish = () => {
+      if (!active) return;
+      const card = active;
+      active = null;
+      card.classList.remove('dragging');
+      if (lastTarget) lastTarget.classList.remove('drag-over');
+      if (moved && lastTarget && lastTarget !== card) {
+        const from = Number(card.dataset.index);
+        const to = Number(lastTarget.dataset.index);
+        const arr = state.data.sections;
+        const [item] = arr.splice(from, 1);
+        arr.splice(to, 0, item);
+        state.dirty = true;
+      }
+      renderHomeCMS($('content'));
+    };
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
+  });
+}
 
-  // Remove existing sheet
-  document.querySelector('.sheet')?.remove();
-  document.querySelector('.overlay')?.classList.remove('open');
+/* ── Section editor modal ─────────────────────────────────────────────────── */
+function openSectionEditor(sec, index) {
+  const draft = JSON.parse(JSON.stringify(sec));
+  const items = state.data.items[sec.id] || [];
+  const isPersonalized = isPersonalizedSource(draft.source_type);
+  const isManual = isManualSource(draft.source_type);
 
-  const overlay = document.createElement('div');
-  overlay.className = 'overlay open';
-  document.body.appendChild(overlay);
-
-  const sheet = document.createElement('div');
-  sheet.className = 'sheet open';
-  sheet.innerHTML = `
-    <div class="sheet-handle"></div>
-    <div class="card-title" style="margin-bottom:14px">${isNew ? '➕ Add Item' : '✏️ Edit Item'}</div>
-    <div class="form-group">
-      <label class="form-label">Title *</label>
-      <input class="form-input" id="ie-title" value="${esc(item.title)}" placeholder="Song name">
+  openModal(`
+    <div class="modal-title">Edit section</div>
+    <div class="modal-subtitle muted small">${esc(sec.id)}${sec.id !== sec.section_key ? ` · key ${esc(sec.section_key)}` : ''}</div>`,
+  `
+    <div class="form-row cols-2">
+      <div class="form-group">
+        <label class="form-label">Title</label>
+        <input class="form-input" data-f="title" value="${esc(draft.title)}" placeholder="Section title">
+        <div class="field-error" data-err="title">Title is required</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Subtitle <span class="muted">(optional)</span></label>
+        <input class="form-input" data-f="subtitle" value="${esc(draft.subtitle || '')}" placeholder="Why this section?">
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Artist</label>
-      <input class="form-input" id="ie-artist" value="${esc(item.artist || '')}" placeholder="Artist name">
+    <div class="form-row cols-2">
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-select" data-f="source_type">
+          ${SOURCE_TYPES.map((t) => `<option value="${t.id}" ${draft.source_type === t.id ? 'selected' : ''}>${t.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Provider (playback routing)</label>
+        <select class="form-select" data-f="provider">
+          <option value="auto" ${(draft.provider || 'auto') === 'auto' ? 'selected' : ''}>Auto — smart fallback</option>
+          <option value="youtube" ${(draft.provider || '').includes('youtube') ? 'selected' : ''}>YouTube only</option>
+          <option value="jiosaavn" ${(draft.provider || '').includes('jiosaavn') ? 'selected' : ''}>JioSaavn (webpage)</option>
+        </select>
+        <div class="form-hint">Auto = JioSaavn permalink if enabled → YouTube → JioSaavn search fallback.</div>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Artwork URL</label>
-      <input class="form-input" id="ie-artwork" value="${esc(item.artwork_url || '')}" placeholder="https://...">
-    </div>
-    <div class="form-group">
-      <label class="form-label">YouTube Video ID</label>
-      <input class="form-input" id="ie-youtube" value="${esc(item.youtube_video_id || '')}" placeholder="dQw4w9WgXcQ">
-    </div>
-    <div class="form-group">
-      <label class="form-label">JioSaavn URL <span class="badge badge-green">Optional</span></label>
-      <input class="form-input" id="ie-jiosaavn" value="${esc(item.jiosaavn_url || '')}" placeholder="https://www.jiosaavn.com/song/...">
-      <div class="form-hint">Paste exact JioSaavn song page URL. Must be HTTPS on jiosaavn.com.</div>
-      <div class="form-error" id="ie-jiosaavn-error" style="display:none"></div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Playback Provider</label>
-      <select class="form-select" id="ie-provider">
-        <option value="auto" ${item.provider==='auto'?'selected':''}>🔄 Auto (YouTube first, JioSaavn if URL set)</option>
-        <option value="youtube" ${item.provider==='youtube'?'selected':''}>▶️ YouTube</option>
-        <option value="jiosaavn" ${item.provider==='jiosaavn'?'selected':''}>🎵 JioSaavn</option>
+    <div class="form-group" data-block="personalized" style="${isPersonalized ? '' : 'display:none'}">
+      <label class="form-label">Personalized engine</label>
+      <select class="form-select" data-f="section_key">
+        ${PERSONALIZED_KEYS.map((k) => `<option value="${k.id}" ${draft.section_key === k.id ? 'selected' : ''}>${k.title} — ${k.engine}</option>`).join('')}
       </select>
+      <div class="form-hint">Personalized sections use the on-device recommendation engine — they are never a literal YouTube search.</div>
     </div>
-    <div class="btn-group" style="margin-top:16px">
-      <button class="btn btn-success" id="ie-save" style="flex:1">💾 Save</button>
-      <button class="btn" id="ie-cancel">Cancel</button>
+    <div data-block="catalog" style="${isPersonalized ? 'display:none' : ''}">
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label class="form-label">Query / source value</label>
+          <input class="form-input" data-f="source_value" value="${esc(draft.source_value || draft.query || '')}" placeholder="${esc(sourceById(draft.source_type).hint)}">
+          <div class="field-error" data-err="source_value">Required for this source type</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Region code <span class="muted">(trending only)</span></label>
+          <input class="form-input" data-f="region_code" value="${esc(draft.region_code || '')}" placeholder="IN / US / blank">
+        </div>
+      </div>
+      <div class="form-hint">${esc(sourceById(draft.source_type).hint)}</div>
     </div>
-  `;
-  document.body.appendChild(sheet);
+    <div class="form-row cols-3">
+      <div class="form-group">
+        <label class="form-label">Max items</label>
+        <input class="form-input" type="number" min="1" max="100" data-f="max_items" value="${draft.max_items || 15}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Refresh (minutes)</label>
+        <input class="form-input" type="number" min="5" max="1440" data-f="refresh_minutes" value="${draft.refresh_minutes || 60}">
+      </div>
+      <div class="form-group" style="display:flex;gap:16px;align-items:center;padding-top:22px">
+        <label class="form-check"><span class="switch"><input type="checkbox" data-f="visible" ${draft.visible !== false ? 'checked' : ''}><span class="slider"></span></span> Show in app</label>
+        <label class="form-check"><span class="switch"><input type="checkbox" data-f="published" ${draft.published !== false ? 'checked' : ''}><span class="slider"></span></span> Published</label>
+      </div>
+    </div>
+    <div data-block="manual" style="${isManual ? '' : 'display:none'}">
+      <hr class="divider">
+      <div class="card-subtitle" style="margin-bottom:4px">Manual items — Title, Artist, Artwork, YouTube &amp; JioSaavn URLs, per-item provider.</div>
+      <div class="form-hint" style="margin-bottom:10px">JioSaavn: only public webpage URLs (permalink / search). Media &amp; stream URLs are rejected — no extraction.</div>
+      <div class="items-list" data-items></div>
+      <button class="btn btn-sm mt8" data-add-item>+ Add item</button>
+    </div>`,
+  `
+    <button class="btn" data-cancel>Cancel</button>
+    <button class="btn btn-primary" data-save>Save section</button>
+  `);
 
-  // Validate JioSaavn URL on input
-  $('ie-jiosaavn').oninput = () => {
-    const url = $('ie-jiosaavn').value.trim();
-    const err = $('ie-jiosaavn-error');
-    if (url && !isValidJioSaavnUrl(url)) {
-      err.textContent = 'Must be HTTPS on jiosaavn.com or saavn.com. No media/stream URLs.';
-      err.style.display = 'block';
-    } else {
-      err.style.display = 'none';
-    }
+  const modal = document.querySelector('.modal');
+  const srcSelect = modal.querySelector('[data-f="source_type"]');
+  const syncBlocks = () => {
+    const t = srcSelect.value;
+    modal.querySelector('[data-block="personalized"]').style.display = t === 'personalized' ? '' : 'none';
+    modal.querySelector('[data-block="catalog"]').style.display = t === 'personalized' ? 'none' : '';
+    modal.querySelector('[data-block="manual"]').style.display = isManualSource(t) ? '' : 'none';
+    modal.querySelector('[data-f="source_value"]').placeholder = esc(sourceById(t).hint);
+  };
+  srcSelect.onchange = syncBlocks;
+
+  /* items editor */
+  const itemsBox = modal.querySelector('[data-items]');
+  const renderItems = () => {
+    itemsBox.innerHTML = items.map((it, idx) => {
+      const jio = inspectJioSaavnUrl(it.jiosaavn_url || '');
+      const yt = inspectYoutubeInput(it.youtube_video_id || '');
+      const provider = (it.provider || 'auto').toLowerCase();
+      const playback = (it.playback_provider || 'auto').toLowerCase();
+      const fallback = (it.fallback_provider || 'none').toLowerCase();
+      return `
+      <div class="item-card" data-idx="${idx}">
+        <div class="item-head">
+          <span class="badge badge-gray">#${idx + 1}</span>
+          <span class="title">${esc(it.title || 'Untitled item')}</span>
+          <button class="btn btn-sm btn-danger" data-del aria-label="Remove item">✕</button>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label class="form-label">Title</label>
+            <input class="form-input" data-if="title" value="${esc(it.title || '')}" placeholder="Song title">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Artist</label>
+            <input class="form-input" data-if="artist" value="${esc(it.artist || '')}" placeholder="Artist">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Artwork URL <span class="muted">(HTTPS image, optional)</span></label>
+          <input class="form-input" data-if="artwork_url" value="${esc(it.artwork_url || '')}" placeholder="https://… (blank = YouTube thumbnail)">
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label class="form-label">YouTube URL / ID</label>
+            <input class="form-input ${!yt.ok ? 'invalid' : ''}" data-if="youtube_video_id" value="${esc(it.youtube_video_id || '')}" placeholder="dQw4w9WgXcQ or watch URL">
+            <div class="form-hint" data-yt-status style="color:${yt.ok && yt.id ? 'var(--green)' : yt.text ? 'var(--red)' : 'var(--text2)'}">${esc(yt.text || 'Optional if a JioSaavn permalink is set')}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">JioSaavn URL <span class="muted">(permalink only)</span></label>
+            <input class="form-input ${jio.ok && it.jiosaavn_url ? '' : (!jio.ok ? 'invalid' : '')}" data-if="jiosaavn_url" value="${esc(it.jiosaavn_url || '')}" placeholder="https://www.jiosaavn.com/song/…">
+            <div class="form-hint" style="color:${jio.ok && it.jiosaavn_url ? 'var(--green)' : !jio.ok ? 'var(--red)' : 'var(--text2)'}">${esc(jio.text || 'Optional if a YouTube video is set')}</div>
+          </div>
+        </div>
+        <div class="form-row cols-3">
+          <div class="form-group">
+            <label class="form-label">Provider</label>
+            <select class="form-select" data-if="provider">
+              <option value="auto" ${provider === 'auto' ? 'selected' : ''}>Auto</option>
+              <option value="youtube" ${provider.includes('youtube') ? 'selected' : ''}>YouTube</option>
+              <option value="jiosaavn" ${provider.includes('jiosaavn') ? 'selected' : ''}>JioSaavn</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Playback</label>
+            <select class="form-select" data-if="playback_provider">
+              <option value="auto" ${playback === 'auto' ? 'selected' : ''}>Auto</option>
+              <option value="youtube" ${playback.includes('youtube') && !playback.includes('jiosaavn') ? 'selected' : ''}>YouTube</option>
+              <option value="jiosaavn" ${playback.includes('jiosaavn') ? 'selected' : ''}>JioSaavn</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fallback</label>
+            <select class="form-select" data-if="fallback_provider">
+              <option value="none" ${fallback === 'none' || !fallback ? 'selected' : ''}>None</option>
+              <option value="youtube" ${fallback.includes('youtube') ? 'selected' : ''}>YouTube</option>
+              <option value="jiosaavn" ${fallback.includes('jiosaavn') ? 'selected' : ''}>JioSaavn</option>
+            </select>
+          </div>
+        </div>
+        <label class="form-check"><span class="switch"><input type="checkbox" data-if-en ${it.is_enabled !== false ? 'checked' : ''}><span class="slider"></span></span> Enabled</label>
+      </div>`;
+    }).join('') || '<div class="muted small">No items yet — add one below.</div>';
+
+    itemsBox.querySelectorAll('.item-card').forEach((card) => {
+      const idx = Number(card.dataset.idx);
+      card.querySelector('[data-del]').onclick = () => { items.splice(idx, 1); renderItems(); };
+      card.querySelectorAll('[data-if]').forEach((input) => {
+        input.onchange = () => {
+          items[idx][input.dataset.if] = input.value;
+          if (input.dataset.if === 'youtube_video_id') items[idx].content_id = extractYoutubeId(input.value) || input.value;
+          renderItems();
+        };
+      });
+      const en = card.querySelector('[data-if-en]');
+      if (en) en.onchange = () => { items[idx].is_enabled = en.checked; };
+    });
+  };
+  renderItems();
+  modal.querySelector('[data-add-item]').onclick = () => {
+    items.push({
+      id: uid(), section_id: sec.id, youtube_video_id: '', content_id: '', title: '', artist: '',
+      artwork_url: '', jiosaavn_url: '',
+      provider: draft.source_type === 'jiosaavn_manual' ? 'jiosaavn' : 'auto',
+      playback_provider: draft.source_type === 'jiosaavn_manual' ? 'jiosaavn' : 'auto',
+      fallback_provider: draft.source_type === 'jiosaavn_manual' ? 'youtube' : 'none',
+      sort_order: items.length, is_enabled: true,
+    });
+    renderItems();
   };
 
-  const close = () => {
-    sheet.classList.remove('open');
-    overlay.classList.remove('open');
-    setTimeout(() => { sheet.remove(); overlay.remove(); }, 300);
-  };
-
-  overlay.onclick = close;
-  $('ie-cancel').onclick = close;
-
-  $('ie-save').onclick = () => {
-    const title = $('ie-title').value.trim();
-    if (!title) { toast('Title is required', 'error'); return; }
-
-    const jUrl = $('ie-jiosaavn').value.trim();
-    if (jUrl && !isValidJioSaavnUrl(jUrl)) {
-      toast('Invalid JioSaavn URL', 'error');
-      return;
-    }
-
-    const updated = {
-      id: item.id || uid(),
-      section_id: sectionId,
-      content_id: item.content_id || uid(),
-      title,
-      artist: $('ie-artist').value.trim(),
-      artwork_url: $('ie-artwork').value.trim(),
-      youtube_video_id: $('ie-youtube').value.trim(),
-      jiosaavn_url: jUrl,
-      provider: $('ie-provider').value,
-      playback_provider: $('ie-provider').value === 'jiosaavn' ? 'jiosaavn_web' : 'youtube_web',
-      fallback_provider: 'youtube_web',
-      sort_order: isNew ? items.length : item.sort_order ?? itemIdx,
-      is_enabled: true,
-    };
-
-    if (isNew) {
-      items.push(updated);
+  modal.querySelector('[data-cancel]').onclick = closeModal;
+  modal.querySelector('[data-save]').onclick = () => {
+    /* read form back into draft */
+    modal.querySelectorAll('[data-f]').forEach((input) => {
+      const f = input.dataset.f;
+      if (input.type === 'checkbox') draft[f] = input.checked;
+      else if (f === 'max_items' || f === 'refresh_minutes') draft[f] = parseInt(input.value, 10) || 15;
+      else draft[f] = input.value;
+    });
+    if (draft.source_type === 'personalized') {
+      draft.section_type = 'personalized';
+      draft.source_value = draft.section_key;
+      draft.query = '';
+      const pk = personalizedById(draft.section_key);
+      if (pk && pk.id !== 'continue_listening') draft.title = draft.title || pk.title;
+    } else if (isManualSource(draft.source_type)) {
+      draft.section_type = 'home_section';
     } else {
-      items[itemIdx] = { ...items[itemIdx], ...updated };
+      draft.section_type = 'home_section';
+      draft.query = draft.source_value || '';
     }
-    state.items[sectionId] = items;
-    close();
+    /* validate */
+    let bad = false;
+    const mark = (name, on) => { const e = modal.querySelector(`[data-err="${name}"]`); if (e) e.classList.toggle('show', on); if (on) bad = true; };
+    mark('title', !(draft.title || '').trim());
+    mark('source_value', !isPersonalizedSource(draft.source_type) && !isManualSource(draft.source_type) && draft.source_type !== 'youtube_trending' && !(draft.source_value || '').trim());
+    if (isManualSource(draft.source_type)) {
+      for (const it of items) {
+        if (it.is_enabled === false) continue;
+        const jio = inspectJioSaavnUrl(it.jiosaavn_url || '');
+        const yt = inspectYoutubeInput(it.youtube_video_id || '');
+        if (!jio.ok) { toast(`Invalid JioSaavn URL in “${it.title || 'item'}”: ${jio.text}`, 'error'); bad = true; }
+        if (!yt.ok) { toast(`Invalid YouTube ID in “${it.title || 'item'}”: ${yt.text}`, 'error'); bad = true; }
+      }
+    }
+    if (bad) return;
+    Object.assign(sec, draft);
+    state.data.items[sec.id] = items;
+    state.dirty = true;
+    closeModal();
     renderHomeCMS($('content'));
+    toast('Section updated (draft — Publish Home to apply)');
   };
 }
 
-function isValidJioSaavnUrl(url) {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== 'https:') return false;
-    const host = u.hostname.toLowerCase();
-    const ok = ['jiosaavn.com','www.jiosaavn.com','saavn.com','www.saavn.com'];
-    if (!ok.some(h => host === h || host.endsWith('.'+h))) return false;
-    const bad = ['.mp3','.m4a','.m3u8','.mp4','.mpd','.aac'];
-    if (bad.some(e => url.toLowerCase().includes(e))) return false;
-    if (/cdn|stream|download|media/.test(host)) return false;
-    return true;
-  } catch { return false; }
+/* ── Preview modal ────────────────────────────────────────────────────────── */
+function openPreview(sec) {
+  const sections = sec ? [sec] : state.data.sections;
+  const shown = sections.filter((x) => x.visible !== false && x.published !== false);
+  const hasContinue = sections.some((x) => isPersonalizedSource(x.source_type) && x.section_key === 'continue_listening');
+  const body = `
+    <div class="phone-frame">
+      <div class="phone-screen">
+        ${!sec && !hasContinue ? `
+        <div class="preview-shelf">
+          <div class="preview-shelf-head"><span class="preview-shelf-title">Continue Listening</span><span class="badge badge-green">auto</span></div>
+          <div class="preview-empty">Added automatically by the app at the top (recently played).</div>
+        </div>` : ''}
+        ${sections.map((x, i) => {
+          const items = state.data.items[x.id] || [];
+          const on = x.visible !== false && x.published !== false;
+          const t = x.source_type || 'youtube_search';
+          let badge = '';
+          if (t === 'personalized') badge = '<span class="badge badge-purple">Personalized</span>';
+          else if (isManualSource(t)) badge = '<span class="badge badge-pink">Manual</span>';
+          else badge = '<span class="badge badge-blue">Catalog</span>';
+          let cards = '';
+          if (isManualSource(t)) {
+            cards = items.length
+              ? `<div class="preview-cards">${items.map((it) => {
+                  const p = (it.provider || 'auto').toLowerCase();
+                  const chip = p.includes('jiosaavn') ? 'JS' : p.includes('youtube') ? 'YT' : 'A';
+                  return `<div class="preview-card">${esc(it.title || 'Untitled')}<br><small>${chip}</small></div>`;
+                }).join('')}</div>`
+              : `<div class="preview-empty">No pinned items</div>`;
+          } else if (t === 'personalized') {
+            cards = `<div class="preview-empty">Generated by the recommendation engine on the device.</div>`;
+          } else {
+            cards = `<div class="preview-empty">Query: ${esc(x.source_value || x.query || '—')}</div>`;
+          }
+          return `
+          <div class="preview-shelf ${on ? '' : 'off'}">
+            <div class="preview-shelf-head">
+              <span class="preview-shelf-title">${i + 1}. ${esc(x.title)}</span>
+              ${badge}
+              ${on ? '' : '<span class="badge badge-yellow">hidden</span>'}
+            </div>
+            ${cards}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    <p class="muted small mt12" style="text-align:center">Preview of draft state (${shown.length}/${sections.length} visible). Actual content is fetched by the app per query.</p>`;
+
+  openModal(`<div class="modal-title">👁 ${sec ? 'Section preview' : 'Home preview'}</div>`, body, `<button class="btn btn-primary" data-close>Close</button>`);
+  document.querySelector('[data-close]').onclick = closeModal;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// BIND FORM EVENTS
-// ═══════════════════════════════════════════════════════════════
-function bindSectionForms(el) {
-  // Field changes
-  el.querySelectorAll('[data-field]').forEach(input => {
-    const field = input.dataset.field;
-    const id = input.dataset.id;
-    input.onchange = () => {
-      const s = state.sections.find(x => x.id === id);
-      if (!s) return;
-      if (field === 'visible' || field === 'published') s[field] = input.checked;
-      else if (field === 'max_items') s[field] = parseInt(input.value) || 15;
-      else s[field] = input.value;
-      // Re-render if source_type changed
-      if (field === 'source_type') renderHomeCMS(el);
-    };
+/* ── Publish ──────────────────────────────────────────────────────────────── */
+function validateAll() {
+  const errors = [];
+  const warnings = [];
+  const sections = state.data.sections;
+  if (!sections.length) { errors.push('No sections to publish'); return { errors, warnings }; }
+  sections.forEach((sec, i) => {
+    const name = `${i + 1}. ${sec.title || '(untitled)'}`;
+    if (!(sec.title || '').trim()) errors.push(`${name}: title is required`);
+    const t = sec.source_type || 'youtube_search';
+    if (!isPersonalizedSource(t) && !isManualSource(t) && t !== 'youtube_trending' && !(sec.source_value || sec.query || '').trim()) {
+      errors.push(`${name}: query/source value is required for ${sourceById(t).label}`);
+    }
+    if (isManualSource(t)) {
+      const items = state.data.items[sec.id] || [];
+      const jioFlag = (state.data.flags.find((f) => f.key === 'enable_jiosaavn_web_playback') || {}).value === true;
+      items.forEach((it, j) => {
+        if (it.is_enabled === false) return;
+        const itName = it.title || `item #${j + 1}`;
+        const yt = inspectYoutubeInput(it.youtube_video_id || '');
+        const jio = inspectJioSaavnUrl(it.jiosaavn_url || '');
+        if (!yt.ok) errors.push(`${name} → ${itName}: ${yt.text}`);
+        if (!jio.ok) errors.push(`${name} → ${itName}: ${jio.text}`);
+        const provider = (it.provider || 'auto').toLowerCase();
+        const playback = (it.playback_provider || 'auto').toLowerCase();
+        const wantsJio = provider.includes('jiosaavn') || playback.includes('jiosaavn');
+        if (!yt.id && !it.jiosaavn_url) {
+          errors.push(`${name} → ${itName}: needs a YouTube video or a JioSaavn permalink`);
+        } else if (wantsJio && !jioFlag) {
+          warnings.push(`${name} → ${itName}: JioSaavn playback is OFF (enable_jiosaavn_web_playback). The app will fall back to YouTube or skip it.`);
+        } else if (wantsJio && !/\/song\//.test(it.jiosaavn_url || '') && !(state.data.flags.find((f) => f.key === 'enable_jiosaavn_search_fallback') || {}).value) {
+          warnings.push(`${name} → ${itName}: no exact permalink and search fallback is OFF — the app may not play this via JioSaavn.`);
+        }
+      });
+    }
   });
-
-  // Delete section
-  el.querySelectorAll('[data-delete]').forEach(btn => {
-    btn.onclick = () => {
-      const id = btn.dataset.delete;
-      if (!confirm('Delete this section?')) return;
-      state.sections = state.sections.filter(s => s.id !== id);
-      delete state.items[id];
-      renderHomeCMS(el);
-    };
-  });
-
-  // Add item
-  el.querySelectorAll('[data-add-item]').forEach(btn => {
-    btn.onclick = () => showItemEditor(btn.dataset.addItem, -1);
-  });
-
-  // Edit item
-  el.querySelectorAll('[data-edit-item]').forEach(btn => {
-    const [sid, idx] = btn.dataset.editItem.split(':');
-    btn.onclick = () => showItemEditor(sid, parseInt(idx));
-  });
-
-  // Delete item
-  el.querySelectorAll('[data-del-item]').forEach(btn => {
-    const [sid, idx] = btn.dataset.delItem.split(':');
-    btn.onclick = () => {
-      const items = state.items[sid] || [];
-      items.splice(parseInt(idx), 1);
-      renderHomeCMS(el);
-    };
-  });
+  return { errors, warnings };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PUBLISH
-// ═══════════════════════════════════════════════════════════════
-async function publishAll(el) {
-  const btn = $('publish-all');
-  btn.disabled = true;
-  btn.textContent = '⏳ Publishing...';
-  state.saving = true;
+function validateAndPublish(el) {
+  const { errors, warnings } = validateAll();
+  if (errors.length) {
+    openModal(
+      `<div class="modal-title">⚠️ Cannot publish — fix these first</div>`,
+      `<ul class="err-list">${errors.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>`,
+      `<button class="btn btn-primary" data-close>OK, I'll fix them</button>`,
+    );
+    document.querySelector('[data-close]').onclick = closeModal;
+    return;
+  }
+  if (warnings.length) {
+    openModal(
+      `<div class="modal-title">Publish with warnings?</div>`,
+      `<ul class="err-list warn-list">${warnings.map((e) => `<li>⚠️ ${esc(e)}</li>`).join('')}</ul>
+       <p class="muted small mt12">You can still publish — warnings may mean some items don't play until flags change.</p>`,
+      `<button class="btn" data-close>Cancel</button><button class="btn btn-success" data-confirm>Publish anyway</button>`,
+    );
+    document.querySelector('[data-close]').onclick = closeModal;
+    document.querySelector('[data-confirm]').onclick = () => { closeModal(); doPublish(el); };
+    return;
+  }
+  doPublish(el);
+}
 
+async function doPublish(el) {
+  const btn = $('publish-home');
+  setBusy(btn, true, 'Publishing…');
   try {
-    // 1. Upsert sections
-    const rows = state.sections.map((s, i) => ({
-      id: s.id,
-      section_key: s.section_key || `home_${s.id}`,
-      title: s.title || 'Untitled',
-      subtitle: s.subtitle || null,
-      section_type: s.section_type || 'home_section',
-      source_type: s.source_type || 'youtube_search',
-      source_value: s.source_value || s.query || null,
-      query: s.query || s.source_value || null,
-      sort_order: i,
-      visible: s.visible !== false,
-      published: s.published !== false,
-      max_items: Math.max(1, Math.min(100, Number(s.max_items) || 15)),
-      provider: s.provider || 'youtube',
-      playback_provider: s.playback_provider || 'youtube_web',
-      fallback_provider: s.fallback_provider || 'youtube_web',
-      refresh_minutes: s.refresh_minutes || 60,
-      region_code: s.region_code || null,
-      category_id: s.category_id || null,
-    }));
+    const sections = state.data.sections;
+    const { data: existing, error: existingErr } = await supabase.from('home_layout_config').select('id');
+    if (existingErr) throw existingErr;
+    const keep = new Set();
+    const rows = sections.map((sec, i) => {
+      const id = sec.id || uid();
+      keep.add(id);
+      const t = sec.source_type || 'youtube_search';
+      const personalized = t === 'personalized';
+      const sourceValue = personalized ? (sec.section_key || id) : (sec.source_value || sec.query || '');
+      const provider = normalize(sec.provider, 'auto');
+      const playback = normalize(sec.playback_provider, provider);
+      const fallback = normalize(sec.fallback_provider, 'none');
+      return {
+        id,
+        section_key: sec.section_key || (personalized ? id : `home_${id}`),
+        title: (sec.title || 'New section').trim(),
+        subtitle: (sec.subtitle || '').trim() || null,
+        section_type: personalized ? 'personalized' : (sec.section_type || 'home_section'),
+        source_type: t,
+        source_value: sourceValue || null,
+        query: personalized ? null : (sourceValue || null),
+        sort_order: i,
+        visible: sec.visible !== false,
+        published: sec.published !== false,
+        max_items: Math.max(1, Math.min(100, Number(sec.max_items) || 15)),
+        region_code: (sec.region_code || '').trim() || null,
+        category_id: sec.category_id || null,
+        refresh_minutes: Math.max(5, Number(sec.refresh_minutes) || 60),
+        provider, playback_provider: playback, fallback_provider: fallback,
+      };
+    });
+    const stale = (existing || []).map((x) => x.id).filter((id) => !keep.has(id));
+    if (stale.length) {
+      const { error } = await supabase.from('home_layout_config').delete().in('id', stale);
+      if (error) throw error;
+    }
+    if (rows.length) {
+      const { error } = await supabase.from('home_layout_config').upsert(rows, { onConflict: 'id' });
+      if (error) throw error;
+    }
 
-    // Delete stale sections
-    const { data: existing } = await supabase.from('home_layout_config').select('id');
-    const keep = new Set(rows.map(r => r.id));
-    const stale = (existing || []).map(r => r.id).filter(id => !keep.has(id));
-    if (stale.length) await supabase.from('home_layout_config').delete().in('id', stale);
-
-    // Upsert sections
-    if (rows.length) await supabase.from('home_layout_config').upsert(rows, { onConflict: 'id' });
-
-    // 2. Upsert items
-    const allItems = [];
-    for (const [sid, items] of Object.entries(state.items)) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        allItems.push({
-          id: item.id || uid(),
-          section_id: sid,
-          content_id: item.content_id || uid(),
-          title: item.title || 'Untitled',
-          artist: item.artist || null,
-          artwork_url: item.artwork_url || null,
-          provider: item.provider || 'youtube',
-          playback_provider: item.playback_provider || 'youtube_web',
-          fallback_provider: item.fallback_provider || 'youtube_web',
-          jiosaavn_url: item.jiosaavn_url || null,
-          jiosaavn_enabled: !!item.jiosaavn_url,
-          youtube_video_id: item.youtube_video_id || null,
-          sort_order: i,
-          is_enabled: item.is_enabled !== false,
-          metadata: item.metadata || {},
+    /* items: full refresh of published draft */
+    await supabase.from('home_section_items').delete().neq('id', '__none__');
+    const itemRows = [];
+    for (const row of rows) {
+      const listItems = state.data.items[row.id] || [];
+      for (let idx = 0; idx < listItems.length; idx += 1) {
+        const it = listItems[idx];
+        if (it.is_enabled === false) continue;
+        const yt = inspectYoutubeInput(it.youtube_video_id || '');
+        const jio = inspectJioSaavnUrl(it.jiosaavn_url || '');
+        if (!yt.ok || !jio.ok) continue; /* validated above */
+        const jioUrl = (it.jiosaavn_url || '').trim();
+        if (!yt.id && !jioUrl) continue;
+        const provider = normalize(it.provider, 'auto');
+        const playback = normalize(it.playback_provider, provider === 'auto' ? 'auto' : provider);
+        const fallback = normalize(it.fallback_provider, 'none');
+        itemRows.push({
+          id: it.id || uid(),
+          section_id: row.id,
+          content_id: yt.id || it.content_id || it.id || uid(),
+          title: (it.title || '').trim() || yt.id || 'Untitled',
+          artist: (it.artist || '').trim() || null,
+          artwork_url: (it.artwork_url || '').trim() || (yt.id ? `https://img.youtube.com/vi/${yt.id}/hqdefault.jpg` : null),
+          youtube_video_id: yt.id || null,
+          jiosaavn_url: jioUrl || null,
+          sort_order: idx,
+          is_enabled: true,
+          provider, playback_provider: playback, fallback_provider: fallback,
         });
       }
     }
-
-    // Delete stale items for our sections
-    const sectionIds = rows.map(r => r.id);
-    if (sectionIds.length) {
-      await supabase.from('home_section_items').delete().in('section_id', sectionIds);
+    if (itemRows.length) {
+      const { error } = await supabase.from('home_section_items').insert(itemRows);
+      if (error) throw error;
     }
-    if (allItems.length) {
-      await supabase.from('home_section_items').upsert(allItems, { onConflict: 'id' });
-    }
-
-    // 3. Bump config version
     await supabase.from('home_config').upsert({
-      id: 'current',
-      version: Date.now(),
-      status: 'published',
-      published_at: new Date().toISOString(),
-    }, { onConflict: 'id' });
-
-    toast(`Published ${rows.length} sections, ${allItems.length} items!`);
+      id: 'current', version: Date.now(), status: 'published',
+      published_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+    state.data.sections = rows;
+    state.dirty = false;
+    toast(`✅ Published ${rows.length} section(s), ${itemRows.length} manual item(s). App picks this up within ~1 hour (pull-to-refresh forces it).`);
+    await loadHome();
+    renderHomeCMS(el);
   } catch (e) {
-    console.error('Publish error:', e);
-    toast(`Publish failed: ${e.message}`, 'error');
+    toast(`Publish failed: ${e.message || e}`, 'error');
+  } finally {
+    setBusy(btn, false);
   }
-
-  state.saving = false;
-  btn.disabled = false;
-  btn.textContent = '🚀 Publish';
+}
+function normalize(raw, fallback) {
+  const v = String(raw || '').toLowerCase();
+  if (v.includes('jiosaavn')) return 'jiosaavn';
+  if (v.includes('youtube')) return 'youtube';
+  if (v.includes('auto')) return 'auto';
+  return fallback;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FEATURE FLAGS
-// ═══════════════════════════════════════════════════════════════
-function renderFeatureFlags(el) {
-  const flags = [
-    { key: 'enable_remote_home', label: 'Remote Home CMS', desc: 'Fetch Home config from Supabase' },
-    { key: 'enable_jiosaavn_web_playback', label: 'JioSaavn Web Playback', desc: 'Enable JioSaavn WebView playback' },
-    { key: 'enable_jiosaavn_search_fallback', label: 'JioSaavn Search Fallback', desc: 'Allow search page when no exact URL' },
-    { key: 'enable_jiosaavn_exact_urls', label: 'JioSaavn Exact URLs', desc: 'Allow exact JioSaavn song page URLs' },
-    { key: 'enable_youtube_web_playback', label: 'YouTube Web Playback', desc: 'Enable YouTube WebView playback' },
-    { key: 'enable_home_cms', label: 'Home CMS', desc: 'Enable Home page CMS' },
-  ];
+/* ── Modal helpers ────────────────────────────────────────────────────────── */
+function openModal(titleHtml, bodyHtml, footHtml) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div>${titleHtml}</div>
+        <button class="btn btn-icon" data-x aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-foot">${footHtml}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.querySelector('[data-x]').onclick = closeModal;
+}
+function closeModal() {
+  const overlay = document.querySelector('.modal-overlay');
+  if (overlay) overlay.remove();
+}
 
+/* ══ DISCOVER ════════════════════════════════════════════════════════════════ */
+async function renderDiscover(el) {
+  const { data, error } = await supabase.from('discovery_categories').select('*').order('sort_order');
+  if (error) { el.innerHTML = `<div class="card"><div class="card-title">Discover</div><p class="login-error mt8">${esc(error.message)}</p></div>`; return; }
+  state.data.categories = data || [];
   el.innerHTML = `
     <div class="card">
-      <div class="card-title" style="margin-bottom:14px">🚩 Feature Flags</div>
-      ${flags.map(f => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-          <div style="min-width:0;flex:1">
-            <div style="font-size:14px;font-weight:600">${f.label}</div>
-            <div style="font-size:11px;color:var(--text2)">${f.desc}</div>
-          </div>
-          <label class="form-check" style="margin:0">
-            <input type="checkbox" ${state.flags[f.key] ? 'checked' : ''} data-flag="${f.key}">
-          </label>
+      <div class="card-header">
+        <div>
+          <div class="card-title">Discover categories</div>
+          <div class="card-subtitle">Mood list shown in the app's Discover feed (when enable_discovery_remote_categories is ON). Keep a distinct query per row.</div>
         </div>
-      `).join('')}
-      <div class="btn-group" style="margin-top:16px">
-        <button class="btn btn-success" id="save-flags">💾 Save Flags</button>
+        <div class="btn-group">
+          <button class="btn" id="add-cat">+ Category</button>
+          <button class="btn btn-success" id="save-cats">Save categories</button>
+        </div>
       </div>
-    </div>
-  `;
-
-  $('save-flags').onclick = async () => {
-    const btn = $('save-flags');
-    btn.disabled = true;
+      <div id="cats-list"></div>
+    </div>`;
+  const list = $('cats-list');
+  const renderRows = () => {
+    list.innerHTML = state.data.categories.map((c, i) => `
+      <div class="row-card" data-i="${i}">
+        <div class="row-card-head">
+          <span class="badge badge-gray">#${i + 1}</span>
+          <span class="grow" style="font-weight:700;font-size:14px">${esc(c.name || 'Untitled')}</span>
+          <button class="btn btn-sm" data-move="up" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+          <button class="btn btn-sm" data-move="down" ${i === state.data.categories.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+          <button class="btn btn-sm btn-danger" data-del>✕</button>
+        </div>
+        <div class="row-card-body">
+          <div class="form-group"><label class="form-label">Name</label><input class="form-input" data-c="name" value="${esc(c.name)}"></div>
+          <div class="form-group"><label class="form-label">Emoji</label><input class="form-input" data-c="emoji" value="${esc(c.emoji || '')}"></div>
+          <div class="form-group"><label class="form-label">Kind</label>
+            <select class="form-select" data-c="kind">
+              <option value="source" ${(c.kind || 'source') === 'source' ? 'selected' : ''}>Source</option>
+              <option value="mood" ${c.kind === 'mood' ? 'selected' : ''}>Mood</option>
+              <option value="language" ${c.kind === 'language' ? 'selected' : ''}>Language</option>
+              <option value="region" ${c.kind === 'region' ? 'selected' : ''}>Region</option>
+            </select></div>
+          <div class="form-group"><label class="form-label">Query / token</label><input class="form-input" data-c="query" value="${esc(c.query || '')}"></div>
+          <div class="form-group" style="display:flex;align-items:center;min-height:44px">
+            <label class="form-check"><span class="switch"><input type="checkbox" data-c="active" ${c.active !== false ? 'checked' : ''}><span class="slider"></span></span> Active</label>
+          </div>
+        </div>
+      </div>`).join('') || '<div class="empty-state"><div class="icon">🔍</div><div class="title">No categories</div></div>';
+    list.querySelectorAll('.row-card').forEach((card) => {
+      const i = Number(card.dataset.i);
+      card.querySelectorAll('[data-c]').forEach((input) => {
+        input.onchange = () => {
+          state.data.categories[i][input.dataset.c] = input.dataset.c === 'active' ? input.checked : input.value;
+        };
+      });
+      card.querySelector('[data-del]').onclick = () => { state.data.categories.splice(i, 1); renderRows(); };
+      card.querySelector('[data-move="up"]').onclick = () => {
+        if (i > 0) { [state.data.categories[i], state.data.categories[i - 1]] = [state.data.categories[i - 1], state.data.categories[i]]; renderRows(); }
+      };
+      card.querySelector('[data-move="down"]').onclick = () => {
+        if (i < state.data.categories.length - 1) { [state.data.categories[i], state.data.categories[i + 1]] = [state.data.categories[i + 1], state.data.categories[i]]; renderRows(); }
+      };
+    });
+  };
+  renderRows();
+  $('add-cat').onclick = () => {
+    state.data.categories.push({
+      id: `cat_${Date.now()}`, name: 'New category', emoji: '🎵', query: 'official audio',
+      kind: 'source', fallback_category: 'global', sort_order: state.data.categories.length, active: true,
+    });
+    renderRows();
+  };
+  $('save-cats').onclick = async () => {
+    const btn = $('save-cats');
+    setBusy(btn, true, 'Saving…');
     try {
-      for (const f of flags) {
-        const checked = el.querySelector(`[data-flag="${f.key}"]`).checked;
-        await supabase.from('feature_flags').upsert({
-          key: f.key, value: checked, description: f.desc,
-        }, { onConflict: 'key' });
-      }
-      toast('Flags saved!');
+      const payload = state.data.categories.map((c, i) => ({
+        id: c.id || `cat_${i}`, name: (c.name || 'Untitled').trim(), emoji: c.emoji || '🎵',
+        query: (c.query || '').trim(), kind: c.kind || 'source', token: c.token || c.query || '',
+        ranking_order: c.ranking_order || 'relevance', visible: c.visible !== false,
+        fallback_category: c.fallback_category || 'global', sort_order: i, active: c.active !== false,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error: upsertErr } = await supabase.from('discovery_categories').upsert(payload, { onConflict: 'id' });
+      if (upsertErr) throw upsertErr;
+      toast(`✅ Saved ${payload.length} categories`);
     } catch (e) {
-      toast(`Failed: ${e.message}`, 'error');
+      toast(`Save failed: ${e.message || e}`, 'error');
+    } finally {
+      setBusy(btn, false);
     }
-    btn.disabled = false;
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// PROVIDERS
-// ═══════════════════════════════════════════════════════════════
-function renderProviders(el) {
+/* ══ PROVIDERS ═══════════════════════════════════════════════════════════════ */
+async function renderProviders(el) {
+  let jioOn = false;
+  try {
+    const { data } = await supabase.from('feature_flags').select('key,value');
+    jioOn = (data || []).some((f) => f.key === 'enable_jiosaavn_web_playback' && f.value === true);
+  } catch (_) {}
   el.innerHTML = `
     <div class="stats-grid">
-      <div class="stat-card"><div class="stat-label">YouTube</div><div class="stat-value" style="color:var(--green)">Active</div><div class="stat-change">Data API v3 + InnerTube</div></div>
-      <div class="stat-card"><div class="stat-label">JioSaavn</div><div class="stat-value" style="color:${state.flags.enable_jiosaavn_web_playback ? 'var(--green)' : 'var(--yellow)'}">${state.flags.enable_jiosaavn_web_playback ? 'Active' : 'Disabled'}</div><div class="stat-change">Webpage playback only</div></div>
+      <div class="stat-card"><div class="stat-label">YouTube</div><div class="stat-value" style="color:var(--green)">Active</div><div class="stat-change up">Official webpage / watch URLs only</div></div>
+      <div class="stat-card"><div class="stat-label">JioSaavn</div><div class="stat-value" style="color:${jioOn ? 'var(--green)' : 'var(--yellow)'}">${jioOn ? 'Active' : 'Disabled'}</div><div class="stat-change ${jioOn ? 'up' : ''}">Webpage playback only · enable_jiosaavn_web_playback</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔌 Playback routing (what the app does)</div>
+      <p class="muted mt8" style="font-size:14px;line-height:1.7">
+        <b style="color:var(--text)">Auto:</b> exact JioSaavn permalink (if flag ON) → YouTube video → JioSaavn search page (if fallback ON).<br>
+        <b style="color:var(--text)">YouTube:</b> official watch URL in the WebView.<br>
+        <b style="color:var(--text)">JioSaavn:</b> official jiosaavn.com song page in the WebView (permalink, or search page as fallback).<br>
+        No unofficial JioSaavn API, no audio/stream extraction, no media URLs, no ad blocking on JioSaavn.
+      </p>
     </div>
     <div class="card">
       <div class="card-title">🔌 How to get a JioSaavn URL</div>
-      <div class="source-hint" style="margin-top:10px">
-        1. Open <a href="https://www.jiosaavn.com" target="_blank">jiosaavn.com</a><br>
+      <div class="muted mt8" style="font-size:14px;line-height:1.9">
+        1. Open <a href="https://www.jiosaavn.com" target="_blank" rel="noopener">jiosaavn.com</a> in a browser<br>
         2. Search for the song<br>
         3. Open the exact song page<br>
         4. Copy the URL from the address bar<br>
-        5. Paste it in the item's JioSaavn URL field<br><br>
+        5. Paste it into an item's <b>JioSaavn URL</b> field<br><br>
         <strong>Example:</strong> <code>https://www.jiosaavn.com/song/kesariya/BT8sWBlRelQ</code>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// SETTINGS
-// ═══════════════════════════════════════════════════════════════
+/* ══ FEATURE FLAGS ═══════════════════════════════════════════════════════════ */
+async function renderFlags(el) {
+  const { data, error } = await supabase.from('feature_flags').select('*').order('key');
+  if (error) { el.innerHTML = `<div class="card"><p class="login-error">${esc(error.message)}</p></div>`; return; }
+  const byKey = {};
+  (data || []).forEach((f) => { byKey[f.key] = f; });
+  KNOWN_FLAGS.forEach((known) => { if (!byKey[known.key]) byKey[known.key] = { key: known.key, value: false, description: known.description }; });
+  state.data.flags = Object.values(byKey).sort((a, b) => a.key.localeCompare(b.key));
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Feature flags</div>
+          <div class="card-subtitle">Toggles are read by the app from Supabase on launch (1-hour cache). Changes apply app-side within ~1 hour.</div>
+        </div>
+        <button class="btn btn-success" id="save-flags">Save flags</button>
+      </div>
+      <div id="flags-list">${state.data.flags.map((f, i) => {
+        const known = KNOWN_FLAGS.find((k) => k.key === f.key);
+        return `
+        <div class="row-card" data-i="${i}">
+          <div class="row-card-head">
+            <code>${esc(f.key)}</code>
+            ${known?.appReads ? '<span class="badge badge-green">read by app</span>' : '<span class="badge badge-gray">ops only</span>'}
+            <span class="grow"></span>
+            <label class="form-check"><span class="switch"><input type="checkbox" data-flag ${f.value ? 'checked' : ''}><span class="slider"></span></span> ${f.value ? 'ON' : 'OFF'}</label>
+          </div>
+          <p class="muted small mt8">${esc(f.description || known?.description || '')}</p>
+        </div>`;
+      }).join('')}</div>
+    </div>`;
+  $('flags-list').querySelectorAll('.row-card').forEach((row) => {
+    const i = Number(row.dataset.i);
+    const chk = row.querySelector('[data-flag]');
+    chk.onchange = () => {
+      state.data.flags[i].value = chk.checked;
+      row.querySelector('.form-check').innerHTML = chk.checked
+        ? `<span class="switch"><input type="checkbox" data-flag checked><span class="slider"></span></span> ON`
+        : `<span class="switch"><input type="checkbox" data-flag><span class="slider"></span></span> OFF`;
+      const nchk = row.querySelector('[data-flag]');
+      nchk.onchange = chk.onchange;
+    };
+  });
+  $('save-flags').onclick = async () => {
+    const btn = $('save-flags');
+    setBusy(btn, true, 'Saving…');
+    try {
+      const payload = state.data.flags.map((f) => ({
+        key: f.key, value: !!f.value, description: f.description || (KNOWN_FLAGS.find((k) => k.key === f.key) || {}).description,
+        updated_at: new Date().toISOString(),
+      }));
+      const { error: upsertErr } = await supabase.from('feature_flags').upsert(payload, { onConflict: 'key' });
+      if (upsertErr) throw upsertErr;
+      toast(`✅ Flags saved (${payload.filter((f) => f.value).length} ON / ${payload.filter((f) => !f.value).length} OFF)`);
+    } catch (e) {
+      toast(`Save failed: ${e.message || e}`, 'error');
+    } finally {
+      setBusy(btn, false);
+    }
+  };
+}
+
+/* ══ USERS / SETTINGS ════════════════════════════════════════════════════════ */
+function renderUsers(el) {
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">Authorized admins</div>
+      <p class="muted small mt8">Writes are restricted by Supabase RLS to these Google accounts (after <code>claim_home_admin()</code>).</p>
+      <div class="mt12">
+        ${AUTHORIZED_EMAILS.map((e) => `
+          <div class="row-card"><div class="row-card-head">
+            <span class="grow" style="font-weight:600">${esc(e)}</span>
+            <span class="badge badge-green">Allowlisted</span>
+          </div></div>`).join('')}
+      </div>
+    </div>`;
+}
+
 function renderSettings(el) {
   el.innerHTML = `
     <div class="card">
-      <div class="card-title">⚙️ App Info</div>
-      <div class="form-group" style="margin-top:12px">
-        <label class="form-label">Package</label>
-        <input class="form-input" value="com.vshots.live" disabled>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Version</label>
-        <input class="form-input" value="5.8.0 (42)" disabled>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Supabase Project</label>
-        <input class="form-input" value="jzxtxqjheggyoqwohqjg" disabled>
-      </div>
+      <div class="card-title">Settings</div>
+      <div class="form-group mt12"><label class="form-label">App</label><input class="form-input" value="V Shots (com.vshots.live) — 5.8.0+42" disabled></div>
+      <div class="form-group"><label class="form-label">Supabase</label><input class="form-input" value="${SUPABASE_URL}" disabled></div>
+      <div class="form-group"><label class="form-label">Admin URL</label><input class="form-input" value="${PRODUCTION_REDIRECT_URL}" disabled></div>
     </div>
     <div class="card">
-      <div class="card-title">🔐 Security</div>
-      <div class="source-hint" style="margin-top:8px">
-        Admin write access is controlled by Supabase RLS (authenticated users only).
-        The anon key is public — write permissions require authentication.
-        No service-role keys are exposed in the client.
-      </div>
-    </div>
-  `;
+      <div class="card-title">Security & legal boundary</div>
+      <p class="muted small mt8" style="line-height:1.6">
+        This page uses the publishable anon key only. Database password, service-role key, GitHub tokens and
+        BrowserStack keys must never be placed here. JioSaavn integration opens <b>public JioSaavn webpages</b> only
+        (permalink or search page) in the app's WebView — no unofficial API, no audio extraction, no media URLs,
+        no ad blocking on JioSaavn. YouTube playback uses the official webpage/player — no stream extraction,
+        no ad circumvention.
+      </p>
+    </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════════════
+/* ══ BOOT ═══════════════════════════════════════════════════════════════════ */
 async function init() {
-  state.admin = true;
-  state.user = { email: 'admin@vshots.live' };
-  renderLayout();
+  if (state.demo) {
+    state.admin = true;
+    state.user = { email: 'demo@vshots.local' };
+    state.data = demoData();
+    renderAdmin();
+    return;
+  }
+  const ok = await checkAuth();
+  if (!ok && new URLSearchParams(location.search).has('error')) {
+    renderLogin('Google sign-in was cancelled or failed.');
+    return;
+  }
+  render();
 }
+
+function render() {
+  if (!state.admin) { renderLogin(); return; }
+  renderAdmin();
+}
+
+supabase.auth.onAuthStateChange(async (event) => {
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    const ok = await checkAuth();
+    if (ok) renderAdmin();
+  }
+  if (event === 'SIGNED_OUT') {
+    state.admin = false;
+    state.user = null;
+    renderLogin();
+  }
+});
 
 init();
