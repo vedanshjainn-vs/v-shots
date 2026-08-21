@@ -2,8 +2,6 @@
 // V Shots — JioSaavn Web Provider (official webpage URL only)
 // ═════════════════════════════════════════════════════════════════════════════
 
-import 'package:flutter/foundation.dart';
-
 class JioSaavnWebProvider {
   JioSaavnWebProvider._();
   static final JioSaavnWebProvider instance = JioSaavnWebProvider._();
@@ -36,7 +34,10 @@ class JioSaavnWebProvider {
     if (uri == null) return false;
     final host = uri.host.toLowerCase();
     final validHosts = [
-      'jiosaavn.com', 'www.jiosaavn.com', 'saavn.com', 'www.saavn.com',
+      'jiosaavn.com',
+      'www.jiosaavn.com',
+      'saavn.com',
+      'www.saavn.com',
     ];
     if (!validHosts.any((h) => host == h || host.endsWith('.$h'))) return false;
     for (final ext in ['.mp3', '.m4a', '.m3u8', '.mp4', '.mpd', '.aac']) {

@@ -67,7 +67,7 @@ class PlaybackRouter {
       if (fallbackUrl != null && fallbackUrl.isNotEmpty) {
         return PlaybackTarget(source: PlaybackSource.youtube, url: fallbackUrl);
       }
-      return PlaybackTarget(
+      return const PlaybackTarget(
         source: PlaybackSource.youtube,
         url: 'https://www.youtube.com/',
       );
