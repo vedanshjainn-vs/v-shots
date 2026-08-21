@@ -62,3 +62,44 @@ String youtubeWatchUrl(String videoId) =>
 
 /// True when [url] is a supported YouTube URL that yields a video id.
 bool isSupportedYoutubeUrl(String url) => extractYoutubeVideoId(url) != null;
+
+/// Playlist id from a bare `PL…` / `UU…` token or a watch/playlist URL.
+String? extractYoutubePlaylistId(String input) {
+  final trimmed = input.trim();
+  if (trimmed.isEmpty) return null;
+  if (RegExp(r'^(PL|UU|LL|FL|RD|OL)[A-Za-z0-9_-]+$').hasMatch(trimmed)) {
+    return trimmed;
+  }
+  try {
+    final uri = Uri.parse(trimmed);
+    final host = uri.host.toLowerCase();
+    final isYoutubeHost = host == 'youtube.com' ||
+        host.endsWith('.youtube.com') ||
+        host == 'youtu.be';
+    if (!isYoutubeHost) return null;
+    final list = uri.queryParameters['list'];
+    if (list != null && list.isNotEmpty) return list;
+  } catch (_) {}
+  return null;
+}
+
+/// Channel id (`UC…`) from a bare id or `/channel/UC…` URL.
+/// `@handles` are not ids — callers should treat those as search queries.
+String? extractYoutubeChannelId(String input) {
+  final trimmed = input.trim();
+  if (trimmed.isEmpty) return null;
+  if (RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(trimmed)) return trimmed;
+  try {
+    final uri = Uri.parse(trimmed);
+    final host = uri.host.toLowerCase();
+    final isYoutubeHost =
+        host == 'youtube.com' || host.endsWith('.youtube.com');
+    if (!isYoutubeHost) return null;
+    final segs = uri.pathSegments;
+    if (segs.length >= 2 && segs[0] == 'channel') {
+      final id = segs[1];
+      return id.startsWith('UC') ? id : null;
+    }
+  } catch (_) {}
+  return null;
+}

@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../core/motion/motion.dart';
+import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart'
@@ -91,6 +92,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _load({required bool forceRefresh}) async {
+    if (forceRefresh) {
+      await RemoteConfigService.instance.refresh();
+    }
+    _shelves = homeFeedService.buildShelfDescriptors();
     await homeFeedService.loadShelves(
       _shelves,
       forceRefresh: forceRefresh,

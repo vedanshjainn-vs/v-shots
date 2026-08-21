@@ -1,16 +1,20 @@
 # V Shots Admin Panel
 
-The remote Home CMS admin UI is intended to be hosted as a static GitHub Pages application and use Supabase as its backend.
+Static GitHub Pages CMS for remote Home configuration.
 
-## Planned controls
+**Live URL:** https://vedanshjainn-vs.github.io/v-shots/
 
-- Home section create/edit/delete
-- drag/reorder sections
-- enable/disable sections
-- YouTube Search / Playlist / Channel / Manual / Trending source types
-- region/category and item limits
-- publish state
+## What it controls
+
+- Home section create / edit / reorder / show-hide
+- Source types: YouTube Search, Playlist, Channel, Trending, Manual video IDs, Personalized
+- Discover category queries
+- Feature flags (`enable_remote_home`, playback flags)
+
+The Flutter app reads published rows from Supabase (`home_layout_config`, `discovery_categories`, `home_section_items`, `feature_flags`). Pull-to-refresh on Home reloads remote config immediately; otherwise the app caches for 1 hour.
 
 ## Security
 
-Use the Supabase publishable/anon key only in the static frontend. Never place the Supabase service-role key or database password in this folder, GitHub Actions, or the mobile app.
+- Google OAuth + email allowlist
+- Writes go through the Supabase **anon** key and RLS (`is_home_admin()`)
+- Never put the database password, service-role key, GitHub tokens, or BrowserStack keys in this folder

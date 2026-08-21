@@ -83,4 +83,34 @@ void main() {
       expect(isSupportedYoutubeUrl('https://example.com/x'), isFalse);
     });
   });
+
+  group('playlist / channel ids', () {
+    test('extracts playlist ids from URLs and bare tokens', () {
+      expect(
+        extractYoutubePlaylistId('PLrAXtmRdnEQy6nuLMOVlkwJZKj9X8nK8x'),
+        'PLrAXtmRdnEQy6nuLMOVlkwJZKj9X8nK8x',
+      );
+      expect(
+        extractYoutubePlaylistId(
+          'https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMOVlkwJZKj9X8nK8x',
+        ),
+        'PLrAXtmRdnEQy6nuLMOVlkwJZKj9X8nK8x',
+      );
+      expect(extractYoutubePlaylistId('latest punjabi songs'), isNull);
+    });
+
+    test('extracts channel ids from URLs and bare tokens', () {
+      expect(
+        extractYoutubeChannelId('UCuAXFkgsw1L7xaCfnd5JJOw'),
+        'UCuAXFkgsw1L7xaCfnd5JJOw',
+      );
+      expect(
+        extractYoutubeChannelId(
+          'https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw',
+        ),
+        'UCuAXFkgsw1L7xaCfnd5JJOw',
+      );
+      expect(extractYoutubeChannelId('@ArijitSingh'), isNull);
+    });
+  });
 }
