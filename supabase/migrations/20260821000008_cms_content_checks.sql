@@ -24,21 +24,21 @@ alter table public.home_layout_config
   drop constraint if exists home_layout_config_provider_check;
 alter table public.home_layout_config
   add constraint home_layout_config_provider_check check (
-    provider is null or provider in ('auto', 'youtube', 'jiosaavn')
+    provider is null or provider in ('auto', 'youtube', 'jiosaavn', 'youtube_web', 'jiosaavn_web')
   );
 
 alter table public.home_layout_config
   drop constraint if exists home_layout_config_playback_check;
 alter table public.home_layout_config
   add constraint home_layout_config_playback_check check (
-    playback_provider is null or playback_provider in ('auto', 'youtube', 'jiosaavn')
+    playback_provider is null or playback_provider in ('auto', 'youtube', 'jiosaavn', 'youtube_web', 'jiosaavn_web')
   );
 
 alter table public.home_layout_config
   drop constraint if exists home_layout_config_fallback_check;
 alter table public.home_layout_config
   add constraint home_layout_config_fallback_check check (
-    fallback_provider is null or fallback_provider in ('none', 'youtube', 'jiosaavn')
+    fallback_provider is null or fallback_provider in ('none', 'youtube', 'jiosaavn', 'youtube_web', 'jiosaavn_web')
   );
 
 alter table public.home_layout_config
@@ -67,21 +67,21 @@ alter table public.home_section_items
   drop constraint if exists home_section_items_provider_check;
 alter table public.home_section_items
   add constraint home_section_items_provider_check check (
-    provider is null or provider in ('auto', 'youtube', 'jiosaavn')
+    provider is null or provider in ('auto', 'youtube', 'jiosaavn', 'youtube_web', 'jiosaavn_web')
   );
 
 alter table public.home_section_items
   drop constraint if exists home_section_items_playback_check;
 alter table public.home_section_items
   add constraint home_section_items_playback_check check (
-    playback_provider is null or playback_provider in ('auto', 'youtube', 'jiosaavn')
+    playback_provider is null or playback_provider in ('auto', 'youtube', 'jiosaavn', 'youtube_web', 'jiosaavn_web')
   );
 
 alter table public.home_section_items
   drop constraint if exists home_section_items_fallback_check;
 alter table public.home_section_items
   add constraint home_section_items_fallback_check check (
-    fallback_provider is null or fallback_provider in ('none', 'youtube', 'jiosaavn')
+    fallback_provider is null or fallback_provider in ('none', 'youtube', 'jiosaavn', 'youtube_web', 'jiosaavn_web')
   );
 
 alter table public.home_section_items
