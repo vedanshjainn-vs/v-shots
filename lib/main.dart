@@ -61,6 +61,7 @@ import 'features/shots/upload_shot_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final bootTimer = Stopwatch()..start();
 
   await Future.wait([
     SupabaseService.initialize(),
@@ -70,6 +71,7 @@ void main() async {
     RemoteConfigService.instance.init(),
     AppVersion.load(),
   ]);
+  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
   await AuthService.instance.initializeGoogleSignIn();
 
@@ -90,6 +92,7 @@ void main() async {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
+  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
   runApp(const VShotsApp());
 }
 

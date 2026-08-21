@@ -94,8 +94,30 @@ class MusicRepository {
     return result.orElse(const []).map((t) => t.toTrackMap()).toList();
   }
 
-  Future<List<Map<String, dynamic>>> getTrending({int limit = 15}) async {
-    final result = await _manager.getTrending(limit: limit);
+  Future<List<Map<String, dynamic>>> getTrending({
+    int limit = 15,
+    String region = '',
+  }) async {
+    final result = await _manager.getTrending(limit: limit, region: region);
+    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+  }
+
+  /// Tracks of a YouTube playlist in playlist order (unavailable entries
+  /// skipped). Empty on failure.
+  Future<List<Map<String, dynamic>>> getPlaylistTracks(
+    String playlistId, {
+    int limit = 30,
+  }) async {
+    final result = await _manager.getPlaylistTracks(playlistId, limit: limit);
+    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+  }
+
+  /// Latest uploads of a YouTube channel. Empty on failure.
+  Future<List<Map<String, dynamic>>> getChannelTracks(
+    String channelId, {
+    int limit = 30,
+  }) async {
+    final result = await _manager.getChannelTracks(channelId, limit: limit);
     return result.orElse(const []).map((t) => t.toTrackMap()).toList();
   }
 

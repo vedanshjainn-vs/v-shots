@@ -13,6 +13,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import '../../../innertube/inner_tube_client.dart';
+import 'package:flutter/foundation.dart';
 import '../../../innertube/inner_tube_normalizer.dart';
 import '../../music_provider.dart';
 import '../../provider_models.dart';
@@ -40,6 +41,8 @@ class InnerTubeMusicProvider extends MusicProvider {
         ProviderCapability.getTrending,
         ProviderCapability.getRecommendations,
         ProviderCapability.getRelated,
+        ProviderCapability.getPlaylist,
+        ProviderCapability.getChannel,
       };
 
   bool _initialized = false;
@@ -140,8 +143,61 @@ class InnerTubeMusicProvider extends MusicProvider {
   @override
   Future<ProviderResult<List<ProviderTrack>>> getTrending({
     int limit = 15,
+    String region = '',
   }) async {
-    return search('trending music hits official audio', limit: limit);
+    try {
+      final items = await _client.trending(region: region, limit: limit * 2);
+      final tracks = _normalizer.mapSearchResults(items, limit: limit);
+      if (tracks.isNotEmpty) return ProviderResult.success(tracks);
+    } catch (e) {
+      debugPrint('[InnerTube] trending browse failed: $e');
+    }
+    // FEtrending is rejected for some contexts — report FAILURE so the
+    // ProviderManager fails over to the Data API provider's REAL
+    // videos.list?chart=mostPopular trending (region honored), which in
+    // turn falls back to a viewCount search as a last resort.
+    return ProviderResult.failure('InnerTube trending tab unavailable');
+  }
+
+  /// Playlist videos in playlist order (unavailable entries already skipped
+  /// by the client). Songs in playlists can be longer than the app-wide
+  /// search cap, so a wider duration window is used here.
+  @override
+  Future<ProviderResult<List<ProviderTrack>>> getPlaylistTracks(
+    String playlistId, {
+    int limit = 30,
+  }) async {
+    try {
+      final items = await _client.playlistVideos(playlistId, limit: limit);
+      final tracks = _normalizer.mapSearchResults(
+        items,
+        limit: limit,
+        maxMinutes: 60,
+      );
+      if (tracks.isEmpty) {
+        return ProviderResult.failure('Playlist has no playable videos');
+      }
+      return ProviderResult.success(tracks);
+    } catch (e) {
+      return ProviderResult.failure('Playlist resolution failed: $e');
+    }
+  }
+
+  @override
+  Future<ProviderResult<List<ProviderTrack>>> getChannelTracks(
+    String channelId, {
+    int limit = 30,
+  }) async {
+    try {
+      final items = await _client.channelVideos(channelId, limit: limit);
+      final tracks = _normalizer.mapSearchResults(items, limit: limit);
+      if (tracks.isEmpty) {
+        return ProviderResult.failure('Channel has no playable videos');
+      }
+      return ProviderResult.success(tracks);
+    } catch (e) {
+      return ProviderResult.failure('Channel resolution failed: $e');
+    }
   }
 
   @override

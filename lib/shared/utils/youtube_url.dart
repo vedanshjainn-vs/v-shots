@@ -89,6 +89,9 @@ String? extractYoutubeChannelId(String input) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) return null;
   if (RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(trimmed)) return trimmed;
+  // Handle form: '@artist' or a youtube.com/@artist URL — passed through so
+  // the provider chain can resolve it (Data API channels.list forHandle).
+  if (RegExp(r'^@[A-Za-z0-9_.-]{3,64}$').hasMatch(trimmed)) return trimmed;
   try {
     final uri = Uri.parse(trimmed);
     final host = uri.host.toLowerCase();
@@ -99,6 +102,12 @@ String? extractYoutubeChannelId(String input) {
     if (segs.length >= 2 && segs[0] == 'channel') {
       final id = segs[1];
       return id.startsWith('UC') ? id : null;
+    }
+    if (segs.isNotEmpty && segs[0].startsWith('@')) {
+      final handle = segs[0];
+      return RegExp(r'^@[A-Za-z0-9_.-]{3,64}$').hasMatch(handle)
+          ? handle
+          : null;
     }
   } catch (_) {}
   return null;

@@ -108,10 +108,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _load({required bool forceRefresh}) async {
+    final sw = Stopwatch()..start();
     if (forceRefresh) {
       await RemoteConfigService.instance.refresh();
     }
     _shelves = homeFeedService.buildShelfDescriptors();
+    debugPrint(
+      '[Home] shelves built in ${sw.elapsedMilliseconds}ms '
+      '(${_shelves.length} shelves, CMS=${_shelves.any((s) => s.sourceType != null && s.sourceType!.isNotEmpty) ? 'remote' : 'default'})',
+    );
     await homeFeedService.loadShelves(
       _shelves,
       forceRefresh: forceRefresh,
@@ -120,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       },
     );
     if (mounted) setState(() => _initialLoading = false);
+    debugPrint('[Home] hydrated in ${sw.elapsedMilliseconds}ms');
   }
 
   @override

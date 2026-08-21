@@ -36,6 +36,7 @@ import '../../core/storage/local_library.dart';
 import '../../core/remote_config/home_cms_models.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/remote_config/remote_feature_flags.dart';
+import '../../core/providers/jiosaavn_web_provider.dart';
 import '../../shared/utils/youtube_url.dart';
 
 /// What kind of content a shelf is built from.
@@ -213,6 +214,42 @@ class HomeFeedService {
       if (s.id.isEmpty) continue;
       if (!s.visible || !s.published) continue;
 
+      // JioSaavn playlist page source: ONE tappable card that opens the
+      // official playlist page in the WebView — no API, no scraping, no
+      // manual song entry (the page itself plays the playlist).
+      if (s.sourceType == 'jiosaavn_playlist') {
+        final url = s.sourceValue.trim();
+        final ok =
+            jiosaavnEnabled && JioSaavnWebProvider.isValidPlaylistUrl(url);
+        if (ok) {
+          shelves.add(
+            HomeShelf(
+              id: s.id,
+              title: s.title,
+              subtitle: s.subtitle.isEmpty ? 'JioSaavn playlist' : s.subtitle,
+              kind: HomeShelfKind.manual,
+              limit: 1,
+              sourceType: s.sourceType,
+              sourceValue: url,
+              manualItems: [
+                {
+                  'id': 'jsv_playlist_${s.id}',
+                  'title': s.title,
+                  'artist': 'JioSaavn Playlist',
+                  'artwork': '',
+                  'duration': 0,
+                  'url': url,
+                  'jiosaavnUrl': url,
+                  'playbackSource': 'jiosaavn',
+                  'provider': 'jiosaavn',
+                },
+              ],
+            ),
+          );
+        }
+        continue;
+      }
+
       final personalized = _personalizedKind(
         id: s.id,
         sectionKey: s.sectionKey,
@@ -285,7 +322,16 @@ class HomeFeedService {
           title: s.title,
           subtitle: s.subtitle.isEmpty ? 'Curated for you' : s.subtitle,
           kind: HomeShelfKind.catalog,
-          query: _catalogQuery(s),
+          // Directed sources (playlist/channel/trending) carry NO literal
+          // query — they are resolved by real provider calls keyed on
+          // sourceType + sourceValue (see _fetch). Previously their IDs were
+          // fed into search() as literal queries, which returned unrelated
+          // results.
+          query: (s.sourceType == 'youtube_playlist' ||
+                  s.sourceType == 'youtube_channel' ||
+                  s.sourceType == 'youtube_trending')
+              ? null
+              : _catalogQuery(s),
           order: s.sourceType == 'youtube_trending' ? 'viewCount' : 'relevance',
           limit: s.maxItems,
           sourceType: s.sourceType,
@@ -845,9 +891,40 @@ class HomeFeedService {
 
       case HomeShelfKind.catalog:
         if (repo == null) return const [];
-        if (shelf.sourceType == 'youtube_trending' &&
-            (shelf.query == null || shelf.query!.isEmpty)) {
-          return repo.getTrending(limit: shelf.limit);
+        final src = shelf.sourceType ?? '';
+        if (src == 'youtube_trending') {
+          // Real regional trending via the provider chain (InnerTube
+          // FEtrending with region gl; falls back to search internally).
+          final region = (shelf.regionCode ?? '').trim();
+          final trending = await repo.getTrending(
+            limit: shelf.limit,
+            region: region,
+          );
+          if (trending.isNotEmpty) return trending;
+          if (shelf.query != null && shelf.query!.isNotEmpty) {
+            return _fetchWithReplenishment(shelf, excludeIds);
+          }
+          return const [];
+        }
+        if (src == 'youtube_playlist') {
+          final id = extractYoutubePlaylistId(shelf.sourceValue ?? '');
+          if (id == null) return const [];
+          final tracks = await repo.getPlaylistTracks(id, limit: shelf.limit);
+          if (tracks.isNotEmpty) return tracks;
+          if (shelf.query != null && shelf.query!.isNotEmpty) {
+            return _fetchWithReplenishment(shelf, excludeIds);
+          }
+          return const [];
+        }
+        if (src == 'youtube_channel') {
+          final id = extractYoutubeChannelId(shelf.sourceValue ?? '');
+          if (id == null) return const [];
+          final tracks = await repo.getChannelTracks(id, limit: shelf.limit);
+          if (tracks.isNotEmpty) return tracks;
+          if (shelf.query != null && shelf.query!.isNotEmpty) {
+            return _fetchWithReplenishment(shelf, excludeIds);
+          }
+          return const [];
         }
         final query = shelf.query ?? '';
         if (query.isEmpty) return const [];

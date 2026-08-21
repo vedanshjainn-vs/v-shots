@@ -97,6 +97,20 @@ class RelatedFakeProvider implements MusicProvider {
   }
 
   @override
+  Future<ProviderResult<List<ProviderTrack>>> getPlaylistTracks(
+    String playlistId, {
+    int limit = 30,
+  }) async =>
+      ProviderResult.failure('not supported in fake');
+
+  @override
+  Future<ProviderResult<List<ProviderTrack>>> getChannelTracks(
+    String channelId, {
+    int limit = 30,
+  }) async =>
+      ProviderResult.failure('not supported in fake');
+
+  @override
   Future<ProviderResult<List<ProviderTrack>>> getRelated(
     String trackId, {
     int limit = 10,
@@ -132,7 +146,8 @@ class RelatedFakeProvider implements MusicProvider {
       ProviderResult.failure('unused');
 
   @override
-  Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15}) =>
+  Future<ProviderResult<List<ProviderTrack>>> getTrending(
+          {int limit = 15, String region = ''}) =>
       search('trending', limit: limit);
 
   @override

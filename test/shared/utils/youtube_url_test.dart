@@ -110,7 +110,9 @@ void main() {
         ),
         'UCuAXFkgsw1L7xaCfnd5JJOw',
       );
-      expect(extractYoutubeChannelId('@ArijitSingh'), isNull);
+      // Handles pass through so the provider chain can resolve
+      // them (Data API channels.list?forHandle) — PHASE 17.
+      expect(extractYoutubeChannelId('@ArijitSingh'), '@ArijitSingh');
     });
   });
 }

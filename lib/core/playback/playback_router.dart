@@ -111,6 +111,12 @@ class PlaybackRouter {
     }
     final youtube = _resolveYouTube(track);
     if (!youtube.isUnavailable) return youtube;
+    // JioSaavn playlist page: open the official page itself (no API, no
+    // scraping) when there is no playable YouTube id.
+    if (policy.jiosaavnWebPlayback && policy.jiosaavnExactUrls) {
+      final playlistPage = _playlistPageOf(track);
+      if (playlistPage != null) return _jiosaavnTarget(track, playlistPage);
+    }
     if (policy.jiosaavnWebPlayback && policy.jiosaavnSearchFallback) {
       final search = _searchUrlOf(track);
       if (search != null) return _jiosaavnTarget(track, search);
@@ -130,6 +136,8 @@ class PlaybackRouter {
     if (policy.jiosaavnExactUrls) {
       final permalink = _permalinkOf(track);
       if (permalink != null) return _jiosaavnTarget(track, permalink);
+      final playlistPage = _playlistPageOf(track);
+      if (playlistPage != null) return _jiosaavnTarget(track, playlistPage);
     }
     if (policy.jiosaavnSearchFallback) {
       final search = _searchUrlOf(track);
@@ -192,6 +200,22 @@ class PlaybackRouter {
     }
     final url = track['url'];
     if (url is String && JioSaavnWebProvider.isValidPermalink(url)) {
+      return url.trim();
+    }
+    return null;
+  }
+
+  /// An official JioSaavn playlist page URL from the track (page-open
+  /// playback; never an API or scraping).
+  static String? _playlistPageOf(Map<String, dynamic> track) {
+    for (final key in ['jiosaavnUrl', 'jiosaavn_url']) {
+      final value = track[key];
+      if (value is String && JioSaavnWebProvider.isValidPlaylistUrl(value)) {
+        return value.trim();
+      }
+    }
+    final url = track['url'];
+    if (url is String && JioSaavnWebProvider.isValidPlaylistUrl(url)) {
       return url.trim();
     }
     return null;

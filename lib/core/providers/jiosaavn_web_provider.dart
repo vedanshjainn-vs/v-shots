@@ -12,6 +12,7 @@ class JioSaavnUrlKind {
   static const none = 'none';
   static const permalink = 'permalink';
   static const search = 'search';
+  static const playlist = 'playlist';
   static const invalid = 'invalid';
 }
 
@@ -23,7 +24,12 @@ class JioSaavnUrlCheck {
 
   bool get isPermalink => kind == JioSaavnUrlKind.permalink;
   bool get isSearch => kind == JioSaavnUrlKind.search;
-  bool get isAllowedPage => isPermalink || isSearch;
+
+  /// Official playlist page (`/featured/…` or `/s/playlist/…`). The app
+  /// opens the page itself — never an API or scraping.
+  bool get isPlaylistPage => kind == JioSaavnUrlKind.playlist;
+
+  bool get isAllowedPage => isPermalink || isSearch || isPlaylistPage;
 }
 
 class JioSaavnWebProvider {
@@ -135,6 +141,14 @@ class JioSaavnWebProvider {
         reason: 'search',
       );
     }
+    // Official playlist pages only — the app opens the page in the WebView
+    // (identical compliance posture to song permalinks: no API, no scraping).
+    if (path.startsWith('/featured/') || path.startsWith('/s/playlist/')) {
+      return const JioSaavnUrlCheck(
+        kind: JioSaavnUrlKind.playlist,
+        reason: 'playlist page',
+      );
+    }
     return const JioSaavnUrlCheck(
       kind: JioSaavnUrlKind.invalid,
       reason: 'not a song permalink or search url',
@@ -145,7 +159,10 @@ class JioSaavnWebProvider {
 
   static bool isValidSearchUrl(String url) => inspect(url).isSearch;
 
-  /// True for an official song permalink OR an official search URL.
+  /// True for an official playlist page URL (page-open playback only).
+  static bool isValidPlaylistUrl(String url) => inspect(url).isPlaylistPage;
+
+  /// True for an official song permalink, search URL, or playlist page.
   static bool isValidJioSaavnUrl(String url) => inspect(url).isAllowedPage;
 
   static String buildSearchUrl({required String title, String artist = ''}) {

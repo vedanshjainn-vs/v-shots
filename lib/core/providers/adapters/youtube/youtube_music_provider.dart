@@ -36,6 +36,7 @@ class YouTubeMusicProvider extends MusicProvider {
         ProviderCapability.getLyrics,
         ProviderCapability.getTrending,
         ProviderCapability.getRecommendations,
+        ProviderCapability.getChannel,
       };
 
   bool _initialized = false;
@@ -171,12 +172,61 @@ class YouTubeMusicProvider extends MusicProvider {
   @override
   Future<ProviderResult<List<ProviderTrack>>> getTrending({
     int limit = 15,
+    String region = '',
   }) async {
+    // Falls back to a viewCount search when the API key is absent/blocked.
+    final popular = await _apiClient.getMostPopular(
+      region: region,
+      maxResults: limit * 2,
+    );
+    if (popular.isNotEmpty) {
+      final tracks = popular
+          .take(limit)
+          .map(_mapper.toProviderTrack)
+          .where((ProviderTrack t) => t.id.isNotEmpty)
+          .toList();
+      if (tracks.isNotEmpty) return ProviderResult.success(tracks);
+    }
     return search(
       'trending music hits official audio',
       order: 'viewCount',
       limit: limit,
     );
+  }
+
+  /// Channel uploads via the official Data API: resolves '@handle' with
+  /// channels.list?forHandle, then searches channelId uploads (date order).
+  @override
+  Future<ProviderResult<List<ProviderTrack>>> getChannelTracks(
+    String channelId, {
+    int limit = 30,
+  }) async {
+    var id = channelId.trim();
+    if (id.isEmpty) return ProviderResult.failure('empty channel reference');
+    if (id.startsWith('@')) {
+      final resolved = await _apiClient.resolveHandleToChannelId(id);
+      if (resolved == null || resolved.isEmpty) {
+        return ProviderResult.failure('could not resolve channel handle');
+      }
+      id = resolved;
+    }
+    if (!RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(id)) {
+      return ProviderResult.failure('not a channel id');
+    }
+    final videos =
+        await _apiClient.searchChannelVideos(id, maxResults: limit * 2);
+    if (videos.isEmpty) {
+      return ProviderResult.failure('channel returned no videos');
+    }
+    final tracks = videos
+        .take(limit)
+        .map(_mapper.toProviderTrack)
+        .where((ProviderTrack t) => t.id.isNotEmpty)
+        .toList();
+    if (tracks.isEmpty) {
+      return ProviderResult.failure('channel had no playable videos');
+    }
+    return ProviderResult.success(tracks);
   }
 
   @override

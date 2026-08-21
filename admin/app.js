@@ -21,13 +21,14 @@ const AUTHORIZED_EMAILS = [
 ];
 
 const SOURCE_TYPES = [
-  { id: 'youtube_search', label: 'YouTube Search', hint: 'Search query, e.g. trending punjabi songs official audio' },
-  { id: 'youtube_playlist', label: 'YouTube Playlist', hint: 'Playlist URL or PL… id' },
-  { id: 'youtube_channel', label: 'YouTube Channel', hint: 'Channel URL, UC… id, or @handle' },
-  { id: 'youtube_trending', label: 'YouTube Trending', hint: 'Optional region code (IN, US) — blank = global' },
-  { id: 'youtube_manual', label: 'Manual (YouTube)', hint: 'Pin exact YouTube videos below' },
-  { id: 'jiosaavn_manual', label: 'Manual (JioSaavn)', hint: 'Paste exact https://www.jiosaavn.com/song/... permalinks. Never invent IDs.' },
-  { id: 'personalized', label: 'Personalized (app engine)', hint: 'Uses the on-device recommendation engine — no query needed' },
+  { id: 'youtube_search', label: 'YouTube Search', hint: 'Search query, e.g. trending punjabi songs official audio', valueField: 'query' },
+  { id: 'youtube_playlist', label: 'YouTube Playlist', hint: 'Playlist URL or PL… id — the app fetches the whole playlist automatically', valueField: 'url' },
+  { id: 'youtube_channel', label: 'YouTube Channel', hint: 'Channel URL, UC… id, or @handle — the app fetches latest uploads automatically', valueField: 'url' },
+  { id: 'youtube_trending', label: 'YouTube Trending', hint: 'Region code (IN / US / GB …) — real regional trending via the official API', valueField: 'region' },
+  { id: 'youtube_manual', label: 'Manual (YouTube)', hint: 'Pin exact YouTube videos below', valueField: 'none' },
+  { id: 'jiosaavn_manual', label: 'Manual (JioSaavn)', hint: 'Paste exact https://www.jiosaavn.com/song/... permalinks. Never invent IDs.', valueField: 'none' },
+  { id: 'jiosaavn_playlist', label: 'JioSaavn Playlist (page)', hint: 'Paste a https://www.jiosaavn.com/featured/... or /s/playlist/... URL — the app opens the official playlist page. No manual songs, no unofficial API.', valueField: 'url' },
+  { id: 'personalized', label: 'Personalized (app engine)', hint: 'Uses the on-device recommendation engine — no query needed', valueField: 'none' },
 ];
 
 /* Stable personalized keys — matches HomeFeedService._personalizedKeys in the app. */
@@ -174,7 +175,10 @@ function inspectJioSaavnUrl(url) {
     if (u.pathname.startsWith('/search/songs/')) {
       return { ok: true, text: 'Search URL (used only when search fallback is enabled)' };
     }
-    return { ok: false, text: 'Must be a /song/ permalink or /search/songs/ page' };
+    if (u.pathname.startsWith('/featured/') || u.pathname.startsWith('/s/playlist/')) {
+      return { ok: true, text: '✓ Official playlist page (the app opens this page — no API/scraping)' };
+    }
+    return { ok: false, text: 'Must be a /song/ permalink, /search/songs/ page, or playlist page' };
   } catch (_) {
     return { ok: false, text: 'Not a valid URL' };
   }
@@ -515,6 +519,7 @@ async function renderHomeCMS(el) {
     <div class="publish-bar">
       <div class="publish-summary">
         ${state.dirty ? '<span class="dirty-dot"></span>' : ''}
+        <span id="pub-status" style="font-weight:700">${state.dirty ? 'Unsaved changes' : 'Saved'}</span> ·
         <b>${sections.length}</b> sections · <b style="color:var(--green)">${live}</b> live ·
         <b style="color:var(--yellow)">${sections.length - live}</b> hidden/unpublished ·
         ${Object.values(state.data.items).reduce((n, a) => n + a.length, 0)} manual items
@@ -748,16 +753,20 @@ function openSectionEditor(sec, index) {
     <div data-block="catalog" style="${isPersonalized ? 'display:none' : ''}">
       <div class="form-row cols-2">
         <div class="form-group">
-          <label class="form-label">Query / source value</label>
+          <label class="form-label" data-sv-label>${isManual ? '' : 'Query / source value'}</label>
           <input class="form-input" data-f="source_value" value="${esc(draft.source_value || draft.query || '')}" placeholder="${esc(sourceById(draft.source_type).hint)}">
           <div class="field-error" data-err="source_value">Required for this source type</div>
+          <div class="form-hint" data-sv-hint></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Region code <span class="muted">(trending only)</span></label>
-          <input class="form-input" data-f="region_code" value="${esc(draft.region_code || '')}" placeholder="IN / US / blank">
+        <div class="form-group" data-block="region" style="${draft.source_type === 'youtube_trending' ? '' : 'display:none'}">
+          <label class="form-label">Region code <span class="muted">(trending)</span></label>
+          <input class="form-input" data-f="region_code" value="${esc(draft.region_code || '')}" placeholder="IN / US / GB / blank">
         </div>
       </div>
       <div class="form-hint">${esc(sourceById(draft.source_type).hint)}</div>
+      <div data-block="jpl-note" style="${draft.source_type === 'jiosaavn_playlist' ? '' : 'display:none'}">
+        <div class="banner">🎧 The app opens the OFFICIAL JioSaavn playlist page in its WebView — the playlist plays there, so no songs need to be added manually. Track listing/metadata is intentionally NOT scraped (no unofficial API).</div>
+      </div>
     </div>
     <div class="form-row cols-3">
       <div class="form-group">
@@ -782,6 +791,7 @@ function openSectionEditor(sec, index) {
     </div>`,
   `
     <button class="btn" data-cancel>Cancel</button>
+    <button class="btn" data-preview-sec>👁 Resolve &amp; Preview</button>
     <button class="btn btn-primary" data-save>Save section</button>
   `);
 
@@ -789,12 +799,51 @@ function openSectionEditor(sec, index) {
   const srcSelect = modal.querySelector('[data-f="source_type"]');
   const syncBlocks = () => {
     const t = srcSelect.value;
+    const st = sourceById(t);
     modal.querySelector('[data-block="personalized"]').style.display = t === 'personalized' ? '' : 'none';
     modal.querySelector('[data-block="catalog"]').style.display = t === 'personalized' ? 'none' : '';
     modal.querySelector('[data-block="manual"]').style.display = isManualSource(t) ? '' : 'none';
-    modal.querySelector('[data-f="source_value"]').placeholder = esc(sourceById(t).hint);
+    const regionGroup = modal.querySelector('[data-block="region"]');
+    if (regionGroup) regionGroup.style.display = t === 'youtube_trending' ? '' : 'none';
+    const jplNote = modal.querySelector('[data-block="jpl-note"]');
+    if (jplNote) jplNote.style.display = t === 'jiosaavn_playlist' ? '' : 'none';
+    const svInput = modal.querySelector('[data-f="source_value"]');
+    svInput.placeholder = esc(st.hint);
+    svInput.style.display = (st.valueField === 'none' || isManualSource(t)) ? 'none' : '';
+    const svLabel = modal.querySelector('[data-sv-label]');
+    if (svLabel) {
+      svLabel.style.display = (st.valueField === 'none' || isManualSource(t)) ? 'none' : '';
+      svLabel.textContent = st.valueField === 'url' ? 'URL' : 'Search query';
+    }
+    // live URL validation for url-typed sources
+    const svHint = modal.querySelector('[data-sv-hint]');
+    if (svHint) {
+      svHint.textContent = '';
+      svInput.oninput = () => {
+        const v = svInput.value.trim();
+        if (!v) { svHint.textContent = ''; return; }
+        if (t === 'youtube_playlist') {
+          const ok = /list=[A-Za-z0-9_-]{10,}/.test(v) || /^PL[A-Za-z0-9_-]{10,}$/.test(v) || /^RDCLAK5uy_[A-Za-z0-9_-]+$/.test(v);
+          svHint.textContent = ok ? '✓ playlist reference detected' : '⚠ not a playlist URL / PL… id';
+          svHint.style.color = ok ? 'var(--green)' : 'var(--red)';
+        } else if (t === 'youtube_channel') {
+          const ok = /^(UC[A-Za-z0-9_-]{22}|@[A-Za-z0-9_.-]{3,64})$/.test(v) || /\/channel\/UC|youtube\.com\/@/.test(v);
+          svHint.textContent = ok ? '✓ channel reference detected' : '⚠ not a channel URL / UC id / @handle';
+          svHint.style.color = ok ? 'var(--green)' : 'var(--red)';
+        } else if (t === 'jiosaavn_playlist') {
+          const jio = inspectJioSaavnUrl(v);
+          const isPl = /\/featured\/|\/s\/playlist\//.test(v);
+          svHint.textContent = (jio.ok && isPl) ? '✓ official JioSaavn playlist page' : (jio.ok ? jio.text : '⚠ ' + jio.text);
+          svHint.style.color = (jio.ok && isPl) ? 'var(--green)' : 'var(--red)';
+        } else {
+          svHint.textContent = '';
+        }
+      };
+      svInput.oninput();
+    }
   };
   srcSelect.onchange = syncBlocks;
+  syncBlocks();
 
   /* items editor */
   const itemsBox = modal.querySelector('[data-items]');
@@ -896,6 +945,12 @@ function openSectionEditor(sec, index) {
   };
 
   modal.querySelector('[data-cancel]').onclick = closeModal;
+  modal.querySelector('[data-preview-sec]').onclick = () => {
+    const t = srcSelect.value;
+    const value = (modal.querySelector('[data-f="source_value"]').value || '').trim();
+    const maxItems = Math.max(1, Math.min(50, parseInt(modal.querySelector('[data-f="max_items"]').value, 10) || 15));
+    resolveAndPreviewContent(t, value, maxItems, draft.title || '');
+  };
   modal.querySelector('[data-save]').onclick = () => {
     /* read form back into draft */
     modal.querySelectorAll('[data-f]').forEach((input) => {
@@ -1003,7 +1058,14 @@ function validateAll() {
     const name = `${i + 1}. ${sec.title || '(untitled)'}`;
     if (!(sec.title || '').trim()) errors.push(`${name}: title is required`);
     const t = sec.source_type || 'youtube_search';
-    if (!isPersonalizedSource(t) && !isManualSource(t) && t !== 'youtube_trending' && !(sec.source_value || sec.query || '').trim()) {
+    if (t === 'jiosaavn_playlist') {
+      const v = (sec.source_value || '').trim();
+      const jio = inspectJioSaavnUrl(v);
+      if (!v) errors.push(`${name}: a JioSaavn playlist URL is required`);
+      else if (!(jio.ok && /\/featured\/|\/s\/playlist\//.test(v))) {
+        errors.push(`${name}: ${jio.ok ? 'not a playlist page (use /featured/ or /s/playlist/)' : jio.text}`);
+      }
+    } else if (!isPersonalizedSource(t) && !isManualSource(t) && t !== 'youtube_trending' && !(sec.source_value || sec.query || '').trim()) {
       errors.push(`${name}: query/source value is required for ${sourceById(t).label}`);
     }
     if (isManualSource(t)) {
@@ -1059,6 +1121,13 @@ function validateAndPublish(el) {
 
 async function doPublish(el) {
   const btn = $('publish-home');
+  const statusEl = $('pub-status');
+  const setStatus = (text, color) => {
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.style.color = color || 'var(--text)';
+  };
+  setStatus('Publishing…', 'var(--yellow)');
   setBusy(btn, true, 'Publishing…');
   try {
     const sections = state.data.sections;
@@ -1156,11 +1225,15 @@ async function doPublish(el) {
     });
     state.data.sections = rows;
     state.dirty = false;
+    setStatus(`Published ✓ ${new Date().toLocaleTimeString()}`, 'var(--green)');
     toast(`✅ Published ${rows.length} section(s), ${itemRows.length} manual item(s). App picks this up within ~1 hour (pull-to-refresh forces it).`);
     await loadHome();
     renderHomeCMS(el);
   } catch (e) {
+    setStatus('Publish failed', 'var(--red)');
     toast(`Publish failed: ${e.message || e}`, 'error');
+    // Draft + form state are preserved: state.data.sections is untouched on
+    // error, so the user's changes stay visible for retry.
   } finally {
     setBusy(btn, false);
   }
@@ -1171,6 +1244,144 @@ function normalize(raw, fallback) {
   if (v.includes('youtube')) return 'youtube';
   if (v.includes('auto')) return 'auto';
   return fallback;
+}
+
+/* ══ LIVE CONTENT RESOLUTION (admin preview via constrained pg_net RPCs) ════ */
+const innerTubeKey = { booted: false };
+const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function rpcCall(fn, params) {
+  const { data, error } = await supabase.rpc(fn, params || {});
+  if (error) throw new Error(error.message || String(error));
+  return data;
+}
+
+async function ensureInnerTubeBoot() {
+  if (innerTubeKey.booted) return;
+  const reqId = await rpcCall('inner_tube_boot_request');
+  await sleepMs(1500);
+  try { await rpcCall('inner_tube_boot_collect', { p_request_id: reqId }); } catch (_) {}
+  innerTubeKey.booted = true;
+}
+
+/// Walks a raw InnerTube response for BOTH renderer generations and returns
+/// normalized {id,title,artist,thumb} items in page order.
+function parseInnerTubeItems(json) {
+  const out = [];
+  const seen = new Set();
+  const walk = (n) => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    const vr = n.videoRenderer;
+    if (vr && vr.videoId) {
+      const title = vr.title?.runs?.[0]?.text || '';
+      const artist = vr.ownerText?.runs?.[0]?.text || vr.longBylineText?.runs?.[0]?.text || vr.shortBylineText?.runs?.[0]?.text || '';
+      if (!seen.has(vr.videoId)) {
+        seen.add(vr.videoId);
+        out.push({ id: vr.videoId, title, artist, thumb: vr.thumbnail?.thumbnails?.slice(-1)[0]?.url || `https://img.youtube.com/vi/${vr.videoId}/hqdefault.jpg` });
+      }
+    }
+    const lv = n.lockupViewModel;
+    if (lv && lv.contentId && String(lv.contentType || '').includes('VIDEO')) {
+      const title = lv.metadata?.lockupMetadataViewModel?.title?.content || '';
+      const rows = lv.metadata?.lockupMetadataViewModel?.metadata?.rows || [];
+      const artist = rows.map((r) => (r.metadataParts || []).map((p) => p.text?.content || '').join(' ')).filter(Boolean).join(' · ');
+      const srcs = lv.contentImage?.thumbnailViewModel?.image?.sources || [];
+      if (!seen.has(lv.contentId)) {
+        seen.add(lv.contentId);
+        out.push({ id: lv.contentId, title, artist, thumb: srcs.slice(-1)[0]?.url || `https://img.youtube.com/vi/${lv.contentId}/hqdefault.jpg` });
+      }
+    }
+    Object.values(n).forEach(walk);
+  };
+  walk(json);
+  return out;
+}
+
+async function resolveAndPreviewContent(sourceType, value, maxItems, sectionTitle) {
+  openModal(
+    `<div class="modal-title">👁 Resolving…</div>`,
+    `<div style="text-align:center;padding:28px"><div class="spinner"></div><div class="muted small mt8">Fetching live content from YouTube…</div></div>`,
+    `<button class="btn" data-close>Cancel</button>`,
+  );
+  document.querySelector('[data-close]').onclick = closeModal;
+  try {
+    let items = [];
+    let note = '';
+    if (sourceType === 'jiosaavn_playlist') {
+      const jio = inspectJioSaavnUrl(value);
+      const isPl = /\/featured\/|\/s\/playlist\//.test(value);
+      note = (jio.ok && isPl)
+        ? '✓ Official JioSaavn playlist page — the app opens this exact page in its WebView and the playlist plays there (no API, no scraping, no manual songs).'
+        : '⚠ Invalid playlist URL: ' + jio.text;
+    } else if (sourceType === 'youtube_playlist') {
+      const m = value.match(/(?:list=)([A-Za-z0-9_-]{10,})/) || value.match(/^(PL[A-Za-z0-9_-]{10,}|RDCLAK5uy_[A-Za-z0-9_-]+)$/);
+      if (!m) throw new Error('Could not extract a playlist id from: ' + value);
+      await ensureInnerTubeBoot();
+      const reqId = await rpcCall('inner_tube_request', { p_kind: 'browse', p_value: 'VL' + m[1], p_max_items: maxItems });
+      await sleepMs(1500);
+      const json = await rpcCall('inner_tube_collect', { p_request_id: reqId });
+      items = parseInnerTubeItems(json);
+      note = items.length ? `${items.length} videos resolved (live)` : 'Playlist resolved but no playable video entries were found.';
+    } else if (sourceType === 'youtube_channel') {
+      const m = value.match(/(UC[A-Za-z0-9_-]{22})/) || value.match(/^(@[A-Za-z0-9_.-]{3,64})$/);
+      if (!m) throw new Error('Could not extract a channel id/handle from: ' + value);
+      const ref = m[1].startsWith('@') ? m[1] : m[1];
+      if (ref.startsWith('@')) {
+        note = '⚠ @handle resolution happens on the app via the official Data API (channels.list?forHandle) — preview shows a UC-id based channel.';
+        throw new Error('Paste the channel UC… id (from the channel URL) for a live preview — @handles are resolved in the app.');
+      }
+      await ensureInnerTubeBoot();
+      const reqId = await rpcCall('inner_tube_request', { p_kind: 'browse', p_value: ref, p_max_items: maxItems });
+      await sleepMs(1500);
+      const json = await rpcCall('inner_tube_collect', { p_request_id: reqId });
+      items = parseInnerTubeItems(json);
+      note = items.length ? `${items.length} uploads resolved (live)` : 'Channel resolved but no videos were returned.';
+    } else if (sourceType === 'youtube_trending') {
+      await ensureInnerTubeBoot();
+      try {
+        const reqId = await rpcCall('inner_tube_request', { p_kind: 'browse', p_value: 'FEtrending', p_max_items: maxItems });
+        await sleepMs(1500);
+        const json = await rpcCall('inner_tube_collect', { p_request_id: reqId });
+        items = parseInnerTubeItems(json);
+        note = items.length ? `${items.length} trending videos (live, IN region)` : 'Trending tab returned no videos — the app falls back to the official Data API mostPopular.';
+      } catch (e) {
+        note = 'YouTube rejects the trending tab for this context — the APP uses the official Data API videos.list?chart=mostPopular (region-honored) instead. ' + e.message;
+      }
+    } else if (sourceType === 'youtube_search') {
+      await ensureInnerTubeBoot();
+      const reqId = await rpcCall('inner_tube_request', { p_kind: 'search', p_value: value, p_max_items: maxItems });
+      await sleepMs(1500);
+      const json = await rpcCall('inner_tube_collect', { p_request_id: reqId });
+      items = parseInnerTubeItems(json);
+      note = items.length ? `${items.length} results (live search)` : 'Search returned no results.';
+    } else {
+      note = 'Preview is not applicable for this source type.';
+    }
+
+    openModal(
+      `<div class="modal-title">👁 ${esc(sectionTitle || 'Section')} — live preview</div>`,
+      `<div class="muted small" style="margin-bottom:10px">${esc(note)}</div>
+       ${items.length ? `<div class="items-list" style="max-height:52vh;overflow-y:auto">${items.map((it, i) => `
+         <div class="item-card" style="display:flex;gap:10px;align-items:center">
+           <img src="${esc(it.thumb)}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:cover;flex:none" loading="lazy">
+           <div style="min-width:0">
+             <div style="font-weight:600;font-size:13px">${i + 1}. ${esc(it.title || 'Untitled')}</div>
+             <div class="muted small" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.artist || '')}</div>
+           </div>
+         </div>`).join('')}</div>`
+       : `<div class="empty-state"><div class="icon">🔎</div><div class="title">No items to preview</div><div class="desc">${esc(note)}</div></div>`}`,
+      `<button class="btn btn-primary" data-close>Done</button>`,
+    );
+    document.querySelector('[data-close]').onclick = closeModal;
+  } catch (e) {
+    openModal(
+      `<div class="modal-title">⚠ Preview failed</div>`,
+      `<div class="card"><p class="login-error">${esc(e.message || String(e))}</p></div>`,
+      `<button class="btn btn-primary" data-close>OK</button>`,
+    );
+    document.querySelector('[data-close]').onclick = closeModal;
+  }
 }
 
 /* ── Modal helpers ────────────────────────────────────────────────────────── */

@@ -104,3 +104,43 @@ void main() {
     });
   });
 }
+
+// ── PHASE 17: playlist page URLs (page-open playback, no API/scraping) ──────
+void playlistPageTests() {
+  test('accepts official /featured/ playlist page', () {
+    expect(
+      JioSaavnWebProvider.isValidPlaylistUrl(
+        'https://www.jiosaavn.com/featured/weekly-top-songs/abc123',
+      ),
+      isTrue,
+    );
+  });
+
+  test('accepts official /s/playlist/ page', () {
+    expect(
+      JioSaavnWebProvider.isValidPlaylistUrl(
+        'https://www.jiosaavn.com/s/playlist/123/slug',
+      ),
+      isTrue,
+    );
+  });
+
+  test('rejects non-playlist pages (song permalink is not a playlist)', () {
+    expect(
+      JioSaavnWebProvider.isValidPlaylistUrl(
+        'https://www.jiosaavn.com/song/kesariya/BRpGZEd7ZAs',
+      ),
+      isFalse,
+    );
+  });
+
+  test('rejects media urls as playlist', () {
+    expect(
+      JioSaavnWebProvider.isValidPlaylistUrl(
+        'https://www.jiosaavn.com/featured/x.mp3',
+      ),
+      isFalse,
+    );
+  });
+  playlistPageTests();
+}

@@ -87,12 +87,12 @@ class InnerTubeClient {
     }
   }
 
-  Map<String, dynamic> _context() => {
+  Map<String, dynamic> _context({String? gl}) => {
         'client': {
           'clientName': 'WEB',
           'clientVersion': _clientVersion ?? _fallbackVersion,
           'hl': _hl,
-          'gl': _gl,
+          'gl': gl ?? _gl,
         },
       };
 
@@ -198,6 +198,67 @@ class InnerTubeClient {
   }
 
   /// Related videos for [videoId] — the real "more like this" source.
+  /// Videos of a YouTube playlist (browse `VL{playlistId}`) in playlist
+  /// order. Deleted/private/unavailable entries carry no videoRenderer and
+  /// are skipped safely — the rest keep their order.
+  Future<List<InnerTubeVideoItem>> playlistVideos(
+    String playlistId, {
+    int limit = 50,
+  }) async {
+    final id = playlistId.trim();
+    if (id.isEmpty) return const [];
+    final json = await _post('browse', {
+      'context': _context(),
+      'browseId': 'VL$id',
+    });
+    if (json == null) return const [];
+    return _collectBrowseVideos(json).take(limit).toList();
+  }
+
+  /// Latest uploads of a YouTube channel (browse `UC{channelId}`). Returns
+  /// the channel's video tab content in page order.
+  Future<List<InnerTubeVideoItem>> channelVideos(
+    String channelId, {
+    int limit = 30,
+  }) async {
+    final id = channelId.trim();
+    if (id.isEmpty) return const [];
+    final json = await _post('browse', {
+      'context': _context(),
+      'browseId': id,
+    });
+    if (json == null) return const [];
+    return _collectBrowseVideos(json).take(limit).toList();
+  }
+
+  /// Real regional trending (browse `FEtrending` with `context.client.gl` =
+  /// [region], e.g. IN / US / GB). NOTE: YouTube currently rejects
+  /// FEtrending for some contexts — callers MUST fall back (the provider
+  /// falls back to the official Data API mostPopular / search).
+  Future<List<InnerTubeVideoItem>> trending({
+    String region = 'IN',
+    int limit = 20,
+  }) async {
+    final json = await _post('browse', {
+      'context': _context(gl: region.trim().isEmpty ? _gl : region.trim()),
+      'browseId': 'FEtrending',
+    });
+    if (json == null) return const [];
+    return _collectBrowseVideos(json).take(limit).toList();
+  }
+
+  /// Collects video items from a browse response across BOTH renderer
+  /// generations: classic videoRenderer (search) and the newer
+  /// lockupViewModel (playlist/channel/trending pages).
+  List<InnerTubeVideoItem> _collectBrowseVideos(Map<String, dynamic> json) {
+    final out = <InnerTubeVideoItem>[..._collectVideoRenderers(json)];
+    final seen = {for (final i in out) i.videoId};
+    for (final it in _collectLockupVideos(json)) {
+      if (it.videoId.isNotEmpty && seen.add(it.videoId)) out.add(it);
+    }
+    return out;
+  }
+
   Future<List<InnerTubeVideoItem>> related(
     String videoId, {
     int limit = 20,

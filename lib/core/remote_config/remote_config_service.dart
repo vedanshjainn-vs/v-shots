@@ -6,6 +6,7 @@
 // used if present, otherwise compiled defaults.
 // ═════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -72,17 +73,17 @@ class RemoteConfigService {
   bool _loaded = false;
 
   /// Loads cached config and refreshes if stale. Safe to call at startup.
+  ///
+  /// PERFORMANCE CONTRACT (Phase 17): init() NEVER awaits the network. It
+  /// decodes the last-known-good cache (fast) and schedules [refresh] in the
+  /// background — first paint is not blocked by Supabase/CMS latency. Fresh
+  /// rows are applied through the [revision] notifier, so Home rebuilds
+  /// automatically when the background refresh completes.
   Future<void> init() async {
     if (_loaded) return;
     _loaded = true;
+    final sw = Stopwatch()..start();
     try {
-      // SupabaseService.initialize() is idempotent. Awaiting it here closes a
-      // real startup race: init() runs concurrently with initialize() from
-      // main(), and a refresh() that starts before Supabase is ready would
-      // be skipped forever (init is one-shot), leaving the app on compiled
-      // defaults until a later pull-to-refresh / resume refresh.
-      await SupabaseService.initialize();
-
       final prefs = await SharedPreferences.getInstance();
       final ts = prefs.getInt(_cacheKeyTs) ?? 0;
       final age = DateTime.now().millisecondsSinceEpoch - ts;
@@ -103,16 +104,29 @@ class RemoteConfigService {
       if (flagsJson != null) {
         _flags = _decodeFlags(flagsJson);
       }
+      debugPrint(
+        '[RemoteConfig] cache loaded in ${sw.elapsedMilliseconds}ms '
+        '(${_homeSections.length} sections cached)',
+      );
 
       // Freshness is driven by the CMS refresh_minutes value stored at the
       // last successful refresh (see computeHomeCacheTtl). Missing expiry
       // falls back to the previous age-based 1-hour behavior.
       final expiry = prefs.getInt(_cacheKeyExpiry);
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (expiry != null) {
-        if (now >= expiry) await refresh();
-      } else if (age > _cacheTtl.inMilliseconds || ts == 0) {
-        await refresh();
+      final stale = expiry != null
+          ? now >= expiry
+          : (age > _cacheTtl.inMilliseconds || ts == 0);
+
+      // BACKGROUND refresh — never awaited by callers that need first paint.
+      if (stale) {
+        unawaited(
+          refresh().then((_) {
+            debugPrint('[RemoteConfig] background refresh complete');
+          }).catchError((Object e) {
+            debugPrint('[RemoteConfig] background refresh failed: $e');
+          }),
+        );
       }
     } catch (e) {
       debugPrint('[RemoteConfig] init error: $e');
@@ -120,6 +134,9 @@ class RemoteConfigService {
   }
 
   Future<void> refresh() async {
+    // SupabaseService.initialize() shares its in-flight future, so this is
+    // cheap even when init() was called concurrently from main().
+    await SupabaseService.initialize();
     if (!SupabaseService.isAvailable) {
       debugPrint(
         '[RemoteConfig] Supabase unavailable — keeping cached/defaults',
