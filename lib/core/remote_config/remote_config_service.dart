@@ -76,6 +76,13 @@ class RemoteConfigService {
     if (_loaded) return;
     _loaded = true;
     try {
+      // SupabaseService.initialize() is idempotent. Awaiting it here closes a
+      // real startup race: init() runs concurrently with initialize() from
+      // main(), and a refresh() that starts before Supabase is ready would
+      // be skipped forever (init is one-shot), leaving the app on compiled
+      // defaults until a later pull-to-refresh / resume refresh.
+      await SupabaseService.initialize();
+
       final prefs = await SharedPreferences.getInstance();
       final ts = prefs.getInt(_cacheKeyTs) ?? 0;
       final age = DateTime.now().millisecondsSinceEpoch - ts;
