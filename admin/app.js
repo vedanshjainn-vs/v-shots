@@ -1472,6 +1472,45 @@ async function renderDiscover(el) {
         </div>
       </div>
       <div id="cats-list"></div>
+    </div>
+    <div class="card" id="discover-algo-card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🧠 Discover algorithm</div>
+          <div class="card-subtitle">The V Shots Discover feed mixes 4 buckets per user (adaptive by their interaction count). These are GLOBAL defaults — the on-device engine decides per user. Weights are relative (any positive numbers).</div>
+        </div>
+        <button class="btn btn-success" id="save-algo">Save algorithm</button>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group"><label class="form-label">Personalization %</label><input class="form-input" type="number" min="0" max="100" id="algo-personal" value="50"></div>
+        <div class="form-group"><label class="form-label">Trending %</label><input class="form-input" type="number" min="0" max="100" id="algo-trending" value="25"></div>
+        <div class="form-group"><label class="form-label">Fresh %</label><input class="form-input" type="number" min="0" max="100" id="algo-fresh" value="15"></div>
+        <div class="form-group"><label class="form-label">Exploration %</label><input class="form-input" type="number" min="0" max="100" id="algo-exploration" value="10"></div>
+      </div>
+      <div class="form-row cols-2" style="margin-top:6px">
+        <div class="form-group">
+          <label class="form-label">Region (trending)</label>
+          <select class="form-select" id="algo-region">
+            <option value="IN">IN — India</option>
+            <option value="US">US — United States</option>
+            <option value="GB">GB — United Kingdom</option>
+            <option value="PK">PK — Pakistan</option>
+            <option value="AE">AE — UAE</option>
+            <option value="CA">CA — Canada</option>
+            <option value="AU">AU — Australia</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Exploration queries (one per line)</label>
+          <textarea class="form-textarea" id="algo-explore" rows="3" placeholder="punjabi hit songs official audio&#10;telugu hit songs official audio"></textarea>
+        </div>
+      </div>
+      <div class="section-toggles">
+        <label class="toggle-label"><span class="switch"><input type="checkbox" id="algo-on-personal" checked><span class="slider"></span></span> Personalization ON</label>
+        <label class="toggle-label"><span class="switch"><input type="checkbox" id="algo-on-trending" checked><span class="slider"></span></span> Trending ON</label>
+        <label class="toggle-label"><span class="switch"><input type="checkbox" id="algo-on-fresh" checked><span class="slider"></span></span> Fresh ON</label>
+        <label class="toggle-label"><span class="switch"><input type="checkbox" id="algo-on-exploration" checked><span class="slider"></span></span> Exploration ON</label>
+      </div>
     </div>`;
   const list = $('cats-list');
   const renderRows = () => {
@@ -1538,6 +1577,64 @@ async function renderDiscover(el) {
       const { error: upsertErr } = await supabase.from('discovery_categories').upsert(payload, { onConflict: 'id' });
       if (upsertErr) throw upsertErr;
       toast(`✅ Saved ${payload.length} categories`);
+    } catch (e) {
+      toast(`Save failed: ${e.message || e}`, 'error');
+    } finally {
+      setBusy(btn, false);
+    }
+  };
+
+  // ── Discover algorithm settings (discover_settings row) ──
+  const algoCard = $('discover-algo-card');
+  if (!algoCard) return;
+  let algoConfig = null;
+  try {
+    const { data: algoRow } = await supabase
+      .from('discover_settings').select('config').limit(1).maybeSingle();
+    if (algoRow?.config) algoConfig = algoRow.config;
+  } catch (_) {}
+  const weights = (algoConfig?.weights) || {};
+  const enabled = (algoConfig?.enabled) || {};
+  const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+  const setChk = (id, v) => { const el = $(id); if (el) el.checked = v !== false; };
+  set('algo-personal', weights.personal ?? 50);
+  set('algo-trending', weights.trending ?? 25);
+  set('algo-fresh', weights.fresh ?? 15);
+  set('algo-exploration', weights.exploration ?? 10);
+  set('algo-region', (algoConfig?.region) || 'IN');
+  set('algo-explore', ((algoConfig?.explore_queries) || []).join('\n'));
+  setChk('algo-on-personal', enabled.personalization);
+  setChk('algo-on-trending', enabled.trending);
+  setChk('algo-on-fresh', enabled.fresh);
+  setChk('algo-on-exploration', enabled.exploration);
+
+  $('save-algo').onclick = async () => {
+    const btn = $('save-algo');
+    setBusy(btn, true, 'Saving…');
+    try {
+      const payload = {
+        weights: {
+          personal: Number($('algo-personal').value) || 0,
+          trending: Number($('algo-trending').value) || 0,
+          fresh: Number($('algo-fresh').value) || 0,
+          exploration: Number($('algo-exploration').value) || 0,
+        },
+        enabled: {
+          personalization: $('algo-on-personal').checked,
+          trending: $('algo-on-trending').checked,
+          fresh: $('algo-on-fresh').checked,
+          exploration: $('algo-on-exploration').checked,
+        },
+        region: $('algo-region').value || 'IN',
+        explore_queries: $('algo-explore').value
+          .split('\n').map((s) => s.trim()).filter(Boolean),
+      };
+      const { error } = await supabase.from('discover_settings').upsert(
+        { id: 'current', config: payload, updated_at: new Date().toISOString() },
+        { onConflict: 'id' },
+      );
+      if (error) throw error;
+      toast('✅ Discover algorithm saved — the app picks it up within ~1 hour.');
     } catch (e) {
       toast(`Save failed: ${e.message || e}`, 'error');
     } finally {
