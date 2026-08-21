@@ -30,8 +30,7 @@ String? extractYoutubeVideoId(String url) {
   }
 
   final host = uri.host.toLowerCase();
-  final isYoutubeHost =
-      host == 'youtube.com' ||
+  final isYoutubeHost = host == 'youtube.com' ||
       host.endsWith('.youtube.com') ||
       host == 'youtu.be' ||
       host.endsWith('.youtu.be');

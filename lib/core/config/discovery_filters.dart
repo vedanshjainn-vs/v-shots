@@ -220,12 +220,13 @@ class DiscoveryFilterConfig {
     List<DiscoveryMood>? moods,
     List<DiscoveryFilterOption>? languages,
     List<DiscoveryFilterOption>? regions,
-  }) => DiscoveryFilterConfig(
-    source: source ?? this.source,
-    moods: moods ?? this.moods,
-    languages: languages ?? this.languages,
-    regions: regions ?? this.regions,
-  );
+  }) =>
+      DiscoveryFilterConfig(
+        source: source ?? this.source,
+        moods: moods ?? this.moods,
+        languages: languages ?? this.languages,
+        regions: regions ?? this.regions,
+      );
 }
 
 /// Builds the final YouTube discovery query from the applied filters.

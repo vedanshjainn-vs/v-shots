@@ -78,17 +78,15 @@ class LyricsService {
         },
       );
 
-      final response = await http
-          .get(
-            uri,
-            headers: {
-              // LRCLIB asks integrators to identify themselves via
-              // User-Agent — good API citizenship, not required for
-              // basic functionality but costs nothing to include.
-              'User-Agent': 'VShots/1.0 (github.com/vedanshjainn-vs/v-shots)',
-            },
-          )
-          .timeout(const Duration(seconds: 8));
+      final response = await http.get(
+        uri,
+        headers: {
+          // LRCLIB asks integrators to identify themselves via
+          // User-Agent — good API citizenship, not required for
+          // basic functionality but costs nothing to include.
+          'User-Agent': 'VShots/1.0 (github.com/vedanshjainn-vs/v-shots)',
+        },
+      ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 404) {
         _cache[cacheKey] = LyricsResult.notFound;
@@ -128,9 +126,8 @@ class LyricsService {
       final minutes = int.parse(match.group(1)!);
       final seconds = int.parse(match.group(2)!);
       final fraction = match.group(3)!;
-      final millis = fraction.length == 2
-          ? int.parse(fraction) * 10
-          : int.parse(fraction);
+      final millis =
+          fraction.length == 2 ? int.parse(fraction) * 10 : int.parse(fraction);
       final text = match.group(4)!.trim();
       lines.add(
         LyricLine(

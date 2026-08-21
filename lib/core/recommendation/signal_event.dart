@@ -81,14 +81,14 @@ class SignalEvent {
   final double? value;
 
   Map<String, dynamic> toJson() => {
-    'type': type.name,
-    'timestamp': timestamp.toIso8601String(),
-    if (trackId != null) 'trackId': trackId,
-    if (artist != null) 'artist': artist,
-    if (title != null) 'title': title,
-    if (query != null) 'query': query,
-    if (value != null) 'value': value,
-  };
+        'type': type.name,
+        'timestamp': timestamp.toIso8601String(),
+        if (trackId != null) 'trackId': trackId,
+        if (artist != null) 'artist': artist,
+        if (title != null) 'title': title,
+        if (query != null) 'query': query,
+        if (value != null) 'value': value,
+      };
 
   factory SignalEvent.fromJson(Map<String, dynamic> json) {
     return SignalEvent(
@@ -96,8 +96,7 @@ class SignalEvent {
         (t) => t.name == json['type'],
         orElse: () => SignalType.play,
       ),
-      timestamp:
-          DateTime.tryParse(json['timestamp'] as String? ?? '') ??
+      timestamp: DateTime.tryParse(json['timestamp'] as String? ?? '') ??
           DateTime.now(),
       trackId: json['trackId'] as String?,
       artist: json['artist'] as String?,

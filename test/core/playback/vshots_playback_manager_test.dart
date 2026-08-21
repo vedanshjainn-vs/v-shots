@@ -6,12 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/core/playback/vshots_playback_manager.dart';
 
 Map<String, dynamic> _track(String id) => {
-  'id': id,
-  'title': 'T $id',
-  'artist': 'A',
-  'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-  'duration': 200,
-};
+      'id': id,
+      'title': 'T $id',
+      'artist': 'A',
+      'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      'duration': 200,
+    };
 
 void main() {
   test('play() opens the single global session with the track', () {

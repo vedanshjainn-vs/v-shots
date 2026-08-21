@@ -255,9 +255,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // "For You" (null source query) → MUSIC INTELLIGENCE V3 pipeline:
     // user taste → candidate pools → ranking → diversity → exploration.
     if (source.query == null) {
-      final primaryMood = _applied.moods.isNotEmpty
-          ? _applied.moods.first
-          : null;
+      final primaryMood =
+          _applied.moods.isNotEmpty ? _applied.moods.first : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
       try {
         final music = await musicRecommendationEngine.generateForYou(
@@ -319,9 +318,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     DiscoverySource source,
     List<Map<String, dynamic>> tracks,
   ) {
-    var refined = const MusicCatalogService()
-        .ingest(tracks, label: '.discover')
-        .items;
+    var refined =
+        const MusicCatalogService().ingest(tracks, label: '.discover').items;
     const ranker = MusicRanker();
     refined = switch (source.id) {
       'trending' => ranker.rankTrending(refined),
@@ -427,11 +425,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   /// Compact summary for the top pill (e.g. "For You", "Romantic · Hindi").
   String _filterSummary() => discoveryFilterSummary(
-    source: _applied.source,
-    moods: _applied.moods,
-    languages: _applied.languages,
-    regions: _applied.regions,
-  );
+        source: _applied.source,
+        moods: _applied.moods,
+        languages: _applied.languages,
+        regions: _applied.regions,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -513,15 +511,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                     onDoubleTapLike: () => _handleDoubleTapLike(track),
                     onSkipPrevious: page > 0
                         ? () => _pageController.previousPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                          )
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            )
                         : null,
                     onSkipNext: page < _pageCount - 1
                         ? () => _pageController.nextPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                          )
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            )
                         : null,
                   ),
                 );
@@ -708,11 +706,11 @@ class _ExploreSheetState extends State<_ExploreSheet> {
   }
 
   DiscoveryFilterConfig get _draft => DiscoveryFilterConfig(
-    source: _draftSource,
-    moods: _draftMoods,
-    languages: _draftLanguages,
-    regions: _draftRegions,
-  );
+        source: _draftSource,
+        moods: _draftMoods,
+        languages: _draftLanguages,
+        regions: _draftRegions,
+      );
 
   bool get _hasChanges => !_draft.matches(widget.initial);
 
@@ -921,20 +919,20 @@ class _ExploreSheetState extends State<_ExploreSheet> {
   }
 
   Widget _sectionLabel(String label) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Text(
-      label,
-      style: const TextStyle(
-        color: AppColors.textMain,
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMain,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
 
   Widget _chipWrap(
     List<({String label, String icon, bool selected, VoidCallback onTap})>
-    items,
+        items,
   ) {
     return Wrap(
       spacing: 8,
@@ -966,9 +964,8 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                   style: TextStyle(
                     color: item.selected ? Colors.white : AppColors.textMain,
                     fontSize: 13,
-                    fontWeight: item.selected
-                        ? FontWeight.w700
-                        : FontWeight.w500,
+                    fontWeight:
+                        item.selected ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
               ],

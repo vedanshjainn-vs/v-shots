@@ -143,18 +143,18 @@ class RemoteConfigService {
 
   // ── encoding helpers ───────────────────────────────────────────────────
   static String _encodeCategories(List<DiscoveryCategory> list) => jsonEncode(
-    list
-        .map(
-          (c) => {
-            'id': c.id,
-            'label': c.label,
-            'icon': c.icon,
-            'query': c.query,
-            'fallbackCategory': c.fallbackCategory,
-          },
-        )
-        .toList(),
-  );
+        list
+            .map(
+              (c) => {
+                'id': c.id,
+                'label': c.label,
+                'icon': c.icon,
+                'query': c.query,
+                'fallbackCategory': c.fallbackCategory,
+              },
+            )
+            .toList(),
+      );
 
   static List<DiscoveryCategory> _decodeCategories(String json) {
     try {

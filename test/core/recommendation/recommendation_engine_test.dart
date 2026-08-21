@@ -41,11 +41,11 @@ class RelatedFakeProvider implements MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-    ProviderCapability.search,
-    ProviderCapability.getRelated,
-    ProviderCapability.getTrending,
-    ProviderCapability.getRecommendations,
-  };
+        ProviderCapability.search,
+        ProviderCapability.getRelated,
+        ProviderCapability.getTrending,
+        ProviderCapability.getRecommendations,
+      };
 
   @override
   bool supports(ProviderCapability capability) =>
@@ -59,12 +59,12 @@ class RelatedFakeProvider implements MusicProvider {
       const ProviderHealth(healthy: true);
 
   ProviderTrack _track(String id, String artist) => ProviderTrack(
-    id: id,
-    title: '$artist — $id',
-    artist: artist,
-    artworkUrl: '',
-    durationSeconds: 200,
-  );
+        id: id,
+        title: '$artist — $id',
+        artist: artist,
+        artworkUrl: '',
+        durationSeconds: 200,
+      );
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> search(
@@ -128,7 +128,8 @@ class RelatedFakeProvider implements MusicProvider {
     required String trackName,
     required String artistName,
     int? durationSeconds,
-  }) async => ProviderResult.failure('unused');
+  }) async =>
+      ProviderResult.failure('unused');
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15}) =>
@@ -138,7 +139,8 @@ class RelatedFakeProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getRecommendations({
     required Set<String> excludeIds,
     int limit = 10,
-  }) => search('recommendations', limit: limit);
+  }) =>
+      search('recommendations', limit: limit);
 
   @override
   Future<void> dispose() async {}

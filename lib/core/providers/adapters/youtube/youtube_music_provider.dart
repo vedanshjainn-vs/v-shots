@@ -14,9 +14,9 @@ class YouTubeMusicProvider extends MusicProvider {
     YouTubeDataApiClient? apiClient,
     YoutubeMusicMapper mapper = const YoutubeMusicMapper(),
     LyricsService? lyricsService,
-  }) : _apiClient = apiClient ?? YouTubeDataApiClient(),
-       _mapper = mapper,
-       _lyrics = lyricsService ?? LyricsService.instance;
+  })  : _apiClient = apiClient ?? YouTubeDataApiClient(),
+        _mapper = mapper,
+        _lyrics = lyricsService ?? LyricsService.instance;
 
   final YouTubeDataApiClient _apiClient;
   final YoutubeMusicMapper _mapper;
@@ -30,13 +30,13 @@ class YouTubeMusicProvider extends MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-    ProviderCapability.search,
-    ProviderCapability.getTrack,
-    ProviderCapability.getArtwork,
-    ProviderCapability.getLyrics,
-    ProviderCapability.getTrending,
-    ProviderCapability.getRecommendations,
-  };
+        ProviderCapability.search,
+        ProviderCapability.getTrack,
+        ProviderCapability.getArtwork,
+        ProviderCapability.getLyrics,
+        ProviderCapability.getTrending,
+        ProviderCapability.getRecommendations,
+      };
 
   bool _initialized = false;
 

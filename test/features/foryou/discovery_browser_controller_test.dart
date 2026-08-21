@@ -6,12 +6,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/features/foryou/discovery_browser_controller.dart';
 
 Map<String, dynamic> _track(String id) => {
-  'id': id,
-  'title': 'Title $id',
-  'artist': 'Artist',
-  'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-  'duration': 200,
-};
+      'id': id,
+      'title': 'Title $id',
+      'artist': 'Artist',
+      'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      'duration': 200,
+    };
 
 void main() {
   group('DiscoveryBrowserController', () {

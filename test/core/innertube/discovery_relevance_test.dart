@@ -6,10 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/core/innertube/discovery_relevance.dart';
 
 Map<String, dynamic> _t(String id, String title, String artist) => {
-  'id': id,
-  'title': title,
-  'artist': artist,
-};
+      'id': id,
+      'title': title,
+      'artist': artist,
+    };
 
 void main() {
   group('isIrrelevantContent', () {

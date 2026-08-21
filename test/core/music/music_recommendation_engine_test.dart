@@ -17,8 +17,8 @@ MusicSearch _fakeSearch() {
     final artist = q.contains('arijit')
         ? 'Arijit Singh'
         : q.contains('trending')
-        ? 'Trending Artist'
-        : 'Artist $q';
+            ? 'Trending Artist'
+            : 'Artist $q';
     return List.generate(limit, (i) {
       return {
         'id': 'vid-${query.hashCode}-$i',
@@ -114,9 +114,8 @@ void main() {
       session: MusicSessionState(),
     );
     final feed = await engine.generateForYou(excludeIds: const {}, count: 6);
-    final titles = feed
-        .map((t) => (t['title'] as String).toLowerCase())
-        .toList();
+    final titles =
+        feed.map((t) => (t['title'] as String).toLowerCase()).toList();
     expect(
       titles.where((t) => t.contains('tum hi ho')).length,
       1,

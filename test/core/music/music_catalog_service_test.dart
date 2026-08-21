@@ -15,15 +15,16 @@ Map<String, dynamic> _t(
   int duration = 200,
   bool official = false,
   String? channelId,
-}) => {
-  'id': id,
-  'title': title,
-  'artist': artist,
-  'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-  'duration': duration,
-  if (official) 'isOfficial': true,
-  if (channelId != null) 'channelId': channelId,
-};
+}) =>
+    {
+      'id': id,
+      'title': title,
+      'artist': artist,
+      'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      'duration': duration,
+      if (official) 'isOfficial': true,
+      if (channelId != null) 'channelId': channelId,
+    };
 
 void main() {
   const validator = MusicContentValidator();

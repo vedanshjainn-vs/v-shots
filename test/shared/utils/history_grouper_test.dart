@@ -9,11 +9,11 @@ void main() {
   final now = DateTime(2026, 8, 16, 15, 30); // fixed clock for determinism
 
   Map<String, dynamic> entry(String id, DateTime playedAt) => {
-    'id': id,
-    'title': 'T $id',
-    'artist': 'A',
-    'playedAt': playedAt.toIso8601String(),
-  };
+        'id': id,
+        'title': 'T $id',
+        'artist': 'A',
+        'playedAt': playedAt.toIso8601String(),
+      };
 
   group('groupHistoryByDay', () {
     test('buckets into Today / Yesterday / Earlier', () {

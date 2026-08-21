@@ -298,7 +298,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               gradient: p['gradient'] as Gradient,
               boxShadow: [
                 BoxShadow(
-                  color: (p['gradient'] as LinearGradient).colors.first
+                  color: (p['gradient'] as LinearGradient)
+                      .colors
+                      .first
                       .withValues(alpha: 0.35),
                   blurRadius: 36,
                   spreadRadius: 6,

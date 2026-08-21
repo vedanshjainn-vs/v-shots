@@ -14,7 +14,8 @@ import 'package:v_shots/core/providers/adapters/youtube/youtube_data_api_client.
 
 void main() {
   group('Discovery Category Config', () {
-    test('For You is first and personalized; other categories have distinct, '
+    test(
+        'For You is first and personalized; other categories have distinct, '
         'non-empty queries', () {
       // "For You" is the personalized entry: empty query signals the feed to
       // build from the RecommendationEngine instead of a fixed query.
@@ -25,9 +26,8 @@ void main() {
         reason: 'For You must use the empty-query personalized path',
       );
 
-      final queryCategories = kDiscoveryCategories
-          .where((c) => c.id != 'for_you')
-          .toList();
+      final queryCategories =
+          kDiscoveryCategories.where((c) => c.id != 'for_you').toList();
       final queries = queryCategories.map((c) => c.query).toSet();
       expect(
         queries.length,
@@ -75,10 +75,8 @@ void main() {
           seenQueries[c.label] = results.map((v) => v.id).toList();
         }
         // At least a majority of categories should yield distinct content.
-        final distinctSets = seenQueries.values
-            .map((ids) => ids.join(','))
-            .toSet()
-            .length;
+        final distinctSets =
+            seenQueries.values.map((ids) => ids.join(',')).toSet().length;
         expect(
           distinctSets,
           greaterThanOrEqualTo(seenQueries.length ~/ 2),

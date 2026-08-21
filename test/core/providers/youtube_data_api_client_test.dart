@@ -67,7 +67,8 @@ void main() {
       expect(details.title, contains('Despacito'));
     });
 
-    test('catalog has no fabricated video IDs or thumbnail mismatches', () async {
+    test('catalog has no fabricated video IDs or thumbnail mismatches',
+        () async {
       // Search across several categories and assert every returned video has
       // a well-formed, non-empty videoId and a thumbnail that corresponds to
       // THAT SAME videoId (never a generic/placeholder or a different video).

@@ -12,14 +12,15 @@ Map<String, dynamic> _t(
   String artist, {
   int duration = 200,
   bool official = false,
-}) => {
-  'id': id,
-  'title': title,
-  'artist': artist,
-  'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-  'duration': duration,
-  if (official) 'isOfficial': true,
-};
+}) =>
+    {
+      'id': id,
+      'title': title,
+      'artist': artist,
+      'artwork': 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      'duration': duration,
+      if (official) 'isOfficial': true,
+    };
 
 void main() {
   const validator = MusicContentValidator();

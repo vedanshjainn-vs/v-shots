@@ -13,15 +13,16 @@ ProviderTrack _track(
   String artist, {
   String? channelId,
   bool official = false,
-}) => ProviderTrack(
-  id: id,
-  title: title,
-  artist: artist,
-  artworkUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
-  durationSeconds: 200,
-  channelId: channelId,
-  isOfficial: official,
-);
+}) =>
+    ProviderTrack(
+      id: id,
+      title: title,
+      artist: artist,
+      artworkUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
+      durationSeconds: 200,
+      channelId: channelId,
+      isOfficial: official,
+    );
 
 void main() {
   const resolver = MusicEntityResolver();

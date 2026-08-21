@@ -296,8 +296,7 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                     trailing: ValueListenableBuilder<Map<String, dynamic>?>(
                       valueListenable: currentTrackNotifier,
                       builder: (context, current, _) {
-                        final isThisPlaying =
-                            current?['id'] == track['id'] &&
+                        final isThisPlaying = current?['id'] == track['id'] &&
                             audioPlayer.playing;
                         if (isThisPlaying) {
                           return const AnimatedEqualizer(

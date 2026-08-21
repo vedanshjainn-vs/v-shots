@@ -8,12 +8,12 @@ import 'package:v_shots/core/music/music_diversity.dart';
 import 'package:v_shots/core/providers/provider_models.dart';
 
 ProviderTrack _track(String id, String artist, String genre) => ProviderTrack(
-  id: id,
-  title: 'T $id',
-  artist: artist,
-  artworkUrl: '',
-  durationSeconds: 200,
-);
+      id: id,
+      title: 'T $id',
+      artist: artist,
+      artworkUrl: '',
+      durationSeconds: 200,
+    );
 
 ScoredMusicCandidate _c(String id, String artist, String genre, double score) =>
     ScoredMusicCandidate(

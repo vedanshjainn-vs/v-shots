@@ -115,7 +115,8 @@ class KeywordProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getRelated(
     String trackId, {
     int limit = 10,
-  }) async => ProviderResult.failure('not supported');
+  }) async =>
+      ProviderResult.failure('not supported');
 
   @override
   Future<ProviderResult<String>> getStream(String id) async =>
@@ -130,7 +131,8 @@ class KeywordProvider implements MusicProvider {
     required String trackName,
     required String artistName,
     int? durationSeconds,
-  }) async => ProviderResult.failure('unused');
+  }) async =>
+      ProviderResult.failure('unused');
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15}) =>
@@ -140,7 +142,8 @@ class KeywordProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getRecommendations({
     required Set<String> excludeIds,
     int limit = 10,
-  }) => search('recommendations', limit: limit);
+  }) =>
+      search('recommendations', limit: limit);
 
   @override
   Future<void> dispose() async {}
@@ -166,7 +169,8 @@ void main() {
   });
 
   group('Recommendation -> Home pipeline', () {
-    test('cold start: personalized shelves fall back, '
+    test(
+        'cold start: personalized shelves fall back, '
         '"Because You Listened To" hidden', () async {
       final repo = buildFakeRepository();
       final engine = RecommendationEngine(repo);

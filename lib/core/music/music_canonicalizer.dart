@@ -70,8 +70,7 @@ List<Map<String, dynamic>> deduplicateMusicItems(
     final newRank = _representationRank(track);
     final existingDuration = existing['duration'] as int? ?? 0;
     final newDuration = track['duration'] as int? ?? 0;
-    final replace =
-        newRank < ranks[key]! ||
+    final replace = newRank < ranks[key]! ||
         (newRank == ranks[key]! && newDuration > existingDuration);
     if (replace) {
       byKey[key] = track;
