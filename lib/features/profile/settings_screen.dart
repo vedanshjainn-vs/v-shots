@@ -8,8 +8,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/backend/auth_service.dart';
 import '../../core/backend/supabase_service.dart';
 import '../../core/cache/search_cache.dart';
+import '../../core/config/app_version.dart';
 import '../../core/motion/motion.dart';
+import '../../core/navigation/app_navigator.dart';
 import '../../core/player/sleep_timer.dart';
+import '../../core/recommendation/signal_store.dart';
+import '../../core/storage/local_library.dart';
+import '../../core/storage/personalization_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_card.dart';
@@ -299,12 +304,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
-                const ListTile(
-                  leading: Icon(
+                ListTile(
+                  leading: const Icon(
                     Icons.info_outline_rounded,
                     color: AppColors.accent,
                   ),
-                  title: Text(
+                  title: const Text(
                     'V Shots',
                     style: TextStyle(
                       color: AppColors.textMain,
@@ -313,8 +318,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    'Version 5.4.0 (Nova Release)',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    AppVersion.displayLabel,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const Divider(color: AppColors.borderSubtle, height: 1),
