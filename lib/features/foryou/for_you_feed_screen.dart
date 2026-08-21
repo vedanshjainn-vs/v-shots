@@ -11,13 +11,16 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/config/discovery_filters.dart';
+import '../../core/config/discovery_remote.dart';
+import '../../core/playback/playback_router.dart';
+import '../../core/remote_config/remote_config_service.dart';
+import '../../core/remote_config/remote_feature_flags.dart';
 import '../../core/music/music_catalog_service.dart';
 import '../../core/music/music_ranker.dart';
 import '../../core/motion/motion.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
-import '../../shared/utils/youtube_url.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
@@ -96,6 +99,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// The APPLIED Discovery filter configuration — the only state the feed
   /// actually fetches from. The Explore sheet works on a DRAFT copy and only
   /// commits here on APPLY (see _showExplore).
+  DiscoveryFilterCatalog _catalog = DiscoveryFilterCatalog.compiled;
   DiscoveryFilterConfig _applied = DiscoveryFilterConfig.initial;
 
   /// True while the PageView is being moved PROGRAMMATICALLY (auto-advance),
@@ -105,6 +109,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   @override
   void initState() {
     super.initState();
+    _catalog = DiscoveryFilterCatalog.resolve(
+      useRemote: RemoteFeatureFlags.instance.enableDiscoveryRemoteCategories,
+      rows: RemoteConfigService.instance.categoryRows,
+    );
+    _applied = DiscoveryFilterConfig(source: _catalog.sources.first);
     _browser.addListener(_onBrowserChanged);
     VShotsPlaybackManager.instance.addListener(_onManagerChanged);
     currentTabIndexNotifier.addListener(_onTabChanged);
@@ -147,7 +156,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // The browser is the ONLY playback owner in Discovery. App launch stays
     // silent — this fires only on an actual tab switch to Discovery.
     if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
-      VShotsPlaybackManager.instance.playQueue(_items, _currentIndex);
+      unawaited(_playCurrent(expanded: false));
     }
   }
 
@@ -224,19 +233,35 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// Play tap on a Discovery card → open the selected video in the in-app
   /// YouTube browser (reusing the single session). Discovery NEVER routes to
   /// the old global player — this is the ONLY playback path in Discovery.
+  Future<void> _playCurrent({required bool expanded}) async {
+    if (_items.isEmpty) return;
+    final resolved = await PlaybackRouter.instance.resolveQueue(
+      List.of(_items),
+    );
+    if (!mounted) return;
+    _items
+      ..clear()
+      ..addAll(resolved);
+    final current = _items[_currentIndex.clamp(0, _items.length - 1)];
+    if (current['playbackUnavailable'] == true) {
+      debugPrint(
+        '[DiscoveryPlay] unavailable: ${current['unavailableReason']}',
+      );
+      return;
+    }
+    VShotsPlaybackManager.instance.playQueue(
+      List.of(_items),
+      _currentIndex,
+      expanded: expanded,
+    );
+    if (mounted) setState(() {});
+  }
+
   void _onPlayTap() {
     final track = _items.isNotEmpty ? _items[_currentIndex] : null;
     if (track == null) return;
-    final videoId = (track['id'] as String?) ?? '';
-    debugPrint(
-      '[DiscoveryPlay] videoId=$videoId url=${youtubeWatchUrl(videoId)}',
-    );
-    // The old global player is intentionally bypassed for Discovery — the
-    // in-app browser owns playback. The single playback coordinator pauses the
-    // global IFrame (in case another tab was playing) so audio never doubles.
-    debugPrint('[DiscoveryPlay] OLD_PLAYER_CALL_BLOCKED (routing to browser)');
-    VShotsPlaybackManager.instance.playQueue(List.of(_items), _currentIndex);
-    setState(() {});
+    debugPrint('[DiscoveryPlay] id=${track['id']} url=${track['url']}');
+    unawaited(_playCurrent(expanded: true));
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
@@ -255,8 +280,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // "For You" (null source query) → MUSIC INTELLIGENCE V3 pipeline:
     // user taste → candidate pools → ranking → diversity → exploration.
     if (source.query == null) {
-      final primaryMood =
-          _applied.moods.isNotEmpty ? _applied.moods.first : null;
+      final primaryMood = _applied.moods.isNotEmpty
+          ? _applied.moods.first
+          : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
       try {
         final music = await musicRecommendationEngine.generateForYou(
@@ -318,8 +344,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     DiscoverySource source,
     List<Map<String, dynamic>> tracks,
   ) {
-    var refined =
-        const MusicCatalogService().ingest(tracks, label: '.discover').items;
+    var refined = const MusicCatalogService()
+        .ingest(tracks, label: '.discover')
+        .items;
     const ranker = MusicRanker();
     refined = switch (source.id) {
       'trending' => ranker.rankTrending(refined),
@@ -397,7 +424,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _ExploreSheet(initial: _applied),
+      builder: (ctx) => _ExploreSheet(initial: _applied, catalog: _catalog),
     );
     // null → dismissed WITHOUT APPLY (X / Done / tap-outside): discard draft,
     // keep the previously applied configuration.
@@ -425,11 +452,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   /// Compact summary for the top pill (e.g. "For You", "Romantic · Hindi").
   String _filterSummary() => discoveryFilterSummary(
-        source: _applied.source,
-        moods: _applied.moods,
-        languages: _applied.languages,
-        regions: _applied.regions,
-      );
+    source: _applied.source,
+    moods: _applied.moods,
+    languages: _applied.languages,
+    regions: _applied.regions,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -511,15 +538,15 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                     onDoubleTapLike: () => _handleDoubleTapLike(track),
                     onSkipPrevious: page > 0
                         ? () => _pageController.previousPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                            )
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          )
                         : null,
                     onSkipNext: page < _pageCount - 1
                         ? () => _pageController.nextPage(
-                              duration: const Duration(milliseconds: 300),
-                              curve: Curves.easeOutCubic,
-                            )
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          )
                         : null,
                   ),
                 );
@@ -678,9 +705,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 /// sheet. The top of Discovery stays clean — only the compact summary pill +
 /// Explore control are persistent; everything else lives here.
 class _ExploreSheet extends StatefulWidget {
-  const _ExploreSheet({required this.initial});
+  const _ExploreSheet({required this.initial, required this.catalog});
 
   final DiscoveryFilterConfig initial;
+  final DiscoveryFilterCatalog catalog;
 
   @override
   State<_ExploreSheet> createState() => _ExploreSheetState();
@@ -706,11 +734,11 @@ class _ExploreSheetState extends State<_ExploreSheet> {
   }
 
   DiscoveryFilterConfig get _draft => DiscoveryFilterConfig(
-        source: _draftSource,
-        moods: _draftMoods,
-        languages: _draftLanguages,
-        regions: _draftRegions,
-      );
+    source: _draftSource,
+    moods: _draftMoods,
+    languages: _draftLanguages,
+    regions: _draftRegions,
+  );
 
   bool get _hasChanges => !_draft.matches(widget.initial);
 
@@ -820,7 +848,7 @@ class _ExploreSheetState extends State<_ExploreSheet> {
               const SizedBox(height: 8),
               _sectionLabel('Discover'),
               _chipWrap(
-                kDiscoverySources
+                widget.catalog.sources
                     .map(
                       (s) => (
                         label: s.label,
@@ -834,7 +862,7 @@ class _ExploreSheetState extends State<_ExploreSheet> {
               const SizedBox(height: 18),
               _sectionLabel('Moods'),
               _chipWrap(
-                kDiscoveryMoods
+                widget.catalog.moods
                     .map(
                       (m) => (
                         label: m.label,
@@ -848,7 +876,7 @@ class _ExploreSheetState extends State<_ExploreSheet> {
               const SizedBox(height: 18),
               _sectionLabel('Language'),
               _chipWrap(
-                kDiscoveryLanguages
+                widget.catalog.languages
                     .map(
                       (l) => (
                         label: l.label,
@@ -862,7 +890,7 @@ class _ExploreSheetState extends State<_ExploreSheet> {
               const SizedBox(height: 18),
               _sectionLabel('Region / Culture'),
               _chipWrap(
-                kDiscoveryRegions
+                widget.catalog.regions
                     .map(
                       (r) => (
                         label: r.label,
@@ -919,20 +947,20 @@ class _ExploreSheetState extends State<_ExploreSheet> {
   }
 
   Widget _sectionLabel(String label) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textMain,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Text(
+      label,
+      style: const TextStyle(
+        color: AppColors.textMain,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 
   Widget _chipWrap(
     List<({String label, String icon, bool selected, VoidCallback onTap})>
-        items,
+    items,
   ) {
     return Wrap(
       spacing: 8,
@@ -964,8 +992,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                   style: TextStyle(
                     color: item.selected ? Colors.white : AppColors.textMain,
                     fontSize: 13,
-                    fontWeight:
-                        item.selected ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight: item.selected
+                        ? FontWeight.w700
+                        : FontWeight.w500,
                   ),
                 ),
               ],
@@ -1554,22 +1583,24 @@ class _ForYouCardState extends State<_ForYouCard>
                     );
                   },
                 ),
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: Colors.white,
-                    size: 28,
+                if (RemoteFeatureFlags.instance.enableSocial) ...[
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    onPressed: () {
+                      unawaited(HapticFeedback.lightImpact());
+                      CommentSheet.show(
+                        context,
+                        shotId: trackId,
+                        commentCount: 18,
+                      );
+                    },
                   ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    CommentSheet.show(
-                      context,
-                      shotId: trackId,
-                      commentCount: 18,
-                    );
-                  },
-                ),
+                ],
                 const SizedBox(height: 12),
                 IconButton(
                   icon: const Icon(

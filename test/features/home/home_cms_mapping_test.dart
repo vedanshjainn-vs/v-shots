@@ -161,5 +161,100 @@ void main() {
         isTrue,
       );
     });
+
+    test('malformed CMS rows are skipped without throwing', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        cmsSections: [
+          {},
+          {'id': '', 'title': 12, 'visible': 'maybe'},
+        ],
+      );
+      expect(
+        shelves.every((s) => s.kind == HomeShelfKind.continueListening),
+        isTrue,
+      );
+    });
+
+    test('JioSaavn CMS item maps onto a normalized track', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        jiosaavnEnabled: true,
+        jiosaavnSearchFallback: false,
+        cmsSections: [
+          {
+            'id': 'jiosaavn_test',
+            'section_key': 'jiosaavn_test',
+            'title': 'JioSaavn Test',
+            'source_type': 'jiosaavn_manual',
+            'visible': true,
+            'published': true,
+            'max_items': 5,
+          },
+        ],
+        cmsItems: {
+          'jiosaavn_test': [
+            {
+              'id': 'item-1',
+              'section_id': 'jiosaavn_test',
+              'content_id': 'kesariya',
+              'title': 'Kesariya',
+              'artist': 'Arijit Singh',
+              'jiosaavn_url':
+                  'https://www.jiosaavn.com/song/kesariya/RDPkZEVaUXw',
+              'provider': 'jiosaavn',
+              'playback_provider': 'jiosaavn',
+              'fallback_provider': 'youtube',
+              'youtube_video_id': '',
+              'is_enabled': true,
+            },
+          ],
+        },
+      );
+      final shelf = shelves.firstWhere((s) => s.id == 'jiosaavn_test');
+      expect(shelf.kind, HomeShelfKind.manual);
+      expect(shelf.manualItems, isNotEmpty);
+      final track = shelf.manualItems.first;
+      expect(track['title'], 'Kesariya');
+      expect(track['artist'], 'Arijit Singh');
+      expect(track['jiosaavnUrl'], contains('jiosaavn.com/song/'));
+      expect(track['playbackSource'], 'jiosaavn');
+      expect(track['youtubeId'], isEmpty);
+    });
+
+    test('JioSaavn items are omitted when the flag is off', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        jiosaavnEnabled: false,
+        cmsSections: [
+          {
+            'id': 'jiosaavn_test',
+            'title': 'JioSaavn Test',
+            'source_type': 'jiosaavn_manual',
+            'visible': true,
+            'published': true,
+          },
+        ],
+        cmsItems: {
+          'jiosaavn_test': [
+            {
+              'id': 'item-1',
+              'section_id': 'jiosaavn_test',
+              'title': 'Kesariya',
+              'jiosaavn_url':
+                  'https://www.jiosaavn.com/song/kesariya/RDPkZEVaUXw',
+              'provider': 'jiosaavn',
+              'playback_provider': 'jiosaavn',
+              'is_enabled': true,
+            },
+          ],
+        },
+      );
+      final shelf = shelves.firstWhere((s) => s.id == 'jiosaavn_test');
+      expect(shelf.manualItems, isEmpty);
+    });
   });
 }

@@ -61,7 +61,7 @@ private class VShotsBackgroundMediaWebView(
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
             evaluateJavascript(
-                "(function(){var v=document.querySelector('video');if(!v){return 'none';}if(v.ended){return 'ended';}return v.paused?'paused':'playing';})()",
+                "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}if(v.ended){return 'ended';}return v.paused?'paused':'playing';})()",
             ) { result ->
                 val state = cleanJsResult(result)
                 setMediaPlaying(state == "playing")
@@ -464,8 +464,16 @@ private class VShotsBackgroundMediaWebView(
         return false
     }
 
+    private fun isDeniedJioHost(host: String): Boolean {
+        val h = host.lowercase(Locale.US)
+        if (h == "api.jiosaavn.com" || h.endsWith(".api.jiosaavn.com")) return true
+        if (h == "saavn.me" || h.endsWith(".saavn.me")) return true
+        return false
+    }
+
     private fun isAllowedHost(host: String): Boolean {
         val h = host.lowercase(Locale.US)
+        if (isDeniedJioHost(h)) return false
         val allowed = listOf(
             "youtube.com",
             "youtu.be",
@@ -507,6 +515,8 @@ private class VShotsBackgroundMediaWebView(
 
     fun load(url: String) {
         if (!url.startsWith("https://")) return
+        val host = Uri.parse(url).host?.lowercase(Locale.US) ?: return
+        if (isDeniedJioHost(host)) return
         endedReported = false
         loadUrl(url)
     }
@@ -580,7 +590,7 @@ private class VShotsBackgroundMediaWebView(
         evaluateJavascript(
             """
             (function(){
-              var v=document.querySelector('video');
+              var v=document.querySelector('video,audio');
               if(!v){return 'none';}
               if(!v.paused){ v.pause(); }
               return 'paused';
@@ -625,7 +635,7 @@ private class VShotsBackgroundMediaWebView(
             """
             (function(){
               try {
-                var v=document.querySelector('video');
+                var v=document.querySelector('video,audio');
                 var buttons=document.querySelectorAll('button,[role="button"]');
                 for(var i=0;i<buttons.length;i++){
                   var b=buttons[i];
@@ -713,7 +723,7 @@ private class VShotsBrowserPlatformView(
                 }
                 "play" -> {
                     webView.evaluateJavascript(
-                        "(function(){var v=document.querySelector('video');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
+                        "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
                     ) { value ->
                         webView.setMediaPlaying(clean(value) == "playing")
                     }

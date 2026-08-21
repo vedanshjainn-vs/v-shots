@@ -22,6 +22,7 @@ class RemoteConfigService {
 
   static const Duration _cacheTtl = Duration(hours: 1);
   static const _cacheKeyCategories = 'rc_discovery_categories';
+  static const _cacheKeyCategoryRows = 'rc_discovery_category_rows';
   static const _cacheKeyHome = 'rc_home_layout';
   static const _cacheKeyItems = 'rc_home_items';
   static const _cacheKeyFlags = 'rc_feature_flags';
@@ -29,6 +30,9 @@ class RemoteConfigService {
 
   List<DiscoveryCategory> _categories = kDiscoveryCategories;
   List<DiscoveryCategory> get categories => _categories;
+
+  List<Map<String, dynamic>> _categoryRows = const [];
+  List<Map<String, dynamic>> get categoryRows => _categoryRows;
 
   List<Map<String, dynamic>> _homeSections = const [];
   List<Map<String, dynamic>> get homeSections => _homeSections;
@@ -96,9 +100,11 @@ class RemoteConfigService {
           .limit(50);
       if (catRows.isNotEmpty) {
         final parsed = <DiscoveryCategory>[];
+        final rawMaps = <Map<String, dynamic>>[];
         for (final row in catRows) {
           final map = cmsAsMap(row);
           if (map == null) continue;
+          rawMaps.add(map);
           final name = cmsAsString(map['name']);
           final query = cmsAsString(map['query']);
           if (name.isEmpty) continue;
@@ -112,6 +118,7 @@ class RemoteConfigService {
             ),
           );
         }
+        if (rawMaps.isNotEmpty) _categoryRows = rawMaps;
         if (parsed.isNotEmpty) {
           _categories = _ensureForYouCategory(parsed);
         }
@@ -173,6 +180,7 @@ class RemoteConfigService {
         _cacheKeyCategories,
         _encodeCategories(_categories),
       );
+      await prefs.setString(_cacheKeyCategoryRows, jsonEncode(_categoryRows));
       await prefs.setString(_cacheKeyHome, jsonEncode(_homeSections));
       await prefs.setString(_cacheKeyItems, jsonEncode(_itemsBySection));
       await prefs.setString(_cacheKeyFlags, jsonEncode(_flags));
@@ -216,18 +224,18 @@ class RemoteConfigService {
   }
 
   static String _encodeCategories(List<DiscoveryCategory> list) => jsonEncode(
-        list
-            .map(
-              (c) => {
-                'id': c.id,
-                'label': c.label,
-                'icon': c.icon,
-                'query': c.query,
-                'fallbackCategory': c.fallbackCategory,
-              },
-            )
-            .toList(),
-      );
+    list
+        .map(
+          (c) => {
+            'id': c.id,
+            'label': c.label,
+            'icon': c.icon,
+            'query': c.query,
+            'fallbackCategory': c.fallbackCategory,
+          },
+        )
+        .toList(),
+  );
 
   static List<DiscoveryCategory> _decodeCategories(String json) {
     try {
@@ -289,7 +297,9 @@ class RemoteConfigService {
   static Map<String, bool> _decodeFlags(String json) {
     try {
       final data = jsonDecode(json) as Map<String, dynamic>;
-      return data.map((key, value) => MapEntry(key, cmsAsBool(value)));
+      return data.map(
+        (key, value) => MapEntry(key, cmsAsBool(value, fallback: false)),
+      );
     } catch (_) {
       return const {};
     }

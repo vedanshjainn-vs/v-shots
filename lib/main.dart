@@ -17,7 +17,9 @@ import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/navigation/app_navigator.dart';
+import 'core/config/app_version.dart';
 import 'core/remote_config/remote_config_service.dart';
+import 'core/remote_config/remote_feature_flags.dart';
 import 'core/backend/supabase_service.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
@@ -66,6 +68,7 @@ void main() async {
     SignalStore.instance.initialize(),
     PersonalizationStore.instance.initialize(),
     RemoteConfigService.instance.init(),
+    AppVersion.load(),
   ]);
 
   await AuthService.instance.initializeGoogleSignIn();
@@ -610,38 +613,55 @@ Future<void> playTrack(
   BuildContext? context,
   Map<String, dynamic> track,
   List<Map<String, dynamic>> queue,
-  int index,
-) async {
+  int index, {
+  bool expanded = true,
+}) async {
   _log('═══ PLAYBACK START ═══');
   _log('Track: ${track['title']} (${track['id']})');
   unawaited(HapticFeedback.selectionClick());
 
-  // Resolve playback URL via PlaybackRouter (supports YouTube + JioSaavn)
-  final target = await PlaybackRouter.instance.resolvePlayback(track);
-  _log('Playback source: ${target.source.name}, URL: ${target.url}');
+  final resolvedQueue = await PlaybackRouter.instance.resolveQueue(
+    queue.isEmpty ? [track] : queue,
+  );
+  final safeIndex = resolvedQueue.isEmpty
+      ? 0
+      : index.clamp(0, resolvedQueue.length - 1);
+  final resolvedTrack = resolvedQueue.isEmpty
+      ? await PlaybackRouter.instance.attachResolvedPlayback(track)
+      : resolvedQueue[safeIndex];
 
-  // Add resolved URL to track for browser to use
-  final resolvedTrack = Map<String, dynamic>.from(track);
-  resolvedTrack['url'] = target.url;
-  resolvedTrack['playbackSource'] = target.source.name;
+  if (resolvedTrack['playbackUnavailable'] == true) {
+    final reason =
+        '${resolvedTrack['unavailableReason'] ?? 'This track is unavailable'}';
+    _log('Playback unavailable: $reason');
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(reason), backgroundColor: AppColors.error),
+      );
+    }
+    return;
+  }
 
-  // Route through VShotsPlaybackManager (native WebView)
+  _log(
+    'Playback source: ${resolvedTrack['playbackSource']}, '
+    'URL: ${resolvedTrack['url']}',
+  );
+
   VShotsPlaybackManager.instance.playQueue(
-    queue.map((t) {
-      if (t['id'] == track['id']) return resolvedTrack;
-      return t;
-    }).toList(),
-    index,
-    expanded: true,
+    resolvedQueue.isEmpty ? [resolvedTrack] : resolvedQueue,
+    safeIndex,
+    expanded: expanded,
   );
 
   currentTrack = resolvedTrack;
   currentTrackNotifier.value = resolvedTrack;
-  currentQueue = List<Map<String, dynamic>>.from(queue);
-  currentQueueIndex = index;
+  currentQueue = List<Map<String, dynamic>>.from(
+    resolvedQueue.isEmpty ? [resolvedTrack] : resolvedQueue,
+  );
+  currentQueueIndex = safeIndex;
 
-  unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
-  playbackSignalTracker.onTrackStarted(track);
+  unawaited(LocalLibrary.instance.recordRecentlyPlayed(resolvedTrack));
+  playbackSignalTracker.onTrackStarted(resolvedTrack);
 }
 
 // ═══════════════════════════════════════════════
@@ -1719,92 +1739,94 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                           const SizedBox(height: 12),
 
-                          // Creator Hub Card
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.surface2,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: profile.isCreator
-                                    ? AppColors.accent.withValues(alpha: 0.4)
-                                    : AppColors.border,
-                                width: 1,
+                          // Creator Hub Card — hidden until a real UGC backend
+                          // exists (`enable_social`).
+                          if (RemoteFeatureFlags.instance.enableSocial)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surface2,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: profile.isCreator
+                                      ? AppColors.accent.withValues(alpha: 0.4)
+                                      : AppColors.border,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: AppColors.primaryGradient,
+                                    ),
+                                    child: Icon(
+                                      profile.isCreator
+                                          ? Icons.video_library_rounded
+                                          : Icons.stars_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          profile.isCreator
+                                              ? 'Creator Studio'
+                                              : 'Become a Creator',
+                                          style: const TextStyle(
+                                            color: AppColors.textMain,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        Text(
+                                          profile.isCreator
+                                              ? 'Upload original music & shots'
+                                              : 'Share music with listeners',
+                                          style: const TextStyle(
+                                            color: AppColors.textMuted,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 6,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    onPressed: () =>
+                                        _handleCreatorUpload(context),
+                                    child: Text(
+                                      profile.isCreator ? 'Upload' : 'Request',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: AppColors.primaryGradient,
-                                  ),
-                                  child: Icon(
-                                    profile.isCreator
-                                        ? Icons.video_library_rounded
-                                        : Icons.stars_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        profile.isCreator
-                                            ? 'Creator Studio'
-                                            : 'Become a Creator',
-                                        style: const TextStyle(
-                                          color: AppColors.textMain,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      Text(
-                                        profile.isCreator
-                                            ? 'Upload original music & shots'
-                                            : 'Share music with listeners',
-                                        style: const TextStyle(
-                                          color: AppColors.textMuted,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primary,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 6,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                  ),
-                                  onPressed: () =>
-                                      _handleCreatorUpload(context),
-                                  child: Text(
-                                    profile.isCreator ? 'Upload' : 'Request',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                           const SizedBox(height: 14),
                         ],
                       ),

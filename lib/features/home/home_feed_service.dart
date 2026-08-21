@@ -35,6 +35,7 @@ import '../../core/recommendation/taste_profile.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/remote_config/home_cms_models.dart';
 import '../../core/remote_config/remote_config_service.dart';
+import '../../core/remote_config/remote_feature_flags.dart';
 import '../../shared/utils/youtube_url.dart';
 
 /// What kind of content a shelf is built from.
@@ -124,9 +125,9 @@ class HomeFeedService {
     MusicRepository? repository,
     RecommendationEngine? engine,
     MusicRecommendationEngine? musicEngine,
-  })  : _repository = repository,
-        _engine = engine,
-        _musicEngine = musicEngine;
+  }) : _repository = repository,
+       _engine = engine,
+       _musicEngine = musicEngine;
 
   final MusicRepository? _repository;
   final RecommendationEngine? _engine;
@@ -137,13 +138,24 @@ class HomeFeedService {
     List<Map<String, dynamic>>? cmsSections,
     Map<String, List<Map<String, dynamic>>>? cmsItems,
     bool? enableRemoteHome,
+    bool? jiosaavnEnabled,
+    bool? jiosaavnSearchFallback,
   }) {
     final enabled =
-        enableRemoteHome ?? RemoteConfigService.instance.enableRemoteHome;
+        enableRemoteHome ?? RemoteFeatureFlags.instance.enableRemoteHome;
     final sections = cmsSections ?? RemoteConfigService.instance.homeSections;
     final items = cmsItems ?? RemoteConfigService.instance.itemsBySection;
     if (enabled && sections.isNotEmpty) {
-      return _buildFromCms(sections, items);
+      return _buildFromCms(
+        sections,
+        items,
+        jiosaavnEnabled:
+            jiosaavnEnabled ??
+            RemoteFeatureFlags.instance.enableJioSaavnWebPlayback,
+        jiosaavnSearchFallback:
+            jiosaavnSearchFallback ??
+            RemoteFeatureFlags.instance.enableJioSaavnSearchFallback,
+      );
     }
     return _buildDefaultShelves();
   }
@@ -212,21 +224,30 @@ class HomeFeedService {
             limit: s.maxItems,
             onlyWhenPersonalized:
                 personalized == HomeShelfKind.becauseYouListenedTo ||
-                    personalized == HomeShelfKind.artistsForYou,
+                personalized == HomeShelfKind.artistsForYou,
           ),
         );
         continue;
       }
 
-      if (s.sourceType == 'youtube_manual') {
-        final rows = itemsBySection[s.id] ??
+      if (s.sourceType == 'youtube_manual' ||
+          s.sourceType == 'jiosaavn_manual' ||
+          s.sourceType == 'manual') {
+        final rows =
+            itemsBySection[s.id] ??
             itemsBySection[s.sectionKey] ??
             const <Map<String, dynamic>>[];
-        final tracks = rows
-            .map(HomeCmsItem.fromMap)
-            .where((item) => item.enabled && item.youtubeVideoId.isNotEmpty)
-            .map((item) => item.toTrackMap())
-            .toList();
+        final tracks = <Map<String, dynamic>>[];
+        for (final row in rows) {
+          final item = HomeCmsItem.fromMap(row);
+          if (!item.isPlayable(
+            jiosaavnEnabled: jiosaavnEnabled,
+            searchFallback: jiosaavnSearchFallback,
+          )) {
+            continue;
+          }
+          tracks.add(item.toTrackMap(jiosaavnEnabled: jiosaavnEnabled));
+        }
         shelves.add(
           HomeShelf(
             id: s.id,
@@ -318,146 +339,146 @@ class HomeFeedService {
   }
 
   List<HomeShelf> _buildDefaultShelves() => <HomeShelf>[
-        HomeShelf(
-          id: 'continue',
-          title: 'Continue Listening',
-          subtitle: 'Pick up where you left off',
-          kind: HomeShelfKind.continueListening,
-          limit: 15,
-        ),
-        HomeShelf(
-          id: 'mfy',
-          title: 'Made For You',
-          subtitle: 'Personalized from your listening',
-          kind: HomeShelfKind.madeForYou,
-          limit: 14,
-        ),
-        HomeShelf(
-          id: 'byld',
-          title: 'Because You Listened To',
-          subtitle: 'Based on your recent plays',
-          kind: HomeShelfKind.becauseYouListenedTo,
-          limit: 12,
-          onlyWhenPersonalized: true,
-        ),
-        HomeShelf(
-          id: 'trending',
-          title: 'Trending Now',
-          subtitle: 'What the world is playing',
-          kind: HomeShelfKind.catalog,
-          query: 'trending songs official music video 2026',
-          order: 'viewCount',
-          limit: 12,
-          fallbackQueries: [
-            'viral trending songs official audio 2026',
-            'top songs official audio 2026',
-          ],
-        ),
-        HomeShelf(
-          id: 'new',
-          title: 'New Releases',
-          subtitle: 'Fresh drops this week',
-          kind: HomeShelfKind.catalog,
-          query: 'new music releases official audio 2026',
-          order: 'date',
-          limit: 12,
-          fallbackQueries: ['latest songs official audio 2026'],
-        ),
-        HomeShelf(
-          id: 'tfy',
-          title: 'Trending For You',
-          subtitle: 'Trending, ranked by your taste',
-          kind: HomeShelfKind.trendingForYou,
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'artists',
-          title: 'Artists For You',
-          subtitle: 'From your listening taste',
-          kind: HomeShelfKind.artistsForYou,
-          onlyWhenPersonalized: true,
-        ),
-        HomeShelf(
-          id: 'official',
-          title: 'Official Music',
-          subtitle: 'Verified artist & label uploads',
-          kind: HomeShelfKind.officialMusic,
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'discover',
-          title: 'Discover Something New',
-          subtitle: 'Step outside your usual mix',
-          kind: HomeShelfKind.discoverSomethingNew,
-          limit: 12,
-        ),
-        HomeShelf(
-          id: 'bollywood',
-          title: 'Bollywood Hits',
-          subtitle: 'Hindi cinema favourites',
-          kind: HomeShelfKind.catalog,
-          query: 'top bollywood hindi songs official music video',
-          limit: 12,
-          fallbackQueries: [
-            'latest bollywood songs official audio',
-            'new hindi movie songs official',
-          ],
-        ),
-        HomeShelf(
-          id: 'punjabi',
-          title: 'Punjabi Bangers',
-          subtitle: 'Desi energy',
-          kind: HomeShelfKind.catalog,
-          query: 'latest punjabi pop hits official audio',
-          limit: 12,
-          fallbackQueries: ['punjabi hit songs official audio'],
-        ),
-        HomeShelf(
-          id: 'global',
-          title: 'Global Pop',
-          subtitle: 'International chart hits',
-          kind: HomeShelfKind.catalog,
-          query: 'billboard top global pop hits official audio',
-          limit: 12,
-          fallbackQueries: ['english pop hits official audio'],
-        ),
-        HomeShelf(
-          id: 'lofi',
-          title: 'Chill & Lo-Fi',
-          subtitle: 'Late night focus',
-          kind: HomeShelfKind.catalog,
-          query: 'chill lofi late night beats official audio',
-          limit: 12,
-          fallbackQueries: ['lofi study beats official audio'],
-        ),
-        HomeShelf(
-          id: 'hiphop',
-          title: 'Hip-Hop',
-          subtitle: 'Rap & beats',
-          kind: HomeShelfKind.catalog,
-          query: 'hip hop rap songs official audio',
-          limit: 12,
-          fallbackQueries: ['rap hits official audio'],
-        ),
-        HomeShelf(
-          id: 'romantic',
-          title: 'Romantic',
-          subtitle: 'Love songs',
-          kind: HomeShelfKind.catalog,
-          query: 'romantic love songs official audio hindi',
-          limit: 12,
-          fallbackQueries: ['romantic hindi songs official video'],
-        ),
-        HomeShelf(
-          id: 'classics',
-          title: '90s Classics',
-          subtitle: 'Evergreen hits',
-          kind: HomeShelfKind.catalog,
-          query: '90s 2000s evergreen bollywood classic songs',
-          limit: 12,
-          fallbackQueries: ['90s hindi songs official'],
-        ),
-      ];
+    HomeShelf(
+      id: 'continue',
+      title: 'Continue Listening',
+      subtitle: 'Pick up where you left off',
+      kind: HomeShelfKind.continueListening,
+      limit: 15,
+    ),
+    HomeShelf(
+      id: 'mfy',
+      title: 'Made For You',
+      subtitle: 'Personalized from your listening',
+      kind: HomeShelfKind.madeForYou,
+      limit: 14,
+    ),
+    HomeShelf(
+      id: 'byld',
+      title: 'Because You Listened To',
+      subtitle: 'Based on your recent plays',
+      kind: HomeShelfKind.becauseYouListenedTo,
+      limit: 12,
+      onlyWhenPersonalized: true,
+    ),
+    HomeShelf(
+      id: 'trending',
+      title: 'Trending Now',
+      subtitle: 'What the world is playing',
+      kind: HomeShelfKind.catalog,
+      query: 'trending songs official music video 2026',
+      order: 'viewCount',
+      limit: 12,
+      fallbackQueries: [
+        'viral trending songs official audio 2026',
+        'top songs official audio 2026',
+      ],
+    ),
+    HomeShelf(
+      id: 'new',
+      title: 'New Releases',
+      subtitle: 'Fresh drops this week',
+      kind: HomeShelfKind.catalog,
+      query: 'new music releases official audio 2026',
+      order: 'date',
+      limit: 12,
+      fallbackQueries: ['latest songs official audio 2026'],
+    ),
+    HomeShelf(
+      id: 'tfy',
+      title: 'Trending For You',
+      subtitle: 'Trending, ranked by your taste',
+      kind: HomeShelfKind.trendingForYou,
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'artists',
+      title: 'Artists For You',
+      subtitle: 'From your listening taste',
+      kind: HomeShelfKind.artistsForYou,
+      onlyWhenPersonalized: true,
+    ),
+    HomeShelf(
+      id: 'official',
+      title: 'Official Music',
+      subtitle: 'Verified artist & label uploads',
+      kind: HomeShelfKind.officialMusic,
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'discover',
+      title: 'Discover Something New',
+      subtitle: 'Step outside your usual mix',
+      kind: HomeShelfKind.discoverSomethingNew,
+      limit: 12,
+    ),
+    HomeShelf(
+      id: 'bollywood',
+      title: 'Bollywood Hits',
+      subtitle: 'Hindi cinema favourites',
+      kind: HomeShelfKind.catalog,
+      query: 'top bollywood hindi songs official music video',
+      limit: 12,
+      fallbackQueries: [
+        'latest bollywood songs official audio',
+        'new hindi movie songs official',
+      ],
+    ),
+    HomeShelf(
+      id: 'punjabi',
+      title: 'Punjabi Bangers',
+      subtitle: 'Desi energy',
+      kind: HomeShelfKind.catalog,
+      query: 'latest punjabi pop hits official audio',
+      limit: 12,
+      fallbackQueries: ['punjabi hit songs official audio'],
+    ),
+    HomeShelf(
+      id: 'global',
+      title: 'Global Pop',
+      subtitle: 'International chart hits',
+      kind: HomeShelfKind.catalog,
+      query: 'billboard top global pop hits official audio',
+      limit: 12,
+      fallbackQueries: ['english pop hits official audio'],
+    ),
+    HomeShelf(
+      id: 'lofi',
+      title: 'Chill & Lo-Fi',
+      subtitle: 'Late night focus',
+      kind: HomeShelfKind.catalog,
+      query: 'chill lofi late night beats official audio',
+      limit: 12,
+      fallbackQueries: ['lofi study beats official audio'],
+    ),
+    HomeShelf(
+      id: 'hiphop',
+      title: 'Hip-Hop',
+      subtitle: 'Rap & beats',
+      kind: HomeShelfKind.catalog,
+      query: 'hip hop rap songs official audio',
+      limit: 12,
+      fallbackQueries: ['rap hits official audio'],
+    ),
+    HomeShelf(
+      id: 'romantic',
+      title: 'Romantic',
+      subtitle: 'Love songs',
+      kind: HomeShelfKind.catalog,
+      query: 'romantic love songs official audio hindi',
+      limit: 12,
+      fallbackQueries: ['romantic hindi songs official video'],
+    ),
+    HomeShelf(
+      id: 'classics',
+      title: '90s Classics',
+      subtitle: 'Evergreen hits',
+      kind: HomeShelfKind.catalog,
+      query: '90s 2000s evergreen bollywood classic songs',
+      limit: 12,
+      fallbackQueries: ['90s hindi songs official'],
+    ),
+  ];
 
   /// Whether the user has enough signal history for genuinely personalized
   /// shelves. Exposed for the UI (e.g. to show a "personalize your feed"

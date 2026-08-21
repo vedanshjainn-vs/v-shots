@@ -247,6 +247,7 @@ function sourceHint(type) {
     case 'youtube_channel': return 'Channel URL, UC… id, or @handle';
     case 'youtube_trending': return 'Optional region code (IN, US) — leave blank for global';
     case 'youtube_manual': return 'Pin exact YouTube video IDs below';
+    case 'jiosaavn_manual': return 'Paste exact https://www.jiosaavn.com/song/... permalinks. Do not invent IDs.';
     case 'personalized': return 'App engine — no YouTube query needed';
     default: return 'Source value';
   }
@@ -269,6 +270,7 @@ async function renderHomeCMS(el) {
         </div>
         <div class="btn-group">
           <button class="btn" id="add-personalized">+ Personalized</button>
+          <button class="btn" id="add-jiosaavn-test">+ JioSaavn test</button>
           <button class="btn btn-primary" id="add-section">+ Catalog section</button>
           <button class="btn" id="reload-sections">Reload</button>
           <button class="btn btn-success" id="publish-sections">Publish Home</button>
@@ -288,13 +290,67 @@ async function renderHomeCMS(el) {
       const sourceType = s.source_type || 'youtube_search';
       const options = SOURCE_TYPES.map((t) => `<option value="${t.id}" ${sourceType === t.id ? 'selected' : ''}>${t.label}</option>`).join('');
       const items = state.data.items[s.id] || [];
-      const itemRows = items.map((it, idx) => `
-        <div class="item-row" data-item="${idx}">
-          <input class="form-input" data-ifield="youtube_video_id" value="${esc(it.youtube_video_id || it.content_id || '')}" placeholder="YouTube video ID">
-          <input class="form-input" data-ifield="title" value="${esc(it.title || '')}" placeholder="Title">
-          <input class="form-input" data-ifield="artist" value="${esc(it.artist || '')}" placeholder="Artist">
-          <button class="btn btn-sm btn-danger" data-idel>✕</button>
-        </div>`).join('');
+      const isManual = sourceType === 'youtube_manual' || sourceType === 'jiosaavn_manual';
+      const itemRows = items.map((it, idx) => {
+        const provider = (it.provider || 'auto').toLowerCase();
+        const playback = (it.playback_provider || it.provider || 'auto').toLowerCase();
+        const fallback = (it.fallback_provider || 'none').toLowerCase();
+        const jio = inspectJioSaavnUrl(it.jiosaavn_url || '');
+        return `
+        <div class="item-card" data-item="${idx}">
+          <div class="form-row" style="grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Title</label>
+              <input class="form-input" data-ifield="title" value="${esc(it.title || '')}" placeholder="Title">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Artist</label>
+              <input class="form-input" data-ifield="artist" value="${esc(it.artist || '')}" placeholder="Artist">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Artwork URL</label>
+              <input class="form-input" data-ifield="artwork_url" value="${esc(it.artwork_url || '')}" placeholder="https://…">
+            </div>
+            <button class="btn btn-sm btn-danger" data-idel>✕</button>
+          </div>
+          <div class="form-row" style="margin-top:8px;grid-template-columns:1fr 1fr 1fr">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Provider</label>
+              <select class="form-select" data-ifield="provider">
+                <option value="auto" ${provider === 'auto' ? 'selected' : ''}>Auto</option>
+                <option value="youtube" ${provider.includes('youtube') ? 'selected' : ''}>YouTube</option>
+                <option value="jiosaavn" ${provider.includes('jiosaavn') ? 'selected' : ''}>JioSaavn</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Playback</label>
+              <select class="form-select" data-ifield="playback_provider">
+                <option value="youtube" ${playback.includes('jiosaavn') ? '' : 'selected'}>YouTube</option>
+                <option value="jiosaavn" ${playback.includes('jiosaavn') ? 'selected' : ''}>JioSaavn</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Fallback</label>
+              <select class="form-select" data-ifield="fallback_provider">
+                <option value="none" ${fallback === 'none' || !fallback ? 'selected' : ''}>None</option>
+                <option value="youtube" ${fallback.includes('youtube') ? 'selected' : ''}>YouTube</option>
+                <option value="jiosaavn" ${fallback.includes('jiosaavn') ? 'selected' : ''}>JioSaavn</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" style="margin-top:8px;grid-template-columns:1fr 1fr">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">YouTube URL / ID</label>
+              <input class="form-input" data-ifield="youtube_video_id" value="${esc(it.youtube_video_id || '')}" placeholder="ID or https://www.youtube.com/watch?v=…">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">JioSaavn URL</label>
+              <input class="form-input" data-ifield="jiosaavn_url" value="${esc(it.jiosaavn_url || '')}" placeholder="https://www.jiosaavn.com/song/slug/id">
+            </div>
+          </div>
+          <div class="source-hint jio-status">${esc(jio.text)}</div>
+        </div>`;
+      }).join('');
       d.innerHTML = `
         <div class="form-row" style="grid-template-columns:2fr 2fr 1fr auto;gap:10px;align-items:end">
           <div class="form-group" style="margin:0">
@@ -364,13 +420,18 @@ async function renderHomeCMS(el) {
             content_id: '',
             title: '',
             artist: '',
+            artwork_url: '',
+            jiosaavn_url: '',
+            provider: sourceType === 'jiosaavn_manual' ? 'jiosaavn' : 'auto',
+            playback_provider: sourceType === 'jiosaavn_manual' ? 'jiosaavn' : 'youtube',
+            fallback_provider: sourceType === 'jiosaavn_manual' ? 'youtube' : 'none',
             sort_order: 0,
             is_enabled: true,
           });
           renderHomeCMS(el);
         };
       }
-      d.querySelectorAll('.item-row').forEach((row) => {
+      d.querySelectorAll('.item-card').forEach((row) => {
         const idx = Number(row.dataset.item);
         row.querySelectorAll('[data-ifield]').forEach((input) => {
           input.onchange = () => {
@@ -378,7 +439,11 @@ async function renderHomeCMS(el) {
             if (!listItems[idx]) return;
             listItems[idx][input.dataset.ifield] = input.value;
             if (input.dataset.ifield === 'youtube_video_id') {
-              listItems[idx].content_id = input.value;
+              listItems[idx].content_id = extractYoutubeId(input.value) || input.value;
+            }
+            if (input.dataset.ifield === 'jiosaavn_url') {
+              const status = row.querySelector('.jio-status');
+              if (status) status.textContent = inspectJioSaavnUrl(input.value).text;
             }
           };
         });
@@ -477,27 +542,39 @@ async function publishHome(el) {
 
     await supabase.from('home_section_items').delete().neq('id', '__none__');
     const itemRows = [];
-    rows.forEach((row) => {
+    for (const row of rows) {
       const listItems = state.data.items[row.id] || [];
-      listItems.forEach((it, idx) => {
-        const videoId = (it.youtube_video_id || it.content_id || '').trim();
-        if (!videoId) return;
+      for (let idx = 0; idx < listItems.length; idx += 1) {
+        const it = listItems[idx];
+        const videoId = extractYoutubeId(it.youtube_video_id || it.content_id || '');
+        const jioUrl = String(it.jiosaavn_url || '').trim();
+        const jio = inspectJioSaavnUrl(jioUrl);
+        if (jioUrl && !jio.ok) {
+          throw new Error(`Invalid JioSaavn URL on "${it.title || 'untitled'}": ${jio.text}`);
+        }
+        const provider = (it.provider || 'auto').toLowerCase();
+        const playback = (it.playback_provider || provider || 'youtube').toLowerCase();
+        const fallback = (it.fallback_provider || 'none').toLowerCase();
+        const wantsJio = provider.includes('jiosaavn') || playback.includes('jiosaavn');
+        if (!videoId && !jioUrl && !wantsJio) continue;
+        const contentId = videoId || it.content_id || it.id || uid();
         itemRows.push({
           id: it.id || uid(),
           section_id: row.id,
-          content_id: videoId,
-          title: it.title || videoId,
+          content_id: contentId,
+          title: it.title || contentId,
           artist: it.artist || null,
-          artwork_url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-          youtube_video_id: videoId,
+          artwork_url: it.artwork_url || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null),
+          youtube_video_id: videoId || null,
+          jiosaavn_url: jioUrl || null,
           sort_order: idx,
-          is_enabled: true,
-          provider: 'youtube',
-          playback_provider: 'youtube_web',
-          fallback_provider: 'youtube_web',
+          is_enabled: it.is_enabled !== false,
+          provider: provider.includes('jiosaavn') ? 'jiosaavn' : (provider.includes('youtube') ? 'youtube' : 'auto'),
+          playback_provider: playback.includes('jiosaavn') ? 'jiosaavn' : 'youtube',
+          fallback_provider: fallback.includes('jiosaavn') ? 'jiosaavn' : (fallback.includes('youtube') ? 'youtube' : 'none'),
         });
-      });
-    });
+      }
+    }
     if (itemRows.length) {
       const { error } = await supabase.from('home_section_items').insert(itemRows);
       if (error) throw error;
@@ -529,6 +606,14 @@ async function renderDiscover(el) {
     <tr data-i="${i}">
       <td><input class="form-input" data-c="name" value="${esc(c.name)}"></td>
       <td><input class="form-input" data-c="emoji" value="${esc(c.emoji || '')}"></td>
+      <td>
+        <select class="form-select" data-c="kind">
+          <option value="source" ${(c.kind || 'source') === 'source' ? 'selected' : ''}>Source</option>
+          <option value="mood" ${c.kind === 'mood' ? 'selected' : ''}>Mood</option>
+          <option value="language" ${c.kind === 'language' ? 'selected' : ''}>Language</option>
+          <option value="region" ${c.kind === 'region' ? 'selected' : ''}>Region</option>
+        </select>
+      </td>
       <td><input class="form-input" data-c="query" value="${esc(c.query || '')}"></td>
       <td><label class="form-check"><input type="checkbox" data-c="active" ${c.active !== false ? 'checked' : ''}> On</label></td>
     </tr>`).join('');
@@ -546,7 +631,7 @@ async function renderDiscover(el) {
       </div>
       <div class="table-container">
         <table>
-          <thead><tr><th>Name</th><th>Emoji</th><th>YouTube query</th><th>Active</th></tr></thead>
+          <thead><tr><th>Name</th><th>Emoji</th><th>Kind</th><th>Query / token</th><th>Active</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>
@@ -563,7 +648,7 @@ async function renderDiscover(el) {
   $('add-cat').onclick = () => {
     const id = `cat_${Date.now()}`;
     state.data.categories.push({
-      id, name: 'New category', emoji: '🎵', query: 'official audio', fallback_category: 'global', sort_order: state.data.categories.length, active: true,
+      id, name: 'New category', emoji: '🎵', query: 'official audio', kind: 'source', fallback_category: 'global', sort_order: state.data.categories.length, active: true,
     });
     renderDiscover(el);
   };
@@ -574,6 +659,10 @@ async function renderDiscover(el) {
         name: c.name || 'Untitled',
         emoji: c.emoji || '🎵',
         query: c.query || '',
+        kind: c.kind || 'source',
+        token: c.token || c.query || '',
+        ranking_order: c.ranking_order || 'relevance',
+        visible: c.visible !== false,
         fallback_category: c.fallback_category || 'global',
         sort_order: i,
         active: c.active !== false,
@@ -594,11 +683,85 @@ async function renderFlags(el) {
     el.innerHTML = `<div class="card"><p class="login-error">${esc(error.message)}</p></div>`;
     return;
   }
-  state.data.flags = data || [];
+  const byKey = {};
+  (data || []).forEach((f) => { byKey[f.key] = f; });
+  KNOWN_FLAGS.forEach((known) => {
+    if (!byKey[known.key]) byKey[known.key] = { ...known };
+  });
+  state.data.flags = Object.values(byKey).sort((a, b) => a.key.localeCompare(b.key));
   el.innerHTML = `<div class="card"><div class="card-header"><div class="card-title">Feature flags</div><button class="btn btn-success" id="save-flags">Save flags</button></div>
     <div class="table-container"><table><thead><tr><th>Flag</th><th>Description</th><th>Enabled</th></tr></thead>
     <tbody>${state.data.flags.map((f, i) => `<tr data-i="${i}"><td><code>${esc(f.key)}</code></td><td>${esc(f.description || '')}</td>
       <td><label class="form-check"><input type="checkbox" data-flag ${f.value ? 'checked' : ''}></label></td></tr>`).join('')}</tbody></table></div></div>`;
+  el.querySelectorAll('tbody tr').forEach((tr) => {
+    const i = Number(tr.dataset.i);
+    tr.querySelector('[data-flag]').onchange = (ev) => { state.data.flags[i].value = ev.target.checked; };
+  });
+  $('save-flags').onclick = async () => {
+    try {
+      const payload = state.data.flags.map((f) => ({
+        key: f.key, value: !!f.value, description: f.description, updated_at: new Date().toISOString(),
+      }));
+      const { error: upsertErr } = await supabase.from('feature_flags').upsert(payload, { onConflict: 'key' });
+      if (upsertErr) throw upsertErr;
+      toast('Flags saved');
+    } catch (e) {
+      toast(`Save failed: ${e.message}`, 'error');
+    }
+  };
+}
+
+function renderUsers(el) {
+  el.innerHTML = `<div class="card"><div class="card-title">Authorized admins</div>
+    <div class="table-container" style="margin-top:12px"><table><thead><tr><th>Email</th><th>Status</th></tr></thead>
+    <tbody>${AUTHORIZED_EMAILS.map((e) => `<tr><td>${esc(e)}</td><td><span class="badge badge-green">Allowlisted</span></td></tr>`).join('')}</tbody></table></div>
+    <p style="color:var(--text2);margin-top:12px;font-size:13px">Writes are restricted by Supabase RLS to these Google accounts after <code>claim_home_admin()</code>.</p></div>`;
+}
+
+function renderSettings(el) {
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">Settings</div>
+      <div class="form-group" style="margin-top:16px"><label class="form-label">App</label><input class="form-input" value="V Shots (com.vshots.live)" disabled></div>
+      <div class="form-group"><label class="form-label">Supabase</label><input class="form-input" value="${SUPABASE_URL}" disabled></div>
+      <div class="form-group"><label class="form-label">Admin URL</label><input class="form-input" value="${PRODUCTION_REDIRECT_URL}" disabled></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Security</div>
+      <p style="color:var(--text2);margin-top:8px;font-size:14px">This page uses the publishable anon key only. Database password, service-role key, GitHub tokens, and BrowserStack keys must never be placed here.</p>
+    </div>`;
+}
+
+function render() {
+  if (!state.admin) {
+    renderLogin();
+    return;
+  }
+  renderAdmin();
+}
+
+async function init() {
+  const ok = await checkAuth();
+  if (!ok && new URLSearchParams(location.search).has('error')) {
+    renderLogin('Google sign-in was cancelled or failed.');
+    return;
+  }
+  render();
+}
+
+supabase.auth.onAuthStateChange(async (event) => {
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    const ok = await checkAuth();
+    if (ok) renderAdmin();
+  }
+  if (event === 'SIGNED_OUT') {
+    state.admin = false;
+    renderLogin();
+  }
+});
+
+init();
+kbox" data-flag ${f.value ? 'checked' : ''}></label></td></tr>`).join('')}</tbody></table></div></div>`;
   el.querySelectorAll('tbody tr').forEach((tr) => {
     const i = Number(tr.dataset.i);
     tr.querySelector('[data-flag]').onchange = (ev) => { state.data.flags[i].value = ev.target.checked; };

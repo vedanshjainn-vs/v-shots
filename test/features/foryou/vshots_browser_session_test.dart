@@ -30,5 +30,16 @@ void main() {
     test('is case-insensitive', () {
       expect(isAllowedBrowserHost('WWW.YOUTUBE.COM'), isTrue);
     });
+
+    test('allows official JioSaavn page hosts', () {
+      expect(isAllowedBrowserHost('www.jiosaavn.com'), isTrue);
+      expect(isAllowedBrowserHost('jiosaavn.com'), isTrue);
+      expect(isAllowedBrowserHost('static.saavncdn.com'), isTrue);
+    });
+
+    test('rejects JioSaavn API and third-party wrappers', () {
+      expect(isAllowedBrowserHost('api.jiosaavn.com'), isFalse);
+      expect(isAllowedBrowserHost('saavn.me'), isFalse);
+    });
   });
 }

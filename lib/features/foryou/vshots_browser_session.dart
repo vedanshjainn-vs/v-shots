@@ -22,9 +22,14 @@ import 'package:flutter/services.dart';
 import '../../core/browser/vshots_content_blocker.dart';
 import '../../shared/utils/youtube_url.dart';
 
-/// Pure host policy — approved YouTube/Google infrastructure only.
+/// Pure host policy — YouTube/Google + official JioSaavn webpage hosts.
 bool isAllowedBrowserHost(String host) {
   final h = host.toLowerCase();
+  if (h.isEmpty) return false;
+  if (h == 'api.jiosaavn.com' || h.endsWith('.api.jiosaavn.com')) {
+    return false;
+  }
+  if (h == 'saavn.me' || h.endsWith('.saavn.me')) return false;
   const allowed = [
     'youtube.com',
     'youtu.be',
@@ -41,6 +46,12 @@ bool isAllowedBrowserHost(String host) {
     'c.saavncdn.com',
   ];
   return allowed.any((a) => h == a || h.endsWith('.$a'));
+}
+
+bool isAllowedBrowserUrl(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.scheme != 'https') return false;
+  return isAllowedBrowserHost(uri.host);
 }
 
 class VShotsBrowserSession {
