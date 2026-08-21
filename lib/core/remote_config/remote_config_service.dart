@@ -97,8 +97,8 @@ class RemoteConfigService {
       if (catRows.isNotEmpty) {
         final parsed = <DiscoveryCategory>[];
         for (final row in catRows) {
-          if (row is! Map) continue;
-          final map = Map<String, dynamic>.from(row);
+          final map = cmsAsMap(row);
+          if (map == null) continue;
           final name = cmsAsString(map['name']);
           final query = cmsAsString(map['query']);
           if (name.isEmpty) continue;
@@ -125,10 +125,12 @@ class RemoteConfigService {
           .order('sort_order')
           .limit(50);
       if (homeRows.isNotEmpty) {
-        _homeSections = [
-          for (final row in homeRows)
-            if (row is Map) Map<String, dynamic>.from(row),
-        ];
+        final parsedHome = <Map<String, dynamic>>[];
+        for (final row in homeRows) {
+          final map = cmsAsMap(row);
+          if (map != null) parsedHome.add(map);
+        }
+        if (parsedHome.isNotEmpty) _homeSections = parsedHome;
       }
 
       try {
@@ -140,8 +142,8 @@ class RemoteConfigService {
             .limit(500);
         final grouped = <String, List<Map<String, dynamic>>>{};
         for (final row in itemRows) {
-          if (row is! Map) continue;
-          final map = Map<String, dynamic>.from(row);
+          final map = cmsAsMap(row);
+          if (map == null) continue;
           final sectionId = cmsAsString(map['section_id']);
           if (sectionId.isEmpty) continue;
           grouped.putIfAbsent(sectionId, () => []).add(map);
@@ -155,7 +157,8 @@ class RemoteConfigService {
         final flagRows = await db.from('feature_flags').select().limit(50);
         final flags = <String, bool>{};
         for (final row in flagRows) {
-          final map = Map<String, dynamic>.from(row as Map);
+          final map = cmsAsMap(row);
+          if (map == null) continue;
           final key = cmsAsString(map['key']);
           if (key.isEmpty) continue;
           flags[key] = cmsAsBool(map['value'], fallback: false);
@@ -198,9 +201,7 @@ class RemoteConfigService {
   static List<DiscoveryCategory> _ensureForYouCategory(
     List<DiscoveryCategory> parsed,
   ) {
-    final hasForYou = parsed.any(
-      (c) => c.id == 'for_you' || c.query.isEmpty,
-    );
+    final hasForYou = parsed.any((c) => c.id == 'for_you' || c.query.isEmpty);
     if (hasForYou) return parsed;
     return [
       const DiscoveryCategory(
@@ -231,16 +232,21 @@ class RemoteConfigService {
   static List<DiscoveryCategory> _decodeCategories(String json) {
     try {
       final data = jsonDecode(json) as List<dynamic>;
-      return data.map((e) {
-        final map = Map<String, dynamic>.from(e as Map);
-        return DiscoveryCategory(
-          id: cmsAsString(map['id']),
-          label: cmsAsString(map['label']),
-          icon: cmsAsString(map['icon'], '🎵'),
-          query: cmsAsString(map['query']),
-          fallbackCategory: cmsAsString(map['fallbackCategory'], 'global'),
+      final parsed = <DiscoveryCategory>[];
+      for (final e in data) {
+        final map = cmsAsMap(e);
+        if (map == null) continue;
+        parsed.add(
+          DiscoveryCategory(
+            id: cmsAsString(map['id']),
+            label: cmsAsString(map['label']),
+            icon: cmsAsString(map['icon'], '🎵'),
+            query: cmsAsString(map['query']),
+            fallbackCategory: cmsAsString(map['fallbackCategory'], 'global'),
+          ),
         );
-      }).toList();
+      }
+      return parsed.isEmpty ? kDiscoveryCategories : parsed;
     } catch (_) {
       return kDiscoveryCategories;
     }
@@ -249,7 +255,12 @@ class RemoteConfigService {
   static List<Map<String, dynamic>> _decodeHome(String json) {
     try {
       final data = jsonDecode(json) as List<dynamic>;
-      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final parsed = <Map<String, dynamic>>[];
+      for (final e in data) {
+        final map = cmsAsMap(e);
+        if (map != null) parsed.add(map);
+      }
+      return parsed;
     } catch (_) {
       return const [];
     }
@@ -258,12 +269,18 @@ class RemoteConfigService {
   static Map<String, List<Map<String, dynamic>>> _decodeItems(String json) {
     try {
       final data = jsonDecode(json) as Map<String, dynamic>;
-      return data.map((key, value) {
-        final list = (value as List<dynamic>)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-        return MapEntry(key, list);
-      });
+      final result = <String, List<Map<String, dynamic>>>{};
+      for (final entry in data.entries) {
+        final raw = entry.value;
+        if (raw is! List<dynamic>) continue;
+        final items = <Map<String, dynamic>>[];
+        for (final e in raw) {
+          final map = cmsAsMap(e);
+          if (map != null) items.add(map);
+        }
+        result[entry.key] = items;
+      }
+      return result;
     } catch (_) {
       return const {};
     }

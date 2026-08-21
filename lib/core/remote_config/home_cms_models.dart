@@ -24,6 +24,18 @@ String cmsAsString(dynamic value, [String fallback = '']) {
   return s.isEmpty ? fallback : s;
 }
 
+Map<String, dynamic>? cmsAsMap(Object? value) {
+  if (value is Map<String, dynamic>) {
+    return Map<String, dynamic>.from(value);
+  }
+  if (value is Map<dynamic, dynamic>) {
+    return {
+      for (final entry in value.entries) '${entry.key}': entry.value,
+    };
+  }
+  return null;
+}
+
 /// One published Home row from `home_layout_config`.
 class HomeCmsSection {
   const HomeCmsSection({

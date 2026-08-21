@@ -5,62 +5,64 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Home CMS mapping', () {
-    test('personalized CMS keys keep the recommendation engine, not catalog search',
-        () {
-      final service = HomeFeedService();
-      final shelves = service.buildShelfDescriptors(
-        enableRemoteHome: true,
-        cmsSections: [
-          {
-            'id': 'made_for_you',
-            'section_key': 'made_for_you',
-            'title': 'Made For You',
-            'section_type': 'category',
-            'source_type': 'youtube_search',
-            'query': 'made for you personalized',
-            'visible': true,
-            'published': true,
-            'max_items': 12,
-            'sort_order': 1,
-          },
-          {
-            'id': 'because_listened',
-            'section_key': 'because_listened',
-            'title': 'Because You Listened To',
-            'section_type': 'category',
-            'source_type': 'youtube_search',
-            'query': 'because you listened to',
-            'visible': true,
-            'published': true,
-            'max_items': 12,
-            'sort_order': 2,
-          },
-          {
-            'id': 'punjabi',
-            'section_key': 'punjabi',
-            'title': 'Punjabi Bangers',
-            'section_type': 'home_section',
-            'source_type': 'youtube_search',
-            'source_value': 'latest punjabi pop hits official audio',
-            'query': 'latest punjabi pop hits official audio',
-            'visible': true,
-            'published': true,
-            'max_items': 15,
-            'sort_order': 3,
-          },
-        ],
-      );
+    test(
+      'personalized CMS keys keep the recommendation engine, not catalog search',
+      () {
+        final service = HomeFeedService();
+        final shelves = service.buildShelfDescriptors(
+          enableRemoteHome: true,
+          cmsSections: [
+            {
+              'id': 'made_for_you',
+              'section_key': 'made_for_you',
+              'title': 'Made For You',
+              'section_type': 'category',
+              'source_type': 'youtube_search',
+              'query': 'made for you personalized',
+              'visible': true,
+              'published': true,
+              'max_items': 12,
+              'sort_order': 1,
+            },
+            {
+              'id': 'because_listened',
+              'section_key': 'because_listened',
+              'title': 'Because You Listened To',
+              'section_type': 'category',
+              'source_type': 'youtube_search',
+              'query': 'because you listened to',
+              'visible': true,
+              'published': true,
+              'max_items': 12,
+              'sort_order': 2,
+            },
+            {
+              'id': 'punjabi',
+              'section_key': 'punjabi',
+              'title': 'Punjabi Bangers',
+              'section_type': 'home_section',
+              'source_type': 'youtube_search',
+              'source_value': 'latest punjabi pop hits official audio',
+              'query': 'latest punjabi pop hits official audio',
+              'visible': true,
+              'published': true,
+              'max_items': 15,
+              'sort_order': 3,
+            },
+          ],
+        );
 
-      expect(shelves.first.kind, HomeShelfKind.continueListening);
-      final mfy = shelves.firstWhere((s) => s.id == 'made_for_you');
-      expect(mfy.kind, HomeShelfKind.madeForYou);
-      expect(mfy.query, isNull);
-      final byld = shelves.firstWhere((s) => s.id == 'because_listened');
-      expect(byld.kind, HomeShelfKind.becauseYouListenedTo);
-      final punjabi = shelves.firstWhere((s) => s.id == 'punjabi');
-      expect(punjabi.kind, HomeShelfKind.catalog);
-      expect(punjabi.query, 'latest punjabi pop hits official audio');
-    });
+        expect(shelves.first.kind, HomeShelfKind.continueListening);
+        final mfy = shelves.firstWhere((s) => s.id == 'made_for_you');
+        expect(mfy.kind, HomeShelfKind.madeForYou);
+        expect(mfy.query, isNull);
+        final byld = shelves.firstWhere((s) => s.id == 'because_listened');
+        expect(byld.kind, HomeShelfKind.becauseYouListenedTo);
+        final punjabi = shelves.firstWhere((s) => s.id == 'punjabi');
+        expect(punjabi.kind, HomeShelfKind.catalog);
+        expect(punjabi.query, 'latest punjabi pop hits official audio');
+      },
+    );
 
     test('hidden or unpublished CMS rows are skipped', () {
       final service = HomeFeedService();
@@ -87,8 +89,10 @@ void main() {
           },
         ],
       );
-      expect(shelves.every((s) => s.kind == HomeShelfKind.continueListening),
-          isTrue);
+      expect(
+        shelves.every((s) => s.kind == HomeShelfKind.continueListening),
+        isTrue,
+      );
     });
 
     test('youtube_manual shelves use pinned CMS items', () {
@@ -152,8 +156,10 @@ void main() {
         cmsSections: const [],
       );
       expect(shelves.any((s) => s.id == 'mfy'), isTrue);
-      expect(shelves.any((s) => s.kind == HomeShelfKind.continueListening),
-          isTrue);
+      expect(
+        shelves.any((s) => s.kind == HomeShelfKind.continueListening),
+        isTrue,
+      );
     });
   });
 }
