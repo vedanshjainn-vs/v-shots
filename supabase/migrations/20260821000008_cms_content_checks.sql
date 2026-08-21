@@ -16,7 +16,7 @@ alter table public.home_layout_config
     source_type in (
       'youtube_search', 'youtube_playlist', 'youtube_channel',
       'youtube_trending', 'youtube_manual', 'jiosaavn_manual',
-      'manual', 'personalized'
+      'jiosaavn_playlist', 'manual', 'personalized'
     )
   );
 
