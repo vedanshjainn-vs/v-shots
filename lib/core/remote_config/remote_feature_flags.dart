@@ -66,7 +66,7 @@ class RemoteFeatureFlags {
   bool get enableSocial => value('enable_social', defaultValue: false);
 
   PlaybackPolicy get playbackPolicy => PlaybackPolicy(
-    jiosaavnWebPlayback: enableJioSaavnWebPlayback,
-    jiosaavnSearchFallback: enableJioSaavnSearchFallback,
-  );
+        jiosaavnWebPlayback: enableJioSaavnWebPlayback,
+        jiosaavnSearchFallback: enableJioSaavnSearchFallback,
+      );
 }

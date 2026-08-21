@@ -21,15 +21,16 @@ void main() {
     String title = 'Kesariya',
     String artist = 'Arijit Singh',
     String? fallbackSource,
-  }) => {
-    if (id != null) 'id': id,
-    if (youtubeId != null) 'youtubeId': youtubeId,
-    if (jiosaavnUrl != null) 'jiosaavnUrl': jiosaavnUrl,
-    if (playbackSource != null) 'playbackSource': playbackSource,
-    if (fallbackSource != null) 'fallbackSource': fallbackSource,
-    'title': title,
-    'artist': artist,
-  };
+  }) =>
+      {
+        if (id != null) 'id': id,
+        if (youtubeId != null) 'youtubeId': youtubeId,
+        if (jiosaavnUrl != null) 'jiosaavnUrl': jiosaavnUrl,
+        if (playbackSource != null) 'playbackSource': playbackSource,
+        if (fallbackSource != null) 'fallbackSource': fallbackSource,
+        'title': title,
+        'artist': artist,
+      };
 
   group('AUTO', () {
     test('exact JioSaavn URL wins when flag on', () async {

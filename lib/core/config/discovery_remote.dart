@@ -48,8 +48,7 @@ class DiscoveryFilterCatalog {
     final languages = <DiscoveryFilterOption>[];
     final regions = <DiscoveryFilterOption>[];
 
-    final sorted = [...rows]
-      ..sort((a, b) {
+    final sorted = [...rows]..sort((a, b) {
         return cmsAsInt(
           a['sort_order'],
           0,

@@ -219,7 +219,7 @@ class AuthService {
       );
     }
     try {
-      await SupabaseService.client.rpc('delete_own_account');
+      await SupabaseService.client.rpc<void>('delete_own_account');
     } on AuthException catch (e) {
       debugPrint(
         '[AuthService] delete_own_account AuthException: ${e.message}',
@@ -231,7 +231,7 @@ class AuthService {
         'Could not delete account. Please try again.',
       );
     }
-    return AuthResult.success(null);
+    return const AuthResult.success(null);
   }
 
   bool get isSignedIn => SupabaseService.currentUser != null;
