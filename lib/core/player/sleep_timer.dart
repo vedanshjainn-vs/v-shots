@@ -63,6 +63,7 @@ class SleepTimer {
   }
 
   void _fire() {
+    VShotsPlaybackManager.instance.pause();
     audioPlayer.pause();
     cancel();
   }
