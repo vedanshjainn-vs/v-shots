@@ -329,21 +329,34 @@ async function loadPage() {
 }
 
 /* ── Data loading ─────────────────────────────────────────────────────────── */
+/// Races a promise against a timeout so a dead network surfaces a REAL
+/// error quickly (supabase-js silently retries fetch failures with backoff).
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} — request timed out after ${Math.round(ms / 1000)}s`)), ms)),
+  ]);
+}
+
 async function loadHome() {
   if (state.demo) {
     state.data = demoData();
     state.sync = { ok: true, error: null, at: new Date().toISOString(), sections: state.data.sections.length, items: 2 };
     return;
   }
-  const { data: sections, error } = await supabase
-    .from('home_layout_config').select('*').order('sort_order');
+  const { data: sections, error } = await withTimeout(
+    supabase.from('home_layout_config').select('*').order('sort_order'),
+    15000, 'home_layout_config fetch',
+  );
   if (error) {
     state.sync = { ok: false, error: error.message || String(error), at: new Date().toISOString() };
     throw error;
   }
   state.data.sections = sections || [];
-  const { data: items, error: itemsErr } = await supabase
-    .from('home_section_items').select('*').order('sort_order');
+  const { data: items, error: itemsErr } = await withTimeout(
+    supabase.from('home_section_items').select('*').order('sort_order'),
+    15000, 'home_section_items fetch',
+  );
   if (itemsErr) {
     state.sync = { ok: false, error: itemsErr.message || String(itemsErr), at: new Date().toISOString() };
     throw itemsErr;
