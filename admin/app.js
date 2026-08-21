@@ -75,6 +75,9 @@ const state = {
   demo: new URLSearchParams(location.search).has('demo'),
   dirty: false,
   busy: false,
+  sync: null, // { ok, error, at, sections, items } — set by loadHome()
+  homeLoaded: false, // server rows loaded; renderHomeCMS must NOT refetch
+                      // while a draft is being edited (was wiping edits!)
   data: { sections: [], items: {}, categories: [], flags: [] },
 };
 
@@ -307,6 +310,8 @@ async function loadPage() {
   const item = NAV_ITEMS.find((n) => n.id === state.page);
   $('page-title').textContent = item?.label || 'Dashboard';
   content.innerHTML = '<div style="text-align:center;padding:60px"><div class="spinner"></div></div>';
+  // Entering Home Management from nav = fresh entry (discard any draft).
+  if (state.page === 'home-cms') { state.homeLoaded = false; state.dirty = false; }
   try {
     switch (state.page) {
       case 'dashboard': await renderDashboard(content); break;
@@ -324,17 +329,45 @@ async function loadPage() {
 }
 
 /* ── Data loading ─────────────────────────────────────────────────────────── */
+/// Races a promise against a timeout so a dead network surfaces a REAL
+/// error quickly (supabase-js silently retries fetch failures with backoff).
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} — request timed out after ${Math.round(ms / 1000)}s`)), ms)),
+  ]);
+}
+
 async function loadHome() {
-  if (state.demo) { state.data = demoData(); return; }
-  const { data: sections, error } = await supabase
-    .from('home_layout_config').select('*').order('sort_order');
-  if (error) throw error;
+  if (state.demo) {
+    state.data = demoData();
+    state.sync = { ok: true, error: null, at: new Date().toISOString(), sections: state.data.sections.length, items: 2 };
+    return;
+  }
+  const { data: sections, error } = await withTimeout(
+    supabase.from('home_layout_config').select('*').order('sort_order'),
+    15000, 'home_layout_config fetch',
+  );
+  if (error) {
+    state.sync = { ok: false, error: error.message || String(error), at: new Date().toISOString() };
+    throw error;
+  }
   state.data.sections = sections || [];
-  const { data: items } = await supabase
-    .from('home_section_items').select('*').order('sort_order');
+  const { data: items, error: itemsErr } = await withTimeout(
+    supabase.from('home_section_items').select('*').order('sort_order'),
+    15000, 'home_section_items fetch',
+  );
+  if (itemsErr) {
+    state.sync = { ok: false, error: itemsErr.message || String(itemsErr), at: new Date().toISOString() };
+    throw itemsErr;
+  }
   const grouped = {};
   (items || []).forEach((row) => { (grouped[row.section_id] ||= []).push(row); });
   state.data.items = grouped;
+  state.sync = {
+    ok: true, error: null, at: new Date().toISOString(),
+    sections: (sections || []).length, items: (items || []).length,
+  };
 }
 
 function demoData() {
@@ -435,10 +468,28 @@ async function renderDashboard(el) {
 
 /* ══ HOME MANAGEMENT ════════════════════════════════════════════════════════ */
 async function renderHomeCMS(el) {
-  try { await loadHome(); } catch (e) {
-    el.innerHTML = `<div class="card"><div class="card-title">Could not load Home</div><p class="login-error mt8">${esc(e.message)}</p>
-      <button class="btn mt12" onclick="location.reload()">Reload</button></div>`;
-    return;
+  // 1) LOADING state — explicit, never mistaken for empty.
+  el.innerHTML = `<div style="text-align:center;padding:48px 12px">
+      <div class="spinner"></div>
+      <div class="muted small mt12">Loading Home sections…</div>
+    </div>`;
+  // CRITICAL: fetch from the server ONLY on entry/reload. While the user is
+  // editing a draft, re-renders must keep the in-memory draft — a refetch
+  // here silently discarded every edit (the real "changes not saving" bug).
+  if (!state.homeLoaded) {
+    try { await loadHome(); } catch (e) {
+      // 2) ERROR state — real reason + Retry. NEVER "No sections yet" here.
+      const reason = e?.message || String(e);
+      el.innerHTML = `<div class="card">
+        <div class="card-title">Couldn't load Home sections</div>
+        <p class="login-error mt8">Supabase request failed: ${esc(reason)}</p>
+        <p class="muted small mt8">Project: ${SUPABASE_URL.replace('https://', '')} — if this persists, check the network or Supabase status.</p>
+        <button class="btn btn-primary mt12" id="retry-load">↻ Retry</button>
+      </div>`;
+      $('retry-load').onclick = () => renderHomeCMS(el);
+      return;
+    }
+    state.homeLoaded = true;
   }
   const sections = state.data.sections;
   const live = sections.filter((x) => x.visible !== false && x.published !== false).length;
@@ -585,10 +636,23 @@ async function renderHomeCMS(el) {
     toast('JioSaavn section added — paste real /song/ permalinks, then publish. Search fallback needs the flag ON.', 'warn');
   };
   $('preview-home').onclick = () => openPreview(null);
-  $('reload-home').onclick = () => { state.dirty = false; renderHomeCMS(el); toast('Reloaded from Supabase'); };
+  $('reload-home').onclick = () => { state.dirty = false; state.homeLoaded = false; renderHomeCMS(el); toast('Reloaded from Supabase'); };
   $('publish-home').onclick = () => validateAndPublish(el);
 
   initDragReorder(list);
+
+  // Live data-source status footer — makes it obvious the panel is talking
+  // to the real production DB (and shows sync health).
+  const sync = state.sync;
+  const footer = document.createElement('div');
+  footer.className = 'muted small';
+  footer.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px';
+  footer.innerHTML = `
+    <span class="chip">Supabase: jzxtxqjheggyoqwohqjg</span>
+    <span class="chip">${sections.length} sections · ${Object.values(state.data.items).reduce((n, a) => n + a.length, 0)} items</span>
+    <span class="chip">synced ${sync?.at ? new Date(sync.at).toLocaleTimeString() : '—'}</span>
+    <span class="chip" style="${sync?.ok ? 'color:var(--green)' : 'color:var(--red)'}">${sync?.ok ? '● connected' : '● error'}</span>`;
+  el.appendChild(footer);
 }
 
 /* ── Touch + mouse drag reorder ───────────────────────────────────────────── */
@@ -1039,8 +1103,8 @@ async function doPublish(el) {
       if (error) throw error;
     }
 
-    /* items: full refresh of published draft */
-    await supabase.from('home_section_items').delete().neq('id', '__none__');
+    /* items: NON-DESTRUCTIVE publish — upsert by id first, then remove only
+       rows that are no longer part of the draft (never a blanket wipe). */
     const itemRows = [];
     for (const row of rows) {
       const listItems = state.data.items[row.id] || [];
@@ -1071,7 +1135,15 @@ async function doPublish(el) {
       }
     }
     if (itemRows.length) {
-      const { error } = await supabase.from('home_section_items').insert(itemRows);
+      const { error } = await supabase.from('home_section_items').upsert(itemRows, { onConflict: 'id' });
+      if (error) throw error;
+    }
+    const { data: existingItems, error: existingItemsErr } = await supabase.from('home_section_items').select('id');
+    if (existingItemsErr) throw existingItemsErr;
+    const keepItemIds = new Set(itemRows.map((r) => r.id));
+    const staleItemIds = (existingItems || []).map((x) => x.id).filter((id) => !keepItemIds.has(id));
+    if (staleItemIds.length) {
+      const { error } = await supabase.from('home_section_items').delete().in('id', staleItemIds);
       if (error) throw error;
     }
     await supabase.from('home_config').upsert({
