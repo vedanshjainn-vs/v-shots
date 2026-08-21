@@ -42,11 +42,19 @@ class SupabaseService {
   static bool get isAvailable => _available;
 
   /// Call once from main(), before runApp(). Safe to call multiple
-  /// times (no-ops after the first successful/failed attempt).
-  static Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+  /// times — CONCURRENT callers wait for the same in-flight initialization
+  /// instead of returning early. (The old `_initialized` guard made a
+  /// concurrent `await initialize()` a no-op while the first call was still
+  /// running, so RemoteConfigService could observe `isAvailable == false`
+  /// and skip its one-shot refresh forever.)
+  static Future<void> initialize() {
+    if (_initialized) return Future<void>.value();
+    return _initializing ??= _doInitialize();
+  }
 
+  static Future<void>? _initializing;
+
+  static Future<void> _doInitialize() async {
     try {
       // isOptional: true — a missing .env must not crash the app;
       // it should just leave Supabase-backed features unavailable
@@ -75,6 +83,9 @@ class SupabaseService {
       // misconfiguration must never take down the whole app.
       debugPrint('[SupabaseService] Initialization failed: $e\n$st');
       _available = false;
+    } finally {
+      _initialized = true;
+      _initializing = null;
     }
   }
 
