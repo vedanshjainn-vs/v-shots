@@ -1,13 +1,13 @@
-# 🎬 V Shots (Nova Edition) — Official YouTube Player & Hybrid Streaming
+# V Shots — Music discovery (YouTube WebView)
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.44.9-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.12.2-0175C2?logo=dart&logoColor=white)](https://dart.dev)
-[![YouTube API](https://img.shields.io/badge/YouTube%20API-v3%20%26%20Official%20IFrame-FF0000?logo=youtube&logoColor=white)](https://developers.google.com/youtube/v3)
+[![YouTube API](https://img.shields.io/badge/YouTube-WebView%20%2B%20Data%20API-FF0000?logo=youtube&logoColor=white)](https://developers.google.com/youtube/v3)
 [![Supabase](https://img.shields.io/badge/Supabase-Backend%20%26%20RLS-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
 [![Android](https://img.shields.io/badge/Android-com.vshots.live-3DDC84?logo=android&logoColor=white)](https://android.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A compliant, high-performance Android Flutter music discovery & social streaming platform backed by Supabase and the **Official YouTube IFrame Player & YouTube Data API v3**.
+An Android Flutter music discovery app backed by Supabase. YouTube videos play by loading **youtube.com** in a native WebView. Metadata comes from YouTube Data API v3 (when configured) and YouTube's public InnerTube web endpoints.
 
 ---
 
@@ -22,30 +22,28 @@ A compliant, high-performance Android Flutter music discovery & social streaming
 
 ## ⚡ Architecture & Compliance Highlights
 
-1. **Official YouTube Playback:**
-   - Powered by the **Official YouTube IFrame Player API** (`youtube_player_iframe`).
-   - Genuine, visible 16:9 player surface with official branding preserved and no obstructing overlays.
-   - Clear "Powered by YouTube" attribution badge and direct links to YouTube Terms.
-   - Foreground-only compliant YouTube video playback.
+1. **YouTube playback (native WebView):**
+   - Loads `https://www.youtube.com/watch?v=…` in a native Android WebView.
+   - Does not use the YouTube IFrame Player API.
+   - Does not extract, cache, or download YouTube audio/video files.
+   - Does not skip or hide YouTube advertisements.
+   - "Powered by YouTube" attribution is shown in the UI.
 
-2. **Zero Unofficial Scraping or Stream Extraction:**
-   - Completely removed all unofficial stream extractors (`youtube_explode_dart`, `getManifest`, `audioOnly`).
-   - No caching or saving of raw YouTube stream URLs.
+2. **Discovery metadata:**
+   - InnerTube web endpoints (primary) with YouTube Data API v3 fallback when `YOUTUBE_DATA_API_KEY` is set.
+   - Curated offline catalog if both are unavailable.
 
-3. **YouTube Data API v3 & Resilience:**
-   - Real-time search, metadata resolution, channel names, thumbnails, and ISO 8601 duration parsing.
-   - Curated fallback music catalog providing 100% offline and rate-limit resilience.
+3. **Provider architecture (`ProviderManager`):**
+   - InnerTube → YouTube Data API v3 for search/metadata.
+   - Playback is always the in-app WebView (YouTube watch page, or a JioSaavn webpage when a permalink is present).
 
-4. **Hybrid Provider Architecture (`ProviderManager`):**
-   - Clean separation between **YouTubeProvider** (official IFrame foreground player + Data API v3 metadata) and **LicensedMusicProvider / UGC** (authorized media streams via `just_audio` + `audio_service` for background playback, lock-screen controls, and Bluetooth).
-
-5. **4-Tab Navigation System (`BottomTabBar`):**
-   - **Home (0):** Data-driven personalized feed — Continue Listening, Made For You, Because You Listened To, Trending, and catalog shelves powered by the recommendation engine (official YouTube player for playback).
+4. **4-Tab Navigation System (`BottomTabBar`):**
+   - **Home (0):** Data-driven personalized feed — Continue Listening, Made For You, Because You Listened To, Trending, and catalog shelves (WebView playback).
    - **Discover (1):** Vertical full-screen reels-style swipe feed with autoplay, next-item preloading, and a mood/category chip rail.
    - **Search (2):** 300ms debounced search, category filters, recent searches history, and result pagination.
    - **Profile (3):** Music-first profile with Liked Songs, Playlists, Recently Played, and Creator Studio Hub.
 
-6. **Dynamic Creator Gating:**
+5. **Dynamic Creator Gating:**
    - Dynamic check via `profiles.is_creator` in Supabase.
    - Approved creators access `UploadShotScreen` to publish UGC video/audio shots.
    - Listeners receive a "Creator Upload — Limited Access" bottom sheet with "Request Access".

@@ -28,8 +28,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'vshots_youtube_ad_blocker.dart';
-
 /// Centralized ad-blocking engine.
 /// Every V Shots browser WebView MUST use this engine.
 class VShotsAdBlockEngine {
@@ -656,19 +654,6 @@ class VShotsAdBlockEngine {
     '&ad_interstitial',
     '&ad_rewarded',
     '&ad_native',
-
-    // YouTube-specific ad endpoints (while preserving normal YouTube)
-    '&adformat=',
-    '&ad_type=',
-    '&ad_module=',
-    '&ad_break_type=',
-    '&ad_break_length=',
-    '&ad_break_position=',
-    '/api/stats/watchtime',
-    '/api/stats/qoe',
-    '/api/stats/playback',
-    '/api/stats/atr',
-    '/api/stats/ads',
   ];
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -790,16 +775,13 @@ class VShotsAdBlockEngine {
     final host = _normalizeHost(uri.host);
     if (host.isEmpty) return false;
 
-    // User allowlist wins (but NOT for YouTube ads)
-    if (_userAllow.contains(host) && !_isYouTubeDomain(host)) return false;
+    // YouTube watch-page hosts are never blocked (no ad-resource intercept).
+    if (_isYouTubeDomain(host)) return false;
 
-    // YouTube-specific ad blocking (even on essential hosts)
-    if (VShotsYouTubeAdBlocker.shouldBlock(url)) {
-      blockedVideoAds++;
-      return true;
-    }
+    // User allowlist wins
+    if (_userAllow.contains(host)) return false;
 
-    // Essential hosts are NEVER blocked (except YouTube ads handled above)
+    // Essential hosts are NEVER blocked
     if (essentialHosts.contains(host)) return false;
 
     // Host-based blocking

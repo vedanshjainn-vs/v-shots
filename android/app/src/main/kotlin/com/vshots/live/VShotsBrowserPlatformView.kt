@@ -28,10 +28,8 @@ private const val VIEW_TYPE = "vshots/native_browser"
 /**
  * Discovery-only native browser view with FORCEFUL ad blocking.
  *
- * Ad blocking is ALWAYS ON and works at THREE layers:
- *   1. Network-level: shouldInterceptRequest blocks ad hosts/URLs
- *   2. URL-level: shouldOverrideUrlLoading blocks ad navigation
- *   3. Cosmetic: CSS injection hides residual ad containers
+ * Third-party ad blocking for non-YouTube pages. YouTube watch-page
+ * resources (including YouTube ads) are never intercepted or hidden.
  *
  * Unlike the generic webview_flutter platform view, this WebView deliberately
  * keeps its media lifecycle alive when Android makes the Flutter activity
@@ -154,13 +152,11 @@ private class VShotsBackgroundMediaWebView(
                     val path = url.path?.lowercase(Locale.US) ?: ""
                     val query = url.query?.lowercase(Locale.US) ?: ""
 
-                    // YouTube-specific ad blocking (even on essential hosts)
-                    if (isYouTubeDomain(host) && shouldBlockYouTubeAd(urlStr, path, query)) {
-                        reportBlock(host)
-                        return emptyResponse()
-                    }
+                    // YouTube (and Google ad CDNs used by the YouTube watch page)
+                    // must never be intercepted — no ad-resource blocking.
+                    if (isYouTubeDomain(host) || isYouTubeAdNetwork(host)) return null
 
-                    // Essential hosts are NEVER blocked (except YouTube ads above)
+                    // Essential hosts are NEVER blocked
                     if (matchesAnyHost(host, essentialHosts)) return null
 
                     // Host-based blocking
@@ -205,151 +201,17 @@ private class VShotsBackgroundMediaWebView(
                 return youtubeDomains.any { host == it || host.endsWith(".$it") }
             }
 
-            /**
-             * Check if YouTube URL should be blocked as an ad.
-             * Blocks ad-specific paths/queries while allowing normal content.
-             */
-            private fun shouldBlockYouTubeAd(url: String, path: String, query: String): Boolean {
-                val lowerUrl = url.lowercase(Locale.US)
-
-                // YouTube ad-specific domains (block completely)
-                val adDomains = listOf(
-                    "pagead2.googlesyndication.com",
-                    "tpc.googlesyndication.com",
-                    "googleads.g.doubleclick.net",
-                    "ad.doubleclick.net",
-                    "static.doubleclick.net",
-                    "m.doubleclick.net",
-                    "adx.g.doubleclick.net",
-                    "feedads.g.doubleclick.net",
+            /** Google ad CDNs used by the YouTube watch page — never blocked. */
+            private fun isYouTubeAdNetwork(host: String): Boolean {
+                val networks = listOf(
+                    "doubleclick.net",
+                    "googlesyndication.com",
                     "googleadservices.com",
-                    "www.googleadservices.com",
-                    "pagead.googlesyndication.com",
                     "adservice.google.com",
-                    "adservice.google.co.uk",
                     "adservice.google.co.in",
+                    "adservice.google.co.uk",
                 )
-
-                val host = Uri.parse(url).host?.lowercase(Locale.US) ?: ""
-                for (adDomain in adDomains) {
-                    if (host == adDomain || host.endsWith(".$adDomain")) {
-                        return true
-                    }
-                }
-
-                // YouTube ad URL patterns
-                val adPatterns = listOf(
-                    "/pagead/",
-                    "/pcs/",
-                    "/google_ads/",
-                    "/googleads",
-                    "/adservice/",
-                    "/ad_break",
-                    "/adunit/",
-                    "/adview",
-                    "/adslot/",
-                    "/admanager/",
-                    "/dfp/",
-                    "/gpt/",
-                    "/googletag/",
-                    "/googletagmanager/",
-                    "/api/stats/ads",
-                    "/api/stats/atr",
-                    "&adformat=",
-                    "&ad_type=",
-                    "&ad_module=",
-                    "&ad_break",
-                    "&ad_pod",
-                    "&ad_creative",
-                    "&ad_media",
-                    "&ad_video",
-                    "&ad_audio",
-                    "&ad_companion",
-                    "&ad_overlay",
-                    "&ad_banner",
-                    "&ad_interstitial",
-                    "&ad_rewarded",
-                    "&ad_native",
-                    "&ad_display",
-                    "&ad_instream",
-                    "&ad_outstream",
-                    "&ad_linear",
-                    "&ad_nonlinear",
-                    "&ad_skippable",
-                    "&ad_nonskippable",
-                    "&ad_preroll",
-                    "&ad_midroll",
-                    "&ad_postroll",
-                    "adformat=",
-                    "ad_type=",
-                    "ad_module=",
-                    "ad_break",
-                    "ad_pod",
-                    "ad_creative",
-                    "ad_media",
-                    "ad_video",
-                    "ad_audio",
-                    "ad_companion",
-                    "ad_overlay",
-                    "ad_banner",
-                    "ad_interstitial",
-                    "ad_rewarded",
-                    "ad_native",
-                    "ad_display",
-                    "ad_instream",
-                    "ad_outstream",
-                    "ad_linear",
-                    "ad_nonlinear",
-                    "ad_skippable",
-                    "ad_nonskippable",
-                    "ad_preroll",
-                    "ad_midroll",
-                    "ad_postroll",
-                )
-
-                for (pattern in adPatterns) {
-                    if (path.contains(pattern) || lowerUrl.contains(pattern)) {
-                        return true
-                    }
-                }
-
-                // Check for ad-related query parameters
-                if (query.isNotEmpty()) {
-                    val adQueryParams = listOf(
-                        "adformat=",
-                        "ad_type=",
-                        "ad_module=",
-                        "ad_break",
-                        "ad_pod",
-                        "ad_creative",
-                        "ad_media",
-                        "ad_video",
-                        "ad_audio",
-                        "ad_companion",
-                        "ad_overlay",
-                        "ad_banner",
-                        "ad_interstitial",
-                        "ad_rewarded",
-                        "ad_native",
-                        "ad_display",
-                        "ad_instream",
-                        "ad_outstream",
-                        "ad_linear",
-                        "ad_nonlinear",
-                        "ad_skippable",
-                        "ad_nonskippable",
-                        "ad_preroll",
-                        "ad_midroll",
-                        "ad_postroll",
-                    )
-                    for (param in adQueryParams) {
-                        if (query.contains(param)) {
-                            return true
-                        }
-                    }
-                }
-
-                return false
+                return networks.any { host == it || host.endsWith(".$it") }
             }
 
             /**
@@ -368,13 +230,10 @@ private class VShotsBackgroundMediaWebView(
                 val path = url.path?.lowercase(Locale.US) ?: ""
                 val query = url.query?.lowercase(Locale.US) ?: ""
 
-                // YouTube-specific ad redirect blocking
-                if (isYouTubeDomain(host) && shouldBlockYouTubeAd(urlStr, path, query)) {
-                    reportBlock(host)
-                    return true
-                }
+                // Never intercept YouTube navigation or YouTube ad-network hosts.
+                if (isYouTubeDomain(host) || isYouTubeAdNetwork(host)) return false
 
-                // Allow essential hosts (except YouTube ads above)
+                // Allow essential hosts
                 if (isAllowedHost(host)) return false
 
                 // Block ad domains
@@ -516,69 +375,6 @@ private class VShotsBackgroundMediaWebView(
             "button[class*=download-ad]," +
             "button[class*=fake-download]," +
             "button[class*=ad-download]," +
-            // YouTube specific ad selectors
-            ".ytp-ad-overlay-container," +
-            ".ytp-ad-text-overlay," +
-            ".ytp-ad-image-overlay," +
-            ".ytp-ad-button-overlay," +
-            ".ytp-ad-player-overlay," +
-            ".ytp-ad-player-overlay-instream-info," +
-            ".ytp-ad-overlay-slot," +
-            ".ytp-ad-skip-button," +
-            ".ytp-ad-skip-button-modern," +
-            ".ytp-ad-skip-button-slot," +
-            ".ytp-ad-progress," +
-            ".ytp-ad-progress-bar," +
-            ".ytp-ad-countdown," +
-            ".ytp-ad-countdown-overlay," +
-            ".ytp-ad-badge," +
-            ".ytp-ad-badge-container," +
-            ".ytp-ad-visit-advertiser-button," +
-            ".ytp-ad-visit-advertiser-button-renderer," +
-            ".ytd-display-ad-renderer," +
-            ".ytd-statement-banner-renderer," +
-            ".ytd-ad-slot-renderer," +
-            ".ytd-in-feed-ad-layout-renderer," +
-            ".ytd-banner-promo-renderer," +
-            ".ytd-video-masthead-ad-v3-renderer," +
-            ".ytd-promoted-sparkles-web-renderer," +
-            ".ytd-promoted-video-renderer," +
-            ".ytd-primetime-promo-renderer," +
-            ".ytd-brand-video-singleton-renderer," +
-            ".ytd-brand-video-shelf-renderer," +
-            ".ytd-merch-shelf-renderer," +
-            ".ytd-carousel-ad-renderer," +
-            ".ytp-ad-overlay-container," +
-            ".ytp-ad-text-overlay," +
-            ".ytp-ad-image-overlay," +
-            ".ytp-ad-button-overlay," +
-            ".ytp-ad-player-overlay," +
-            ".ytp-ad-player-overlay-instream-info," +
-            ".ytp-ad-overlay-slot," +
-            ".ytp-ad-skip-button," +
-            ".ytp-ad-skip-button-modern," +
-            ".ytp-ad-skip-button-slot," +
-            ".ytp-ad-progress," +
-            ".ytp-ad-progress-bar," +
-            ".ytp-ad-countdown," +
-            ".ytp-ad-countdown-overlay," +
-            ".ytp-ad-badge," +
-            ".ytp-ad-badge-container," +
-            ".ytp-ad-visit-advertiser-button," +
-            ".ytp-ad-visit-advertiser-button-renderer," +
-            ".ytd-display-ad-renderer," +
-            ".ytd-statement-banner-renderer," +
-            ".ytd-ad-slot-renderer," +
-            ".ytd-in-feed-ad-layout-renderer," +
-            ".ytd-banner-promo-renderer," +
-            ".ytd-video-masthead-ad-v3-renderer," +
-            ".ytd-promoted-sparkles-web-renderer," +
-            ".ytd-promoted-video-renderer," +
-            ".ytd-primetime-promo-renderer," +
-            ".ytd-brand-video-singleton-renderer," +
-            ".ytd-brand-video-shelf-renderer," +
-            ".ytd-merch-shelf-renderer," +
-            ".ytd-carousel-ad-renderer," +
             "{display:none!important;height:0!important;min-height:0!important;overflow:hidden!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;}" +
             "';" +
             "document.head.appendChild(s);" +
