@@ -481,7 +481,9 @@ private class VShotsBackgroundMediaWebView(
         // YouTube pages ONLY: the pass exists to unmute/autoplay the official
         // YouTube player. It must never run on JioSaavn pages — clicking
         // random controls or forcing play there would start the wrong song.
-        val currentUrl = webView.url ?: return
+        // (This class extends WebView, so the page URL is `url` — not an
+        // outer `webView` reference.)
+        val currentUrl = url ?: return
         val currentHost = currentUrl.lowercase(Locale.US)
         if (!currentHost.contains("youtube.com") &&
             !currentHost.contains("youtu.be")
