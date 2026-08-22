@@ -1528,10 +1528,13 @@ async function renderDiscover(el) {
           <div class="form-group"><label class="form-label">Emoji</label><input class="form-input" data-c="emoji" value="${esc(c.emoji || '')}"></div>
           <div class="form-group"><label class="form-label">Kind</label>
             <select class="form-select" data-c="kind">
-              <option value="source" ${(c.kind || 'source') === 'source' ? 'selected' : ''}>Source</option>
+              <option value="source" ${(c.kind || 'source') === 'source' ? 'selected' : ''}>Quick Explore</option>
               <option value="mood" ${c.kind === 'mood' ? 'selected' : ''}>Mood</option>
               <option value="language" ${c.kind === 'language' ? 'selected' : ''}>Language</option>
-              <option value="region" ${c.kind === 'region' ? 'selected' : ''}>Region</option>
+              <option value="genre" ${c.kind === 'genre' ? 'selected' : ''}>Genre</option>
+              <option value="decade" ${c.kind === 'decade' ? 'selected' : ''}>Decade</option>
+              <option value="activity" ${c.kind === 'activity' ? 'selected' : ''}>Activity</option>
+              <option value="region" ${c.kind === 'region' ? 'selected' : ''}>Region (legacy)</option>
             </select></div>
           <div class="form-group"><label class="form-label">Query / token</label><input class="form-input" data-c="query" value="${esc(c.query || '')}"></div>
           <div class="form-group" style="display:flex;align-items:center;min-height:44px">

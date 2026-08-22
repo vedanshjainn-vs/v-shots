@@ -105,7 +105,7 @@ alter table public.discovery_categories
   drop constraint if exists discovery_categories_kind_check;
 alter table public.discovery_categories
   add constraint discovery_categories_kind_check check (
-    kind in ('source', 'mood', 'language', 'region')
+    kind in ('source', 'mood', 'language', 'region', 'genre', 'decade', 'activity')
   );
 
 alter table public.discovery_categories

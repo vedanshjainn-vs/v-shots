@@ -297,7 +297,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       source: source,
       moods: _applied.moods,
       languages: _applied.languages,
-      regions: _applied.regions,
+      genres: _applied.genres,
     );
     debugPrint(
       '[Discover] source="${source.label}" order="${source.order}" '
@@ -311,14 +311,38 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       final primaryMood =
           _applied.moods.isNotEmpty ? _applied.moods.first : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
+      final biases = <String>[
+        ..._applied.moods.map((m) => m.query),
+        ..._applied.decades.map((d) => d.token),
+        ..._applied.activities.map((a) => a.token),
+      ];
+      var engineConfig = RemoteConfigService.instance.discoverSettings;
+      if (source.id == 'surprise_me') {
+        // 🎲 Surprise Me = exploration-heavy mix (owner spec).
+        engineConfig = {
+          ...engineConfig,
+          'weights': {
+            'personal': 10,
+            'trending': 25,
+            'fresh': 25,
+            'exploration': 40,
+          },
+          'enabled': {
+            'personalization': false,
+            'trending': true,
+            'fresh': true,
+            'exploration': true,
+          },
+        };
+      }
       try {
         final batch = await _discoverEngine.nextBatch(
           excludeIds: _seenIds,
           count: 12,
           languages: _applied.languages.map((l) => l.token).toList(),
-          moods: _applied.moods.map((m) => m.query).toList(),
-          regions: _applied.regions.map((r) => r.token).toList(),
-          config: RemoteConfigService.instance.discoverSettings,
+          moods: biases,
+          regions: _applied.genres.map((g) => g.token).toList(),
+          config: engineConfig,
         );
         if (batch.isNotEmpty) return _refineForMode(source, batch);
       } catch (e) {
@@ -329,8 +353,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
           excludeIds: _seenIds,
           count: 12,
           languages: _applied.languages.map((l) => l.token).toList(),
-          moods: _applied.moods.map((m) => m.query).toList(),
-          regions: _applied.regions.map((r) => r.token).toList(),
+          moods: biases,
+          regions: _applied.genres.map((g) => g.token).toList(),
         );
         if (music.isNotEmpty) return _refineForMode(source, music);
       } catch (e) {
@@ -390,9 +414,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     refined = switch (source.id) {
       'trending' => ranker.rankTrending(refined),
       'new' || 'latest' => ranker.rankNewest(refined),
-      'viral' => ranker.rankViral(refined),
+      'rising_now' || 'viral' => ranker.rankViral(refined),
       'popular' => ranker.rankPopular(refined),
-      _ => refined, // For You: engine order already personalized
+      _ => refined, // For You / Surprise Me: engine order already ranked
     };
     refined = ranker.applyAlreadySeenPenalty(refined, _seenIds);
     refined = ranker.applyDiversity(refined);
@@ -515,7 +539,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         source: _applied.source,
         moods: _applied.moods,
         languages: _applied.languages,
-        regions: _applied.regions,
+        genres: _applied.genres,
       );
 
   @override
@@ -781,7 +805,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
   late DiscoverySource _draftSource;
   late List<DiscoveryMood> _draftMoods;
   late List<DiscoveryFilterOption> _draftLanguages;
-  late List<DiscoveryFilterOption> _draftRegions;
+  late List<DiscoveryFilterOption> _draftGenres;
+  late List<DiscoveryFilterOption> _draftDecades;
+  late List<DiscoveryFilterOption> _draftActivities;
 
   @override
   void initState() {
@@ -790,14 +816,18 @@ class _ExploreSheetState extends State<_ExploreSheet> {
     _draftSource = i.source;
     _draftMoods = List.of(i.moods);
     _draftLanguages = List.of(i.languages);
-    _draftRegions = List.of(i.regions);
+    _draftGenres = List.of(i.genres);
+    _draftDecades = List.of(i.decades);
+    _draftActivities = List.of(i.activities);
   }
 
   DiscoveryFilterConfig get _draft => DiscoveryFilterConfig(
         source: _draftSource,
         moods: _draftMoods,
         languages: _draftLanguages,
-        regions: _draftRegions,
+        genres: _draftGenres,
+        decades: _draftDecades,
+        activities: _draftActivities,
       );
 
   bool get _hasChanges => !_draft.matches(widget.initial);
@@ -818,11 +848,27 @@ class _ExploreSheetState extends State<_ExploreSheet> {
     });
   }
 
-  void _toggleRegion(DiscoveryFilterOption region) {
+  void _toggleGenre(DiscoveryFilterOption genre) {
     setState(() {
-      _draftRegions.any((r) => r.id == region.id)
-          ? _draftRegions.removeWhere((r) => r.id == region.id)
-          : _draftRegions.add(region);
+      _draftGenres.any((r) => r.id == genre.id)
+          ? _draftGenres.removeWhere((r) => r.id == genre.id)
+          : _draftGenres.add(genre);
+    });
+  }
+
+  void _toggleDecade(DiscoveryFilterOption decade) {
+    setState(() {
+      _draftDecades.any((r) => r.id == decade.id)
+          ? _draftDecades.removeWhere((r) => r.id == decade.id)
+          : _draftDecades.add(decade);
+    });
+  }
+
+  void _toggleActivity(DiscoveryFilterOption activity) {
+    setState(() {
+      _draftActivities.any((r) => r.id == activity.id)
+          ? _draftActivities.removeWhere((r) => r.id == activity.id)
+          : _draftActivities.add(activity);
     });
   }
 
@@ -830,7 +876,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
     setState(() {
       _draftMoods.clear();
       _draftLanguages.clear();
-      _draftRegions.clear();
+      _draftGenres.clear();
+      _draftDecades.clear();
+      _draftActivities.clear();
     });
   }
 
@@ -840,7 +888,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
       source: widget.initial.source,
       moods: widget.initial.moods,
       languages: widget.initial.languages,
-      regions: widget.initial.regions,
+      genres: widget.initial.genres,
+      decades: widget.initial.decades,
+      activities: widget.initial.activities,
     );
     return Container(
       decoration: const BoxDecoration(
@@ -906,7 +956,8 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                 ],
               ),
               const SizedBox(height: 8),
-              _sectionLabel('Discover'),
+              // A. QUICK EXPLORE — the five primary modes.
+              _sectionLabel('Quick Explore'),
               _chipWrap(
                 widget.catalog.sources
                     .map(
@@ -920,7 +971,8 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                     .toList(),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('Moods'),
+              // B. BROWSE BY MOOD.
+              _sectionLabel('Browse by Mood'),
               _chipWrap(
                 widget.catalog.moods
                     .map(
@@ -934,7 +986,8 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                     .toList(),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('Language'),
+              // C. BROWSE BY LANGUAGE.
+              _sectionLabel('Browse by Language'),
               _chipWrap(
                 widget.catalog.languages
                     .map(
@@ -948,15 +1001,46 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                     .toList(),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('Region / Culture'),
+              // D. BROWSE BY GENRE.
+              _sectionLabel('Browse by Genre'),
               _chipWrap(
-                widget.catalog.regions
+                widget.catalog.genres
                     .map(
-                      (r) => (
-                        label: r.label,
+                      (g) => (
+                        label: g.label,
                         icon: '',
-                        selected: _draftRegions.any((x) => x.id == r.id),
-                        onTap: () => _toggleRegion(r),
+                        selected: _draftGenres.any((x) => x.id == g.id),
+                        onTap: () => _toggleGenre(g),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              // E. DECADES.
+              _sectionLabel('Decades'),
+              _chipWrap(
+                widget.catalog.decades
+                    .map(
+                      (d) => (
+                        label: d.label,
+                        icon: '',
+                        selected: _draftDecades.any((x) => x.id == d.id),
+                        onTap: () => _toggleDecade(d),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              // F. ACTIVITY.
+              _sectionLabel('Activity'),
+              _chipWrap(
+                widget.catalog.activities
+                    .map(
+                      (a) => (
+                        label: a.label,
+                        icon: '',
+                        selected: _draftActivities.any((x) => x.id == a.id),
+                        onTap: () => _toggleActivity(a),
                       ),
                     )
                     .toList(),
@@ -1501,6 +1585,27 @@ class _ForYouCardState extends State<_ForYouCard>
                       ),
                     ),
                     const SizedBox(height: 10),
+                    if (_reasonLabel(track) != null) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _reasonLabel(track)!,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -1694,5 +1799,28 @@ class _ForYouCardState extends State<_ForYouCard>
         ),
       ],
     );
+  }
+}
+
+/// Maps a card's internal `discoverReason` to the user-facing "why this
+/// song" label shown on the Discover card (owner-spec sections).
+String? _reasonLabel(Map<String, dynamic> track) {
+  final reason = (track['discoverReason'] as String?) ?? '';
+  if (reason.isEmpty) return null;
+  if (reason.startsWith('because_you_listened_to_')) {
+    final artist = reason.replaceFirst('because_you_listened_to_', '');
+    return artist.isEmpty ? null : '🎯 Because you like $artist';
+  }
+  switch (reason) {
+    case 'trending_in_india':
+      return '🔥 Trending around you';
+    case 'new_release':
+      return '🆕 Your next obsession';
+    case 'something_new_for_you':
+      return '🎲 Try something different';
+    case 'similar_to_your_taste':
+      return '✨ Made for you';
+    default:
+      return null;
   }
 }

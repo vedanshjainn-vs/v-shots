@@ -1,38 +1,100 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — Discovery filter config tests
+// V Shots — Discovery filter config tests (V SHOTS DISCOVER taxonomy)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/core/config/discovery_filters.dart';
 
 void main() {
-  group('sources', () {
-    test('For You is the personalized (null-query) source', () {
-      final forYou = kDiscoverySources.first;
-      expect(forYou.id, 'for_you');
-      expect(forYou.query, isNull);
+  group('V Shots Discover taxonomy (owner spec)', () {
+    test('A. Quick Explore has exactly the five specified sources', () {
+      expect(
+        kDiscoverySources.map((s) => s.label).toList(),
+        ['For You', 'Trending', 'New Releases', 'Rising Now', 'Surprise Me'],
+      );
     });
 
-    test('every non-personalized source has a distinct query', () {
+    test('B. Browse by Mood has the ten specified moods', () {
+      expect(
+        kDiscoveryMoods.map((m) => m.label).toList(),
+        [
+          'Chill',
+          'Happy',
+          'Sad',
+          'Romantic',
+          'Energetic',
+          'Party',
+          'Focus',
+          'Sleep',
+          'Workout',
+          'Devotional',
+        ],
+      );
+    });
+
+    test('C/D/E/F lists match the specified sizes and order anchors', () {
+      expect(kDiscoveryLanguages.first.label, 'Hindi');
+      expect(kDiscoveryLanguages[1].label, 'Punjabi');
+      expect(kDiscoveryLanguages.length, 12);
+      expect(
+        kDiscoveryGenres.map((g) => g.label).toList(),
+        [
+          'Bollywood',
+          'Indie',
+          'Pop',
+          'Hip-Hop',
+          'EDM',
+          'Rock',
+          'Lo-Fi',
+          'Classical',
+          'Ghazal',
+          'Sufi',
+          'Regional',
+        ],
+      );
+      expect(
+        kDiscoveryDecades.map((d) => d.label).toList(),
+        ['90s', '2000s', '2010s', '2020s'],
+      );
+      expect(
+        kDiscoveryActivities.map((a) => a.label).toList(),
+        [
+          'Workout',
+          'Road Trip',
+          'Late Night',
+          'Morning',
+          'Party',
+          'Study',
+          'Travel',
+          'Rainy Day',
+        ],
+      );
+    });
+
+    test('For You and Surprise Me are engine sources (null query)', () {
+      expect(
+        kDiscoverySources.firstWhere((s) => s.id == 'for_you').query,
+        isNull,
+      );
+      expect(
+        kDiscoverySources.firstWhere((s) => s.id == 'surprise_me').query,
+        isNull,
+      );
+    });
+
+    test('every non-engine source has a distinct query', () {
       final queries = kDiscoverySources
           .where((s) => s.query != null)
           .map((s) => s.query)
           .toSet();
-      expect(queries.length, kDiscoverySources.length - 1);
+      expect(queries.length, kDiscoverySources.length - 2);
     });
 
-    test('each mode has a distinct ranking order', () {
-      final orders = kDiscoverySources.map((s) => s.order).toList();
-      expect(orders.toSet(), containsAll(['relevance', 'viewCount', 'date']));
-      final trending = kDiscoverySources.firstWhere((s) => s.id == 'trending');
-      final latest = kDiscoverySources.firstWhere((s) => s.id == 'latest');
-      expect(trending.order, 'viewCount');
-      expect(latest.order, 'date');
-    });
-
-    test('every mood has a distinct query token', () {
-      final tokens = kDiscoveryMoods.map((m) => m.query).toSet();
-      expect(tokens.length, kDiscoveryMoods.length);
+    test('Rising Now ranks by viewCount', () {
+      expect(
+        kDiscoverySources.firstWhere((s) => s.id == 'rising_now').order,
+        'viewCount',
+      );
     });
   });
 
@@ -64,26 +126,28 @@ void main() {
       },
     );
 
-    test('multiple languages + regions append their tokens', () {
+    test('languages + genres + decades + activities append their tokens', () {
       final hindi = kDiscoveryLanguages.firstWhere((l) => l.id == 'hindi');
-      final english = kDiscoveryLanguages.firstWhere((l) => l.id == 'english');
-      final bollywood = kDiscoveryRegions.firstWhere(
-        (r) => r.id == 'bollywood',
-      );
+      final bollywood = kDiscoveryGenres.firstWhere((g) => g.id == 'bollywood');
+      final nineties = kDiscoveryDecades.first;
+      final workout = kDiscoveryActivities.first;
       final q = buildDiscoveryQuery(
         source: kDiscoverySources[2],
-        languages: [hindi, english],
-        regions: [bollywood],
+        languages: [hindi],
+        genres: [bollywood],
+        decades: [nineties],
+        activities: [workout],
       );
       expect(q, contains('hindi'));
-      expect(q, contains('english'));
       expect(q, contains('bollywood'));
+      expect(q, contains('90s hits'));
+      expect(q, contains('workout'));
     });
 
     test('different sources produce different queries', () {
       final trending = buildDiscoveryQuery(source: kDiscoverySources[1]);
-      final viral = buildDiscoveryQuery(source: kDiscoverySources[3]);
-      expect(trending, isNot(viral));
+      final rising = buildDiscoveryQuery(source: kDiscoverySources[3]);
+      expect(trending, isNot(rising));
     });
 
     test('Romantic + Hindi composes a strongly-constrained query', () {
@@ -123,23 +187,27 @@ void main() {
     test('matches() detects identical configs', () {
       final a = DiscoveryFilterConfig(
         source: kDiscoverySources[1],
-        moods: [],
-        languages: [],
-        regions: [],
+        moods: const [],
+        languages: const [],
+        genres: const [],
+        decades: const [],
+        activities: const [],
       );
       final b = DiscoveryFilterConfig(
         source: kDiscoverySources[1],
-        moods: [],
-        languages: [],
-        regions: [],
+        moods: const [],
+        languages: const [],
+        genres: const [],
+        decades: const [],
+        activities: const [],
       );
       expect(a.matches(b), isTrue);
     });
 
     test('matches() differs across sources and filters', () {
       final trending = DiscoveryFilterConfig(source: kDiscoverySources[1]);
-      final viral = DiscoveryFilterConfig(source: kDiscoverySources[3]);
-      expect(trending.matches(viral), isFalse);
+      final rising = DiscoveryFilterConfig(source: kDiscoverySources[3]);
+      expect(trending.matches(rising), isFalse);
 
       final romantic = kDiscoveryMoods.firstWhere((m) => m.id == 'romantic');
       final withMood = DiscoveryFilterConfig(
@@ -154,6 +222,7 @@ void main() {
       final updated = base.copyWith(source: kDiscoverySources[2]);
       expect(updated.source.id, 'new');
       expect(updated.moods, base.moods);
+      expect(updated.decades, base.decades);
     });
   });
 }

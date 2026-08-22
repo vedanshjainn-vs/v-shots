@@ -181,6 +181,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _buildHeroHeader(),
               _buildContinueListeningHero(),
               _buildMoodChips(),
+              _buildSpotlightSliver(),
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
               else
@@ -523,6 +524,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case HomeShelfStatus.error:
         return _buildErrorSliver(shelf);
       case HomeShelfStatus.loaded:
+        if (shelf.sourceType == 'jiosaavn_playlist') {
+          return _buildJioSaavnSliver(shelf);
+        }
         return shelf.kind == HomeShelfKind.artistsForYou
             ? _buildArtistsSliver(shelf)
             : _buildLoadedSliver(shelf);
@@ -628,14 +632,277 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Daily Spotlight — premium hero banner powered by the official
+  /// "Top 100 Songs India" playlist (YouTube Music). Tapping opens the full
+  /// playlist page (Play All → auto-advance queue). Hidden automatically
+  /// when the section is hidden/unpublished in Admin.
+  Widget _buildSpotlightSliver() {
+    final spot = _shelves.where(
+      (s) =>
+          s.id == 'top100_india' &&
+          s.status == HomeShelfStatus.loaded &&
+          s.tracks.isNotEmpty,
+    );
+    if (spot.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    final shelf = spot.first;
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+        child: GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            AppPageRoute<void>(
+              builder: (_) => PlaylistPageScreen(
+                sectionId: shelf.id,
+                title: shelf.title,
+                subtitle: shelf.subtitle,
+                sourceValue: shelf.sourceValue ?? '',
+                initialTracks: shelf.tracks,
+              ),
+            ),
+          ),
+          child: Container(
+            height: 150,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFF7C3AED),
+                  Color(0xFFEC4899),
+                  Color(0xFFF59E0B),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                const Positioned(
+                  right: -20,
+                  bottom: -26,
+                  child: Icon(
+                    Icons.graphic_eq_rounded,
+                    size: 150,
+                    color: Colors.white12,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          '✨ DAILY SPOTLIGHT',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Top 100 Songs India',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'The biggest songs in the country right now',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.white.withValues(alpha: 0.9),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.play_arrow_rounded,
+                                    size: 18, color: Color(0xFF7C3AED)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Play the chart',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF7C3AED),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// JioSaavn playlist — ONE premium full-width card (compliant page-open
+  /// design). The official JioSaavn playlist PAGE opens in the WebView with
+  /// its own player, covers and queue — no unofficial API, no scraping, no
+  /// manual song entry.
+  Widget _buildJioSaavnSliver(HomeShelf shelf) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+        child: GestureDetector(
+          onTap: () {
+            if (shelf.tracks.isNotEmpty) {
+              playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0F766E), Color(0xFF10B981)],
+              ),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.library_music_rounded,
+                      color: Colors.white, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'JIOSAAVN PLAYLIST',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        shelf.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (shelf.subtitle.isNotEmpty)
+                        Text(
+                          shelf.subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow_rounded,
+                          size: 18, color: Color(0xFF0F766E)),
+                      SizedBox(width: 3),
+                      Text(
+                        'Open',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F766E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLoadedSliver(HomeShelf shelf) {
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
+            padding: const EdgeInsets.fromLTRB(20, 22, 16, 4),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -681,40 +948,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+                // Inline header actions — right-aligned with the title
+                // (fixes the mis-placed "View all" below the header).
+                if (shelf.sourceType == 'youtube_playlist')
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.push(
+                      context,
+                      AppPageRoute<void>(
+                        builder: (_) => PlaylistPageScreen(
+                          sectionId: shelf.id,
+                          title: shelf.title,
+                          subtitle: shelf.subtitle,
+                          sourceValue: shelf.sourceValue ?? '',
+                          initialTracks: shelf.tracks,
+                        ),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'View all',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.accent,
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 18, color: AppColors.accent),
+                      ],
+                    ),
+                  )
+                else if (shelf.tracks.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Shuffle play',
+                    onPressed: () {
+                      final shuffled =
+                          List<Map<String, dynamic>>.from(shelf.tracks)
+                            ..shuffle();
+                      playTrack(context, shuffled.first, shuffled, 0);
+                    },
+                    icon: const Icon(Icons.shuffle_rounded,
+                        size: 20, color: AppColors.textMuted),
+                  ),
               ],
             ),
           ),
-          if (shelf.sourceType == 'youtube_playlist')
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.push(
-                context,
-                AppPageRoute<void>(
-                  builder: (_) => PlaylistPageScreen(
-                    sectionId: shelf.id,
-                    title: shelf.title,
-                    subtitle: shelf.subtitle,
-                    sourceValue: shelf.sourceValue ?? '',
-                    initialTracks: shelf.tracks,
-                  ),
-                ),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'View all',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.accent,
-                    ),
-                  ),
-                  Icon(Icons.chevron_right_rounded,
-                      size: 18, color: AppColors.accent),
-                ],
-              ),
-            ),
           SizedBox(
             height: 206,
             // Lazy per-shelf pagination: scrolling near the end fetches the
@@ -736,6 +1017,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               },
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
+                // ignore: deprecated_member_use
+                cacheExtent: 500,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: shelf.tracks.length,
                 itemBuilder: (context, i) => _buildTrackCard(shelf, i),

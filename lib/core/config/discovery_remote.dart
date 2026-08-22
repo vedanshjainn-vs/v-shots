@@ -1,10 +1,9 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // V Shots — Remote Discover category mapping (pure)
+// Maps Supabase `discovery_categories` rows (kind = source/mood/language/
+// genre/decade/activity) onto the V SHOTS DISCOVER filter model.
+// Bad/empty remote data falls back to the compiled lists.
 // ═════════════════════════════════════════════════════════════════════════════
-//
-// Maps Supabase `discovery_categories` rows onto the existing Discover
-// filter model. Does not replace the Discover UI. Bad/empty remote data
-// falls back to the compiled lists in discovery_filters.dart.
 
 import '../remote_config/home_cms_models.dart';
 import 'discovery_filters.dart';
@@ -14,24 +13,29 @@ class DiscoveryFilterCatalog {
     required this.sources,
     required this.moods,
     required this.languages,
-    required this.regions,
+    required this.genres,
+    required this.decades,
+    required this.activities,
   });
 
   final List<DiscoverySource> sources;
   final List<DiscoveryMood> moods;
   final List<DiscoveryFilterOption> languages;
-  final List<DiscoveryFilterOption> regions;
+  final List<DiscoveryFilterOption> genres;
+  final List<DiscoveryFilterOption> decades;
+  final List<DiscoveryFilterOption> activities;
 
   static const compiled = DiscoveryFilterCatalog(
     sources: kDiscoverySources,
     moods: kDiscoveryMoods,
     languages: kDiscoveryLanguages,
-    regions: kDiscoveryRegions,
+    genres: kDiscoveryGenres,
+    decades: kDiscoveryDecades,
+    activities: kDiscoveryActivities,
   );
 
   bool get isUsable => sources.isNotEmpty;
 
-  /// When [useRemote] is false, or [rows] is empty/unusable, compiled lists.
   static DiscoveryFilterCatalog resolve({
     required bool useRemote,
     required List<Map<String, dynamic>> rows,
@@ -46,7 +50,9 @@ class DiscoveryFilterCatalog {
     final sources = <DiscoverySource>[];
     final moods = <DiscoveryMood>[];
     final languages = <DiscoveryFilterOption>[];
-    final regions = <DiscoveryFilterOption>[];
+    final genres = <DiscoveryFilterOption>[];
+    final decades = <DiscoveryFilterOption>[];
+    final activities = <DiscoveryFilterOption>[];
 
     final sorted = [...rows]..sort((a, b) {
         return cmsAsInt(
@@ -77,31 +83,25 @@ class DiscoveryFilterCatalog {
           );
           break;
         case 'language':
-          languages.add(
-            DiscoveryFilterOption(
-              id: id,
-              label: label,
-              token: token.isEmpty ? label.toLowerCase() : token,
-            ),
-          );
+          languages.add(_opt(id, label, token));
           break;
-        case 'region':
-          regions.add(
-            DiscoveryFilterOption(
-              id: id,
-              label: label,
-              token: token.isEmpty ? label.toLowerCase() : token,
-            ),
-          );
+        case 'genre':
+          genres.add(_opt(id, label, token));
+          break;
+        case 'decade':
+          decades.add(_opt(id, label, token));
+          break;
+        case 'activity':
+          activities.add(_opt(id, label, token));
           break;
         default:
-          final isForYou = id == 'for_you' || query.isEmpty && kind == 'source';
+          final isEngineSource = id == 'for_you' || id == 'surprise_me';
           sources.add(
             DiscoverySource(
               id: id,
               label: label,
               icon: icon,
-              query: isForYou ? null : (query.isEmpty ? null : query),
+              query: isEngineSource ? null : (query.isEmpty ? null : query),
               order: order.isEmpty ? 'relevance' : order,
             ),
           );
@@ -115,9 +115,18 @@ class DiscoveryFilterCatalog {
       sources: ensuredSources,
       moods: moods.isEmpty ? kDiscoveryMoods : moods,
       languages: languages.isEmpty ? kDiscoveryLanguages : languages,
-      regions: regions.isEmpty ? kDiscoveryRegions : regions,
+      genres: genres.isEmpty ? kDiscoveryGenres : genres,
+      decades: decades.isEmpty ? kDiscoveryDecades : decades,
+      activities: activities.isEmpty ? kDiscoveryActivities : activities,
     );
   }
+
+  static DiscoveryFilterOption _opt(String id, String label, String token) =>
+      DiscoveryFilterOption(
+        id: id,
+        label: label,
+        token: token.isEmpty ? label.toLowerCase() : token,
+      );
 
   static bool _rowVisible(Map<String, dynamic> raw) {
     if (!cmsAsBool(raw['active'], fallback: true)) return false;

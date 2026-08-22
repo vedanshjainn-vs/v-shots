@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased] — PHASE 17.9: V Shots Discover taxonomy + playback fixes + Home polish (2026-08-22)
+
+### Discover — new structure (owner spec)
+- Explore sheet: A. Quick Explore (Trending / New Releases / Rising Now /
+  For You / Surprise Me) · B. Mood (10) · C. Language (12) · D. Genre (11)
+  · E. Decades (4) · F. Activity (8).
+- Rising Now = viral ranking; Surprise Me = exploration-heavy engine mix;
+  mood/language/genre/decade/activity bias tokens feed the algorithm.
+- Every card shows a "why this song" chip (Made for you · Because you like
+  X · Trending around you · Your next obsession · Try something different).
+- Admin Discover page: full taxonomy + algorithm controls.
+
+### Playback fixes
+- JioSaavn "random song" bug FIXED: removed YouTube ad cosmetic/DOM JS from
+  the native WebView (it ran on NON-YouTube pages and ended JioSaavn tracks
+  instantly) — compliance restored, general ad-network blocking only. The
+  autoplay/unmute pass now runs on YouTube pages ONLY.
+- JioSaavn playlists get a dedicated premium card (badge + Open → official
+  page in WebView). In-app song-listing remains out of scope (would need the
+  unofficial API/scraping — project boundary).
+
+### Home polish
+- "View all" moved INLINE in the shelf header (was mis-placed below).
+- Shuffle per shelf; Daily Spotlight hero (Top 100 India playlist).
+- Horizontal scroll cacheExtent for smoother shelf swipes.
+
+### Data
+- Migration 20260821000014 (APPLIED): discovery_categories reseeded with
+  the 50-row taxonomy; kind CHECK widened (genre/decade/activity) in 00008.
+
+
 ## [Unreleased] — PHASE 17.8: fast Home, playlist pages, Discover algorithm (2026-08-21)
 
 ### Performance

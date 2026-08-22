@@ -113,7 +113,6 @@ private class VShotsBackgroundMediaWebView(
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 events.invokeMethod("pageFinished", null)
-                applyCosmeticBlocking()
                 startPlaybackPolling()
                 attemptAutoplayWithAudio()
             }
@@ -271,158 +270,6 @@ private class VShotsBackgroundMediaWebView(
      *
      * Includes YOUTUBE-SPECIFIC ad selectors for YouTube pages.
      */
-    private fun applyCosmeticBlocking() {
-        if (!blockerEnabled) return
-        evaluateJavascript(
-            "(function(){try{" +
-            "var s=document.createElement('style');" +
-            "s.setAttribute('id','vshots-adblock');" +
-            "s.textContent='" +
-            // Google AdSense/DFP
-            "[data-google-query-id]," +
-            "ins.adsbygoogle," +
-            "div[id^=google_ads_]," +
-            "iframe[src*=doubleclick]," +
-            "iframe[src*=googlesyndication]," +
-            "iframe[src*=googleadservices]," +
-            "div[class*=ad-slot]," +
-            "div[class*=adslot]," +
-            "div[class*=ad-container]," +
-            "div[id*=ad-container]," +
-            "aside[class*=advert]," +
-            "div[data-ad]," +
-            "div[data-ad-client]," +
-            "div[id^=div-gpt-ad]," +
-            // Common ad containers
-            "div[class*=adsbygoogle]," +
-            "div[class*=ad-banner]," +
-            "div[class*=ad-wrapper]," +
-            "div[class*=ad-unit]," +
-            "div[class*=ad-space]," +
-            "div[class*=ad-placement]," +
-            "div[class*=ad-zone]," +
-            "div[class*=ad-region]," +
-            "div[class*=ad-area]," +
-            "div[class*=ad-block]," +
-            "div[class*=ad-panel]," +
-            "div[class*=ad-box]," +
-            "div[class*=ad-card]," +
-            "div[class*=ad-tile]," +
-            "div[class*=ad-row]," +
-            "div[class*=ad-column]," +
-            "div[class*=ad-grid]," +
-            "div[class*=ad-list]," +
-            "div[class*=ad-feed]," +
-            "div[class*=ad-stream]," +
-            "div[class*=ad-carousel]," +
-            "div[class*=ad-slider]," +
-            "div[class*=ad-popup]," +
-            "div[class*=ad-modal]," +
-            "div[class*=ad-overlay]," +
-            "div[class*=ad-interstitial]," +
-            "div[class*=ad-fullscreen]," +
-            "div[class*=ad-sticky]," +
-            "div[class*=ad-fixed]," +
-            "div[class*=ad-floating]," +
-            "div[class*=ad-bottom]," +
-            "div[class*=ad-top]," +
-            "div[class*=ad-left]," +
-            "div[class*=ad-right]," +
-            "div[class*=ad-header]," +
-            "div[class*=ad-footer]," +
-            "div[class*=ad-sidebar]," +
-            // Video ad overlays
-            "div[class*=video-ad]," +
-            "div[class*=preroll]," +
-            "div[class*=midroll]," +
-            "div[class*=postroll]," +
-            "div[class*=ad-break]," +
-            "div[class*=ad-pod]," +
-            "div[class*=ad-slate]," +
-            "div[class*=ad-companion]," +
-            // Ad iframes
-            "iframe[class*=ad]," +
-            "iframe[id*=ad]," +
-            "iframe[name*=ad]," +
-            "iframe[data-ad]," +
-            "iframe[src*=ad]," +
-            "iframe[src*=ads]," +
-            "iframe[src*=banner]," +
-            "iframe[src*=sponsor]," +
-            "iframe[src*=promo]," +
-            // Popup/overlay containers
-            "div[class*=popup-ad]," +
-            "div[class*=pop-up]," +
-            "div[class*=popunder]," +
-            "div[class*=interstitial]," +
-            "div[class*=overlay-ad]," +
-            "div[class*=modal-ad]," +
-            "div[class*=fullscreen-ad]," +
-            "div[class*=sticky-ad]," +
-            "div[class*=fixed-ad]," +
-            "div[class*=floating-ad]," +
-            "div[class*=bottom-ad]," +
-            "div[class*=top-ad]," +
-            "div[class*=left-ad]," +
-            "div[class*=right-ad]," +
-            "div[class*=header-ad]," +
-            "div[class*=footer-ad]," +
-            "div[class*=sidebar-ad]," +
-            // Fake download buttons
-            "a[class*=download-ad]," +
-            "a[class*=fake-download]," +
-            "a[class*=ad-download]," +
-            "button[class*=download-ad]," +
-            "button[class*=fake-download]," +
-            "button[class*=ad-download]," +
-            "{display:none!important;height:0!important;min-height:0!important;overflow:hidden!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;}" +
-            "';" +
-            "document.head.appendChild(s);" +
-            "}catch(e){}})()",
-            null,
-        )
-    }
-
-    // YouTube ad skip/speed manipulation REMOVED for YouTube ToS compliance.
-
-    /**
-     * Block known ad elements via JavaScript injection.
-     * More targeted than CSS — removes elements from DOM.
-     * Only runs on non-YouTube pages to avoid breaking YouTube.
-     */
-    private fun applyDomBlocking() {
-        if (!blockerEnabled) return
-        evaluateJavascript(
-            "(function(){try{" +
-            "var url=window.location.href;" +
-            "if(url.indexOf('youtube.com')>=0||url.indexOf('youtu.be')>=0)return;" +
-            // Remove ad iframes
-            "var iframes=document.querySelectorAll('iframe');" +
-            "for(var i=0;i<iframes.length;i++){" +
-            "var f=iframes[i];" +
-            "var src=(f.src||'').toLowerCase();" +
-            "var cls=(f.className||'').toLowerCase();" +
-            "var id=(f.id||'').toLowerCase();" +
-            "if(src.indexOf('doubleclick')>=0||src.indexOf('googlesyndication')>=0||" +
-            "src.indexOf('googleadservices')>=0||src.indexOf('adnxs')>=0||" +
-            "src.indexOf('ad.')>=0||src.indexOf('ads.')>=0||" +
-            "cls.indexOf('ad')>=0||id.indexOf('ad')>=0){" +
-            "f.parentNode.removeChild(f);" +
-            "}" +
-            "}" +
-            // Remove ad divs
-            "var adDivs=document.querySelectorAll('div[class*=ad-],div[id*=ad-],div[data-ad]');" +
-            "for(var j=0;j<adDivs.length;j++){" +
-            "var d=adDivs[j];" +
-            "if(d.tagName==='VIDEO'||d.tagName==='AUDIO')continue;" +
-            "if(d.querySelector('video')||d.querySelector('audio'))continue;" +
-            "d.parentNode.removeChild(d);" +
-            "}" +
-            "}catch(e){}})()",
-            null,
-        )
-    }
-
     /** Host == rule or endsWith ".rule" (e.g. "doubleclick.net" also matches
      *  "ad.doubleclick.net"). Conservative: no substring matching. */
     private fun matchesAnyHost(host: String, rules: Set<String>): Boolean {
@@ -631,6 +478,14 @@ private class VShotsBackgroundMediaWebView(
      * blocks unmuted autoplay, the real YouTube control remains visible.
      */
     private fun attemptAutoplayWithAudio() {
+        // YouTube pages ONLY: the pass exists to unmute/autoplay the official
+        // YouTube player. It must never run on JioSaavn pages — clicking
+        // random controls or forcing play there would start the wrong song.
+        val currentUrl = webView.url ?: return
+        val currentHost = currentUrl.lowercase(Locale.US)
+        if (!currentHost.contains("youtube.com") &&
+            !currentHost.contains("youtu.be")
+        ) return
         evaluateJavascript(
             """
             (function(){
