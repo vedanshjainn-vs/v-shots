@@ -16,7 +16,7 @@ alter table public.home_layout_config
     source_type in (
       'youtube_search', 'youtube_playlist', 'youtube_channel',
       'youtube_trending', 'youtube_manual', 'jiosaavn_manual',
-      'manual', 'personalized'
+      'jiosaavn_playlist', 'manual', 'personalized'
     )
   );
 
@@ -105,7 +105,7 @@ alter table public.discovery_categories
   drop constraint if exists discovery_categories_kind_check;
 alter table public.discovery_categories
   add constraint discovery_categories_kind_check check (
-    kind in ('source', 'mood', 'language', 'region')
+    kind in ('source', 'mood', 'language', 'region', 'genre', 'decade', 'activity')
   );
 
 alter table public.discovery_categories
