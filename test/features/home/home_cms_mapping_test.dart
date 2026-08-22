@@ -367,5 +367,49 @@ void staleKeyRegressionTests() {
       final shelf = shelves.singleWhere((s) => s.id == 'trending_now');
       expect(shelf.kind, HomeShelfKind.continueListening);
     });
+
+    test('is_spotlight flag flows from CMS rows to shelves', () {
+      final service = HomeFeedService();
+      final shelves = service.buildShelfDescriptors(
+        enableRemoteHome: true,
+        cmsSections: [
+          {
+            'id': 'top100_india',
+            'section_key': 'top100_india',
+            'title': 'Top 100 Songs India',
+            'section_type': 'home_section',
+            'source_type': 'youtube_playlist',
+            'source_value':
+                'https://youtube.com/playlist?list=PL4fGSI1pDJn4pTWyM3t61lOyZ6_4jcNOw',
+            'query': '',
+            'visible': true,
+            'published': true,
+            'max_items': 12,
+            'sort_order': 1,
+            'is_spotlight': true,
+          },
+          {
+            'id': 'top_weekly_hindi',
+            'section_key': 'top_weekly_hindi',
+            'title': 'Top Weekly Videos Hindi',
+            'section_type': 'home_section',
+            'source_type': 'youtube_playlist',
+            'source_value':
+                'https://youtube.com/playlist?list=PL4fGSI1pDJn5RgLW0Sb_zECecWdH_4zOX',
+            'query': '',
+            'visible': true,
+            'published': true,
+            'max_items': 12,
+            'sort_order': 2,
+            'is_spotlight': false,
+          },
+        ],
+      );
+      final spot = shelves.singleWhere((s) => s.id == 'top100_india');
+      expect(spot.isSpotlight, isTrue);
+      expect(spot.sourceType, 'youtube_playlist');
+      final normal = shelves.singleWhere((s) => s.id == 'top_weekly_hindi');
+      expect(normal.isSpotlight, isFalse);
+    });
   });
 }

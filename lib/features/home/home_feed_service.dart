@@ -80,6 +80,7 @@ class HomeShelf {
     this.sourceType,
     this.sourceValue,
     this.regionCode,
+    this.isSpotlight = false,
     List<Map<String, dynamic>>? manualItems,
   }) : manualItems = manualItems ?? [];
 
@@ -99,6 +100,10 @@ class HomeShelf {
   final String? sourceType;
   final String? sourceValue;
   final String? regionCode;
+
+  /// Daily Spotlight carousel: flagged sections render as auto-rotating hero
+  /// cards at the top of Home (and are skipped as regular shelves).
+  final bool isSpotlight;
 
   /// Pinned tracks for [HomeShelfKind.manual] shelves.
   final List<Map<String, dynamic>> manualItems;
@@ -348,6 +353,7 @@ class HomeFeedService {
           sourceType: s.sourceType,
           sourceValue: s.sourceValue,
           regionCode: s.regionCode,
+          isSpotlight: s.isSpotlight,
         ),
       );
     }
@@ -632,27 +638,62 @@ class HomeFeedService {
       'artists_for_you',
     };
     final phaseOne = shelves.where((s) => phaseOneIds.contains(s.id)).toList();
-    var phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
-    if (maxShelves != null && phaseTwo.length > maxShelves) {
-      phaseTwo = phaseTwo.take(maxShelves).toList();
-    }
+    // Daily Spotlight cards hydrate EARLY: the hero carousel must paint in
+    // the first screen, not only after the whole feed resolves.
+    final spotlight = shelves
+        .where(
+          (s) => !phaseOneIds.contains(s.id) && s.isSpotlight,
+        )
+        .toList();
+    final rest = shelves
+        .where(
+          (s) => !phaseOneIds.contains(s.id) && !s.isSpotlight,
+        )
+        .toList();
+    final tail = maxShelves != null && rest.length > maxShelves
+        ? rest.take(maxShelves).toList()
+        : rest;
 
-    // Load in small chunks (not a full parallel burst): InnerTube/YouTube
-    // throttle a burst of ~11 simultaneous discovery requests. 4-at-a-time
-    // keeps Home fast without tripping rate limits.
-    await _loadInChunks(
-      phaseOne,
-      baseExclude,
-      force: forceRefresh,
-      onUpdate: onUpdate,
-    );
-    await _loadInChunks(
-      phaseTwo,
+    // ONE priority-ordered queue with a bounded worker pool: personalized
+    // shelves first, then spotlight heroes, then the rest. Shelves resolve
+    // PROGRESSIVELY (onUpdate fires per shelf) so Home paints real content
+    // shelf-by-shelf instead of waiting for everything at once.
+    await _loadWithConcurrency(
+      [...phaseOne, ...spotlight, ...tail],
+      6,
       baseExclude,
       force: forceRefresh,
       onUpdate: onUpdate,
     );
     onUpdate?.call();
+  }
+
+  /// Bounded-parallel shelf loader: a shared worker pool keeps the network
+  /// burst under the provider throttle while priority shelves resolve first
+  /// (queue order = priority order).
+  Future<void> _loadWithConcurrency(
+    List<HomeShelf> shelves,
+    int concurrency,
+    Set<String> baseExclude, {
+    required bool force,
+    void Function()? onUpdate,
+  }) async {
+    var next = 0;
+    Future<void> worker() async {
+      while (next < shelves.length) {
+        final shelf = shelves[next++];
+        await _loadShelf(
+          shelf,
+          {...baseExclude},
+          force: force,
+          onUpdate: onUpdate,
+        );
+      }
+    }
+
+    await Future.wait(
+      List.generate(concurrency.clamp(1, 8), (_) => worker()),
+    );
   }
 
   /// Scroll-driven lazy load: fetch a slice of shelves (inclusive start,
@@ -685,7 +726,7 @@ class HomeFeedService {
     required bool force,
     void Function()? onUpdate,
   }) async {
-    const chunkSize = 4;
+    const chunkSize = 6;
     for (var i = 0; i < shelves.length; i += chunkSize) {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(

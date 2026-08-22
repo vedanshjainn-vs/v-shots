@@ -549,6 +549,7 @@ async function renderHomeCMS(el) {
           <div class="section-title-inline">${esc(sec.title || 'Untitled')}</div>
           <div class="section-badges">
             ${kindBadge(sec)}
+            ${sec.is_spotlight === true ? '<span class="chip key-chip" title="Shown in the Daily Spotlight auto-sliding carousel" style="color:var(--accent)">⭐ Spotlight</span>' : ''}
             <span class="chip key-chip" title="Stable key">${esc(sec.section_key || sec.id)}</span>
           </div>
         </div>
@@ -792,6 +793,7 @@ function openSectionEditor(sec, index) {
       <div class="form-group" style="display:flex;gap:16px;align-items:center;padding-top:22px">
         <label class="form-check"><span class="switch"><input type="checkbox" data-f="visible" ${draft.visible !== false ? 'checked' : ''}><span class="slider"></span></span> Show in app</label>
         <label class="form-check"><span class="switch"><input type="checkbox" data-f="published" ${draft.published !== false ? 'checked' : ''}><span class="slider"></span></span> Published</label>
+        <label class="form-check" title="This section becomes an auto-sliding card in the Daily Spotlight carousel at the top of Home"><span class="switch"><input type="checkbox" data-f="is_spotlight" ${draft.is_spotlight === true ? 'checked' : ''}><span class="slider"></span></span> ⭐ Spotlight carousel</label>
       </div>
     </div>
     <div data-block="manual" style="${isManual ? '' : 'display:none'}">
@@ -1113,6 +1115,17 @@ function validateAll() {
       });
     }
   });
+  const spotSections = sections.filter((s) => s.is_spotlight === true);
+  const spotLive = spotSections.filter((s) => s.visible !== false && s.published !== false);
+  if (spotLive.length > 6) {
+    warnings.push(`${spotLive.length} sections are in the Daily Spotlight carousel — the app shows all of them, but 2–5 cards usually feels best.`);
+  }
+  spotSections.forEach((sec) => {
+    const t = sec.source_type || 'youtube_search';
+    if (isPersonalizedSource(t)) {
+      warnings.push(`${sec.title || 'A section'}: Spotlight works best with playlist/chart sections (youtube_playlist). Personalized sections get a generic hero card.`);
+    }
+  });
   return { errors, warnings };
 }
 
@@ -1208,6 +1221,7 @@ async function doPublish(el) {
         category_id: sec.category_id || null,
         refresh_minutes: Math.max(5, Number(sec.refresh_minutes) || 60),
         provider, playback_provider: playback, fallback_provider: fallback,
+        is_spotlight: sec.is_spotlight === true,
       };
     });
     const stale = (existing || []).map((x) => x.id).filter((id) => !keep.has(id));

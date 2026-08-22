@@ -57,6 +57,7 @@ class HomeCmsSection {
     this.provider = 'auto',
     this.playbackProvider = 'auto',
     this.fallbackProvider = 'none',
+    this.isSpotlight = false,
   });
 
   final String id;
@@ -80,6 +81,10 @@ class HomeCmsSection {
   final String provider;
   final String playbackProvider;
   final String fallbackProvider;
+
+  /// Daily Spotlight carousel flag: flagged sections render as auto-rotating
+  /// hero cards at the top of Home instead of a regular horizontal shelf.
+  final bool isSpotlight;
 
   factory HomeCmsSection.fromMap(Map<String, dynamic> row) {
     final id = cmsAsString(row['id'], cmsAsString(row['section_key']));
@@ -114,6 +119,7 @@ class HomeCmsSection {
         fallback: provider,
       ),
       fallbackProvider: normalizeCmsFallback(row['fallback_provider']),
+      isSpotlight: cmsAsBool(row['is_spotlight']),
     );
   }
 
@@ -136,6 +142,7 @@ class HomeCmsSection {
         'provider': provider,
         'playback_provider': playbackProvider,
         'fallback_provider': fallbackProvider,
+        'is_spotlight': isSpotlight,
       };
 }
 

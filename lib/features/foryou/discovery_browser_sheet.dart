@@ -84,6 +84,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
           id.isNotEmpty ? id : current,
         );
       },
+      // In-stream ad start/end from the native WebView → "Ad" badge in the
+      // player UI (mute/skip/resume is handled natively).
+      onAdState: (on) => widget.controller.setAdActive(on),
       // Player-essential hosts are ALWAYS allowed, so the general content
       // blocker can never break video/audio/thumbnail delivery.
       contentBlocker: VShotsContentBlocker(
@@ -505,15 +508,25 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (widget.controller.adActive) ...[
+                        const SizedBox(width: 6),
+                        const _AdBadge(),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -613,15 +626,25 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textMain,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textMain,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (widget.controller.adActive) ...[
+                          const SizedBox(width: 6),
+                          const _AdBadge(),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Row(
@@ -895,6 +918,32 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 }
 
 /// Small source badge for the mini-player thumbnail.
+/// Small "Ad" pill shown while the official YouTube player runs an
+/// in-stream ad (mute/skip/resume handled natively — this is UI only).
+class _AdBadge extends StatelessWidget {
+  const _AdBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.hotPink.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'AD',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
 class _SourceBadge extends StatelessWidget {
   const _SourceBadge({required this.source});
 

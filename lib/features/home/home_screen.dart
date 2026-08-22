@@ -77,15 +77,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final end = (_maxLoadedShelves + _lazyBatchSize).clamp(0, _shelves.length);
     _loadingMoreShelves = true;
     unawaited(
-      homeFeedService.loadShelfRange(_shelves, _maxLoadedShelves, end,
-          onUpdate: () {
-        if (mounted) setState(() {});
-      }).whenComplete(() {
+      homeFeedService
+          .loadShelfRange(_shelves, _maxLoadedShelves, end,
+              onUpdate: _onShelfUpdate)
+          .whenComplete(() {
         _maxLoadedShelves = end;
         _loadingMoreShelves = false;
-        if (mounted) setState(() {});
+        _onShelfUpdate();
       }),
     );
+  }
+
+  /// Coalesced repaint: dozens of shelves each fire several onUpdate calls
+  /// while hydrating — instead of rebuilding the whole scroll view ~150×,
+  /// all updates inside one frame collapse into ONE setState. Also flips
+  /// the initial skeleton off the moment the first shelf resolves, so Home
+  /// reveals content PROGRESSIVELY instead of waiting for everything.
+  bool _updateScheduled = false;
+
+  void _onShelfUpdate() {
+    if (!mounted || _updateScheduled) return;
+    _updateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateScheduled = false;
+      if (!mounted) return;
+      setState(() {
+        if (_initialLoading) _initialLoading = false;
+      });
+    });
   }
 
   bool _reloading = false;
@@ -156,11 +175,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _shelves,
       forceRefresh: forceRefresh,
       maxShelves: _maxLoadedShelves,
-      onUpdate: () {
-        if (mounted) setState(() {});
-      },
+      // Progressive reveal: each shelf paints as soon as IT is ready
+      // (onUpdate per shelf, coalesced to one frame) — no more waiting
+      // for the entire feed before the first row appears.
+      onUpdate: _onShelfUpdate,
     );
-    if (mounted) setState(() => _initialLoading = false);
+    if (mounted) {
+      setState(() => _initialLoading = false);
+    }
     debugPrint('[Home] hydrated in ${sw.elapsedMilliseconds}ms');
   }
 
@@ -185,7 +207,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
               else
-                ..._shelves.map(_buildShelf),
+                // Spotlight shelves render as the hero carousel above — skip
+                // them here so content never appears twice.
+                ..._shelves
+                    .where((s) => !_spotlightIds().contains(s.id))
+                    .map(_buildShelf),
               _buildFooter(),
             ],
           ),
@@ -632,144 +658,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  /// Daily Spotlight — premium hero banner powered by the official
-  /// "Top 100 Songs India" playlist (YouTube Music). Tapping opens the full
-  /// playlist page (Play All → auto-advance queue). Hidden automatically
-  /// when the section is hidden/unpublished in Admin.
+  /// Daily Spotlight — auto-rotating premium hero carousel. EVERY section
+  /// flagged `is_spotlight` in the Admin panel becomes a card here (e.g.
+  /// Top 100 Songs India + Top Weekly Hindi), shown in admin sort order.
+  /// Cards auto-slide; tapping a card opens its full playlist page (or the
+  /// official JioSaavn page for JioSaavn playlists). Hidden automatically
+  /// when no spotlight section is loaded/visible.
+  bool _isSpotlightShelf(HomeShelf s) {
+    if (s.isSpotlight) return true;
+    // Legacy cached CMS (pre-00015 rows) carries no flag: when NO flagged
+    // row exists at all, keep the Top 100 hero working and exclude it from
+    // the regular shelf list.
+    final anyFlagged = _shelves.any((x) => x.isSpotlight);
+    return !anyFlagged && s.id == 'top100_india';
+  }
+
+  Set<String> _spotlightIds() =>
+      _shelves.where(_isSpotlightShelf).map((s) => s.id).toSet();
+
+  List<HomeShelf> _spotlightShelves() => _shelves
+      .where(
+        (s) =>
+            _isSpotlightShelf(s) &&
+            s.status == HomeShelfStatus.loaded &&
+            s.tracks.isNotEmpty,
+      )
+      .toList();
+
   Widget _buildSpotlightSliver() {
-    final spot = _shelves.where(
-      (s) =>
-          s.id == 'top100_india' &&
-          s.status == HomeShelfStatus.loaded &&
-          s.tracks.isNotEmpty,
-    );
-    if (spot.isEmpty) {
+    final spots = _spotlightShelves();
+    if (spots.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
-    final shelf = spot.first;
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
-        child: GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            AppPageRoute<void>(
-              builder: (_) => PlaylistPageScreen(
-                sectionId: shelf.id,
-                title: shelf.title,
-                subtitle: shelf.subtitle,
-                sourceValue: shelf.sourceValue ?? '',
-                initialTracks: shelf.tracks,
+        child: _SpotlightCarousel(
+          shelves: spots,
+          onOpen: (shelf) {
+            // JioSaavn playlist → official page in the WebView; YouTube
+            // playlist → full in-app playlist page.
+            if (shelf.sourceType == 'jiosaavn_playlist') {
+              if (shelf.tracks.isNotEmpty) {
+                playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+              }
+              return;
+            }
+            Navigator.push(
+              context,
+              AppPageRoute<void>(
+                builder: (_) => PlaylistPageScreen(
+                  sectionId: shelf.id,
+                  title: shelf.title,
+                  subtitle: shelf.subtitle,
+                  sourceValue: shelf.sourceValue ?? '',
+                  initialTracks: shelf.tracks,
+                ),
               ),
-            ),
-          ),
-          child: Container(
-            height: 150,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF7C3AED),
-                  Color(0xFFEC4899),
-                  Color(0xFFF59E0B),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                const Positioned(
-                  right: -20,
-                  bottom: -26,
-                  child: Icon(
-                    Icons.graphic_eq_rounded,
-                    size: 150,
-                    color: Colors.white12,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text(
-                          '✨ DAILY SPOTLIGHT',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Top 100 Songs India',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'The biggest songs in the country right now',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: Colors.white.withValues(alpha: 0.9),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.play_arrow_rounded,
-                                    size: 18, color: Color(0xFF7C3AED)),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Play the chart',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF7C3AED),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -1008,9 +955,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     notification.metrics.maxScrollExtent - 200) {
                   homeFeedService.loadMoreShelf(
                     shelf,
-                    onUpdate: () {
-                      if (mounted) setState(() {});
-                    },
+                    onUpdate: _onShelfUpdate,
                   );
                 }
                 return false;
@@ -1036,26 +981,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return StaggeredEntrance(
       index: i,
       child: PressableScale(
-        onTap: () {
-          // YouTube playlists open as a FULL page (owner request) — the
-          // whole list with Play All and auto-advance queue.
-          if (shelf.sourceType == 'youtube_playlist') {
-            Navigator.push(
-              context,
-              AppPageRoute<void>(
-                builder: (_) => PlaylistPageScreen(
-                  sectionId: shelf.id,
-                  title: shelf.title,
-                  subtitle: shelf.subtitle,
-                  sourceValue: shelf.sourceValue ?? '',
-                  initialTracks: shelf.tracks,
-                ),
-              ),
-            );
-            return;
-          }
-          playTrack(context, track, tracks, i);
-        },
+        // Tapping a SONG plays that song immediately with the shelf as its
+        // auto-advance queue. The FULL list opens only via "View all" in the
+        // shelf header (owner request: songs play, View all opens the list).
+        onTap: () => playTrack(context, track, tracks, i),
         child: RepaintBoundary(
           child: Container(
             width: 150,
@@ -1451,6 +1380,306 @@ class _MoodGenreScreenState extends State<MoodGenreScreen> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Daily Spotlight carousel — auto-rotating premium hero cards
+// ═════════════════════════════════════════════════════════════════════════════
+// One card per `is_spotlight` section (admin-chosen, admin sort order).
+// Auto-slides every few seconds; pauses while the user swipes; dots show
+// position. Tapping a card hands the section back to the caller (open
+// playlist page / official JioSaavn page).
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _SpotlightCarousel extends StatefulWidget {
+  const _SpotlightCarousel({required this.shelves, required this.onOpen});
+
+  final List<HomeShelf> shelves;
+  final ValueChanged<HomeShelf> onOpen;
+
+  @override
+  State<_SpotlightCarousel> createState() => _SpotlightCarouselState();
+}
+
+class _SpotlightCarouselState extends State<_SpotlightCarousel> {
+  static const Duration _autoAdvanceEvery = Duration(seconds: 5);
+
+  /// One gradient per card position (cycles) — each spotlight card gets its
+  /// own identity instead of repeating the same purple banner.
+  static const List<List<Color>> _gradients = [
+    [Color(0xFF7C3AED), Color(0xFFEC4899), Color(0xFFF59E0B)],
+    [Color(0xFF0EA5E9), Color(0xFF6366F1), Color(0xFF8B5CF6)],
+    [Color(0xFFF59E0B), Color(0xFFEF4444), Color(0xFFEC4899)],
+    [Color(0xFF10B981), Color(0xFF0EA5E9), Color(0xFF6366F1)],
+    [Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFF6366F1)],
+  ];
+
+  late final PageController _pageController = PageController();
+  Timer? _timer;
+  int _page = 0;
+
+  int get _count => widget.shelves.length;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_count > 1) _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(_autoAdvanceEvery, (_) {
+      if (!mounted || !_pageController.hasClients) return;
+      final next = (_page + 1) % _count;
+      _pageController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _stopTimer();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 158,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              // Pause auto-slide while the user is dragging (never fight the
+              // user's finger); resume when the swipe ends.
+              if (n is ScrollStartNotification && n.dragDetails != null) {
+                _stopTimer();
+              } else if (n is ScrollEndNotification) {
+                if (_count > 1) _startTimer();
+              }
+              return false;
+            },
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _count,
+              onPageChanged: (p) => setState(() => _page = p),
+              itemBuilder: (context, i) => _spotCard(widget.shelves[i], i),
+            ),
+          ),
+        ),
+        if (_count > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_count, (i) {
+              final active = i == _page;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: active ? AppColors.primaryLight : AppColors.border,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _spotCard(HomeShelf shelf, int i) {
+    final colors = _gradients[i % _gradients.length];
+    final artwork = shelf.tracks.isNotEmpty
+        ? shelf.tracks.first['artwork'] as String?
+        : null;
+    final isJioSaavn = shelf.sourceType == 'jiosaavn_playlist';
+    return GestureDetector(
+      onTap: () => widget.onOpen(shelf),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // First track's cover art as a decorative right-side hero.
+            if (artwork != null && artwork.isNotEmpty)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(
+                    width: 170,
+                    height: 170,
+                    child: Transform.translate(
+                      offset: const Offset(34, 0),
+                      child: Opacity(
+                        opacity: 0.6,
+                        child: AppImage(
+                          artwork,
+                          fit: BoxFit.cover,
+                          errorIconColor: Colors.white24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            // Left→right fade keeps the text readable over the art.
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      colors.first.withValues(alpha: 0.98),
+                      colors.first.withValues(alpha: 0.75),
+                      colors.last.withValues(alpha: 0.40),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          '✨ DAILY SPOTLIGHT',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (isJioSaavn)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'JIOSAAVN',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        shelf.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        shelf.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.play_arrow_rounded,
+                              size: 18,
+                              color: colors.first,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isJioSaavn ? 'Open playlist' : 'Play the chart',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: colors.first,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

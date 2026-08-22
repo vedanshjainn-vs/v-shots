@@ -161,7 +161,11 @@ class DiscoverFeedEngine {
 
   /// Generates the next swipe batch. [config] comes from the remote
   /// `discover_settings` row (defaults when absent); [excludeIds] prevents
-  /// repeats across sessions.
+  /// repeats across sessions. [languages]/[moods]/[regions] are the active
+  /// Explore filters — when ANY filter is active the feed switches to
+  /// FILTER-FIRST mode: every pool obeys the selected filters, so a Mood /
+  /// Language / Genre pick actually shapes the feed instead of returning
+  /// unrelated "random" songs.
   Future<List<Map<String, dynamic>>> nextBatch({
     required Set<String> excludeIds,
     int count = 12,
@@ -174,7 +178,11 @@ class DiscoverFeedEngine {
     final enabled = Map<String, bool>.from(
       (cfg['enabled'] as Map?)?.cast<String, dynamic>() ?? const {},
     );
-    final weights = _weightsFromConfig(cfg) ?? adaptiveWeights();
+    final filtersActive =
+        languages.isNotEmpty || moods.isNotEmpty || regions.isNotEmpty;
+    final weights = filtersActive
+        ? _filterFirstWeights()
+        : (_weightsFromConfig(cfg) ?? adaptiveWeights());
     final region = (cfg['region'] as String?)?.trim().isNotEmpty == true
         ? (cfg['region'] as String).trim()
         : 'IN';
@@ -212,18 +220,28 @@ class DiscoverFeedEngine {
           regions,
         ).then(candidates.addAll),
       if ((quotas[DiscoverBucket.trending] ?? 0) > 0)
-        _trendingPool(excludeIds, region).then(candidates.addAll),
+        _trendingPool(excludeIds, region,
+                filters: _filterTokens(languages, moods, regions))
+            .then(candidates.addAll),
       if ((quotas[DiscoverBucket.fresh] ?? 0) > 0)
-        _freshPool(excludeIds, languages).then(candidates.addAll),
+        _freshPool(excludeIds, languages, moods).then(candidates.addAll),
       if ((quotas[DiscoverBucket.exploration] ?? 0) > 0)
-        _explorationPool(excludeIds, cfg).then(candidates.addAll),
+        _explorationPool(excludeIds, cfg,
+                filters: _filterTokens(languages, moods, regions))
+            .then(candidates.addAll),
     ]);
 
     // Fallback: pools empty (network hiccup) → one safe popular query so
     // Discover is NEVER blank.
     if (candidates.isEmpty) {
-      final fallback = await _queryPool('top songs official audio', excludeIds,
-          bucket: DiscoverBucket.trending, count: count);
+      final fallback = await _queryPool(
+        filtersActive
+            ? '${_filterTokens(languages, moods, regions).join(' ')} songs official audio'
+            : 'top songs official audio',
+        excludeIds,
+        bucket: DiscoverBucket.trending,
+        count: count,
+      );
       candidates.addAll(fallback);
     }
 
@@ -231,62 +249,108 @@ class DiscoverFeedEngine {
     return ranked;
   }
 
+  /// Filter-first bucket weights: when the user picked a Mood / Language /
+  /// Genre / Decade / Activity, the feed must be dominated by content that
+  /// matches those picks (personal stays the top bucket but every pool gets
+  /// the filter tokens applied to its queries).
+  static DiscoverWeights _filterFirstWeights() => const DiscoverWeights(
+        personal: 0.50,
+        trending: 0.10,
+        fresh: 0.25,
+        exploration: 0.15,
+      );
+
+  static List<String> _filterTokens(
+    List<String> languages,
+    List<String> moods,
+    List<String> regions,
+  ) =>
+      <String>[
+        ...moods,
+        ...languages,
+        ...regions,
+      ].where((t) => t.trim().isNotEmpty).toList();
+
   Future<List<_ScoredCandidate>> _personalPool(
     Set<String> excludeIds,
     List<String> languages,
     List<String> moods,
     List<String> regions,
   ) async {
+    final filterTokens = _filterTokens(languages, moods, regions).join(' ');
     final out = <_ScoredCandidate>[];
     final music = _musicEngine;
-    if (music != null) {
-      try {
-        final tracks = await music.generateForYou(
-          excludeIds: excludeIds,
-          count: 24,
-          languages: languages,
-          moods: moods,
-          regions: regions,
-        );
-        out.addAll(
-          tracks.map(
-            (t) => _ScoredCandidate(t, DiscoverBucket.personal, 'music-engine'),
-          ),
-        );
-      } catch (e) {
-        debugPrint('[DiscoverEngine] music engine pool failed: $e');
-      }
-    }
     final rec = _recommendationEngine;
-    if (rec != null) {
-      try {
-        final scored = await rec.generateFeed(
+
+    // Engine calls run CONCURRENTLY (they are independent pools) — this is
+    // the single biggest cold-start win: two slow engines overlap instead of
+    // waiting one-after-another.
+    final engineResults = await Future.wait([
+      if (music != null)
+        music
+            .generateForYou(
+              excludeIds: excludeIds,
+              count: 24,
+              languages: languages,
+              moods: moods,
+              regions: regions,
+            )
+            .then<List<_ScoredCandidate>>(
+              (tracks) => tracks
+                  .map(
+                    (t) => _ScoredCandidate(
+                        t, DiscoverBucket.personal, 'music-engine'),
+                  )
+                  .toList(),
+            )
+            .catchError((Object e) {
+          debugPrint('[DiscoverEngine] music engine pool failed: $e');
+          return <_ScoredCandidate>[];
+        }),
+      if (rec != null)
+        rec
+            .generateFeed(
           intent: FeedIntent.forYou,
           excludeIds: excludeIds,
           count: 12,
           forceRefresh: true,
-        );
-        for (final s in scored) {
-          final map = s.track.toTrackMap();
-          map['discoverSourceQuery'] = 'personal';
-          out.add(
-            _ScoredCandidate(map, DiscoverBucket.personal, 'taste-engine'),
-          );
-        }
-      } catch (e) {
-        debugPrint('[DiscoverEngine] rec engine pool failed: $e');
-      }
+        )
+            .then<List<_ScoredCandidate>>((scored) {
+          final list = <_ScoredCandidate>[];
+          for (final s in scored) {
+            final map = s.track.toTrackMap();
+            map['discoverSourceQuery'] = 'personal';
+            list.add(
+              _ScoredCandidate(map, DiscoverBucket.personal, 'taste-engine'),
+            );
+          }
+          return list;
+        }).catchError((Object e) {
+          debugPrint('[DiscoverEngine] rec engine pool failed: $e');
+          return <_ScoredCandidate>[];
+        }),
+    ]);
+    for (final list in engineResults) {
+      out.addAll(list);
     }
+
     // Seed-artist queries: songs of top artists (the "because you listened"
-    // chain) — also used by cold users whose profile is building.
+    // chain) — also used by cold users whose profile is building. Filter
+    // tokens are appended so an active Mood/Language pick shapes these too.
     final topArtists = _artistScores.keys.take(3).toList();
     if (topArtists.isNotEmpty && _repository != null) {
       final seeds = await Future.wait(
         topArtists.map(
-          (a) => _queryPool('$a songs official audio', excludeIds,
-              bucket: DiscoverBucket.personal,
-              count: 8,
-              sourceQuery: '$a songs'),
+          (a) => _queryPool(
+            filterTokens.isEmpty
+                ? '$a songs official audio'
+                : '$a $filterTokens songs official audio',
+            excludeIds,
+            bucket: DiscoverBucket.personal,
+            count: 8,
+            sourceQuery: '$a songs',
+            seedArtist: a,
+          ),
         ),
       );
       for (final list in seeds) {
@@ -298,44 +362,84 @@ class DiscoverFeedEngine {
 
   Future<List<_ScoredCandidate>> _trendingPool(
     Set<String> excludeIds,
-    String region,
-  ) async {
+    String region, {
+    List<String> filters = const [],
+  }) async {
+    // Filter-first: trending is regional by definition, so when the user
+    // picked a Mood/Language/Genre the trending slot ALSO follows the
+    // filters instead of injecting unrelated popular videos.
+    if (filters.isNotEmpty) {
+      return _queryPool(
+        'trending ${filters.join(' ')} songs official video',
+        excludeIds,
+        bucket: DiscoverBucket.trending,
+        count: 8,
+      );
+    }
     final out = <_ScoredCandidate>[];
     final repo = _repository;
-    if (repo == null) return out;
-    try {
-      final trending = await repo.getTrending(limit: 15, region: region);
-      out.addAll(
-        trending.map((t) =>
-            _ScoredCandidate(t, DiscoverBucket.trending, 'trending-$region')),
-      );
-    } catch (e) {
-      debugPrint('[DiscoverEngine] trending pool failed: $e');
-    }
-    out.addAll(
-      await _queryPool('trending songs official music video', excludeIds,
+    // Real trending + query fallback run CONCURRENTLY.
+    final both = await Future.wait<List<_ScoredCandidate>>([
+      if (repo != null)
+        repo
+            .getTrending(limit: 15, region: region)
+            .then<List<_ScoredCandidate>>(
+              (trending) => trending
+                  .map(
+                    (t) => _ScoredCandidate(
+                        t, DiscoverBucket.trending, 'trending-$region'),
+                  )
+                  .toList(),
+            )
+            .catchError((Object e) {
+          debugPrint('[DiscoverEngine] trending pool failed: $e');
+          return <_ScoredCandidate>[];
+        }),
+      _queryPool('trending songs official music video', excludeIds,
           bucket: DiscoverBucket.trending, count: 8),
-    );
+    ]);
+    for (final list in both) {
+      out.addAll(list);
+    }
     return out;
   }
 
   Future<List<_ScoredCandidate>> _freshPool(
     Set<String> excludeIds,
     List<String> languages,
+    List<String> moods,
   ) async {
-    final lang = languages.isNotEmpty ? languages.first : '';
-    final q = lang.isEmpty
+    final tokens = _filterTokens(languages, moods, const []);
+    final q = tokens.isEmpty
         ? 'new music releases official audio'
-        : 'new $lang songs official audio';
+        : 'new ${tokens.join(' ')} songs official audio';
     return _queryPool(q, excludeIds,
         bucket: DiscoverBucket.fresh, count: 12, sourceQuery: q);
   }
 
   Future<List<_ScoredCandidate>> _explorationPool(
     Set<String> excludeIds,
-    Map<String, dynamic> cfg,
-  ) async {
-    final out = <_ScoredCandidate>[];
+    Map<String, dynamic> cfg, {
+    List<String> filters = const [],
+  }) async {
+    // Filter-first: exploration STAYS INSIDE the picked theme (chill +
+    // Hindi stays chill-Hindi adjacent) instead of wandering off.
+    if (filters.isNotEmpty) {
+      final tokens = filters.join(' ');
+      final queries = <String>[
+        '$tokens songs official audio',
+        '$tokens playlist hits official audio',
+        'best $tokens songs 2026 official audio',
+      ];
+      final lists = await Future.wait(
+        queries.map(
+          (q) => _queryPool(q, excludeIds,
+              bucket: DiscoverBucket.exploration, count: 5, sourceQuery: q),
+        ),
+      );
+      return lists.expand((l) => l).toList();
+    }
+
     // Taste-ADJACENT: admin-configured exploration queries minus the user's
     // dominant genres — never pure random.
     final cfgList = ((cfg['explore_queries'] as List?) ?? const [])
@@ -360,13 +464,13 @@ class DiscoverFeedEngine {
         .take(3)
         .toList();
 
-    for (final q in adjacent) {
-      out.addAll(
-        await _queryPool(q, excludeIds,
+    final lists = await Future.wait(
+      adjacent.map(
+        (q) => _queryPool(q, excludeIds,
             bucket: DiscoverBucket.exploration, count: 5, sourceQuery: q),
-      );
-    }
-    return out;
+      ),
+    );
+    return lists.expand((l) => l).toList();
   }
 
   Future<List<_ScoredCandidate>> _queryPool(
@@ -375,6 +479,7 @@ class DiscoverFeedEngine {
     required DiscoverBucket bucket,
     required int count,
     String? sourceQuery,
+    String? seedArtist,
   }) async {
     final repo = _repository;
     if (repo == null) return const [];
@@ -387,6 +492,12 @@ class DiscoverFeedEngine {
       return tracks.map((t) {
         final m = Map<String, dynamic>.from(t);
         m['discoverSourceQuery'] = sourceQuery ?? query;
+        // The REAL seed artist (taste profile), used by _reasonFor so the
+        // "Because you like X" chip names the artist the user listens to —
+        // never the upload channel of the track itself.
+        if (seedArtist != null && seedArtist.isNotEmpty) {
+          m['discoverSeedArtist'] = seedArtist;
+        }
         return _ScoredCandidate(m, bucket, sourceQuery ?? query);
       }).toList();
     } catch (e) {
@@ -491,14 +602,29 @@ class DiscoverFeedEngine {
         0.05 * exploration;
   }
 
+  /// The "why this song" reason. Priority:
+  ///   1. A genuine SEED artist (taste-profile artist whose query produced
+  ///      this track) → "because you listened to X".
+  ///   2. The track's artist matching the LONG-TERM taste profile (the same
+  ///      honest signal). The session swipe window is deliberately NOT used:
+  ///      swipe-inflated artist names (which for uploads are CHANNEL titles)
+  ///      were producing "Because you like `<channel name>`" on every card
+  ///      of that channel — the owner-reported bug.
+  ///   3. Otherwise a bucket-based reason.
   String _reasonFor(
     Map<String, dynamic> track,
     DiscoverBucket bucket,
-    Set<String> activeArtists,
+    Map<String, double> artistScores,
   ) {
+    final seed = (track['discoverSeedArtist'] as String?)?.trim() ?? '';
+    if (seed.isNotEmpty) {
+      return 'because_you_listened_to_$seed';
+    }
     final artist = (track['artist'] as String?) ?? '';
     final artistKey = artist.trim().toLowerCase();
-    if (activeArtists.any((a) => a.trim().toLowerCase() == artistKey)) {
+    final inTasteProfile = artistKey.isNotEmpty &&
+        (artistScores[artist] != null || artistScores[artistKey] != null);
+    if (inTasteProfile) {
       return 'because_you_listened_to_$artist';
     }
     switch (bucket) {
@@ -537,7 +663,7 @@ class DiscoverFeedEngine {
         activeGenres: activeGenres,
         recentArtists: recent,
       );
-      c.reason = _reasonFor(c.track, c.bucket, activeArtists);
+      c.reason = _reasonFor(c.track, c.bucket, artistScores);
       scored.add(c);
     }
     // Drop bad candidates.

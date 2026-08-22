@@ -1,5 +1,56 @@
 # Changelog
 
+## [Unreleased] — PHASE 17.10: App-wide playback behavior + Discover/Home fixes (2026-08-22)
+
+### Playback (app-wide — one WebView powers Home/Discover/playlists/queue)
+- EARLY AUTO-ADVANCE: the next queued track starts ~1.5 s BEFORE the current
+  song ends (native poll fires the advance event at duration − 1.5 s while
+  playing; `video.ended` stays as fallback for unknown durations). Never
+  fires while the user paused. Idempotent per load; respects queue/repeat/
+  shuffle through the existing manager.
+- YOUTUBE AD ASSIST (remote flag `enable_youtube_ad_assist`, default ON):
+  while the official player runs an in-stream ad the ad is muted; YouTube's
+  own visible Skip button is clicked (user-equivalent action only —
+  unskippable ads play muted in full); after the ad the main track is
+  unmuted and auto-resumed (bounded 6 s recovery window so a deliberate
+  user pause is never overridden). Nothing is blocked/hidden/resized/sped
+  up; no ad-network interception, no unofficial APIs. JioSaavn pages are
+  never touched. Small "AD" badge in the player UI during ads.
+- Stuck-guard: an ad's own video-end can no longer skip the queue (the
+  end/near-end events are suppressed while an ad is playing).
+
+### Discover fixes (owner feedback)
+- Mood / Language / Genre / Decade / Activity filters now ACTUALLY shape the
+  feed: filter-first bucket weights + filter tokens appended to every pool
+  query (personal/trending/fresh/exploration), trending no longer leaks
+  unfiltered regional videos into a filtered feed, languages get a real
+  quota in the music engine (previously silently dropped), mood quota
+  boosted.
+- "Because you like X" now names the real SEED artist from the taste profile
+  (or a long-term taste artist) — the upload CHANNEL name can no longer
+  appear (session-window artists removed from reason generation).
+- Discover cold start faster: engine pools fetch concurrently (music engine
+  + recommendation engine + seed queries in parallel), candidate generator
+  fetches in 4-at-a-time waves instead of strictly sequential.
+
+### Home fixes (owner feedback)
+- Tapping a SONG now plays it immediately (shelf becomes the queue).
+  The full list opens only via "View all" in the shelf header.
+- Progressive reveal: shelves paint one-by-one as they resolve (no more
+  waiting for the whole 50+ section feed before anything shows).
+- Bounded-parallel loading (6 workers, priority order: personalized →
+  spotlight → rest) with a per-frame coalesced repaint.
+- Daily Spotlight is now a MULTI-CARD AUTO-SLIDING carousel: any number of
+  admin-flagged sections (is_spotlight) rotate every 5 s (dots, per-card
+  gradients, JioSaavn badge). Flagged sections no longer appear as regular
+  shelves. Admin: ⭐ "Spotlight carousel" toggle per section + badge +
+  publish payload. Pre-flagged: Top 100 Songs India.
+
+### Data
+- Migration 20260822000015 (APPLIED): home_layout_config.is_spotlight column
+  (top100_india pre-flagged).
+- Migration 20260822000016 (APPLIED): feature flag enable_youtube_ad_assist.
+
 ## [Unreleased] — PHASE 17.9: V Shots Discover taxonomy + playback fixes + Home polish (2026-08-22)
 
 ### Discover — new structure (owner spec)

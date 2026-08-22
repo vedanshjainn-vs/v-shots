@@ -16,14 +16,24 @@ class DiscoverFakeProvider implements MusicProvider {
   DiscoverFakeProvider({
     this.trendingTracks = const [],
     this.searchTracks = const [],
+    this.onSearch,
   });
 
   /// Tracks returned by getTrending (bucket: trending).
   final List<ProviderTrack> trendingTracks;
 
   /// Tracks returned by every search() call (fresh/exploration/personal
-  /// seed queries).
+  /// seed queries) when [onSearch] is not provided.
   final List<ProviderTrack> searchTracks;
+
+  /// Optional per-query track source (for deterministic reason tests).
+  final List<ProviderTrack> Function(String query)? onSearch;
+
+  /// Every query this fake received (for filter-propagation assertions).
+  final List<String> seenQueries = [];
+
+  /// How many times getTrending was called.
+  int trendingCalls = 0;
 
   @override
   String get id => 'innertube';
@@ -52,8 +62,10 @@ class DiscoverFakeProvider implements MusicProvider {
   Future<ProviderResult<List<ProviderTrack>>> getTrending({
     int limit = 15,
     String region = '',
-  }) async =>
-      ProviderResult.success(trendingTracks.take(limit).toList());
+  }) async {
+    trendingCalls++;
+    return ProviderResult.success(trendingTracks.take(limit).toList());
+  }
 
   @override
   Future<ProviderResult<List<ProviderTrack>>> search(
@@ -63,13 +75,13 @@ class DiscoverFakeProvider implements MusicProvider {
     int maxDurationMinutes = 15,
     int minDurationMinutes = 0,
     Set<String> excludeIds = const {},
-  }) async =>
-      ProviderResult.success(
-        searchTracks
-            .where((t) => !excludeIds.contains(t.id))
-            .take(limit)
-            .toList(),
-      );
+  }) async {
+    seenQueries.add(query);
+    final tracks = onSearch?.call(query) ?? searchTracks;
+    return ProviderResult.success(
+      tracks.where((t) => !excludeIds.contains(t.id)).take(limit).toList(),
+    );
+  }
 
   @override
   Future<ProviderResult<ProviderSearchPage>> searchPage(
@@ -337,6 +349,111 @@ void main() {
       );
       expect(e.recentArtistsWindow, contains('keep artist'));
       expect(e.sessionSignalCount, 2);
+    });
+  });
+
+  group('Explore filters (owner: categories must shape the feed)', () {
+    test('filter mode: every pool query carries the picked tokens', () async {
+      final provider = DiscoverFakeProvider(
+        trendingTracks: [_t('t1', 'Arijit Singh')],
+        searchTracks: List.generate(14, (i) => _t('s$i', 'Artist $i')),
+      );
+      final e = _engine(
+        provider: provider,
+        artistScores: const {'Arijit Singh': 1.0},
+      );
+      final batch = await e.nextBatch(
+        excludeIds: const {},
+        count: 10,
+        languages: const ['hindi'],
+        moods: const ['chill'],
+        regions: const ['bollywood'],
+      );
+      expect(batch, isNotEmpty);
+      final joined = provider.seenQueries.join(' ').toLowerCase();
+      expect(joined, contains('chill'),
+          reason: 'mood token must reach the provider queries');
+      expect(joined, contains('hindi'),
+          reason: 'language token must reach the provider queries');
+      expect(joined, contains('bollywood'),
+          reason: 'genre token must reach the provider queries');
+    });
+
+    test('filter mode: regional trending is NOT injected unfiltered', () async {
+      final provider = DiscoverFakeProvider(
+        trendingTracks: [_t('t1', 'Arijit Singh')],
+        searchTracks: List.generate(14, (i) => _t('s$i', 'Artist $i')),
+      );
+      final e = _engine(
+        provider: provider,
+        artistScores: const {'Arijit Singh': 1.0},
+      );
+      await e.nextBatch(
+        excludeIds: const {},
+        count: 10,
+        moods: const ['chill'],
+      );
+      expect(provider.trendingCalls, 0,
+          reason: 'unfiltered trending must not leak into a filtered feed');
+    });
+  });
+
+  group('reason chip (owner: no channel names in "Because you like")', () {
+    test('seed artist wins over the upload channel name', () async {
+      final provider = DiscoverFakeProvider(
+        trendingTracks: const [],
+        // Each pool query gets its own artist; the seed-artist query for
+        // Arijit Singh returns uploads whose artist field is the CHANNEL
+        // name (T-Series) — the typical upload case.
+        onSearch: (q) {
+          if (q.contains('Arijit Singh')) {
+            return [_t('v1', 'T-Series'), _t('v2', 'T-Series')];
+          }
+          if (q.contains('trending songs')) return [_t('g1', 'Trend Artist')];
+          if (q.contains('new music releases')) {
+            return [_t('n1', 'New Artist')];
+          }
+          return [_t('e1', 'Explore Artist')];
+        },
+      );
+      final e = _engine(
+        provider: provider,
+        artistScores: const {'Arijit Singh': 1.0},
+      );
+      final batch = await e.nextBatch(excludeIds: const {}, count: 6);
+      expect(batch, isNotEmpty);
+      final reasons = batch.map((t) => '${t['discoverReason']}').toList();
+      expect(
+        reasons.any((r) => r.contains('T-Series')),
+        isFalse,
+        reason: 'the reason must never name the upload channel',
+      );
+      expect(
+        reasons.any((r) => r.contains('Arijit Singh')),
+        isTrue,
+        reason: 'the seed artist from the taste profile should be used',
+      );
+    });
+
+    test('session swipes never create channel-name reasons', () async {
+      final provider = DiscoverFakeProvider(
+        trendingTracks: [_t('t1', 'SonyMusicIndia')],
+        onSearch: (q) => [_t('v1', 'SonyMusicIndia'), _t('v2', 'Other Artist')],
+      );
+      final e = _engine(provider: provider, artistScores: const {});
+      // User listens to a channel upload → it enters the session window…
+      e.recordSwipe(
+        {'id': 'old1', 'artist': 'SonyMusicIndia', 'title': 'S'},
+        outcome: DiscoverSwipeOutcome.listenedLong,
+      );
+      // …but the next batch must NOT label those uploads "Because you like
+      // SonyMusicIndia" (the exact owner-reported bug).
+      final batch = await e.nextBatch(excludeIds: const {}, count: 4);
+      for (final t in batch) {
+        final reason = '${t['discoverReason']}';
+        expect(reason.contains('SonyMusicIndia'), isFalse,
+            reason: 'session-window channel names must not feed reasons');
+      }
     });
   });
 }

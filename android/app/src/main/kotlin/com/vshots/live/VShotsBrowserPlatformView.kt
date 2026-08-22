@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -24,6 +25,109 @@ import io.flutter.plugin.platform.PlatformViewFactory
 import java.util.Locale
 
 private const val VIEW_TYPE = "vshots/native_browser"
+private const val TAG = "VShotsPlayback"
+
+/**
+ * App-wide YouTube playback assist (owner spec, Phase 17.10):
+ *
+ *  • EARLY AUTO-ADVANCE — the next queued track starts ~1.5 s BEFORE the
+ *    current one finishes. Consistent across Home / Discover / playlists /
+ *    the queue because every surface plays through this ONE WebView.
+ *
+ *  • AD ASSIST — while the OFFICIAL YouTube player runs an in-stream ad:
+ *      - the ad is muted (only the player's own video element state);
+ *      - YouTube's own "Skip" button is clicked when it appears (the exact
+ *        action a user would take; unskippable ads play muted in full);
+ *      - nothing is blocked, hidden, resized or sped up; no ad-network
+ *        interception, no unofficial APIs, no stream access.
+ *    When the ad ends the main track is unmuted and playback resumed
+ *    automatically (bounded recovery window so a deliberate user pause is
+ *    never overridden).
+ *
+ * Only official, user-equivalent player controls are used. The assist is
+ * gated by the remote flag `enable_youtube_ad_assist` (default ON) and is
+ * YouTube-page-only — JioSaavn pages are never touched.
+ */
+
+/**
+ * One-per-second playback poll. Returns:
+ *   'ad'      — an in-stream ad is playing (player's own ad UI markers)
+ *   'ended'   — media reached its natural end
+ *   'nearend' — <=1.5 s left AND still playing (never while paused)
+ *   'paused' / 'playing' / 'none' / 'unknown'
+ */
+private const val YT_POLL_JS = """
+(function(){
+  try{
+    var adOn = !!document.querySelector('.ad-showing');
+    if(!adOn){
+      var ui = document.querySelector('.videoAdUi, .ytp-ad-player-overlay');
+      if(ui && ui.offsetParent !== null){ adOn = true; }
+    }
+    var v = document.querySelector('video,audio');
+    if(!v){ return adOn ? 'ad' : 'none'; }
+    if(adOn){ return 'ad'; }
+    if(v.ended){ return 'ended'; }
+    var d = v.duration;
+    if(d && isFinite(d) && !v.paused && v.currentTime >= d - 1.5){ return 'nearend'; }
+    return v.paused ? 'paused' : 'playing';
+  }catch(e){ return 'unknown'; }
+})()
+"""
+
+/**
+ * Ad assist pass (runs each poll tick while an ad is active): mute the ad
+ * audio, and click YouTube's OWN visible Skip button when it is shown.
+ * Returns 'skipped' when a skip was clicked, 'muted' when only muted,
+ * 'ok' when nothing needed doing.
+ */
+private const val YT_AD_ASSIST_JS = """
+(function(){
+  try{
+    var skipped = false;
+    var v = document.querySelector('video');
+    if(v && !v.muted){ v.muted = true; v.volume = 0; }
+    var sels = ['button.ytp-ad-skip-button','button.ytp-skip-ad-button',
+                '.ytp-ad-skip-button-modern button','button.ytp-ad-skip-button-modern'];
+    for(var i=0;i<sels.length;i++){
+      var b = document.querySelector(sels[i]);
+      if(b && b.offsetParent !== null && !b.disabled){
+        try{ b.click(); skipped = true; }catch(e){}
+        break;
+      }
+    }
+    return skipped ? 'skipped' : 'muted';
+  }catch(e){ return 'err'; }
+})()
+"""
+
+/**
+ * Post-ad resume pass: unmute the main track, press play when paused, and
+ * click YouTube's own mute/play controls only when they advertise the state
+ * we need. The main music track is ALWAYS unmuted.
+ */
+private const val YT_RESUME_JS = """
+(function(){
+  try{
+    var v = document.querySelector('video');
+    if(v){
+      v.muted = false; v.volume = 1;
+      if(v.paused){
+        var p = v.play();
+        if(p && p.catch){ p.catch(function(){}); }
+      }
+    }
+    var mb = document.querySelector('.ytp-mute-button');
+    if(mb){
+      var lab = ((mb.getAttribute('aria-label')||'') + ' ' + (mb.getAttribute('title')||'')).toLowerCase();
+      if(lab.indexOf('unmute') >= 0){ try{ mb.click(); }catch(e){} }
+    }
+    var pb = document.querySelector('button.ytp-play-button');
+    if(v && v.paused && pb && pb.offsetParent !== null){ try{ pb.click(); }catch(e){} }
+    return 'ok';
+  }catch(e){ return 'err'; }
+})()
+"""
 
 /**
  * Discovery-only native browser view with FORCEFUL ad blocking.
@@ -60,15 +164,8 @@ private class VShotsBackgroundMediaWebView(
     private val playbackPoll = object : Runnable {
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
-            evaluateJavascript(
-                "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}if(v.ended){return 'ended';}return v.paused?'paused':'playing';})()",
-            ) { result ->
-                val state = cleanJsResult(result)
-                setMediaPlaying(state == "playing")
-                if (state == "ended" && !endedReported) {
-                    endedReported = true
-                    events.invokeMethod("videoEnded", null)
-                }
+            evaluateJavascript(YT_POLL_JS) { result ->
+                handlePollResult(cleanJsResult(result))
             }
             handler.postDelayed(this, 1000L)
         }
@@ -78,8 +175,125 @@ private class VShotsBackgroundMediaWebView(
      *  Reset on every new load so each video reports end exactly once. */
     private var endedReported = false
 
+    /** True once the CURRENT load's media entered its last 1.5 s — the
+     *  app-wide auto-advance trigger (owner spec: next track starts just
+     *  BEFORE the song fully ends). Reset on every new load. */
+    private var nearEndReported = false
+
+    /** True while the YouTube page is playing an in-stream ad. */
+    private var adActive = false
+
+    /** ElapsedRealtime stamp of the most recent ad→content transition
+     *  (window for stuck-after-ad recovery). */
+    private var adJustEndedAt = 0L
+
+    /** Master switch for the ad assist (mute + official-skip click +
+     *  resume). Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
+    private var adAssistEnabled = true
+
     var mediaPlaying: Boolean = false
         private set
+
+    private fun handlePollResult(state: String) {
+        val currentUrl = url ?: ""
+        val lower = currentUrl.lowercase(Locale.US)
+        val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
+
+        when (state) {
+            "ad" -> {
+                setAdActive(true)
+                setMediaPlaying(true)
+                if (adAssistEnabled) runAdAssist()
+            }
+            else -> {
+                if (adActive) {
+                    // Ad → content transition: unmute + resume the main
+                    // track, and open the stuck-recovery window.
+                    adJustEndedAt = android.os.SystemClock.elapsedRealtime()
+                    setAdActive(false)
+                    runResumeAfterAd()
+                }
+                when (state) {
+                    "nearend" -> {
+                        // Early auto-advance: YouTube pages ONLY, and the
+                        // JS only reports near-end while actually playing
+                        // (never while the user paused).
+                        if (isYouTube && !nearEndReported) {
+                            nearEndReported = true
+                            Log.d(TAG, "near-end auto-advance fired")
+                            events.invokeMethod("videoEnded", null)
+                        }
+                        setMediaPlaying(true)
+                    }
+                    "ended" -> {
+                        // Real end (fallback for videos with unknown
+                        // duration). Never fired while an in-stream ad is
+                        // showing — the ad's own video-end is not a track
+                        // end (it would wrongly skip the queue).
+                        if (isYouTube && !adActive && !endedReported) {
+                            endedReported = true
+                            Log.d(TAG, "video.ended fired")
+                            events.invokeMethod("videoEnded", null)
+                        }
+                        setMediaPlaying(false)
+                    }
+                    "playing" -> setMediaPlaying(true)
+                    "paused" -> {
+                        // Stuck-after-ad recovery: within a short window
+                        // after an ad ends, resume the main content instead
+                        // of leaving the player paused. Outside the window
+                        // a pause is the USER's choice — never fight it.
+                        val sinceAd = if (adJustEndedAt == 0L) Long.MAX_VALUE
+                        else android.os.SystemClock.elapsedRealtime() - adJustEndedAt
+                        if (sinceAd in 0..6000) {
+                            runResumeAfterAd()
+                        } else {
+                            setMediaPlaying(false)
+                        }
+                    }
+                    else -> Unit // 'none' / 'unknown' — keep current state
+                }
+            }
+        }
+    }
+
+    private fun setAdActive(value: Boolean) {
+        if (adActive == value) return
+        adActive = value
+        Log.d(TAG, if (value) "in-stream ad started" else "in-stream ad ended")
+        events.invokeMethod("adState", value)
+    }
+
+    /**
+     * YouTube AD ASSIST (owner spec) — uses ONLY the controls the official
+     * YouTube player itself exposes:
+     *
+     *   1. While an in-stream ad plays, the ad is muted (the app's music
+     *      must not blast ad audio between songs).
+     *   2. When YouTube shows its own "Skip" button, it is clicked — the
+     *      same action a user performs. Unskippable ads are NEVER
+     *      interfered with: they play (muted) in full.
+     *   3. Nothing is blocked, hidden, resized or sped up. No ad-network
+     *      interception, no unofficial APIs, no stream access.
+     *
+     * Gated by `enable_youtube_ad_assist` (remote flag, default ON).
+     */
+    private fun runAdAssist() {
+        evaluateJavascript(YT_AD_ASSIST_JS) { result ->
+            Log.d(TAG, "ad assist: ${cleanJsResult(result)}")
+        }
+    }
+
+    /**
+     * After an ad ends: unmute the main track, press play if the player is
+     * paused (and click YouTube's own mute/play controls only when they
+     * advertise the state we need). The main music track is ALWAYS unmuted.
+     */
+    private fun runResumeAfterAd() {
+        evaluateJavascript(YT_RESUME_JS) { result ->
+            Log.d(TAG, "post-ad resume: ${cleanJsResult(result)}")
+        }
+    }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -365,7 +579,16 @@ private class VShotsBackgroundMediaWebView(
         val host = Uri.parse(url).host?.lowercase(Locale.US) ?: return
         if (isDeniedJioHost(host)) return
         endedReported = false
+        nearEndReported = false
+        adActive = false
+        adJustEndedAt = 0L
         loadUrl(url)
+    }
+
+    /** Toggles the YouTube ad assist (remote flag from Dart). */
+    fun setAdAssist(enabled: Boolean) {
+        adAssistEnabled = enabled
+        Log.d(TAG, "ad assist ${if (enabled) "enabled" else "disabled"}")
     }
 
     /** Applies the compiled blocker configuration from Dart. Cheap sets only —
@@ -387,6 +610,9 @@ private class VShotsBackgroundMediaWebView(
 
     fun reloadCurrent() {
         endedReported = false
+        nearEndReported = false
+        adActive = false
+        adJustEndedAt = 0L
         reload()
     }
 
@@ -599,6 +825,10 @@ private class VShotsBrowserPlatformView(
                         // A blocker-config error must never take the browser down.
                         result.success(null)
                     }
+                }
+                "setAdAssist" -> {
+                    webView.setAdAssist((call.arguments as? Boolean) ?: true)
+                    result.success(null)
                 }
                 "dispose" -> {
                     webView.disposeMedia()

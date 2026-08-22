@@ -29,6 +29,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool? _pagePlaying;
+  bool _adActive = false;
 
   /// When true, the sheet mounts already expanded (explicit taps from Home /
   /// Search / Library open the full player). Discovery autoplay stays
@@ -84,6 +85,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _isLoading = true;
     _error = null;
     _pagePlaying = null;
+    _adActive = false;
     debugPrint('[DiscoveryBrowser] OPEN videoId=${track['id']} url=$url');
     notifyListeners();
   }
@@ -96,6 +98,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _isLoading = false;
     _error = null;
     _pagePlaying = null;
+    _adActive = false;
     _track = null;
     notifyListeners();
   }
@@ -138,6 +141,19 @@ class DiscoveryBrowserController extends ChangeNotifier {
   void setPagePlaying(bool value) {
     if (_pagePlaying == value) return;
     _pagePlaying = value;
+    notifyListeners();
+  }
+
+  /// True while the official YouTube player is running an in-stream ad.
+  /// Set from the native WebView's `adState` event; drives the small "Ad"
+  /// badge in the player UI. The mute/skip/resume handling itself lives in
+  /// the native layer.
+  bool get adActive => _adActive;
+
+  void setAdActive(bool value) {
+    if (_adActive == value) return;
+    _adActive = value;
+    debugPrint('[DiscoveryBrowser] adActive=$value');
     notifyListeners();
   }
 

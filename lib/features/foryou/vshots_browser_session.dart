@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/browser/vshots_content_blocker.dart';
+import '../../core/remote_config/remote_feature_flags.dart';
 import '../../shared/utils/youtube_url.dart';
 
 /// Pure host policy — YouTube/Google + official JioSaavn webpage hosts.
@@ -60,6 +61,7 @@ class VShotsBrowserSession {
     required this.onPageFinished,
     required this.onError,
     this.onVideoEnded,
+    this.onAdState,
     VShotsContentBlocker? contentBlocker,
   }) : contentBlocker = contentBlocker ?? VShotsContentBlocker();
 
@@ -68,10 +70,17 @@ class VShotsBrowserSession {
   final void Function(String message) onError;
 
   /// Fired by the native WebView when the current video's media reaches its
-  /// natural end (real `video.ended` from the page — not a fake timer).
-  /// Carries the ended video's id (extracted from the loaded URL) so the
-  /// manager can de-duplicate completion events idempotently.
+  /// natural end OR enters its last ~1.5 s (early auto-advance — the native
+  /// layer fires the same event slightly early so the next queued track
+  /// starts before the current one finishes; owner spec). Carries the ended
+  /// video's id (extracted from the loaded URL) so the manager can
+  /// de-duplicate completion events idempotently.
   final void Function(String videoId)? onVideoEnded;
+
+  /// Fired when the YouTube page starts/ends an in-stream ad (true=ad
+  /// playing). Used for the UI badge + logging; the mute/skip/resume
+  /// handling itself lives in the native WebView.
+  final void Function(bool adActive)? onAdState;
 
   /// The general-purpose content blocker for this browser session. Owned here
   /// (NOT by the playback manager) — independent from playback.
@@ -195,10 +204,31 @@ class VShotsBrowserSession {
     _channel = channel;
     channel.setMethodCallHandler(_handleNativeEvent);
     unawaited(_pushContentBlocker(channel));
+    unawaited(_pushAdAssist(channel));
     final pending = _pendingUrl;
     if (pending != null) {
       unawaited(load(pending));
     }
+  }
+
+  /// Pushes the YouTube ad-assist switch (remote flag) to the native WebView.
+  Future<void> _pushAdAssist(MethodChannel channel) async {
+    try {
+      await channel.invokeMethod<void>(
+        'setAdAssist',
+        RemoteFeatureFlags.instance.enableYoutubeAdAssist,
+      );
+    } catch (_) {
+      // Older native view / not ready — non-fatal.
+    }
+  }
+
+  /// Applies the ad-assist flag to the LIVE session (next poll ticks)
+  /// without recreating the WebView or interrupting playback.
+  Future<void> applyAdAssist() async {
+    final channel = _channel;
+    if (channel == null) return;
+    await _pushAdAssist(channel);
   }
 
   Future<void> _handleNativeEvent(MethodCall call) async {
@@ -216,6 +246,9 @@ class VShotsBrowserSession {
       case 'videoEnded':
         final endedId = extractYoutubeVideoId(_lastUrl ?? '') ?? '';
         onVideoEnded?.call(endedId);
+        break;
+      case 'adState':
+        onAdState?.call(call.arguments == true);
         break;
       case 'blocked':
         contentBlocker.recordBlocked(call.arguments?.toString() ?? '');
@@ -252,6 +285,11 @@ class VShotsBrowserSession {
       channel.setMethodCallHandler(null);
     }
   }
+
+  /// Test hook: dispatch a native event without a real platform channel.
+  @visibleForTesting
+  Future<void> debugHandleNativeEvent(MethodCall call) =>
+      _handleNativeEvent(call);
 }
 
 String browserWatchUrl(String videoId) => youtubeWatchUrl(videoId);

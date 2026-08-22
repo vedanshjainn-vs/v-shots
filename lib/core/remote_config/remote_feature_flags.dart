@@ -42,6 +42,7 @@ class RemoteFeatureFlags {
     'enable_jiosaavn_search_fallback': false,
     'enable_jiosaavn_exact_urls': true,
     'enable_youtube_web_playback': true,
+    'enable_youtube_ad_assist': true,
     'enable_discovery_remote_categories': false,
     'enable_social': false,
   };
@@ -77,6 +78,12 @@ class RemoteFeatureFlags {
 
   bool get enableYouTubeWebPlayback =>
       value('enable_youtube_web_playback', defaultValue: true);
+
+  /// YouTube ad assist (mute ad + click the player's own Skip button +
+  /// auto-resume the main track). Uses ONLY the controls the official
+  /// YouTube player exposes — never blocks/hides/speeds up anything.
+  bool get enableYoutubeAdAssist =>
+      value('enable_youtube_ad_assist', defaultValue: true);
 
   bool get enableDiscoveryRemoteCategories =>
       value('enable_discovery_remote_categories', defaultValue: false);
