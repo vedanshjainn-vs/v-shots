@@ -305,4 +305,27 @@ class LocalLibrary {
     recentSearches.value = [];
     await _writeList(_kRecentSearches, []);
   }
+
+  /// Wipes all locally persisted library data (account deletion / sign-out
+  /// cleanup). Does not throw.
+  Future<void> clearAllUserData() async {
+    likedSongs.value = [];
+    recentlyPlayed.value = [];
+    playlists.value = [];
+    downloadedTracks.value = [];
+    recentSearches.value = [];
+    artistPlayCounts = {};
+    _shownSongIds.clear();
+    try {
+      await _writeList(_kLikedSongs, []);
+      await _writeList(_kRecentlyPlayed, []);
+      await _writeList(_kPlaylists, []);
+      await _writeList(_kDownloadedTracks, []);
+      await _writeList(_kRecentSearches, []);
+      await _prefs?.remove(_kArtistPlayCounts);
+      await _prefs?.remove(_kShownSongs);
+    } catch (e) {
+      debugPrint('[LocalLibrary] clearAllUserData failed: $e');
+    }
+  }
 }

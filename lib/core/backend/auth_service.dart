@@ -203,5 +203,36 @@ class AuthService {
     }
   }
 
+  /// Deletes the signed-in Auth user via the server-side
+  /// `delete_own_account` RPC (SECURITY DEFINER, auth.uid() only).
+  /// Never uses a service-role key in the client.
+  Future<AuthResult> deleteAccount() async {
+    if (!SupabaseService.isAvailable) {
+      return const AuthResult.failure(
+        'Account deletion is unavailable right now. Please try again later.',
+      );
+    }
+    final user = SupabaseService.currentUser;
+    if (user == null) {
+      return const AuthResult.failure(
+        'You need to be signed in to delete your account.',
+      );
+    }
+    try {
+      await SupabaseService.client.rpc<void>('delete_own_account');
+    } on AuthException catch (e) {
+      debugPrint(
+        '[AuthService] delete_own_account AuthException: ${e.message}',
+      );
+      return AuthResult.failure('Could not delete account: ${e.message}');
+    } catch (e) {
+      debugPrint('[AuthService] delete_own_account failed: $e');
+      return const AuthResult.failure(
+        'Could not delete account. Please try again.',
+      );
+    }
+    return const AuthResult.success(null);
+  }
+
   bool get isSignedIn => SupabaseService.currentUser != null;
 }

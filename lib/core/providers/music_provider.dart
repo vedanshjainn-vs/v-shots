@@ -15,6 +15,8 @@ enum ProviderCapability {
   getTrending,
   getRecommendations,
   getRelated,
+  getPlaylist,
+  getChannel,
 }
 
 /// Abstract interface every music/content provider must implement.
@@ -60,7 +62,34 @@ abstract class MusicProvider {
     int? durationSeconds,
   });
 
-  Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15});
+  Future<ProviderResult<List<ProviderTrack>>> getTrending({
+    int limit = 15,
+    String region = '',
+  });
+
+  /// Tracks of a YouTube playlist (playlist order; unavailable entries
+  /// skipped). Providers with native playlist browsing declare
+  /// [ProviderCapability.getPlaylist]; the default fails and is never routed
+  /// to.
+  Future<ProviderResult<List<ProviderTrack>>> getPlaylistTracks(
+    String playlistId, {
+    int limit = 30,
+  }) async {
+    return ProviderResult.failure(
+      'getPlaylistTracks not supported by this provider',
+    );
+  }
+
+  /// Latest tracks of a YouTube channel. Providers with native channel
+  /// browsing declare [ProviderCapability.getChannel]; default fails.
+  Future<ProviderResult<List<ProviderTrack>>> getChannelTracks(
+    String channelId, {
+    int limit = 30,
+  }) async {
+    return ProviderResult.failure(
+      'getChannelTracks not supported by this provider',
+    );
+  }
 
   Future<ProviderResult<List<ProviderTrack>>> getRecommendations({
     required Set<String> excludeIds,

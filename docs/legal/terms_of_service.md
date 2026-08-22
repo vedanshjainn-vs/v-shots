@@ -2,40 +2,37 @@
 
 **Last Updated: August 2026**
 
-Welcome to V Shots! These Terms of Service ("Terms") govern your use of the V Shots application (`com.vshots.live`) and related services.
+Welcome to V Shots. These Terms of Service ("Terms") govern your use of the V Shots application (`com.vshots.live`).
 
 ## 1. Acceptance of Terms
 
-By downloading, installing, or using V Shots, you agree to comply with and be bound by these Terms and our Privacy Policy. If you do not agree to these Terms, please do not use the app.
+By downloading, installing, or using V Shots, you agree to these Terms and our Privacy Policy.
 
 ## 2. YouTube API Services & Third-Party Content
 
-V Shots utilizes **YouTube API Services** to enable discovery, search, and official playback of YouTube video content.
+V Shots uses YouTube API Services and YouTube's public web interfaces for discovery and metadata.
 
+- Playback of YouTube content is provided by loading **youtube.com** in a **native Android WebView**, not the YouTube IFrame Player API.
 - Your use of YouTube features is subject to the **YouTube Terms of Service**: [https://www.youtube.com/t/terms](https://www.youtube.com/t/terms).
-- Playback of YouTube content is powered exclusively through the **Official YouTube IFrame Player**.
-- You agree not to attempt to circumvent, disable, or tamper with the official YouTube player, advertisements, or playback restrictions.
-- V Shots is an independent application and is **not affiliated with, associated with, or endorsed by YouTube or Google LLC**.
+- You agree not to attempt to extract YouTube streams, download YouTube media through V Shots, or circumvent YouTube playback or advertising restrictions. V Shots does not skip or hide YouTube ads.
+- V Shots is independent and is **not affiliated with, associated with, or endorsed by YouTube or Google LLC**.
 
-## 3. User-Generated Content (UGC) & Creator Uploads
+When a JioSaavn permalink is provided, V Shots may open the official jiosaavn.com webpage in the same WebView. We do not extract JioSaavn media files.
 
-- **Creator Gating**: Uploading original music and shots is available to authorized creators verified through V Shots.
-- **Rights & Ownership**: When uploading content to V Shots, you represent and warrant that you own or hold all necessary licenses, rights, consents, and permissions to distribute your content.
-- **Prohibited Content**: You may not upload copyright-infringing, defamatory, violent, or unlawful material.
-- **Takedown & Moderation**: V Shots reserves the right to remove any content that violates intellectual property rights or community guidelines.
+## 3. User-Generated Content
 
-## 4. User Accounts & Security
+Creator uploads, comments, and social follow features are limited. Do not upload content you do not have rights to.
 
-- You are responsible for safeguarding your account credentials.
-- V Shots utilizes Supabase for secure identity authentication and Row Level Security (RLS) protection.
+## 4. User Accounts
 
-## 5. Disclaimers & Limitation of Liability
+- You are responsible for your credentials.
+- You may delete your account from Settings. Deletion removes your Auth user and associated cloud profile data and clears local library data on this device.
 
-- The service is provided on an "AS IS" and "AS AVAILABLE" basis without warranties of any kind.
-- V Shots shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of the application.
+## 5. Disclaimers
 
-## 6. Governing Law & Contact
+The service is provided "AS IS". V Shots is not liable for third-party sites (YouTube, JioSaavn) being unavailable, requiring login, or showing their own ads.
 
-These Terms are governed by applicable laws. For questions or support, contact:
+## 6. Contact
+
 - **Email**: support@vshots.live
 - **Repository**: [https://github.com/vedanshjainn-vs/v-shots](https://github.com/vedanshjainn-vs/v-shots)

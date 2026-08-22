@@ -118,6 +118,15 @@ class PaginatedSearchResult {
 /// Official YouTube Data API v3 HTTP Client with built-in resilience,
 /// rate-limiting protection, and rich categorized music fallback catalog.
 class YouTubeDataApiClient {
+  /// Android app-restriction headers for Google API keys restricted to this
+  /// package (device logcat previously showed API_KEY_ANDROID_APP_BLOCKED
+  /// because these headers were missing). Unrestricted keys ignore them.
+  static const Map<String, String> _androidHeaders = {
+    'X-Android-Package': 'com.vshots.live',
+    'X-Android-Cert':
+        'A5:26:1D:03:BE:88:F5:98:BC:13:70:01:2B:9B:EA:1B:DC:11:2D:0E',
+  };
+
   YouTubeDataApiClient({http.Client? httpClient, String? apiKey})
       : _http = httpClient ?? http.Client(),
         _customApiKey = apiKey;
@@ -175,7 +184,9 @@ class YouTubeDataApiClient {
         },
       );
 
-      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -245,7 +256,9 @@ class YouTubeDataApiClient {
           'key': key,
         },
       );
-      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return null;
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
@@ -303,7 +316,9 @@ class YouTubeDataApiClient {
       final uri = Uri.parse(
         '$_baseUrl/search',
       ).replace(queryParameters: params);
-      final response = await _http.get(uri).timeout(const Duration(seconds: 8));
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) {
         debugPrint(
           '[YouTubeDataApiClient] Paginated search HTTP ${response.statusCode}',
@@ -359,6 +374,113 @@ class YouTubeDataApiClient {
     }
   }
 
+  /// Real regional trending via the OFFICIAL Data API mechanism:
+  /// `videos.list` with `chart=mostPopular` (+music category). Region is
+  /// honored through `regionCode` (IN / US / GB …). Returns [] on any
+  /// failure — the provider applies its own fallback.
+  Future<List<YouTubeVideoItem>> getMostPopular({
+    String region = 'IN',
+    int maxResults = 20,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty) return [];
+    try {
+      final uri = Uri.parse('$_baseUrl/videos').replace(
+        queryParameters: {
+          'part': 'snippet,contentDetails',
+          'chart': 'mostPopular',
+          'videoCategoryId': '10',
+          'regionCode':
+              region.trim().isEmpty ? 'IN' : region.trim().toUpperCase(),
+          'maxResults': maxResults.clamp(1, 50).toString(),
+          'key': key,
+        },
+      );
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[YouTubeDataApiClient] mostPopular HTTP ${response.statusCode}',
+        );
+        return [];
+      }
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubeVideoItem.fromJson)
+          .toList();
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] mostPopular error: $e');
+      return [];
+    }
+  }
+
+  /// Resolves a channel handle ('@name') to its UC… id via the official
+  /// `channels.list forHandle` mechanism. Null when unresolved/blocked.
+  Future<String?> resolveHandleToChannelId(String handle) async {
+    final key = apiKey;
+    if (key.isEmpty) return null;
+    final h =
+        handle.trim().startsWith('@') ? handle.trim() : '@${handle.trim()}';
+    try {
+      final uri = Uri.parse('$_baseUrl/channels').replace(
+        queryParameters: {
+          'part': 'id',
+          'forHandle': h,
+          'key': key,
+        },
+      );
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      if (items.isEmpty) return null;
+      return (items.first as Map<String, dynamic>)['id'] as String?;
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] handle resolution error: $e');
+      return null;
+    }
+  }
+
+  /// Latest uploads of a channel via the official search endpoint
+  /// (channelId filter, date order).
+  Future<List<YouTubeVideoItem>> searchChannelVideos(
+    String channelId, {
+    int maxResults = 20,
+  }) async {
+    final key = apiKey;
+    if (key.isEmpty) return [];
+    try {
+      final uri = Uri.parse('$_baseUrl/search').replace(
+        queryParameters: {
+          'part': 'snippet',
+          'type': 'video',
+          'channelId': channelId,
+          'order': 'date',
+          'maxResults': maxResults.clamp(1, 50).toString(),
+          'key': key,
+        },
+      );
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final items = (data['items'] as List?) ?? [];
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(YouTubeVideoItem.fromJson)
+          .toList();
+    } catch (e) {
+      debugPrint('[YouTubeDataApiClient] channel videos error: $e');
+      return [];
+    }
+  }
+
   Future<YouTubeVideoItem?> getVideoDetails(String videoId) async {
     final key = apiKey;
     if (key.isEmpty) {
@@ -374,7 +496,9 @@ class YouTubeDataApiClient {
         },
       );
 
-      final response = await _http.get(uri).timeout(const Duration(seconds: 6));
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -407,7 +531,9 @@ class YouTubeDataApiClient {
         },
       );
 
-      final response = await _http.get(uri).timeout(const Duration(seconds: 6));
+      final response = await _http
+          .get(uri, headers: _androidHeaders)
+          .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;

@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../core/motion/motion.dart';
+import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart'
@@ -30,6 +31,7 @@ import '../../shared/widgets/app_avatar.dart';
 import '../../shared/widgets/app_image.dart';
 import '../profile/artist_details_screen.dart';
 import 'home_feed_service.dart';
+import 'playlist_page_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,8 +51,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);
+    // Cold start: the remote CMS fetch may complete AFTER the first build.
+    // The revision notifier makes Home rebuild from freshly fetched rows
+    // automatically (no manual pull-to-refresh needed).
+    RemoteConfigService.instance.revision.addListener(_onRemoteConfigApplied);
     _shelves = homeFeedService.buildShelfDescriptors();
+    _scrollController.addListener(_onScrollForLazyLoad);
     unawaited(_load(forceRefresh: false));
+  }
+
+  /// Lazy shelf loading: with 50+ CMS shelves the initial Home load fetches
+  /// only the first [_initialShelfCount] shelves; the rest load in batches
+  /// as the user scrolls near the bottom (fast first paint + no wasted
+  /// network for shelves nobody has reached yet).
+  static const int _initialShelfCount = 10;
+  static const int _lazyBatchSize = 8;
+  int _maxLoadedShelves = _initialShelfCount;
+  bool _loadingMoreShelves = false;
+  final ScrollController _scrollController = ScrollController();
+
+  void _onScrollForLazyLoad() {
+    if (!_scrollController.hasClients) return;
+    if (_scrollController.position.extentAfter > 1600) return;
+    if (_loadingMoreShelves || _maxLoadedShelves >= _shelves.length) return;
+    final end = (_maxLoadedShelves + _lazyBatchSize).clamp(0, _shelves.length);
+    _loadingMoreShelves = true;
+    unawaited(
+      homeFeedService
+          .loadShelfRange(_shelves, _maxLoadedShelves, end,
+              onUpdate: _onShelfUpdate)
+          .whenComplete(() {
+        _maxLoadedShelves = end;
+        _loadingMoreShelves = false;
+        _onShelfUpdate();
+      }),
+    );
+  }
+
+  /// Coalesced repaint: dozens of shelves each fire several onUpdate calls
+  /// while hydrating — instead of rebuilding the whole scroll view ~150×,
+  /// all updates inside one frame collapse into ONE setState. Also flips
+  /// the initial skeleton off the moment the first shelf resolves, so Home
+  /// reveals content PROGRESSIVELY instead of waiting for everything.
+  bool _updateScheduled = false;
+
+  void _onShelfUpdate() {
+    if (!mounted || _updateScheduled) return;
+    _updateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateScheduled = false;
+      if (!mounted) return;
+      setState(() {
+        if (_initialLoading) _initialLoading = false;
+      });
+    });
+  }
+
+  bool _reloading = false;
+
+  void _onRemoteConfigApplied() {
+    if (!mounted || _reloading) return;
+    _reloading = true;
+    unawaited(
+      _load(forceRefresh: false).whenComplete(() => _reloading = false),
+    );
   }
 
   @override
@@ -70,6 +134,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);
+    RemoteConfigService.instance.revision
+        .removeListener(_onRemoteConfigApplied);
+    _scrollController.removeListener(_onScrollForLazyLoad);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -91,14 +159,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _load({required bool forceRefresh}) async {
+    final sw = Stopwatch()..start();
+    if (forceRefresh) {
+      await RemoteConfigService.instance.refresh();
+    }
+    _shelves = homeFeedService.buildShelfDescriptors();
+    if (_maxLoadedShelves > _shelves.length) {
+      _maxLoadedShelves = _shelves.length;
+    }
+    debugPrint(
+      '[Home] shelves built in ${sw.elapsedMilliseconds}ms '
+      '(${_shelves.length} shelves, CMS=${_shelves.any((s) => s.sourceType != null && s.sourceType!.isNotEmpty) ? 'remote' : 'default'})',
+    );
     await homeFeedService.loadShelves(
       _shelves,
       forceRefresh: forceRefresh,
-      onUpdate: () {
-        if (mounted) setState(() {});
-      },
+      maxShelves: _maxLoadedShelves,
+      // Progressive reveal: each shelf paints as soon as IT is ready
+      // (onUpdate per shelf, coalesced to one frame) — no more waiting
+      // for the entire feed before the first row appears.
+      onUpdate: _onShelfUpdate,
     );
-    if (mounted) setState(() => _initialLoading = false);
+    if (mounted) {
+      setState(() => _initialLoading = false);
+    }
+    debugPrint('[Home] hydrated in ${sw.elapsedMilliseconds}ms');
   }
 
   @override
@@ -112,15 +197,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           backgroundColor: AppColors.surface2,
           onRefresh: () => _load(forceRefresh: true),
           child: CustomScrollView(
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               _buildHeroHeader(),
               _buildContinueListeningHero(),
               _buildMoodChips(),
+              _buildSpotlightSliver(),
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
               else
-                ..._shelves.map(_buildShelf),
+                // Spotlight shelves render as the hero carousel above — skip
+                // them here so content never appears twice.
+                ..._shelves
+                    .where((s) => !_spotlightIds().contains(s.id))
+                    .map(_buildShelf),
               _buildFooter(),
             ],
           ),
@@ -459,6 +550,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case HomeShelfStatus.error:
         return _buildErrorSliver(shelf);
       case HomeShelfStatus.loaded:
+        if (shelf.sourceType == 'jiosaavn_playlist') {
+          return _buildJioSaavnSliver(shelf);
+        }
         return shelf.kind == HomeShelfKind.artistsForYou
             ? _buildArtistsSliver(shelf)
             : _buildLoadedSliver(shelf);
@@ -564,14 +658,198 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  /// Daily Spotlight — auto-rotating premium hero carousel. EVERY section
+  /// flagged `is_spotlight` in the Admin panel becomes a card here (e.g.
+  /// Top 100 Songs India + Top Weekly Hindi), shown in admin sort order.
+  /// Cards auto-slide; tapping a card opens its full playlist page (or the
+  /// official JioSaavn page for JioSaavn playlists). Hidden automatically
+  /// when no spotlight section is loaded/visible.
+  bool _isSpotlightShelf(HomeShelf s) {
+    if (s.isSpotlight) return true;
+    // Legacy cached CMS (pre-00015 rows) carries no flag: when NO flagged
+    // row exists at all, keep the Top 100 hero working and exclude it from
+    // the regular shelf list.
+    final anyFlagged = _shelves.any((x) => x.isSpotlight);
+    return !anyFlagged && s.id == 'top100_india';
+  }
+
+  Set<String> _spotlightIds() =>
+      _shelves.where(_isSpotlightShelf).map((s) => s.id).toSet();
+
+  List<HomeShelf> _spotlightShelves() => _shelves
+      .where(
+        (s) =>
+            _isSpotlightShelf(s) &&
+            s.status == HomeShelfStatus.loaded &&
+            s.tracks.isNotEmpty,
+      )
+      .toList();
+
+  Widget _buildSpotlightSliver() {
+    final spots = _spotlightShelves();
+    if (spots.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
+        child: _SpotlightCarousel(
+          shelves: spots,
+          onOpen: (shelf) {
+            // JioSaavn playlist → official page in the WebView; YouTube
+            // playlist → full in-app playlist page.
+            if (shelf.sourceType == 'jiosaavn_playlist') {
+              if (shelf.tracks.isNotEmpty) {
+                playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+              }
+              return;
+            }
+            Navigator.push(
+              context,
+              AppPageRoute<void>(
+                builder: (_) => PlaylistPageScreen(
+                  sectionId: shelf.id,
+                  title: shelf.title,
+                  subtitle: shelf.subtitle,
+                  sourceValue: shelf.sourceValue ?? '',
+                  initialTracks: shelf.tracks,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// JioSaavn playlist — ONE premium full-width card (compliant page-open
+  /// design). The official JioSaavn playlist PAGE opens in the WebView with
+  /// its own player, covers and queue — no unofficial API, no scraping, no
+  /// manual song entry.
+  Widget _buildJioSaavnSliver(HomeShelf shelf) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+        child: GestureDetector(
+          onTap: () {
+            if (shelf.tracks.isNotEmpty) {
+              playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0F766E), Color(0xFF10B981)],
+              ),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.library_music_rounded,
+                      color: Colors.white, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'JIOSAAVN PLAYLIST',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        shelf.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 16.5,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (shelf.subtitle.isNotEmpty)
+                        Text(
+                          shelf.subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow_rounded,
+                          size: 18, color: Color(0xFF0F766E)),
+                      SizedBox(width: 3),
+                      Text(
+                        'Open',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F766E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLoadedSliver(HomeShelf shelf) {
     return SliverToBoxAdapter(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 22, 20, 4),
+            padding: const EdgeInsets.fromLTRB(20, 22, 16, 4),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
@@ -617,6 +895,51 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+                // Inline header actions — right-aligned with the title
+                // (fixes the mis-placed "View all" below the header).
+                if (shelf.sourceType == 'youtube_playlist')
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.push(
+                      context,
+                      AppPageRoute<void>(
+                        builder: (_) => PlaylistPageScreen(
+                          sectionId: shelf.id,
+                          title: shelf.title,
+                          subtitle: shelf.subtitle,
+                          sourceValue: shelf.sourceValue ?? '',
+                          initialTracks: shelf.tracks,
+                        ),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'View all',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.accent,
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 18, color: AppColors.accent),
+                      ],
+                    ),
+                  )
+                else if (shelf.tracks.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Shuffle play',
+                    onPressed: () {
+                      final shuffled =
+                          List<Map<String, dynamic>>.from(shelf.tracks)
+                            ..shuffle();
+                      playTrack(context, shuffled.first, shuffled, 0);
+                    },
+                    icon: const Icon(Icons.shuffle_rounded,
+                        size: 20, color: AppColors.textMuted),
+                  ),
               ],
             ),
           ),
@@ -632,18 +955,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     notification.metrics.maxScrollExtent - 200) {
                   homeFeedService.loadMoreShelf(
                     shelf,
-                    onUpdate: () {
-                      if (mounted) setState(() {});
-                    },
+                    onUpdate: _onShelfUpdate,
                   );
                 }
                 return false;
               },
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
+                // ignore: deprecated_member_use
+                cacheExtent: 500,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: shelf.tracks.length,
-                itemBuilder: (context, i) => _buildTrackCard(shelf.tracks, i),
+                itemBuilder: (context, i) => _buildTrackCard(shelf, i),
               ),
             ),
           ),
@@ -652,11 +975,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildTrackCard(List<Map<String, dynamic>> tracks, int i) {
+  Widget _buildTrackCard(HomeShelf shelf, int i) {
+    final tracks = shelf.tracks;
     final track = tracks[i];
     return StaggeredEntrance(
       index: i,
       child: PressableScale(
+        // Tapping a SONG plays that song immediately with the shelf as its
+        // auto-advance queue. The FULL list opens only via "View all" in the
+        // shelf header (owner request: songs play, View all opens the list).
         onTap: () => playTrack(context, track, tracks, i),
         child: RepaintBoundary(
           child: Container(
@@ -1053,6 +1380,306 @@ class _MoodGenreScreenState extends State<MoodGenreScreen> {
                     );
                   },
                 ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Daily Spotlight carousel — auto-rotating premium hero cards
+// ═════════════════════════════════════════════════════════════════════════════
+// One card per `is_spotlight` section (admin-chosen, admin sort order).
+// Auto-slides every few seconds; pauses while the user swipes; dots show
+// position. Tapping a card hands the section back to the caller (open
+// playlist page / official JioSaavn page).
+// ═════════════════════════════════════════════════════════════════════════════
+
+class _SpotlightCarousel extends StatefulWidget {
+  const _SpotlightCarousel({required this.shelves, required this.onOpen});
+
+  final List<HomeShelf> shelves;
+  final ValueChanged<HomeShelf> onOpen;
+
+  @override
+  State<_SpotlightCarousel> createState() => _SpotlightCarouselState();
+}
+
+class _SpotlightCarouselState extends State<_SpotlightCarousel> {
+  static const Duration _autoAdvanceEvery = Duration(seconds: 5);
+
+  /// One gradient per card position (cycles) — each spotlight card gets its
+  /// own identity instead of repeating the same purple banner.
+  static const List<List<Color>> _gradients = [
+    [Color(0xFF7C3AED), Color(0xFFEC4899), Color(0xFFF59E0B)],
+    [Color(0xFF0EA5E9), Color(0xFF6366F1), Color(0xFF8B5CF6)],
+    [Color(0xFFF59E0B), Color(0xFFEF4444), Color(0xFFEC4899)],
+    [Color(0xFF10B981), Color(0xFF0EA5E9), Color(0xFF6366F1)],
+    [Color(0xFFEC4899), Color(0xFF8B5CF6), Color(0xFF6366F1)],
+  ];
+
+  late final PageController _pageController = PageController();
+  Timer? _timer;
+  int _page = 0;
+
+  int get _count => widget.shelves.length;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_count > 1) _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(_autoAdvanceEvery, (_) {
+      if (!mounted || !_pageController.hasClients) return;
+      final next = (_page + 1) % _count;
+      _pageController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  void dispose() {
+    _stopTimer();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 158,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              // Pause auto-slide while the user is dragging (never fight the
+              // user's finger); resume when the swipe ends.
+              if (n is ScrollStartNotification && n.dragDetails != null) {
+                _stopTimer();
+              } else if (n is ScrollEndNotification) {
+                if (_count > 1) _startTimer();
+              }
+              return false;
+            },
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: _count,
+              onPageChanged: (p) => setState(() => _page = p),
+              itemBuilder: (context, i) => _spotCard(widget.shelves[i], i),
+            ),
+          ),
+        ),
+        if (_count > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_count, (i) {
+              final active = i == _page;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: active ? AppColors.primaryLight : AppColors.border,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _spotCard(HomeShelf shelf, int i) {
+    final colors = _gradients[i % _gradients.length];
+    final artwork = shelf.tracks.isNotEmpty
+        ? shelf.tracks.first['artwork'] as String?
+        : null;
+    final isJioSaavn = shelf.sourceType == 'jiosaavn_playlist';
+    return GestureDetector(
+      onTap: () => widget.onOpen(shelf),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: colors,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: colors.first.withValues(alpha: 0.35),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // First track's cover art as a decorative right-side hero.
+            if (artwork != null && artwork.isNotEmpty)
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: SizedBox(
+                    width: 170,
+                    height: 170,
+                    child: Transform.translate(
+                      offset: const Offset(34, 0),
+                      child: Opacity(
+                        opacity: 0.6,
+                        child: AppImage(
+                          artwork,
+                          fit: BoxFit.cover,
+                          errorIconColor: Colors.white24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            // Left→right fade keeps the text readable over the art.
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      colors.first.withValues(alpha: 0.98),
+                      colors.first.withValues(alpha: 0.75),
+                      colors.last.withValues(alpha: 0.40),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          '✨ DAILY SPOTLIGHT',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (isJioSaavn)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'JIOSAAVN',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        shelf.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        shelf.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.play_arrow_rounded,
+                              size: 18,
+                              color: colors.first,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              isJioSaavn ? 'Open playlist' : 'Play the chart',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: colors.first,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

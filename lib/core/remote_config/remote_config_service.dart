@@ -2,26 +2,11 @@
 // V Shots — Remote Config Service (Supabase-backed)
 //
 // Lets Home layout and the Discovery category list be changed WITHOUT an app
-// update, by reading two Supabase tables:
-//
-//   discovery_categories (Section 1 & 3):
-//       id text PK, name text, emoji text, query text, fallback_category text,
-//       sort_order int, active boolean, updated_at timestamptz
-//
-//   home_layout_config (Section 3):
-//       id text PK, section_key text, title text, section_type text,
-//       query text, sort_order int, visible boolean, max_items int,
-//       updated_at timestamptz
-//
-// Behaviour:
-//   - Reads from Supabase when available, else falls back to the compiled
-//     defaults (kDiscoveryCategories / the default Home sections).
-//   - Caches locally (SharedPreferences) with a short TTL (default 1 hour) so
-//     the app does NOT hit Supabase on every launch but still stays fresh.
-//   - A failure to reach Supabase NEVER blocks the app: it returns the cached
-//     value if present, otherwise the compiled defaults.
+// update. A failure to reach Supabase NEVER blocks the app: cached config is
+// used if present, otherwise compiled defaults.
 // ═════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -29,6 +14,35 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../backend/supabase_service.dart';
 import '../config/discovery_categories.dart';
+import 'home_cms_models.dart';
+
+/// Defaults for the Discover feed algorithm (admin-overridable via the
+/// `discover_settings` Supabase row). Percent-style weights are normalized
+/// by the engine, so any positive numbers work.
+abstract final class DiscoverSettingsDefaults {
+  static const Map<String, dynamic> value = {
+    'weights': {
+      'personal': 50,
+      'trending': 25,
+      'fresh': 15,
+      'exploration': 10,
+    },
+    'enabled': {
+      'personalization': true,
+      'trending': true,
+      'fresh': true,
+      'exploration': true,
+    },
+    'region': 'IN',
+    'explore_queries': [
+      'punjabi hit songs official audio',
+      'telugu hit songs official audio',
+      'english indie songs official audio',
+      'lofi chill beats official audio',
+      'hip hop rap official audio',
+    ],
+  };
+}
 
 class RemoteConfigService {
   RemoteConfigService._();
@@ -37,23 +51,73 @@ class RemoteConfigService {
 
   static const Duration _cacheTtl = Duration(hours: 1);
   static const _cacheKeyCategories = 'rc_discovery_categories';
+  static const _cacheKeyCategoryRows = 'rc_discovery_category_rows';
   static const _cacheKeyHome = 'rc_home_layout';
+  static const _cacheKeyItems = 'rc_home_items';
+  static const _cacheKeyFlags = 'rc_feature_flags';
   static const _cacheKeyTs = 'rc_timestamp';
+  static const _cacheKeyExpiry = 'rc_cache_expiry';
+
+  /// Honors the CMS `refresh_minutes` column: cache freshness = the smallest
+  /// refresh_minutes among published sections, clamped to [5, 1440] minutes.
+  /// Falls back to [fallback] when no section carries a usable value.
+  static Duration computeHomeCacheTtl(
+    List<Map<String, dynamic>> sections, {
+    Duration fallback = const Duration(hours: 1),
+  }) {
+    var minutes = 0;
+    for (final row in sections) {
+      final m = cmsAsInt(row['refresh_minutes'], 0);
+      if (m > 0 && (minutes == 0 || m < minutes)) minutes = m;
+    }
+    if (minutes <= 0) return fallback;
+    final clamped = minutes.clamp(5, 1440);
+    return Duration(minutes: clamped);
+  }
 
   List<DiscoveryCategory> _categories = kDiscoveryCategories;
   List<DiscoveryCategory> get categories => _categories;
 
-  /// The remote Home section layout. Each entry maps to a Home row.
+  List<Map<String, dynamic>> _categoryRows = const [];
+  List<Map<String, dynamic>> get categoryRows => _categoryRows;
+
   List<Map<String, dynamic>> _homeSections = const [];
   List<Map<String, dynamic>> get homeSections => _homeSections;
 
+  Map<String, List<Map<String, dynamic>>> _itemsBySection = const {};
+  Map<String, List<Map<String, dynamic>>> get itemsBySection => _itemsBySection;
+
+  Map<String, bool> _flags = const {};
+  Map<String, bool> get featureFlags => _flags;
+
+  /// Discover algorithm settings (remote `discover_settings` row). Weights
+  /// (personal/trending/fresh/exploration), bucket toggles, region and
+  /// taste-adjacent exploration queries. Safe defaults when the row is
+  /// missing or Supabase is unreachable.
+  Map<String, dynamic> _discoverSettings = DiscoverSettingsDefaults.value;
+  Map<String, dynamic> get discoverSettings => _discoverSettings;
+
+  /// When false, Home uses compiled default shelves even if CMS rows exist.
+  bool get enableRemoteHome => _flags['enable_remote_home'] ?? true;
+
+  /// Bumped every time a remote refresh successfully applies new config.
+  /// Screens (Home) listen to this so freshly fetched CMS rows are reflected
+  /// on a cold start without requiring a manual pull-to-refresh.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
   bool _loaded = false;
 
-  /// Loads cached config synchronously (SharedPreferences) and kicks off a
-  /// background refresh if the cache is stale. Safe to call at startup.
+  /// Loads cached config and refreshes if stale. Safe to call at startup.
+  ///
+  /// PERFORMANCE CONTRACT (Phase 17): init() NEVER awaits the network. It
+  /// decodes the last-known-good cache (fast) and schedules [refresh] in the
+  /// background — first paint is not blocked by Supabase/CMS latency. Fresh
+  /// rows are applied through the [revision] notifier, so Home rebuilds
+  /// automatically when the background refresh completes.
   Future<void> init() async {
     if (_loaded) return;
     _loaded = true;
+    final sw = Stopwatch()..start();
     try {
       final prefs = await SharedPreferences.getInstance();
       final ts = prefs.getInt(_cacheKeyTs) ?? 0;
@@ -67,10 +131,37 @@ class RemoteConfigService {
       if (homeJson != null) {
         _homeSections = _decodeHome(homeJson);
       }
+      final itemsJson = prefs.getString(_cacheKeyItems);
+      if (itemsJson != null) {
+        _itemsBySection = _decodeItems(itemsJson);
+      }
+      final flagsJson = prefs.getString(_cacheKeyFlags);
+      if (flagsJson != null) {
+        _flags = _decodeFlags(flagsJson);
+      }
+      debugPrint(
+        '[RemoteConfig] cache loaded in ${sw.elapsedMilliseconds}ms '
+        '(${_homeSections.length} sections cached)',
+      );
 
-      // Refresh if stale (but only if we have backend access).
-      if (age > _cacheTtl.inMilliseconds || ts == 0) {
-        await refresh();
+      // Freshness is driven by the CMS refresh_minutes value stored at the
+      // last successful refresh (see computeHomeCacheTtl). Missing expiry
+      // falls back to the previous age-based 1-hour behavior.
+      final expiry = prefs.getInt(_cacheKeyExpiry);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final stale = expiry != null
+          ? now >= expiry
+          : (age > _cacheTtl.inMilliseconds || ts == 0);
+
+      // BACKGROUND refresh — never awaited by callers that need first paint.
+      if (stale) {
+        unawaited(
+          refresh().then((_) {
+            debugPrint('[RemoteConfig] background refresh complete');
+          }).catchError((Object e) {
+            debugPrint('[RemoteConfig] background refresh failed: $e');
+          }),
+        );
       }
     } catch (e) {
       debugPrint('[RemoteConfig] init error: $e');
@@ -78,6 +169,9 @@ class RemoteConfigService {
   }
 
   Future<void> refresh() async {
+    // SupabaseService.initialize() shares its in-flight future, so this is
+    // cheap even when init() was called concurrently from main().
+    await SupabaseService.initialize();
     if (!SupabaseService.isAvailable) {
       debugPrint(
         '[RemoteConfig] Supabase unavailable — keeping cached/defaults',
@@ -87,7 +181,6 @@ class RemoteConfigService {
     try {
       final db = SupabaseService.client;
 
-      // 1. Discovery categories.
       final catRows = await db
           .from('discovery_categories')
           .select()
@@ -96,52 +189,168 @@ class RemoteConfigService {
           .limit(50);
       if (catRows.isNotEmpty) {
         final parsed = <DiscoveryCategory>[];
+        final rawMaps = <Map<String, dynamic>>[];
         for (final row in catRows) {
-          final name = row['name'] as String? ?? '';
-          final query = row['query'] as String? ?? '';
-          final fallback = row['fallback_category'] as String? ?? 'global';
-          if (name.isEmpty || query.isEmpty) continue;
+          final map = cmsAsMap(row);
+          if (map == null) continue;
+          rawMaps.add(map);
+          final name = cmsAsString(map['name']);
+          final query = cmsAsString(map['query']);
+          if (name.isEmpty) continue;
           parsed.add(
             DiscoveryCategory(
-              id: row['id'] as String? ?? name,
+              id: cmsAsString(map['id'], name),
               label: name,
-              icon: row['emoji'] as String? ?? '🎵',
+              icon: cmsAsString(map['emoji'], '🎵'),
               query: query,
-              fallbackCategory: fallback,
+              fallbackCategory: cmsAsString(map['fallback_category'], 'global'),
             ),
           );
         }
+        if (rawMaps.isNotEmpty) _categoryRows = rawMaps;
         if (parsed.isNotEmpty) {
-          _categories = parsed;
+          _categories = _ensureForYouCategory(parsed);
         }
       }
 
-      // 2. Home layout.
       final homeRows = await db
           .from('home_layout_config')
           .select()
           .eq('visible', true)
+          .eq('published', true)
           .order('sort_order')
           .limit(50);
       if (homeRows.isNotEmpty) {
-        _homeSections = List<Map<String, dynamic>>.from(homeRows);
+        final parsedHome = <Map<String, dynamic>>[];
+        for (final row in homeRows) {
+          final map = cmsAsMap(row);
+          if (map != null) parsedHome.add(map);
+        }
+        if (parsedHome.isNotEmpty) _homeSections = parsedHome;
       }
 
-      // Persist cache.
+      try {
+        final itemRows = await db
+            .from('home_section_items')
+            .select()
+            .eq('is_enabled', true)
+            .order('sort_order')
+            .limit(500);
+        final grouped = <String, List<Map<String, dynamic>>>{};
+        for (final row in itemRows) {
+          final map = cmsAsMap(row);
+          if (map == null) continue;
+          final sectionId = cmsAsString(map['section_id']);
+          if (sectionId.isEmpty) continue;
+          grouped.putIfAbsent(sectionId, () => []).add(map);
+        }
+        _itemsBySection = grouped;
+      } catch (e) {
+        debugPrint('[RemoteConfig] items fetch skipped: $e');
+      }
+
+      try {
+        final settingsRows =
+            await db.from('discover_settings').select().limit(1);
+        if (settingsRows.isNotEmpty) {
+          final map = cmsAsMap(settingsRows.first);
+          if (map != null) {
+            final config = cmsAsMap(map['config']);
+            if (config != null) {
+              final merged = <String, dynamic>{
+                ...DiscoverSettingsDefaults.value,
+                ...config,
+              };
+              // Ensure nested defaults survive partial remote rows.
+              merged['weights'] = {
+                ...((DiscoverSettingsDefaults.value['weights'] as Map)
+                    .cast<String, dynamic>()),
+                ...((config['weights'] as Map?)?.cast<String, dynamic>() ??
+                    const <String, dynamic>{}),
+              };
+              merged['enabled'] = {
+                ...((DiscoverSettingsDefaults.value['enabled'] as Map)
+                    .cast<String, dynamic>()),
+                ...((config['enabled'] as Map?)?.cast<String, dynamic>() ??
+                    const <String, dynamic>{}),
+              };
+              _discoverSettings = merged;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('[RemoteConfig] discover settings skipped: $e');
+      }
+
+      try {
+        final flagRows = await db.from('feature_flags').select().limit(50);
+        final flags = <String, bool>{};
+        for (final row in flagRows) {
+          final map = cmsAsMap(row);
+          if (map == null) continue;
+          final key = cmsAsString(map['key']);
+          if (key.isEmpty) continue;
+          flags[key] = cmsAsBool(map['value'], fallback: false);
+        }
+        if (flags.isNotEmpty) _flags = flags;
+      } catch (e) {
+        debugPrint('[RemoteConfig] flags fetch skipped: $e');
+      }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         _cacheKeyCategories,
         _encodeCategories(_categories),
       );
+      await prefs.setString(_cacheKeyCategoryRows, jsonEncode(_categoryRows));
       await prefs.setString(_cacheKeyHome, jsonEncode(_homeSections));
+      await prefs.setString(_cacheKeyItems, jsonEncode(_itemsBySection));
+      await prefs.setString(_cacheKeyFlags, jsonEncode(_flags));
       await prefs.setInt(_cacheKeyTs, DateTime.now().millisecondsSinceEpoch);
-      debugPrint('[RemoteConfig] Refreshed: ${_categories.length} categories');
+      final ttl = computeHomeCacheTtl(_homeSections);
+      await prefs.setInt(
+        _cacheKeyExpiry,
+        DateTime.now().add(ttl).millisecondsSinceEpoch,
+      );
+      debugPrint(
+        '[RemoteConfig] Refreshed: ${_homeSections.length} home sections, '
+        '${_categories.length} categories',
+      );
+      revision.value++;
     } catch (e) {
       debugPrint('[RemoteConfig] refresh error (keeping cache): $e');
     }
   }
 
-  // ── encoding helpers ───────────────────────────────────────────────────
+  /// Test-only: inject CMS rows without hitting Supabase.
+  @visibleForTesting
+  void debugSetHome({
+    List<Map<String, dynamic>> sections = const [],
+    Map<String, List<Map<String, dynamic>>> items = const {},
+    bool enableRemote = true,
+  }) {
+    _homeSections = sections;
+    _itemsBySection = items;
+    _flags = {..._flags, 'enable_remote_home': enableRemote};
+  }
+
+  static List<DiscoveryCategory> _ensureForYouCategory(
+    List<DiscoveryCategory> parsed,
+  ) {
+    final hasForYou = parsed.any((c) => c.id == 'for_you' || c.query.isEmpty);
+    if (hasForYou) return parsed;
+    return [
+      const DiscoveryCategory(
+        id: 'for_you',
+        label: 'For You',
+        icon: '✨',
+        query: '',
+        fallbackCategory: 'global',
+      ),
+      ...parsed,
+    ];
+  }
+
   static String _encodeCategories(List<DiscoveryCategory> list) => jsonEncode(
         list
             .map(
@@ -158,18 +367,22 @@ class RemoteConfigService {
 
   static List<DiscoveryCategory> _decodeCategories(String json) {
     try {
-      final data = jsonDecode(json) as List;
-      return data
-          .map(
-            (e) => DiscoveryCategory(
-              id: (e['id'] as String?) ?? '',
-              label: (e['label'] as String?) ?? '',
-              icon: (e['icon'] as String?) ?? '🎵',
-              query: (e['query'] as String?) ?? '',
-              fallbackCategory: (e['fallbackCategory'] as String?) ?? 'global',
-            ),
-          )
-          .toList();
+      final data = jsonDecode(json) as List<dynamic>;
+      final parsed = <DiscoveryCategory>[];
+      for (final e in data) {
+        final map = cmsAsMap(e);
+        if (map == null) continue;
+        parsed.add(
+          DiscoveryCategory(
+            id: cmsAsString(map['id']),
+            label: cmsAsString(map['label']),
+            icon: cmsAsString(map['icon'], '🎵'),
+            query: cmsAsString(map['query']),
+            fallbackCategory: cmsAsString(map['fallbackCategory'], 'global'),
+          ),
+        );
+      }
+      return parsed.isEmpty ? kDiscoveryCategories : parsed;
     } catch (_) {
       return kDiscoveryCategories;
     }
@@ -177,10 +390,46 @@ class RemoteConfigService {
 
   static List<Map<String, dynamic>> _decodeHome(String json) {
     try {
-      final data = jsonDecode(json) as List;
-      return data.cast<Map<String, dynamic>>();
+      final data = jsonDecode(json) as List<dynamic>;
+      final parsed = <Map<String, dynamic>>[];
+      for (final e in data) {
+        final map = cmsAsMap(e);
+        if (map != null) parsed.add(map);
+      }
+      return parsed;
     } catch (_) {
       return const [];
+    }
+  }
+
+  static Map<String, List<Map<String, dynamic>>> _decodeItems(String json) {
+    try {
+      final data = jsonDecode(json) as Map<String, dynamic>;
+      final result = <String, List<Map<String, dynamic>>>{};
+      for (final entry in data.entries) {
+        final raw = entry.value;
+        if (raw is! List<dynamic>) continue;
+        final items = <Map<String, dynamic>>[];
+        for (final e in raw) {
+          final map = cmsAsMap(e);
+          if (map != null) items.add(map);
+        }
+        result[entry.key] = items;
+      }
+      return result;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  static Map<String, bool> _decodeFlags(String json) {
+    try {
+      final data = jsonDecode(json) as Map<String, dynamic>;
+      return data.map(
+        (key, value) => MapEntry(key, cmsAsBool(value, fallback: false)),
+      );
+    } catch (_) {
+      return const {};
     }
   }
 }

@@ -119,7 +119,14 @@ class MusicRecommendationEngine {
     for (final s in mixed) {
       final c = s.candidate;
       if (!_session.emitSong(c.songId, c.track.id)) continue;
-      result.add(c.track.toTrackMap());
+      final map = c.track.toTrackMap();
+      // Carry the REAL seed artist (taste profile) so the Discover reason
+      // chip can say "Because you like <artist>" — never the upload
+      // channel's name.
+      if (c.seedArtist != null && c.seedArtist!.isNotEmpty) {
+        map['discoverSeedArtist'] = c.seedArtist;
+      }
+      result.add(map);
       unawaited(_seenStore.record(c.songId));
       if (result.length >= count) break;
     }

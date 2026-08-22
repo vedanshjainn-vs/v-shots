@@ -227,6 +227,12 @@ class VShotsPlaybackManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Pauses the native WebView (sleep timer / lock). Does not close the session.
+  void pause() {
+    browser.requestPause();
+    notifyListeners();
+  }
+
   /// Minimizes the player to the mini player (playback continues).
   void minimize() => browser.requestMinimize();
 

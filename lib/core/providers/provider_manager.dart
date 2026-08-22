@@ -147,10 +147,35 @@ class ProviderManager {
     );
   }
 
-  Future<ProviderResult<List<ProviderTrack>>> getTrending({int limit = 15}) {
+  Future<ProviderResult<List<ProviderTrack>>> getTrending({
+    int limit = 15,
+    String region = '',
+  }) {
     return _routeWithFailover(
       ProviderCapability.getTrending,
-      (p) => p.getTrending(limit: limit),
+      (p) => p.getTrending(limit: limit, region: region),
+    );
+  }
+
+  /// Playlist tracks via any provider declaring [ProviderCapability.getPlaylist].
+  Future<ProviderResult<List<ProviderTrack>>> getPlaylistTracks(
+    String playlistId, {
+    int limit = 30,
+  }) {
+    return _routeWithFailover(
+      ProviderCapability.getPlaylist,
+      (p) => p.getPlaylistTracks(playlistId, limit: limit),
+    );
+  }
+
+  /// Channel uploads via any provider declaring [ProviderCapability.getChannel].
+  Future<ProviderResult<List<ProviderTrack>>> getChannelTracks(
+    String channelId, {
+    int limit = 30,
+  }) {
+    return _routeWithFailover(
+      ProviderCapability.getChannel,
+      (p) => p.getChannelTracks(channelId, limit: limit),
     );
   }
 

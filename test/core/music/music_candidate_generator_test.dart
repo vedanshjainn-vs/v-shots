@@ -93,4 +93,73 @@ void main() {
     );
     expect(candidates.any((c) => c.track.id == 'vid-1'), isFalse);
   });
+
+  test('Explore Language picks create a dedicated language pool', () async {
+    // Regression: context.languages was previously SILENTLY DROPPED —
+    // a Language filter had zero effect on the candidate queries.
+    final queriesSeen = <String>[];
+    MusicSearch recording() =>
+        (query, {required limit, excludeIds = const {}}) async {
+          queriesSeen.add(query);
+          return _fakeSearch()(query, limit: limit, excludeIds: excludeIds);
+        };
+    final generator = MusicCandidateGenerator(search: recording());
+    final context = MusicRecommendationContext(
+      mode: 'for_you',
+      count: 12,
+      languages: ['hindi', 'punjabi'],
+    );
+    final candidates = await generator.generate(
+      profile: _emptyProfile,
+      context: context,
+    );
+    expect(candidates, isNotEmpty);
+    expect(
+      queriesSeen.any((q) => q.contains('hindi songs official audio')),
+      isTrue,
+      reason: 'a selected language must generate its own pool query',
+    );
+  });
+
+  test('Explore Mood picks boost the mood pool quota', () async {
+    final generator = MusicCandidateGenerator(search: _fakeSearch());
+    final context = MusicRecommendationContext(
+      mode: 'for_you',
+      count: 12,
+      moods: ['chill'],
+    );
+    final candidates = await generator.generate(
+      profile: _emptyProfile,
+      context: context,
+    );
+    final moodCount = candidates.where((c) => c.source == 'mood').length;
+    expect(moodCount, greaterThan(2),
+        reason: 'a selected mood must get a meaningful share of the mix');
+  });
+
+  test('filter tokens are appended to trending and new-release pools',
+      () async {
+    final queriesSeen = <String>[];
+    MusicSearch recording() =>
+        (query, {required limit, excludeIds = const {}}) async {
+          queriesSeen.add(query);
+          return _fakeSearch()(query, limit: limit, excludeIds: excludeIds);
+        };
+    final generator = MusicCandidateGenerator(search: recording());
+    final context = MusicRecommendationContext(
+      mode: 'for_you',
+      count: 12,
+      languages: ['hindi'],
+      moods: ['chill'],
+    );
+    await generator.generate(profile: _emptyProfile, context: context);
+    expect(
+      queriesSeen.any((q) => q.contains('trending') && q.contains('hindi')),
+      isTrue,
+    );
+    expect(
+      queriesSeen.any((q) => q.contains('new') && q.contains('chill')),
+      isTrue,
+    );
+  });
 }

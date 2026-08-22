@@ -33,7 +33,11 @@ import '../../core/music/music_catalog_service.dart';
 import '../../core/music/music_ranker.dart';
 import '../../core/recommendation/taste_profile.dart';
 import '../../core/storage/local_library.dart';
+import '../../core/remote_config/home_cms_models.dart';
 import '../../core/remote_config/remote_config_service.dart';
+import '../../core/remote_config/remote_feature_flags.dart';
+import '../../core/providers/jiosaavn_web_provider.dart';
+import '../../shared/utils/youtube_url.dart';
 
 /// What kind of content a shelf is built from.
 enum HomeShelfKind {
@@ -54,6 +58,9 @@ enum HomeShelfKind {
 
   /// A fixed catalog query (YouTube Data API / fallback catalog).
   catalog,
+
+  /// CMS-pinned YouTube video IDs (`youtube_manual` source).
+  manual,
 }
 
 enum HomeShelfStatus { loading, loaded, error, hidden }
@@ -70,7 +77,12 @@ class HomeShelf {
     this.limit = 12,
     this.onlyWhenPersonalized = false,
     this.fallbackQueries = const [],
-  });
+    this.sourceType,
+    this.sourceValue,
+    this.regionCode,
+    this.isSpotlight = false,
+    List<Map<String, dynamic>>? manualItems,
+  }) : manualItems = manualItems ?? [];
 
   final String id;
   final String title;
@@ -85,6 +97,16 @@ class HomeShelf {
   final String? query;
   final String order;
   final int limit;
+  final String? sourceType;
+  final String? sourceValue;
+  final String? regionCode;
+
+  /// Daily Spotlight carousel: flagged sections render as auto-rotating hero
+  /// cards at the top of Home (and are skipped as regular shelves).
+  final bool isSpotlight;
+
+  /// Pinned tracks for [HomeShelfKind.manual] shelves.
+  final List<Map<String, dynamic>> manualItems;
 
   /// Additional relevant queries used to REPLENISH the shelf when the primary
   /// query returns too few valid tracks (never random filler — only related,
@@ -118,38 +140,281 @@ class HomeFeedService {
   final MusicRecommendationEngine? _musicEngine;
 
   /// Builds shelves from CMS config if available, otherwise defaults.
-  List<HomeShelf> buildShelfDescriptors() {
-    final cmsSections = RemoteConfigService.instance.homeSections;
-    if (cmsSections.isNotEmpty) return _buildFromCms(cmsSections);
+  List<HomeShelf> buildShelfDescriptors({
+    List<Map<String, dynamic>>? cmsSections,
+    Map<String, List<Map<String, dynamic>>>? cmsItems,
+    bool? enableRemoteHome,
+    bool? jiosaavnEnabled,
+    bool? jiosaavnSearchFallback,
+  }) {
+    final enabled =
+        enableRemoteHome ?? RemoteFeatureFlags.instance.enableRemoteHome;
+    final sections = cmsSections ?? RemoteConfigService.instance.homeSections;
+    final items = cmsItems ?? RemoteConfigService.instance.itemsBySection;
+    if (enabled && sections.isNotEmpty) {
+      return _buildFromCms(
+        sections,
+        items,
+        jiosaavnEnabled: jiosaavnEnabled ??
+            RemoteFeatureFlags.instance.enableJioSaavnWebPlayback,
+        jiosaavnSearchFallback: jiosaavnSearchFallback ??
+            RemoteFeatureFlags.instance.enableJioSaavnSearchFallback,
+      );
+    }
     return _buildDefaultShelves();
   }
 
-  List<HomeShelf> _buildFromCms(List<Map<String, dynamic>> sections) {
-    final shelves = <HomeShelf>[
-      HomeShelf(
-        id: 'continue',
-        title: 'Continue Listening',
-        subtitle: 'Pick up where you left off',
-        kind: HomeShelfKind.continueListening,
-        limit: 15,
-      ),
-    ];
-    for (final s in sections) {
-      if (s['visible'] == false) continue;
-      final id = s['id'] as String? ?? s['section_key'] as String? ?? '';
-      if (id.isEmpty) continue;
+  static const Map<String, HomeShelfKind> _personalizedKeys = {
+    'continue': HomeShelfKind.continueListening,
+    'continue_listening': HomeShelfKind.continueListening,
+    'mfy': HomeShelfKind.madeForYou,
+    'made_for_you': HomeShelfKind.madeForYou,
+    'byld': HomeShelfKind.becauseYouListenedTo,
+    'because_listened': HomeShelfKind.becauseYouListenedTo,
+    'because_you_listened': HomeShelfKind.becauseYouListenedTo,
+    'because_you_listened_to': HomeShelfKind.becauseYouListenedTo,
+    'tfy': HomeShelfKind.trendingForYou,
+    'trending_for_you': HomeShelfKind.trendingForYou,
+    'discover': HomeShelfKind.discoverSomethingNew,
+    'discover_something_new': HomeShelfKind.discoverSomethingNew,
+    'artists': HomeShelfKind.artistsForYou,
+    'artists_for_you': HomeShelfKind.artistsForYou,
+    'official': HomeShelfKind.officialMusic,
+    'official_music': HomeShelfKind.officialMusic,
+  };
+
+  HomeShelfKind? _personalizedKind({
+    required String id,
+    required String sectionKey,
+    required String sectionType,
+    required String sourceType,
+  }) {
+    for (final key in [id, sectionKey, sectionType, sourceType]) {
+      final kind = _personalizedKeys[key.trim().toLowerCase()];
+      if (kind != null) return kind;
+    }
+    return null;
+  }
+
+  /// A section is routed to the recommendation engine ONLY when its type is
+  /// actually 'personalized'. Stale personalized keys (e.g. a section whose
+  /// type was changed to youtube_playlist but kept section_key
+  /// 'continue_listening') must NOT hijack the shelf — the source type wins.
+  /// (Bug found in production: every edited section rendered as Continue
+  /// Listening because the key map ran before any type check.)
+  bool _isPersonalizedSection(HomeCmsSection s) =>
+      s.sourceType == 'personalized' || s.sectionType == 'personalized';
+
+  List<HomeShelf> _buildFromCms(
+    List<Map<String, dynamic>> sections,
+    Map<String, List<Map<String, dynamic>>> itemsBySection, {
+    bool jiosaavnEnabled = false,
+    bool jiosaavnSearchFallback = true,
+  }) {
+    final shelves = <HomeShelf>[];
+    var hasContinue = false;
+
+    // Sort defensively: the app must honor sort_order itself, not trust the
+    // row order delivered by the network/cache.
+    final ordered = List<Map<String, dynamic>>.from(sections)
+      ..sort((a, b) {
+        final sa = cmsAsInt(a['sort_order'], 0);
+        final sb = cmsAsInt(b['sort_order'], 0);
+        return sa.compareTo(sb);
+      });
+
+    for (final raw in ordered) {
+      final s = HomeCmsSection.fromMap(raw);
+      if (s.id.isEmpty) continue;
+      if (!s.visible || !s.published) continue;
+
+      // JioSaavn playlist page source: ONE tappable card that opens the
+      // official playlist page in the WebView — no API, no scraping, no
+      // manual song entry (the page itself plays the playlist).
+      if (s.sourceType == 'jiosaavn_playlist') {
+        final url = s.sourceValue.trim();
+        final ok =
+            jiosaavnEnabled && JioSaavnWebProvider.isValidPlaylistUrl(url);
+        if (ok) {
+          shelves.add(
+            HomeShelf(
+              id: s.id,
+              title: s.title,
+              subtitle: s.subtitle.isEmpty ? 'JioSaavn playlist' : s.subtitle,
+              kind: HomeShelfKind.manual,
+              limit: 1,
+              sourceType: s.sourceType,
+              sourceValue: url,
+              manualItems: [
+                {
+                  'id': 'jsv_playlist_${s.id}',
+                  'title': s.title,
+                  'artist': 'JioSaavn Playlist',
+                  'artwork': '',
+                  'duration': 0,
+                  'url': url,
+                  'jiosaavnUrl': url,
+                  'playbackSource': 'jiosaavn',
+                  'provider': 'jiosaavn',
+                },
+              ],
+            ),
+          );
+        }
+        continue;
+      }
+
+      final personalized = _isPersonalizedSection(s)
+          ? _personalizedKind(
+              id: s.id,
+              sectionKey: s.sectionKey,
+              sectionType: s.sectionType,
+              sourceType: s.sourceType,
+            )
+          : null;
+      if (personalized != null) {
+        if (personalized == HomeShelfKind.continueListening) {
+          hasContinue = true;
+        }
+        shelves.add(
+          HomeShelf(
+            id: s.id,
+            title: s.title,
+            subtitle: s.subtitle.isEmpty
+                ? _defaultSubtitle(personalized)
+                : s.subtitle,
+            kind: personalized,
+            limit: s.maxItems,
+            onlyWhenPersonalized:
+                personalized == HomeShelfKind.becauseYouListenedTo ||
+                    personalized == HomeShelfKind.artistsForYou,
+          ),
+        );
+        continue;
+      }
+
+      if (s.sourceType == 'youtube_manual' ||
+          s.sourceType == 'jiosaavn_manual' ||
+          s.sourceType == 'manual') {
+        final rows = itemsBySection[s.id] ??
+            itemsBySection[s.sectionKey] ??
+            const <Map<String, dynamic>>[];
+        final tracks = <Map<String, dynamic>>[];
+        for (final row in rows) {
+          final item = HomeCmsItem.fromMap(row);
+          if (!item.isPlayable(
+            jiosaavnEnabled: jiosaavnEnabled,
+            searchFallback: jiosaavnSearchFallback,
+          )) {
+            continue;
+          }
+          tracks.add(
+            item.toTrackMap(
+              jiosaavnEnabled: jiosaavnEnabled,
+              // Section-level provider cascades only to items left on AUTO.
+              providerOverride: s.provider,
+              playbackProviderOverride: s.playbackProvider,
+            ),
+          );
+        }
+        shelves.add(
+          HomeShelf(
+            id: s.id,
+            title: s.title,
+            subtitle: s.subtitle.isEmpty ? 'Editor picks' : s.subtitle,
+            kind: HomeShelfKind.manual,
+            limit: s.maxItems,
+            sourceType: s.sourceType,
+            sourceValue: s.sourceValue,
+            manualItems: tracks,
+          ),
+        );
+        continue;
+      }
+
       shelves.add(
         HomeShelf(
-          id: id,
-          title: s['title'] as String? ?? 'Untitled',
-          subtitle: s['subtitle'] as String? ?? 'Curated for you',
+          id: s.id,
+          title: s.title,
+          subtitle: s.subtitle.isEmpty ? 'Curated for you' : s.subtitle,
           kind: HomeShelfKind.catalog,
-          query: s['query'] as String? ?? s['source_value'] as String?,
-          limit: s['max_items'] as int? ?? 15,
+          // Directed sources (playlist/channel/trending) carry NO literal
+          // query — they are resolved by real provider calls keyed on
+          // sourceType + sourceValue (see _fetch). Previously their IDs were
+          // fed into search() as literal queries, which returned unrelated
+          // results.
+          query: (s.sourceType == 'youtube_playlist' ||
+                  s.sourceType == 'youtube_channel' ||
+                  s.sourceType == 'youtube_trending')
+              ? null
+              : _catalogQuery(s),
+          order: s.sourceType == 'youtube_trending' ? 'viewCount' : 'relevance',
+          limit: s.maxItems,
+          sourceType: s.sourceType,
+          sourceValue: s.sourceValue,
+          regionCode: s.regionCode,
+          isSpotlight: s.isSpotlight,
+        ),
+      );
+    }
+
+    if (!hasContinue) {
+      shelves.insert(
+        0,
+        HomeShelf(
+          id: 'continue',
+          title: 'Continue Listening',
+          subtitle: 'Pick up where you left off',
+          kind: HomeShelfKind.continueListening,
+          limit: 15,
         ),
       );
     }
     return shelves;
+  }
+
+  static String _defaultSubtitle(HomeShelfKind kind) {
+    switch (kind) {
+      case HomeShelfKind.continueListening:
+        return 'Pick up where you left off';
+      case HomeShelfKind.madeForYou:
+        return 'Personalized from your listening';
+      case HomeShelfKind.becauseYouListenedTo:
+        return 'Based on your recent plays';
+      case HomeShelfKind.trendingForYou:
+        return 'Trending, ranked by your taste';
+      case HomeShelfKind.discoverSomethingNew:
+        return 'Step outside your usual mix';
+      case HomeShelfKind.artistsForYou:
+        return 'From your listening taste';
+      case HomeShelfKind.officialMusic:
+        return 'Verified artist & label uploads';
+      case HomeShelfKind.catalog:
+      case HomeShelfKind.manual:
+        return 'Curated for you';
+    }
+  }
+
+  static String _catalogQuery(HomeCmsSection s) {
+    final value = s.sourceValue.isNotEmpty ? s.sourceValue : s.query;
+    switch (s.sourceType) {
+      case 'youtube_playlist':
+        return extractYoutubePlaylistId(value) ??
+            (s.query.isNotEmpty ? s.query : value);
+      case 'youtube_channel':
+        return extractYoutubeChannelId(value) ??
+            (s.query.isNotEmpty ? s.query : value);
+      case 'youtube_trending':
+        final region = (s.regionCode ?? '').trim();
+        if (region.isEmpty) {
+          return s.query.isNotEmpty
+              ? s.query
+              : 'trending songs official music video 2026';
+        }
+        return 'trending songs $region official music video';
+      default:
+        return s.query.isNotEmpty ? s.query : value;
+    }
   }
 
   List<HomeShelf> _buildDefaultShelves() => <HomeShelf>[
@@ -311,10 +576,35 @@ class HomeFeedService {
   final Map<String, String?> _shelfTokens = {};
   final Map<String, bool> _shelfExhausted = {};
 
+  /// In-memory catalog cache (30 min TTL). With 50+ CMS shelves the same
+  /// provider results (queries, trending, playlists) are reused across
+  /// shelves and the Playlist page — big cold-start win, no disk needed.
+  final Map<String, ({List<Map<String, dynamic>> tracks, DateTime at})>
+      _catalogCache = {};
+  static const Duration _catalogCacheTtl = Duration(minutes: 30);
+
+  List<Map<String, dynamic>>? _cachedCatalog(
+    String key,
+  ) {
+    final entry = _catalogCache[key];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.at) > _catalogCacheTtl) {
+      _catalogCache.remove(key);
+      return null;
+    }
+    return List.of(entry.tracks);
+  }
+
+  void _storeCatalog(String key, List<Map<String, dynamic>> tracks) {
+    if (tracks.isEmpty) return;
+    _catalogCache[key] = (tracks: List.of(tracks), at: DateTime.now());
+  }
+
   Future<void> loadShelves(
     List<HomeShelf> shelves, {
     bool forceRefresh = false,
     void Function()? onUpdate,
+    int? maxShelves,
   }) async {
     if (forceRefresh) {
       // New listening/like/skip signals must be visible on the next Home
@@ -322,6 +612,7 @@ class HomeFeedService {
       RecommendationCache.instance.invalidateAll();
       _shelfTokens.clear();
       _shelfExhausted.clear();
+      _catalogCache.clear();
     }
 
     // Per-shelf exclusion: each shelf starts from the SESSION recently-shown
@@ -332,27 +623,96 @@ class HomeFeedService {
 
     const phaseOneIds = {
       'continue',
+      'continue_listening',
       'mfy',
+      'made_for_you',
       'byld',
+      'because_listened',
       'trending',
+      'trending_now',
       'new',
+      'new_releases',
       'tfy',
+      'trending_for_you',
       'artists',
+      'artists_for_you',
     };
     final phaseOne = shelves.where((s) => phaseOneIds.contains(s.id)).toList();
-    final phaseTwo = shelves.where((s) => !phaseOneIds.contains(s.id)).toList();
+    // Daily Spotlight cards hydrate EARLY: the hero carousel must paint in
+    // the first screen, not only after the whole feed resolves.
+    final spotlight = shelves
+        .where(
+          (s) => !phaseOneIds.contains(s.id) && s.isSpotlight,
+        )
+        .toList();
+    final rest = shelves
+        .where(
+          (s) => !phaseOneIds.contains(s.id) && !s.isSpotlight,
+        )
+        .toList();
+    final tail = maxShelves != null && rest.length > maxShelves
+        ? rest.take(maxShelves).toList()
+        : rest;
 
-    // Load in small chunks (not a full parallel burst): InnerTube/YouTube
-    // throttle a burst of ~11 simultaneous discovery requests. 3-at-a-time
-    // keeps Home fast without tripping rate limits.
-    await _loadInChunks(
-      phaseOne,
+    // ONE priority-ordered queue with a bounded worker pool: personalized
+    // shelves first, then spotlight heroes, then the rest. Shelves resolve
+    // PROGRESSIVELY (onUpdate fires per shelf) so Home paints real content
+    // shelf-by-shelf instead of waiting for everything at once.
+    await _loadWithConcurrency(
+      [...phaseOne, ...spotlight, ...tail],
+      6,
       baseExclude,
       force: forceRefresh,
       onUpdate: onUpdate,
     );
+    onUpdate?.call();
+  }
+
+  /// Bounded-parallel shelf loader: a shared worker pool keeps the network
+  /// burst under the provider throttle while priority shelves resolve first
+  /// (queue order = priority order).
+  Future<void> _loadWithConcurrency(
+    List<HomeShelf> shelves,
+    int concurrency,
+    Set<String> baseExclude, {
+    required bool force,
+    void Function()? onUpdate,
+  }) async {
+    var next = 0;
+    Future<void> worker() async {
+      while (next < shelves.length) {
+        final shelf = shelves[next++];
+        await _loadShelf(
+          shelf,
+          {...baseExclude},
+          force: force,
+          onUpdate: onUpdate,
+        );
+      }
+    }
+
+    await Future.wait(
+      List.generate(concurrency.clamp(1, 8), (_) => worker()),
+    );
+  }
+
+  /// Scroll-driven lazy load: fetch a slice of shelves (inclusive start,
+  /// exclusive end) as the user scrolls — the initial Home load stays fast
+  /// with 50+ CMS shelves.
+  Future<void> loadShelfRange(
+    List<HomeShelf> shelves,
+    int start,
+    int end, {
+    bool forceRefresh = false,
+    void Function()? onUpdate,
+  }) async {
+    final baseExclude = LocalLibrary.instance.recentlyShownIds;
+    final slice = shelves.sublist(
+      start.clamp(0, shelves.length),
+      end.clamp(0, shelves.length),
+    );
     await _loadInChunks(
-      phaseTwo,
+      slice,
       baseExclude,
       force: forceRefresh,
       onUpdate: onUpdate,
@@ -366,7 +726,7 @@ class HomeFeedService {
     required bool force,
     void Function()? onUpdate,
   }) async {
-    const chunkSize = 3;
+    const chunkSize = 6;
     for (var i = 0; i < shelves.length; i += chunkSize) {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(
@@ -415,16 +775,20 @@ class HomeFeedService {
     try {
       var tracks = await _fetch(shelf, excludeIds);
       // Music-first safety gate: reject non-music and canonical-deduplicate
-      // BEFORE anything reaches the UI.
-      tracks = const MusicCatalogService()
-          .ingest(tracks, label: '.${shelf.id}')
-          .items;
-      tracks = _rankForShelf(shelf, tracks);
-      tracks = _enforceArtistDiversity(tracks);
+      // BEFORE anything reaches the UI. Manual CMS pins are explicit editor
+      // choices — do not filter them out.
+      if (shelf.kind != HomeShelfKind.manual) {
+        tracks = const MusicCatalogService()
+            .ingest(tracks, label: '.${shelf.id}')
+            .items;
+        tracks = _rankForShelf(shelf, tracks);
+        tracks = _enforceArtistDiversity(tracks);
+      }
       if (tracks.isEmpty) {
         // Offline, history-derived shelves hide when there is no data —
         // a fresh install must NOT show a "couldn't load" Continue Listening.
-        if (shelf.kind == HomeShelfKind.continueListening) {
+        if (shelf.kind == HomeShelfKind.continueListening ||
+            shelf.kind == HomeShelfKind.manual) {
           shelf.status = HomeShelfStatus.hidden;
         }
         // "Official Music" (and any high-confidence-only shelf) hides
@@ -473,6 +837,10 @@ class HomeFeedService {
         .toSet();
 
     List<Map<String, dynamic>> more;
+    if (shelf.kind == HomeShelfKind.manual) {
+      _shelfExhausted[shelf.id] = true;
+      return false;
+    }
     if (shelf.kind == HomeShelfKind.catalog) {
       final query = shelf.query ?? '';
       if (query.isEmpty) {
@@ -623,8 +991,69 @@ class HomeFeedService {
             .take(shelf.limit)
             .toList();
 
+      case HomeShelfKind.manual:
+        return shelf.manualItems.take(shelf.limit).toList();
+
       case HomeShelfKind.catalog:
         if (repo == null) return const [];
+        final src = shelf.sourceType ?? '';
+        if (src == 'youtube_trending') {
+          // Real regional trending via the provider chain (InnerTube
+          // FEtrending with region gl; falls back to search internally).
+          final region = (shelf.regionCode ?? '').trim();
+          final cacheKey = 'tr:$region|${shelf.limit}';
+          final cached = _cachedCatalog(cacheKey);
+          if (cached != null) return cached;
+          final trending = await repo.getTrending(
+            limit: shelf.limit,
+            region: region,
+          );
+          if (trending.isNotEmpty) {
+            _storeCatalog(cacheKey, trending);
+            return trending;
+          }
+          if (shelf.query != null && shelf.query!.isNotEmpty) {
+            return _fetchWithReplenishment(shelf, excludeIds);
+          }
+          return const [];
+        }
+        if (src == 'youtube_playlist') {
+          final id = extractYoutubePlaylistId(shelf.sourceValue ?? '');
+          if (id == null) return const [];
+          final cacheKey = 'pl:$id|${shelf.limit}';
+          final cached = _cachedCatalog(cacheKey);
+          if (cached != null) {
+            return cached
+                .where((t) => !excludeIds.contains(t['id'] as String? ?? ''))
+                .take(shelf.limit)
+                .toList();
+          }
+          final tracks = await repo.getPlaylistTracks(id, limit: shelf.limit);
+          if (tracks.isNotEmpty) {
+            _storeCatalog(cacheKey, tracks);
+            return tracks;
+          }
+          if (shelf.query != null && shelf.query!.isNotEmpty) {
+            return _fetchWithReplenishment(shelf, excludeIds);
+          }
+          return const [];
+        }
+        if (src == 'youtube_channel') {
+          final id = extractYoutubeChannelId(shelf.sourceValue ?? '');
+          if (id == null) return const [];
+          final cacheKey = 'ch:$id|${shelf.limit}';
+          final cached = _cachedCatalog(cacheKey);
+          if (cached != null) return cached;
+          final tracks = await repo.getChannelTracks(id, limit: shelf.limit);
+          if (tracks.isNotEmpty) {
+            _storeCatalog(cacheKey, tracks);
+            return tracks;
+          }
+          if (shelf.query != null && shelf.query!.isNotEmpty) {
+            return _fetchWithReplenishment(shelf, excludeIds);
+          }
+          return const [];
+        }
         final query = shelf.query ?? '';
         if (query.isEmpty) return const [];
         return _fetchWithReplenishment(shelf, excludeIds);
@@ -647,6 +1076,18 @@ class HomeFeedService {
       ...shelf.fallbackQueries,
     ];
 
+    // Catalog cache: identical queries across the 50+ CMS shelves and the
+    // Playlist page resolve from memory instead of re-hitting providers.
+    final cacheKey = 'q:${queries.join('|')}|${shelf.order}|${shelf.limit}';
+    final cached = _cachedCatalog(cacheKey);
+    if (cached != null) {
+      final kept = cached
+          .where((t) => !excludeIds.contains(t['id'] as String? ?? ''))
+          .take(shelf.limit)
+          .toList();
+      if (kept.length >= 3) return kept;
+    }
+
     final result = <Map<String, dynamic>>[];
     final seen = <String>{...excludeIds};
     for (final q in queries) {
@@ -664,6 +1105,7 @@ class HomeFeedService {
       }
       if (result.length >= shelf.limit) break;
     }
+    if (result.isNotEmpty) _storeCatalog(cacheKey, result);
     return result;
   }
 
@@ -710,18 +1152,24 @@ class HomeFeedService {
       case HomeShelfKind.discoverSomethingNew:
         return ranker.rankViral(tracks);
       case HomeShelfKind.catalog:
-        if (shelf.id == 'trending' || shelf.id == 'popular') {
+        if (shelf.sourceType == 'youtube_trending' ||
+            shelf.id == 'trending' ||
+            shelf.id == 'trending_now' ||
+            shelf.id == 'popular') {
           return ranker.rankTrending(tracks);
         }
-        if (shelf.id == 'new') return ranker.rankNewest(tracks);
-        return tracks; // language/genre/mood shelves: relevance order
+        if (shelf.id == 'new' || shelf.id == 'new_releases') {
+          return ranker.rankNewest(tracks);
+        }
+        return tracks;
       case HomeShelfKind.officialMusic:
         return ranker.rankPopular(tracks);
       case HomeShelfKind.madeForYou:
       case HomeShelfKind.becauseYouListenedTo:
       case HomeShelfKind.continueListening:
       case HomeShelfKind.artistsForYou:
-        return tracks; // engine/offline order is already personalized
+      case HomeShelfKind.manual:
+        return tracks;
     }
   }
 

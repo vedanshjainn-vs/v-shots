@@ -8,68 +8,59 @@ V Shots ("we", "our", or "us") is committed to protecting your privacy. This Pri
 
 ## YouTube API Services & Embedded Playback
 
-V Shots uses **YouTube API Services** to provide music discovery, metadata, and official embedded video playback. 
+V Shots uses **YouTube API Services** (including YouTube Data API v3 where configured) and YouTube's public InnerTube web endpoints for music discovery and metadata (titles, channel names, thumbnails, durations).
 
-By using V Shots, you agree to be bound by:
+**Playback:** YouTube videos are played by loading the official YouTube website (`youtube.com/watch`) inside a native Android WebView. V Shots does **not** use the YouTube IFrame Player API, does **not** extract or cache raw YouTube audio/video files, and does **not** skip, hide, speed up, or otherwise manipulate YouTube advertisements.
+
+By using V Shots, you also agree to:
 - **YouTube Terms of Service**: [https://www.youtube.com/t/terms](https://www.youtube.com/t/terms)
 - **Google Privacy Policy**: [https://policies.google.com/privacy](https://policies.google.com/privacy)
 
-### YouTube Data Collection & Handling
-- V Shots accesses public metadata (video title, channel/artist name, thumbnail artwork, and duration) via YouTube Data API v3.
-- Playback of YouTube content is conducted strictly through the **Official YouTube IFrame Player**.
-- V Shots **does not** collect, store, cache, or extract raw YouTube audio or video stream files.
-- V Shots is not affiliated with, endorsed by, or sponsored by YouTube or Google LLC.
+V Shots is not affiliated with, endorsed by, or sponsored by YouTube or Google LLC.
+
+## JioSaavn webpage playback
+
+When a track is configured with a JioSaavn song permalink, V Shots may open that official `jiosaavn.com` webpage in the same WebView. We do not extract JioSaavn audio streams or media CDN URLs.
 
 ## Information We Collect
 
 ### 1. User-Provided Information
 - **Account Data**: When you sign in with Supabase Authentication or Google OAuth, we receive your email address, full name, and avatar picture.
-- **Library & Preferences**: Liked tracks, created playlists, and app theme settings.
-- **Creator Uploads (UGC)**: If you are an authorized creator, audio/video shots and captions you upload to V Shots storage.
+- **Library & Preferences**: Liked tracks, created playlists, and onboarding taste choices stored **on this device**.
 
 ### 2. Automatically Collected Information
-- **Listening Signals & Taste Profile**: Play duration, track completions, and skips stored locally on your device to personalize recommendation carousels.
-- **Device & Network Data**: Operating system version, screen dimensions, and connection status for performance optimization.
+- **Listening Signals & Taste Profile**: Play duration, completions, and skips stored locally on your device to personalize Home and Discover.
+- **Device & Network Data**: Operating system version and connection status for playback.
 
 ## How We Use Information
 
 We use collected information to:
-- Deliver personalized music discovery and "For You" recommendations.
-- Enable playlist management, liked tracks library, and creator UGC sharing.
-- Monitor application health, debug crashes, and prevent abuse.
-- Comply with applicable laws and YouTube API Developer Policies.
+- Deliver personalized music discovery.
+- Enable playlist management and liked tracks on this device.
+- Operate sign-in and (when you request it) account deletion.
 
 ## Data Retention & Storage
 
-- User account details, UGC shots, and social interactions are securely stored in Supabase with Row Level Security (RLS) policies enabled.
+- Account identity is stored in Supabase with Row Level Security.
 - Listening history and taste-profile metrics are stored locally via device storage.
-- YouTube metadata is stored ephemerally in compliance with YouTube API Developer Policies.
+- YouTube metadata is held ephemerally in memory/cache for discovery.
 
 ## Your Data Rights & Controls
 
-You have full control over your data:
-- **Clear Local History**: Clear recent searches and listening history directly in Settings.
-- **Account Deletion**: Request complete deletion of your Supabase profile and uploaded UGC shots.
-- **Google Security Permissions**: Manage third-party app access via your Google Security Settings: [https://myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+- **Clear cache**: Settings → Clear Media & Search Cache.
+- **Sign out**: ends the cloud session; local library data remains on the device unless you delete the account.
+- **Delete Account**: if you are signed in, Delete Account calls a server-side function that removes your Auth user and associated cloud profile rows, then clears this device's library, history, signals, and session. This cannot be undone.
+- **Google permissions**: [https://myaccount.google.com/permissions](https://myaccount.google.com/permissions)
 
 ## Advertising & Google AdMob
 
-V Shots may display advertisements served by Google AdMob ("ads"). This section discloses our advertising practices:
+V Shots may display **in-app** native advertisements served by Google AdMob (separate from YouTube's own ads on youtube.com). YouTube ads inside the WebView are shown by YouTube and are not blocked or skipped by V Shots.
 
-- **Advertising SDK**: We use the Google Mobile Ads SDK to serve native advertisements inside the app.
-- **Ad Identifier**: Where permitted, the advertising ID of your device may be read by the advertising SDK for ad delivery, measurement, and frequency capping.
-- **Ad Personalization**: Ads may be personalized based on your interactions and the advertising ID, but only where you have provided appropriate consent (see below). If consent is not granted, only non-personalized ads are served.
-- **Google's User Messaging Platform (UMP)**: In regions that require consent (such as the EEA and UK), V Shots uses Google's approved consent mechanism. You can accept, decline, or customize ad personalization, and you can change your choices at any time from the in-app privacy options.
-- **Privacy Options**: A privacy-options entry point is available in-app where required by Google's UMP to review or withdraw consent.
-- **Third-Party Advertising Networks**: Currently only Google/AdMob demand is used. We do not add ad networks without an updated disclosure.
-
-## Data Collection for Ads
-
-Advertising-related data (such as ad impressions, clicks, and the device advertising ID) is processed by Google in accordance with Google's Privacy Policy and the policies of Google's advertising platforms. We do not combine your music listening history with ad data for advertising purposes, and we do not sell your personal data.
-
+- **Advertising SDK**: Google Mobile Ads SDK for native ads inside V Shots UI when a production ad unit is configured.
+- **Google UMP**: consent where required (EEA/UK).
+- We do not sell your personal data.
 
 ## Contact Us
 
-For questions regarding this Privacy Policy or data requests:
 - **Email**: support@vshots.live
 - **Repository**: [https://github.com/vedanshjainn-vs/v-shots](https://github.com/vedanshjainn-vs/v-shots)

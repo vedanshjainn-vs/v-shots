@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../main.dart' show audioPlayer;
+import '../playback/vshots_playback_manager.dart';
 
 class SleepTimer {
   SleepTimer._();
@@ -62,6 +63,7 @@ class SleepTimer {
   }
 
   void _fire() {
+    VShotsPlaybackManager.instance.pause();
     audioPlayer.pause();
     cancel();
   }

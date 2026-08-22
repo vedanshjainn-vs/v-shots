@@ -8,8 +8,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/backend/auth_service.dart';
 import '../../core/backend/supabase_service.dart';
 import '../../core/cache/search_cache.dart';
+import '../../core/config/app_version.dart';
 import '../../core/motion/motion.dart';
+import '../../core/navigation/app_navigator.dart';
 import '../../core/player/sleep_timer.dart';
+import '../../core/recommendation/signal_store.dart';
+import '../../core/storage/local_library.dart';
+import '../../core/storage/personalization_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_card.dart';
@@ -36,10 +41,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _clearLocalAccountData() async {
+    SearchCache.instance.clear();
+    await LocalLibrary.instance.clearAllUserData();
+    await SignalStore.instance.clear();
+    await PersonalizationStore.instance.reset();
+  }
+
   void _showDeleteAccountDialog() {
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
@@ -50,12 +62,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700),
         ),
         content: const Text(
-          'Are you sure you want to delete your V Shots account and all associated shots, likes, and bookmarks? This action cannot be undone.',
+          'This permanently deletes your V Shots login and any cloud profile data tied to it, and clears this device\'s library, history, and session. This cannot be undone.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text(
               'Cancel',
               style: TextStyle(color: AppColors.textMuted),
@@ -69,16 +81,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             onPressed: () async {
-              final nav = Navigator.of(context);
+              Navigator.of(dialogContext).pop();
               final messenger = ScaffoldMessenger.of(context);
-              nav.pop();
-              await _handleSignOut();
-              messenger.showSnackBar(
-                const SnackBar(
-                  content: Text('Account deletion requested.'),
-                  backgroundColor: AppColors.error,
-                ),
-              );
+              final result = await AuthService.instance.deleteAccount();
+              if (!result.isSuccess) {
+                if (!context.mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(result.error ?? 'Could not delete account.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+                return;
+              }
+              await _clearLocalAccountData();
+              await AuthService.instance.signOut();
+              restartToAppRoot();
             },
             child: const Text(
               'Delete Permanently',
@@ -286,12 +304,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: EdgeInsets.zero,
             child: Column(
               children: [
-                const ListTile(
-                  leading: Icon(
+                ListTile(
+                  leading: const Icon(
                     Icons.info_outline_rounded,
                     color: AppColors.accent,
                   ),
-                  title: Text(
+                  title: const Text(
                     'V Shots',
                     style: TextStyle(
                       color: AppColors.textMain,
@@ -300,8 +318,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    'Version 5.4.0 (Nova Release)',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    AppVersion.displayLabel,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const Divider(color: AppColors.borderSubtle, height: 1),

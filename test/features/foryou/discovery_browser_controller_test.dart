@@ -37,6 +37,27 @@ void main() {
       expect(c.url, 'https://www.youtube.com/watch?v=bbb44455566');
     });
 
+    test('adActive setter notifies and open/close resets it', () {
+      final c = DiscoveryBrowserController();
+      expect(c.adActive, isFalse);
+      var notifications = 0;
+      c.addListener(() => notifications++);
+
+      c.open(_track('abcDEF12345'));
+      expect(c.adActive, isFalse);
+      c.setAdActive(true);
+      expect(c.adActive, isTrue);
+      expect(notifications, greaterThan(0));
+      final before = notifications;
+
+      // Setting the same value again must NOT re-notify.
+      c.setAdActive(true);
+      expect(notifications, before);
+
+      c.close();
+      expect(c.adActive, isFalse, reason: 'close must reset the ad state');
+    });
+
     test('close clears state and url', () {
       final c = DiscoveryBrowserController();
       c.open(_track('abcDEF12345'));

@@ -9,6 +9,8 @@
 // Cold start (empty profile) → trending/new/regional/exploration only.
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'dart:math';
+
 import '../providers/provider_models.dart';
 import '../recommendation/music_recommendation_config.dart';
 import '../recommendation/music_recommendation_context.dart';
@@ -66,17 +68,38 @@ class MusicCandidateGenerator {
   }) async {
     final count = context.count;
     final quotas = _quotas(profile.isEmpty, count);
+    _applyFilterQuotas(quotas, context, count);
     final queries = _buildQueries(profile, context, quotas);
     final candidates = <MusicCandidate>[];
     final seenVideo = <String>{...context.excludeIds};
     final seenSong = <String>{};
 
-    for (final entry in queries) {
-      final tracks = await _search(
-        entry.query,
-        limit: entry.limit.clamp(1, 10),
-        excludeIds: seenVideo,
+    // Bounded-parallel pool fetching (4-at-a-time waves): the old fully
+    // sequential loop meant every generateForYou() paid for ~10+ round
+    // trips one after another — the biggest Discover cold-start cost.
+    // Results are merged in QUERY ORDER so ranking stays deterministic.
+    const waveSize = 4;
+    final perQuery =
+        List<List<Map<String, dynamic>>?>.filled(queries.length, null);
+    for (var i = 0; i < queries.length; i += waveSize) {
+      final wave = queries.skip(i).take(waveSize).toList();
+      final waveResults = await Future.wait(
+        wave.map(
+          (entry) => _search(
+            entry.query,
+            limit: entry.limit.clamp(1, 10),
+            excludeIds: seenVideo,
+          ),
+        ),
       );
+      for (var j = 0; j < waveResults.length; j++) {
+        perQuery[i + j] = waveResults[j];
+      }
+    }
+
+    for (var qi = 0; qi < queries.length; qi++) {
+      final entry = queries[qi];
+      final tracks = perQuery[qi] ?? const <Map<String, dynamic>>[];
       for (final map in tracks) {
         if (candidates.length >= count * 2) break;
         final track = ProviderTrack.fromTrackMap(map);
@@ -102,6 +125,27 @@ class MusicCandidateGenerator {
       if (candidates.length >= count * 2) break;
     }
     return candidates;
+  }
+
+  /// Explore filters (Language / Mood / Genre picks) become real quotas:
+  /// when the user selected filters, filtered pools must dominate the
+  /// candidate mix — the previous build only gave moods a quota of 2 and
+  /// IGNORED languages entirely, so filtered feeds looked random.
+  void _applyFilterQuotas(
+    Map<String, int> quotas,
+    MusicRecommendationContext context,
+    int count,
+  ) {
+    int qFrac(double fraction) => (count * fraction).round().clamp(0, count);
+    if (context.languages.isNotEmpty) {
+      quotas['language'] = max(1, qFrac(0.25));
+    }
+    if (context.moods.isNotEmpty) {
+      quotas['mood'] = max(2, qFrac(0.25));
+    }
+    if (context.regions.isNotEmpty) {
+      quotas['regional'] = max(1, qFrac(0.20));
+    }
   }
 
   Map<String, int> _quotas(bool coldStart, int count) {
@@ -196,14 +240,40 @@ class MusicCandidateGenerator {
         seedArtist: artist,
       );
     }
-    for (final mood in context.moods.take(1)) {
-      add('mood', '$mood songs official audio', quotas['mood']!);
+    for (final mood in context.moods.take(2)) {
+      add('mood', '$mood songs official audio', quotas['mood'] ?? 2);
     }
-    add('trending', 'trending songs official video 2026', quotas['trending']!);
+    // Explore Language picks → dedicated language pool (previously the
+    // context.languages list was silently dropped).
+    for (final lang in context.languages.take(2)) {
+      add(
+        'language',
+        '$lang songs official audio',
+        (quotas['language'] ?? 0) ~/ 2,
+      );
+    }
+
+    // Filter tokens (mood + language + genre picks) are appended to the
+    // trending / new pools too, so every pool respects an active filter.
+    final filterTokens = <String>[
+      ...context.moods.take(1),
+      ...context.languages.take(1),
+      ...context.regions.take(1),
+    ].where((t) => t.trim().isNotEmpty).join(' ');
+
+    add(
+      'trending',
+      filterTokens.isEmpty
+          ? 'trending songs official video 2026'
+          : 'trending $filterTokens songs official video',
+      quotas['trending'] ?? 2,
+    );
     add(
       'new_release',
-      'new music releases official audio 2026',
-      quotas['new_release']!,
+      filterTokens.isEmpty
+          ? 'new music releases official audio 2026'
+          : 'new $filterTokens music releases official audio',
+      quotas['new_release'] ?? 2,
     );
     for (final region in context.regions.take(2)) {
       add(
@@ -212,14 +282,20 @@ class MusicCandidateGenerator {
         (quotas['regional']! / 2).ceil(),
       );
     }
-    // Exploration: a genre OUTSIDE the user's established taste.
-    final explored = profile.topGenres.take(3).toSet();
-    final unknown = _genreQueries.keys
-        .where((g) => !explored.contains(g))
-        .toList()
-      ..shuffle();
-    for (final genre in unknown.take(quotas['exploration']!)) {
-      add('exploration', _genreQueries[genre]!, 1, seedGenre: genre);
+    // Exploration: a genre OUTSIDE the user's established taste — but when
+    // filters are active it stays INSIDE the picked theme (chill + Hindi
+    // stays chill-Hindi adjacent, never random filler).
+    if (filterTokens.isNotEmpty && (quotas['exploration'] ?? 0) > 0) {
+      add('exploration', '$filterTokens playlist official audio', 1);
+    } else {
+      final explored = profile.topGenres.take(3).toSet();
+      final unknown = _genreQueries.keys
+          .where((g) => !explored.contains(g))
+          .toList()
+        ..shuffle();
+      for (final genre in unknown.take(quotas['exploration'] ?? 0)) {
+        add('exploration', _genreQueries[genre]!, 1, seedGenre: genre);
+      }
     }
     return out;
   }

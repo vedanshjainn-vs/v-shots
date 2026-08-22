@@ -11,13 +11,16 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/config/discovery_filters.dart';
+import '../../core/config/discovery_remote.dart';
+import '../../core/playback/playback_router.dart';
+import '../../core/remote_config/remote_config_service.dart';
+import '../../core/remote_config/remote_feature_flags.dart';
 import '../../core/music/music_catalog_service.dart';
 import '../../core/music/music_ranker.dart';
 import '../../core/motion/motion.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
-import '../../shared/utils/youtube_url.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
@@ -26,10 +29,12 @@ import '../../main.dart'
         currentTabIndexNotifier,
         forYouFeedService,
         musicRecommendationEngine,
+        musicRepository,
         playbackSignalTracker,
         recommendationEngine,
         showMoreOptionsSheet,
         showAddToPlaylistSheet;
+import '../../core/discover/discover_feed_engine.dart';
 import 'discovery_browser_controller.dart';
 import '../../core/playback/vshots_playback_manager.dart';
 
@@ -96,15 +101,35 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// The APPLIED Discovery filter configuration — the only state the feed
   /// actually fetches from. The Explore sheet works on a DRAFT copy and only
   /// commits here on APPLY (see _showExplore).
+  DiscoveryFilterCatalog _catalog = DiscoveryFilterCatalog.compiled;
   DiscoveryFilterConfig _applied = DiscoveryFilterConfig.initial;
 
   /// True while the PageView is being moved PROGRAMMATICALLY (auto-advance),
   /// so [_onPageChanged] does not re-trigger playback (no feedback loop).
   bool _syncingFromManager = false;
 
+  /// The V Shots Discover algorithm engine: adaptive bucket weights,
+  /// Discover Score ranking, artist/genre fatigue and dynamic re-ranking.
+  /// Session-scoped — swipe behaviour immediately reshapes the next batch.
+  late final DiscoverFeedEngine _discoverEngine;
+
+  /// Swipe-time tracking: how long the previous card was on screen.
+  DateTime? _cardShownAt;
+  Map<String, dynamic>? _prevCard;
+
   @override
   void initState() {
     super.initState();
+    _catalog = DiscoveryFilterCatalog.resolve(
+      useRemote: RemoteFeatureFlags.instance.enableDiscoveryRemoteCategories,
+      rows: RemoteConfigService.instance.categoryRows,
+    );
+    _applied = DiscoveryFilterConfig(source: _catalog.sources.first);
+    _discoverEngine = DiscoverFeedEngine(
+      repository: musicRepository,
+      recommendationEngine: recommendationEngine,
+      musicEngine: musicRecommendationEngine,
+    );
     _browser.addListener(_onBrowserChanged);
     VShotsPlaybackManager.instance.addListener(_onManagerChanged);
     currentTabIndexNotifier.addListener(_onTabChanged);
@@ -128,6 +153,17 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     final idx = _items.indexWhere((t) => t['id'] == currentId);
     if (idx == -1 || idx == _currentIndex) return;
 
+    // Auto-advance means the PREVIOUS card finished playing — record the
+    // strongest positive signal (completed) for the engine.
+    if (_currentIndex >= 0 && _currentIndex < _items.length) {
+      _discoverEngine.recordSwipe(
+        _items[_currentIndex],
+        outcome: DiscoverSwipeOutcome.completed,
+      );
+      _cardShownAt = DateTime.now();
+      _prevCard = _items[idx];
+    }
+
     _syncingFromManager = true;
     setState(() => _currentIndex = idx);
     if (_pageController.hasClients) {
@@ -147,7 +183,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // The browser is the ONLY playback owner in Discovery. App launch stays
     // silent — this fires only on an actual tab switch to Discovery.
     if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
-      VShotsPlaybackManager.instance.playQueue(_items, _currentIndex);
+      unawaited(_playCurrent(expanded: false));
     }
   }
 
@@ -224,19 +260,35 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   /// Play tap on a Discovery card → open the selected video in the in-app
   /// YouTube browser (reusing the single session). Discovery NEVER routes to
   /// the old global player — this is the ONLY playback path in Discovery.
+  Future<void> _playCurrent({required bool expanded}) async {
+    if (_items.isEmpty) return;
+    final resolved = await PlaybackRouter.instance.resolveQueue(
+      List.of(_items),
+    );
+    if (!mounted) return;
+    _items
+      ..clear()
+      ..addAll(resolved);
+    final current = _items[_currentIndex.clamp(0, _items.length - 1)];
+    if (current['playbackUnavailable'] == true) {
+      debugPrint(
+        '[DiscoveryPlay] unavailable: ${current['unavailableReason']}',
+      );
+      return;
+    }
+    VShotsPlaybackManager.instance.playQueue(
+      List.of(_items),
+      _currentIndex,
+      expanded: expanded,
+    );
+    if (mounted) setState(() {});
+  }
+
   void _onPlayTap() {
     final track = _items.isNotEmpty ? _items[_currentIndex] : null;
     if (track == null) return;
-    final videoId = (track['id'] as String?) ?? '';
-    debugPrint(
-      '[DiscoveryPlay] videoId=$videoId url=${youtubeWatchUrl(videoId)}',
-    );
-    // The old global player is intentionally bypassed for Discovery — the
-    // in-app browser owns playback. The single playback coordinator pauses the
-    // global IFrame (in case another tab was playing) so audio never doubles.
-    debugPrint('[DiscoveryPlay] OLD_PLAYER_CALL_BLOCKED (routing to browser)');
-    VShotsPlaybackManager.instance.playQueue(List.of(_items), _currentIndex);
-    setState(() {});
+    debugPrint('[DiscoveryPlay] id=${track['id']} url=${track['url']}');
+    unawaited(_playCurrent(expanded: true));
   }
 
   Future<List<Map<String, dynamic>>> _fetchDiscoverBatch() async {
@@ -245,26 +297,64 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       source: source,
       moods: _applied.moods,
       languages: _applied.languages,
-      regions: _applied.regions,
+      genres: _applied.genres,
     );
     debugPrint(
       '[Discover] source="${source.label}" order="${source.order}" '
       'moods=${_applied.moods.length} query="$query"',
     );
 
-    // "For You" (null source query) → MUSIC INTELLIGENCE V3 pipeline:
-    // user taste → candidate pools → ranking → diversity → exploration.
+    // "For You" (null source query) → V SHOTS DISCOVER ALGORITHM:
+    // adaptive buckets (personal/trending/fresh/exploration) → Discover
+    // Score ranking → fatigue/diversity guards → dynamic re-rank per swipe.
     if (source.query == null) {
       final primaryMood =
           _applied.moods.isNotEmpty ? _applied.moods.first : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
+      final biases = <String>[
+        ..._applied.moods.map((m) => m.query),
+        ..._applied.decades.map((d) => d.token),
+        ..._applied.activities.map((a) => a.token),
+      ];
+      var engineConfig = RemoteConfigService.instance.discoverSettings;
+      if (source.id == 'surprise_me') {
+        // 🎲 Surprise Me = exploration-heavy mix (owner spec).
+        engineConfig = {
+          ...engineConfig,
+          'weights': {
+            'personal': 10,
+            'trending': 25,
+            'fresh': 25,
+            'exploration': 40,
+          },
+          'enabled': {
+            'personalization': false,
+            'trending': true,
+            'fresh': true,
+            'exploration': true,
+          },
+        };
+      }
+      try {
+        final batch = await _discoverEngine.nextBatch(
+          excludeIds: _seenIds,
+          count: 12,
+          languages: _applied.languages.map((l) => l.token).toList(),
+          moods: biases,
+          regions: _applied.genres.map((g) => g.token).toList(),
+          config: engineConfig,
+        );
+        if (batch.isNotEmpty) return _refineForMode(source, batch);
+      } catch (e) {
+        debugPrint('[ForYouFeed] Discover engine failed, falling back: $e');
+      }
       try {
         final music = await musicRecommendationEngine.generateForYou(
           excludeIds: _seenIds,
           count: 12,
           languages: _applied.languages.map((l) => l.token).toList(),
-          moods: _applied.moods.map((m) => m.query).toList(),
-          regions: _applied.regions.map((r) => r.token).toList(),
+          moods: biases,
+          regions: _applied.genres.map((g) => g.token).toList(),
         );
         if (music.isNotEmpty) return _refineForMode(source, music);
       } catch (e) {
@@ -324,9 +414,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     refined = switch (source.id) {
       'trending' => ranker.rankTrending(refined),
       'new' || 'latest' => ranker.rankNewest(refined),
-      'viral' => ranker.rankViral(refined),
+      'rising_now' || 'viral' => ranker.rankViral(refined),
       'popular' => ranker.rankPopular(refined),
-      _ => refined, // For You: engine order already personalized
+      _ => refined, // For You / Surprise Me: engine order already ranked
     };
     refined = ranker.applyAlreadySeenPenalty(refined, _seenIds);
     refined = ranker.applyDiversity(refined);
@@ -374,6 +464,27 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (index < 0 || index >= _items.length) return;
     unawaited(HapticFeedback.selectionClick());
     final track = _items[index];
+
+    // Record the swipe outcome for the PREVIOUS card — the Discover engine
+    // re-ranks the next batch from this signal (TikTok-style behaviour).
+    final prev = _prevCard;
+    if (prev != null) {
+      final shownFor = _cardShownAt == null
+          ? 0
+          : DateTime.now().difference(_cardShownAt!).inSeconds;
+      final duration = (prev['duration'] as num?)?.toInt() ?? 0;
+      final outcome = duration > 0 && shownFor >= duration * 0.9
+          ? DiscoverSwipeOutcome.completed
+          : shownFor >= 45
+              ? DiscoverSwipeOutcome.listenedLong
+              : shownFor >= 15
+                  ? DiscoverSwipeOutcome.listenedShort
+                  : DiscoverSwipeOutcome.skippedImmediately;
+      _discoverEngine.recordSwipe(prev, outcome: outcome);
+    }
+    _cardShownAt = DateTime.now();
+    _prevCard = track;
+
     setState(() => _currentIndex = index);
 
     // Programmatic move (auto-advance): the manager ALREADY owns playback
@@ -397,7 +508,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _ExploreSheet(initial: _applied),
+      builder: (ctx) => _ExploreSheet(initial: _applied, catalog: _catalog),
     );
     // null → dismissed WITHOUT APPLY (X / Done / tap-outside): discard draft,
     // keep the previously applied configuration.
@@ -428,7 +539,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         source: _applied.source,
         moods: _applied.moods,
         languages: _applied.languages,
-        regions: _applied.regions,
+        genres: _applied.genres,
       );
 
   @override
@@ -678,9 +789,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 /// sheet. The top of Discovery stays clean — only the compact summary pill +
 /// Explore control are persistent; everything else lives here.
 class _ExploreSheet extends StatefulWidget {
-  const _ExploreSheet({required this.initial});
+  const _ExploreSheet({required this.initial, required this.catalog});
 
   final DiscoveryFilterConfig initial;
+  final DiscoveryFilterCatalog catalog;
 
   @override
   State<_ExploreSheet> createState() => _ExploreSheetState();
@@ -693,7 +805,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
   late DiscoverySource _draftSource;
   late List<DiscoveryMood> _draftMoods;
   late List<DiscoveryFilterOption> _draftLanguages;
-  late List<DiscoveryFilterOption> _draftRegions;
+  late List<DiscoveryFilterOption> _draftGenres;
+  late List<DiscoveryFilterOption> _draftDecades;
+  late List<DiscoveryFilterOption> _draftActivities;
 
   @override
   void initState() {
@@ -702,14 +816,18 @@ class _ExploreSheetState extends State<_ExploreSheet> {
     _draftSource = i.source;
     _draftMoods = List.of(i.moods);
     _draftLanguages = List.of(i.languages);
-    _draftRegions = List.of(i.regions);
+    _draftGenres = List.of(i.genres);
+    _draftDecades = List.of(i.decades);
+    _draftActivities = List.of(i.activities);
   }
 
   DiscoveryFilterConfig get _draft => DiscoveryFilterConfig(
         source: _draftSource,
         moods: _draftMoods,
         languages: _draftLanguages,
-        regions: _draftRegions,
+        genres: _draftGenres,
+        decades: _draftDecades,
+        activities: _draftActivities,
       );
 
   bool get _hasChanges => !_draft.matches(widget.initial);
@@ -730,11 +848,27 @@ class _ExploreSheetState extends State<_ExploreSheet> {
     });
   }
 
-  void _toggleRegion(DiscoveryFilterOption region) {
+  void _toggleGenre(DiscoveryFilterOption genre) {
     setState(() {
-      _draftRegions.any((r) => r.id == region.id)
-          ? _draftRegions.removeWhere((r) => r.id == region.id)
-          : _draftRegions.add(region);
+      _draftGenres.any((r) => r.id == genre.id)
+          ? _draftGenres.removeWhere((r) => r.id == genre.id)
+          : _draftGenres.add(genre);
+    });
+  }
+
+  void _toggleDecade(DiscoveryFilterOption decade) {
+    setState(() {
+      _draftDecades.any((r) => r.id == decade.id)
+          ? _draftDecades.removeWhere((r) => r.id == decade.id)
+          : _draftDecades.add(decade);
+    });
+  }
+
+  void _toggleActivity(DiscoveryFilterOption activity) {
+    setState(() {
+      _draftActivities.any((r) => r.id == activity.id)
+          ? _draftActivities.removeWhere((r) => r.id == activity.id)
+          : _draftActivities.add(activity);
     });
   }
 
@@ -742,7 +876,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
     setState(() {
       _draftMoods.clear();
       _draftLanguages.clear();
-      _draftRegions.clear();
+      _draftGenres.clear();
+      _draftDecades.clear();
+      _draftActivities.clear();
     });
   }
 
@@ -752,7 +888,9 @@ class _ExploreSheetState extends State<_ExploreSheet> {
       source: widget.initial.source,
       moods: widget.initial.moods,
       languages: widget.initial.languages,
-      regions: widget.initial.regions,
+      genres: widget.initial.genres,
+      decades: widget.initial.decades,
+      activities: widget.initial.activities,
     );
     return Container(
       decoration: const BoxDecoration(
@@ -818,9 +956,10 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                 ],
               ),
               const SizedBox(height: 8),
-              _sectionLabel('Discover'),
+              // A. QUICK EXPLORE — the five primary modes.
+              _sectionLabel('Quick Explore'),
               _chipWrap(
-                kDiscoverySources
+                widget.catalog.sources
                     .map(
                       (s) => (
                         label: s.label,
@@ -832,9 +971,10 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                     .toList(),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('Moods'),
+              // B. BROWSE BY MOOD.
+              _sectionLabel('Browse by Mood'),
               _chipWrap(
-                kDiscoveryMoods
+                widget.catalog.moods
                     .map(
                       (m) => (
                         label: m.label,
@@ -846,9 +986,10 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                     .toList(),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('Language'),
+              // C. BROWSE BY LANGUAGE.
+              _sectionLabel('Browse by Language'),
               _chipWrap(
-                kDiscoveryLanguages
+                widget.catalog.languages
                     .map(
                       (l) => (
                         label: l.label,
@@ -860,15 +1001,46 @@ class _ExploreSheetState extends State<_ExploreSheet> {
                     .toList(),
               ),
               const SizedBox(height: 18),
-              _sectionLabel('Region / Culture'),
+              // D. BROWSE BY GENRE.
+              _sectionLabel('Browse by Genre'),
               _chipWrap(
-                kDiscoveryRegions
+                widget.catalog.genres
                     .map(
-                      (r) => (
-                        label: r.label,
+                      (g) => (
+                        label: g.label,
                         icon: '',
-                        selected: _draftRegions.any((x) => x.id == r.id),
-                        onTap: () => _toggleRegion(r),
+                        selected: _draftGenres.any((x) => x.id == g.id),
+                        onTap: () => _toggleGenre(g),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              // E. DECADES.
+              _sectionLabel('Decades'),
+              _chipWrap(
+                widget.catalog.decades
+                    .map(
+                      (d) => (
+                        label: d.label,
+                        icon: '',
+                        selected: _draftDecades.any((x) => x.id == d.id),
+                        onTap: () => _toggleDecade(d),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 18),
+              // F. ACTIVITY.
+              _sectionLabel('Activity'),
+              _chipWrap(
+                widget.catalog.activities
+                    .map(
+                      (a) => (
+                        label: a.label,
+                        icon: '',
+                        selected: _draftActivities.any((x) => x.id == a.id),
+                        onTap: () => _toggleActivity(a),
                       ),
                     )
                     .toList(),
@@ -1413,6 +1585,27 @@ class _ForYouCardState extends State<_ForYouCard>
                       ),
                     ),
                     const SizedBox(height: 10),
+                    if (_reasonLabel(track) != null) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _reasonLabel(track)!,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -1554,22 +1747,24 @@ class _ForYouCardState extends State<_ForYouCard>
                     );
                   },
                 ),
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    color: Colors.white,
-                    size: 28,
+                if (RemoteFeatureFlags.instance.enableSocial) ...[
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    onPressed: () {
+                      unawaited(HapticFeedback.lightImpact());
+                      CommentSheet.show(
+                        context,
+                        shotId: trackId,
+                        commentCount: 18,
+                      );
+                    },
                   ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    CommentSheet.show(
-                      context,
-                      shotId: trackId,
-                      commentCount: 18,
-                    );
-                  },
-                ),
+                ],
                 const SizedBox(height: 12),
                 IconButton(
                   icon: const Icon(
@@ -1604,5 +1799,28 @@ class _ForYouCardState extends State<_ForYouCard>
         ),
       ],
     );
+  }
+}
+
+/// Maps a card's internal `discoverReason` to the user-facing "why this
+/// song" label shown on the Discover card (owner-spec sections).
+String? _reasonLabel(Map<String, dynamic> track) {
+  final reason = (track['discoverReason'] as String?) ?? '';
+  if (reason.isEmpty) return null;
+  if (reason.startsWith('because_you_listened_to_')) {
+    final artist = reason.replaceFirst('because_you_listened_to_', '');
+    return artist.isEmpty ? null : '🎯 Because you like $artist';
+  }
+  switch (reason) {
+    case 'trending_in_india':
+      return '🔥 Trending around you';
+    case 'new_release':
+      return '🆕 Your next obsession';
+    case 'something_new_for_you':
+      return '🎲 Try something different';
+    case 'similar_to_your_taste':
+      return '✨ Made for you';
+    default:
+      return null;
   }
 }

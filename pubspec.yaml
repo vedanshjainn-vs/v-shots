@@ -60,10 +60,8 @@ dependencies:
   # dependency (via share_plus), promoted to a direct dependency since
   # this app now calls it directly.
   url_launcher: ^6.3.2
-  youtube_player_iframe: ^6.0.2
-  # In-app browser surface for the Discovery YouTube browser player. Already
-  # present transitively (via youtube_player_iframe) — promoted to a direct
-  # dependency because the Discovery browser imports it directly.
+  package_info_plus: ^8.3.1
+  # Native WebView used by the in-app browser player.
   webview_flutter: ^4.14.1
   # Platform-specific WebView APIs (Android autoplay settings) used by the
   # Discovery browser. Already present transitively.

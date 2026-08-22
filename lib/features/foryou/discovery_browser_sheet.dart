@@ -67,19 +67,26 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     widget.controller.addListener(_onControllerChanged);
     widget.controller.extentCommand.addListener(_onExtentCommand);
     widget.controller.replayRequest.addListener(_onReplayRequest);
+    widget.controller.pauseRequest.addListener(_onPauseRequest);
     // The single browser session: owns the native WebView + lifecycle; the
     // sheet is only the UI/interaction layer. Minimizing never destroys the
     // session.
     _session = VShotsBrowserSession(
       onPageStarted: () => widget.controller.setLoading(true),
       onPageFinished: () => widget.controller.setLoading(false),
-      onError: (message) {
-        widget.controller.setLoading(false);
-        widget.controller.setError(message);
-      },
+      onError: _onPrimaryPageError,
       // Real media completion (native `video.ended`) → auto-advance the queue
       // through the single global manager (screen on AND screen off).
-      onVideoEnded: VShotsPlaybackManager.instance.onVideoEnded,
+      onVideoEnded: (id) {
+        final current =
+            VShotsPlaybackManager.instance.currentTrack?['id'] as String? ?? '';
+        VShotsPlaybackManager.instance.onVideoEnded(
+          id.isNotEmpty ? id : current,
+        );
+      },
+      // In-stream ad start/end from the native WebView → "Ad" badge in the
+      // player UI (mute/skip/resume is handled natively).
+      onAdState: (on) => widget.controller.setAdActive(on),
       // Player-essential hosts are ALWAYS allowed, so the general content
       // blocker can never break video/audio/thumbnail delivery.
       contentBlocker: VShotsContentBlocker(
@@ -92,6 +99,10 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
           'ggpht.com',
           'google.com',
           'googleapis.com',
+          'jiosaavn.com',
+          'www.jiosaavn.com',
+          'static.saavncdn.com',
+          'c.saavncdn.com',
         ],
       ),
     );
@@ -105,6 +116,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   @override
   void dispose() {
+    widget.controller.pauseRequest.removeListener(_onPauseRequest);
     widget.controller.replayRequest.removeListener(_onReplayRequest);
     widget.controller.extentCommand.removeListener(_onExtentCommand);
     widget.controller.removeListener(_onControllerChanged);
@@ -127,6 +139,11 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   /// Repeat-one: reload the CURRENT url in the same session (the native
   /// layer resets its per-load ended flag, so the next completion fires
   /// again). No new WebView.
+  void _onPauseRequest() {
+    _session.pause();
+    widget.controller.setPagePlaying(false);
+  }
+
   void _onReplayRequest() {
     final url = widget.controller.url;
     if (url == null) return;
@@ -220,9 +237,30 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   // ── Browser session ─────────────────────────────────────────────────────
 
+  bool _usedFallback = false;
+
+  void _onPrimaryPageError(String message) {
+    final track = widget.controller.track;
+    final fallback = track?['fallbackUrl'] as String?;
+    if (!_usedFallback &&
+        fallback != null &&
+        fallback.isNotEmpty &&
+        fallback != _lastLoadedUrl) {
+      _usedFallback = true;
+      _lastLoadedUrl = fallback;
+      widget.controller.setLoading(true);
+      widget.controller.setError(null);
+      _session.load(fallback);
+      return;
+    }
+    widget.controller.setLoading(false);
+    widget.controller.setError(message);
+  }
+
   Future<void> _loadForCurrent() async {
     final url = widget.controller.url;
     if (url == null) return;
+    _usedFallback = false;
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
@@ -387,8 +425,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   }
 
   String _displayUrl() {
-    final id = widget.controller.videoId ?? '';
-    return 'm.youtube.com/watch?v=$id';
+    final url = widget.controller.url ?? '';
+    if (url.isEmpty) return '';
+    return url.replaceFirst(RegExp(r'^https://'), '');
   }
 
   // ── Collapsed mini player ────────────────────────────────────────────────
@@ -454,7 +493,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                       ),
                     ),
                   ),
-                const Positioned(left: 4, bottom: 4, child: _YoutubeBadge()),
+                Positioned(
+                  left: 4,
+                  bottom: 4,
+                  child: _SourceBadge(
+                    source: widget.controller.playbackSource ?? 'youtube',
+                  ),
+                ),
               ],
             ),
             const SizedBox(width: 12),
@@ -463,15 +508,25 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textMain,
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (widget.controller.adActive) ...[
+                        const SizedBox(width: 6),
+                        const _AdBadge(),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -571,15 +626,25 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textMain,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.textMain,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (widget.controller.adActive) ...[
+                          const SizedBox(width: 6),
+                          const _AdBadge(),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Row(
@@ -852,25 +917,54 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   }
 }
 
-/// Small red "YouTube" badge for the mini-player thumbnail.
-class _YoutubeBadge extends StatelessWidget {
-  const _YoutubeBadge();
+/// Small source badge for the mini-player thumbnail.
+/// Small "Ad" pill shown while the official YouTube player runs an
+/// in-stream ad (mute/skip/resume handled natively — this is UI only).
+class _AdBadge extends StatelessWidget {
+  const _AdBadge();
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.hotPink.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Text(
+        'AD',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+}
+
+class _SourceBadge extends StatelessWidget {
+  const _SourceBadge({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    final isJio = source.toLowerCase().contains('jiosaavn');
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
       decoration: BoxDecoration(
-        color: const Color(0xE6FF0000),
+        color: isJio ? const Color(0xE61DB954) : const Color(0xE6FF0000),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.play_arrow_rounded, size: 8, color: Colors.white),
+          const Icon(Icons.play_arrow_rounded, size: 8, color: Colors.white),
           Text(
-            'YouTube',
-            style: TextStyle(
+            isJio ? 'JioSaavn' : 'YouTube',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 7,
               fontWeight: FontWeight.w800,

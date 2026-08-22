@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -24,14 +25,115 @@ import io.flutter.plugin.platform.PlatformViewFactory
 import java.util.Locale
 
 private const val VIEW_TYPE = "vshots/native_browser"
+private const val TAG = "VShotsPlayback"
+
+/**
+ * App-wide YouTube playback assist (owner spec, Phase 17.10):
+ *
+ *  • EARLY AUTO-ADVANCE — the next queued track starts ~1.5 s BEFORE the
+ *    current one finishes. Consistent across Home / Discover / playlists /
+ *    the queue because every surface plays through this ONE WebView.
+ *
+ *  • AD ASSIST — while the OFFICIAL YouTube player runs an in-stream ad:
+ *      - the ad is muted (only the player's own video element state);
+ *      - YouTube's own "Skip" button is clicked when it appears (the exact
+ *        action a user would take; unskippable ads play muted in full);
+ *      - nothing is blocked, hidden, resized or sped up; no ad-network
+ *        interception, no unofficial APIs, no stream access.
+ *    When the ad ends the main track is unmuted and playback resumed
+ *    automatically (bounded recovery window so a deliberate user pause is
+ *    never overridden).
+ *
+ * Only official, user-equivalent player controls are used. The assist is
+ * gated by the remote flag `enable_youtube_ad_assist` (default ON) and is
+ * YouTube-page-only — JioSaavn pages are never touched.
+ */
+
+/**
+ * One-per-second playback poll. Returns:
+ *   'ad'      — an in-stream ad is playing (player's own ad UI markers)
+ *   'ended'   — media reached its natural end
+ *   'nearend' — <=1.5 s left AND still playing (never while paused)
+ *   'paused' / 'playing' / 'none' / 'unknown'
+ */
+private const val YT_POLL_JS = """
+(function(){
+  try{
+    var adOn = !!document.querySelector('.ad-showing');
+    if(!adOn){
+      var ui = document.querySelector('.videoAdUi, .ytp-ad-player-overlay');
+      if(ui && ui.offsetParent !== null){ adOn = true; }
+    }
+    var v = document.querySelector('video,audio');
+    if(!v){ return adOn ? 'ad' : 'none'; }
+    if(adOn){ return 'ad'; }
+    if(v.ended){ return 'ended'; }
+    var d = v.duration;
+    if(d && isFinite(d) && !v.paused && v.currentTime >= d - 1.5){ return 'nearend'; }
+    return v.paused ? 'paused' : 'playing';
+  }catch(e){ return 'unknown'; }
+})()
+"""
+
+/**
+ * Ad assist pass (runs each poll tick while an ad is active): mute the ad
+ * audio, and click YouTube's OWN visible Skip button when it is shown.
+ * Returns 'skipped' when a skip was clicked, 'muted' when only muted,
+ * 'ok' when nothing needed doing.
+ */
+private const val YT_AD_ASSIST_JS = """
+(function(){
+  try{
+    var skipped = false;
+    var v = document.querySelector('video');
+    if(v && !v.muted){ v.muted = true; v.volume = 0; }
+    var sels = ['button.ytp-ad-skip-button','button.ytp-skip-ad-button',
+                '.ytp-ad-skip-button-modern button','button.ytp-ad-skip-button-modern'];
+    for(var i=0;i<sels.length;i++){
+      var b = document.querySelector(sels[i]);
+      if(b && b.offsetParent !== null && !b.disabled){
+        try{ b.click(); skipped = true; }catch(e){}
+        break;
+      }
+    }
+    return skipped ? 'skipped' : 'muted';
+  }catch(e){ return 'err'; }
+})()
+"""
+
+/**
+ * Post-ad resume pass: unmute the main track, press play when paused, and
+ * click YouTube's own mute/play controls only when they advertise the state
+ * we need. The main music track is ALWAYS unmuted.
+ */
+private const val YT_RESUME_JS = """
+(function(){
+  try{
+    var v = document.querySelector('video');
+    if(v){
+      v.muted = false; v.volume = 1;
+      if(v.paused){
+        var p = v.play();
+        if(p && p.catch){ p.catch(function(){}); }
+      }
+    }
+    var mb = document.querySelector('.ytp-mute-button');
+    if(mb){
+      var lab = ((mb.getAttribute('aria-label')||'') + ' ' + (mb.getAttribute('title')||'')).toLowerCase();
+      if(lab.indexOf('unmute') >= 0){ try{ mb.click(); }catch(e){} }
+    }
+    var pb = document.querySelector('button.ytp-play-button');
+    if(v && v.paused && pb && pb.offsetParent !== null){ try{ pb.click(); }catch(e){} }
+    return 'ok';
+  }catch(e){ return 'err'; }
+})()
+"""
 
 /**
  * Discovery-only native browser view with FORCEFUL ad blocking.
  *
- * Ad blocking is ALWAYS ON and works at THREE layers:
- *   1. Network-level: shouldInterceptRequest blocks ad hosts/URLs
- *   2. URL-level: shouldOverrideUrlLoading blocks ad navigation
- *   3. Cosmetic: CSS injection hides residual ad containers
+ * Third-party ad blocking for non-YouTube pages. YouTube watch-page
+ * resources (including YouTube ads) are never intercepted or hidden.
  *
  * Unlike the generic webview_flutter platform view, this WebView deliberately
  * keeps its media lifecycle alive when Android makes the Flutter activity
@@ -62,15 +164,8 @@ private class VShotsBackgroundMediaWebView(
     private val playbackPoll = object : Runnable {
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
-            evaluateJavascript(
-                "(function(){var v=document.querySelector('video');if(!v){return 'none';}if(v.ended){return 'ended';}return v.paused?'paused':'playing';})()",
-            ) { result ->
-                val state = cleanJsResult(result)
-                setMediaPlaying(state == "playing")
-                if (state == "ended" && !endedReported) {
-                    endedReported = true
-                    events.invokeMethod("videoEnded", null)
-                }
+            evaluateJavascript(YT_POLL_JS) { result ->
+                handlePollResult(cleanJsResult(result))
             }
             handler.postDelayed(this, 1000L)
         }
@@ -80,8 +175,125 @@ private class VShotsBackgroundMediaWebView(
      *  Reset on every new load so each video reports end exactly once. */
     private var endedReported = false
 
+    /** True once the CURRENT load's media entered its last 1.5 s — the
+     *  app-wide auto-advance trigger (owner spec: next track starts just
+     *  BEFORE the song fully ends). Reset on every new load. */
+    private var nearEndReported = false
+
+    /** True while the YouTube page is playing an in-stream ad. */
+    private var adActive = false
+
+    /** ElapsedRealtime stamp of the most recent ad→content transition
+     *  (window for stuck-after-ad recovery). */
+    private var adJustEndedAt = 0L
+
+    /** Master switch for the ad assist (mute + official-skip click +
+     *  resume). Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
+    private var adAssistEnabled = true
+
     var mediaPlaying: Boolean = false
         private set
+
+    private fun handlePollResult(state: String) {
+        val currentUrl = url ?: ""
+        val lower = currentUrl.lowercase(Locale.US)
+        val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
+
+        when (state) {
+            "ad" -> {
+                setAdActive(true)
+                setMediaPlaying(true)
+                if (adAssistEnabled) runAdAssist()
+            }
+            else -> {
+                if (adActive) {
+                    // Ad → content transition: unmute + resume the main
+                    // track, and open the stuck-recovery window.
+                    adJustEndedAt = android.os.SystemClock.elapsedRealtime()
+                    setAdActive(false)
+                    runResumeAfterAd()
+                }
+                when (state) {
+                    "nearend" -> {
+                        // Early auto-advance: YouTube pages ONLY, and the
+                        // JS only reports near-end while actually playing
+                        // (never while the user paused).
+                        if (isYouTube && !nearEndReported) {
+                            nearEndReported = true
+                            Log.d(TAG, "near-end auto-advance fired")
+                            events.invokeMethod("videoEnded", null)
+                        }
+                        setMediaPlaying(true)
+                    }
+                    "ended" -> {
+                        // Real end (fallback for videos with unknown
+                        // duration). Never fired while an in-stream ad is
+                        // showing — the ad's own video-end is not a track
+                        // end (it would wrongly skip the queue).
+                        if (isYouTube && !adActive && !endedReported) {
+                            endedReported = true
+                            Log.d(TAG, "video.ended fired")
+                            events.invokeMethod("videoEnded", null)
+                        }
+                        setMediaPlaying(false)
+                    }
+                    "playing" -> setMediaPlaying(true)
+                    "paused" -> {
+                        // Stuck-after-ad recovery: within a short window
+                        // after an ad ends, resume the main content instead
+                        // of leaving the player paused. Outside the window
+                        // a pause is the USER's choice — never fight it.
+                        val sinceAd = if (adJustEndedAt == 0L) Long.MAX_VALUE
+                        else android.os.SystemClock.elapsedRealtime() - adJustEndedAt
+                        if (sinceAd in 0..6000) {
+                            runResumeAfterAd()
+                        } else {
+                            setMediaPlaying(false)
+                        }
+                    }
+                    else -> Unit // 'none' / 'unknown' — keep current state
+                }
+            }
+        }
+    }
+
+    private fun setAdActive(value: Boolean) {
+        if (adActive == value) return
+        adActive = value
+        Log.d(TAG, if (value) "in-stream ad started" else "in-stream ad ended")
+        events.invokeMethod("adState", value)
+    }
+
+    /**
+     * YouTube AD ASSIST (owner spec) — uses ONLY the controls the official
+     * YouTube player itself exposes:
+     *
+     *   1. While an in-stream ad plays, the ad is muted (the app's music
+     *      must not blast ad audio between songs).
+     *   2. When YouTube shows its own "Skip" button, it is clicked — the
+     *      same action a user performs. Unskippable ads are NEVER
+     *      interfered with: they play (muted) in full.
+     *   3. Nothing is blocked, hidden, resized or sped up. No ad-network
+     *      interception, no unofficial APIs, no stream access.
+     *
+     * Gated by `enable_youtube_ad_assist` (remote flag, default ON).
+     */
+    private fun runAdAssist() {
+        evaluateJavascript(YT_AD_ASSIST_JS) { result ->
+            Log.d(TAG, "ad assist: ${cleanJsResult(result)}")
+        }
+    }
+
+    /**
+     * After an ad ends: unmute the main track, press play if the player is
+     * paused (and click YouTube's own mute/play controls only when they
+     * advertise the state we need). The main music track is ALWAYS unmuted.
+     */
+    private fun runResumeAfterAd() {
+        evaluateJavascript(YT_RESUME_JS) { result ->
+            Log.d(TAG, "post-ad resume: ${cleanJsResult(result)}")
+        }
+    }
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -115,7 +327,6 @@ private class VShotsBackgroundMediaWebView(
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 events.invokeMethod("pageFinished", null)
-                applyCosmeticBlocking()
                 startPlaybackPolling()
                 attemptAutoplayWithAudio()
             }
@@ -154,13 +365,11 @@ private class VShotsBackgroundMediaWebView(
                     val path = url.path?.lowercase(Locale.US) ?: ""
                     val query = url.query?.lowercase(Locale.US) ?: ""
 
-                    // YouTube-specific ad blocking (even on essential hosts)
-                    if (isYouTubeDomain(host) && shouldBlockYouTubeAd(urlStr, path, query)) {
-                        reportBlock(host)
-                        return emptyResponse()
-                    }
+                    // YouTube (and Google ad CDNs used by the YouTube watch page)
+                    // must never be intercepted — no ad-resource blocking.
+                    if (isYouTubeDomain(host) || isYouTubeAdNetwork(host)) return null
 
-                    // Essential hosts are NEVER blocked (except YouTube ads above)
+                    // Essential hosts are NEVER blocked
                     if (matchesAnyHost(host, essentialHosts)) return null
 
                     // Host-based blocking
@@ -205,151 +414,17 @@ private class VShotsBackgroundMediaWebView(
                 return youtubeDomains.any { host == it || host.endsWith(".$it") }
             }
 
-            /**
-             * Check if YouTube URL should be blocked as an ad.
-             * Blocks ad-specific paths/queries while allowing normal content.
-             */
-            private fun shouldBlockYouTubeAd(url: String, path: String, query: String): Boolean {
-                val lowerUrl = url.lowercase(Locale.US)
-
-                // YouTube ad-specific domains (block completely)
-                val adDomains = listOf(
-                    "pagead2.googlesyndication.com",
-                    "tpc.googlesyndication.com",
-                    "googleads.g.doubleclick.net",
-                    "ad.doubleclick.net",
-                    "static.doubleclick.net",
-                    "m.doubleclick.net",
-                    "adx.g.doubleclick.net",
-                    "feedads.g.doubleclick.net",
+            /** Google ad CDNs used by the YouTube watch page — never blocked. */
+            private fun isYouTubeAdNetwork(host: String): Boolean {
+                val networks = listOf(
+                    "doubleclick.net",
+                    "googlesyndication.com",
                     "googleadservices.com",
-                    "www.googleadservices.com",
-                    "pagead.googlesyndication.com",
                     "adservice.google.com",
-                    "adservice.google.co.uk",
                     "adservice.google.co.in",
+                    "adservice.google.co.uk",
                 )
-
-                val host = Uri.parse(url).host?.lowercase(Locale.US) ?: ""
-                for (adDomain in adDomains) {
-                    if (host == adDomain || host.endsWith(".$adDomain")) {
-                        return true
-                    }
-                }
-
-                // YouTube ad URL patterns
-                val adPatterns = listOf(
-                    "/pagead/",
-                    "/pcs/",
-                    "/google_ads/",
-                    "/googleads",
-                    "/adservice/",
-                    "/ad_break",
-                    "/adunit/",
-                    "/adview",
-                    "/adslot/",
-                    "/admanager/",
-                    "/dfp/",
-                    "/gpt/",
-                    "/googletag/",
-                    "/googletagmanager/",
-                    "/api/stats/ads",
-                    "/api/stats/atr",
-                    "&adformat=",
-                    "&ad_type=",
-                    "&ad_module=",
-                    "&ad_break",
-                    "&ad_pod",
-                    "&ad_creative",
-                    "&ad_media",
-                    "&ad_video",
-                    "&ad_audio",
-                    "&ad_companion",
-                    "&ad_overlay",
-                    "&ad_banner",
-                    "&ad_interstitial",
-                    "&ad_rewarded",
-                    "&ad_native",
-                    "&ad_display",
-                    "&ad_instream",
-                    "&ad_outstream",
-                    "&ad_linear",
-                    "&ad_nonlinear",
-                    "&ad_skippable",
-                    "&ad_nonskippable",
-                    "&ad_preroll",
-                    "&ad_midroll",
-                    "&ad_postroll",
-                    "adformat=",
-                    "ad_type=",
-                    "ad_module=",
-                    "ad_break",
-                    "ad_pod",
-                    "ad_creative",
-                    "ad_media",
-                    "ad_video",
-                    "ad_audio",
-                    "ad_companion",
-                    "ad_overlay",
-                    "ad_banner",
-                    "ad_interstitial",
-                    "ad_rewarded",
-                    "ad_native",
-                    "ad_display",
-                    "ad_instream",
-                    "ad_outstream",
-                    "ad_linear",
-                    "ad_nonlinear",
-                    "ad_skippable",
-                    "ad_nonskippable",
-                    "ad_preroll",
-                    "ad_midroll",
-                    "ad_postroll",
-                )
-
-                for (pattern in adPatterns) {
-                    if (path.contains(pattern) || lowerUrl.contains(pattern)) {
-                        return true
-                    }
-                }
-
-                // Check for ad-related query parameters
-                if (query.isNotEmpty()) {
-                    val adQueryParams = listOf(
-                        "adformat=",
-                        "ad_type=",
-                        "ad_module=",
-                        "ad_break",
-                        "ad_pod",
-                        "ad_creative",
-                        "ad_media",
-                        "ad_video",
-                        "ad_audio",
-                        "ad_companion",
-                        "ad_overlay",
-                        "ad_banner",
-                        "ad_interstitial",
-                        "ad_rewarded",
-                        "ad_native",
-                        "ad_display",
-                        "ad_instream",
-                        "ad_outstream",
-                        "ad_linear",
-                        "ad_nonlinear",
-                        "ad_skippable",
-                        "ad_nonskippable",
-                        "ad_preroll",
-                        "ad_midroll",
-                        "ad_postroll",
-                    )
-                    for (param in adQueryParams) {
-                        if (query.contains(param)) {
-                            return true
-                        }
-                    }
-                }
-
-                return false
+                return networks.any { host == it || host.endsWith(".$it") }
             }
 
             /**
@@ -368,13 +443,10 @@ private class VShotsBackgroundMediaWebView(
                 val path = url.path?.lowercase(Locale.US) ?: ""
                 val query = url.query?.lowercase(Locale.US) ?: ""
 
-                // YouTube-specific ad redirect blocking
-                if (isYouTubeDomain(host) && shouldBlockYouTubeAd(urlStr, path, query)) {
-                    reportBlock(host)
-                    return true
-                }
+                // Never intercept YouTube navigation or YouTube ad-network hosts.
+                if (isYouTubeDomain(host) || isYouTubeAdNetwork(host)) return false
 
-                // Allow essential hosts (except YouTube ads above)
+                // Allow essential hosts
                 if (isAllowedHost(host)) return false
 
                 // Block ad domains
@@ -412,221 +484,6 @@ private class VShotsBackgroundMediaWebView(
      *
      * Includes YOUTUBE-SPECIFIC ad selectors for YouTube pages.
      */
-    private fun applyCosmeticBlocking() {
-        if (!blockerEnabled) return
-        evaluateJavascript(
-            "(function(){try{" +
-            "var s=document.createElement('style');" +
-            "s.setAttribute('id','vshots-adblock');" +
-            "s.textContent='" +
-            // Google AdSense/DFP
-            "[data-google-query-id]," +
-            "ins.adsbygoogle," +
-            "div[id^=google_ads_]," +
-            "iframe[src*=doubleclick]," +
-            "iframe[src*=googlesyndication]," +
-            "iframe[src*=googleadservices]," +
-            "div[class*=ad-slot]," +
-            "div[class*=adslot]," +
-            "div[class*=ad-container]," +
-            "div[id*=ad-container]," +
-            "aside[class*=advert]," +
-            "div[data-ad]," +
-            "div[data-ad-client]," +
-            "div[id^=div-gpt-ad]," +
-            // Common ad containers
-            "div[class*=adsbygoogle]," +
-            "div[class*=ad-banner]," +
-            "div[class*=ad-wrapper]," +
-            "div[class*=ad-unit]," +
-            "div[class*=ad-space]," +
-            "div[class*=ad-placement]," +
-            "div[class*=ad-zone]," +
-            "div[class*=ad-region]," +
-            "div[class*=ad-area]," +
-            "div[class*=ad-block]," +
-            "div[class*=ad-panel]," +
-            "div[class*=ad-box]," +
-            "div[class*=ad-card]," +
-            "div[class*=ad-tile]," +
-            "div[class*=ad-row]," +
-            "div[class*=ad-column]," +
-            "div[class*=ad-grid]," +
-            "div[class*=ad-list]," +
-            "div[class*=ad-feed]," +
-            "div[class*=ad-stream]," +
-            "div[class*=ad-carousel]," +
-            "div[class*=ad-slider]," +
-            "div[class*=ad-popup]," +
-            "div[class*=ad-modal]," +
-            "div[class*=ad-overlay]," +
-            "div[class*=ad-interstitial]," +
-            "div[class*=ad-fullscreen]," +
-            "div[class*=ad-sticky]," +
-            "div[class*=ad-fixed]," +
-            "div[class*=ad-floating]," +
-            "div[class*=ad-bottom]," +
-            "div[class*=ad-top]," +
-            "div[class*=ad-left]," +
-            "div[class*=ad-right]," +
-            "div[class*=ad-header]," +
-            "div[class*=ad-footer]," +
-            "div[class*=ad-sidebar]," +
-            // Video ad overlays
-            "div[class*=video-ad]," +
-            "div[class*=preroll]," +
-            "div[class*=midroll]," +
-            "div[class*=postroll]," +
-            "div[class*=ad-break]," +
-            "div[class*=ad-pod]," +
-            "div[class*=ad-slate]," +
-            "div[class*=ad-companion]," +
-            // Ad iframes
-            "iframe[class*=ad]," +
-            "iframe[id*=ad]," +
-            "iframe[name*=ad]," +
-            "iframe[data-ad]," +
-            "iframe[src*=ad]," +
-            "iframe[src*=ads]," +
-            "iframe[src*=banner]," +
-            "iframe[src*=sponsor]," +
-            "iframe[src*=promo]," +
-            // Popup/overlay containers
-            "div[class*=popup-ad]," +
-            "div[class*=pop-up]," +
-            "div[class*=popunder]," +
-            "div[class*=interstitial]," +
-            "div[class*=overlay-ad]," +
-            "div[class*=modal-ad]," +
-            "div[class*=fullscreen-ad]," +
-            "div[class*=sticky-ad]," +
-            "div[class*=fixed-ad]," +
-            "div[class*=floating-ad]," +
-            "div[class*=bottom-ad]," +
-            "div[class*=top-ad]," +
-            "div[class*=left-ad]," +
-            "div[class*=right-ad]," +
-            "div[class*=header-ad]," +
-            "div[class*=footer-ad]," +
-            "div[class*=sidebar-ad]," +
-            // Fake download buttons
-            "a[class*=download-ad]," +
-            "a[class*=fake-download]," +
-            "a[class*=ad-download]," +
-            "button[class*=download-ad]," +
-            "button[class*=fake-download]," +
-            "button[class*=ad-download]," +
-            // YouTube specific ad selectors
-            ".ytp-ad-overlay-container," +
-            ".ytp-ad-text-overlay," +
-            ".ytp-ad-image-overlay," +
-            ".ytp-ad-button-overlay," +
-            ".ytp-ad-player-overlay," +
-            ".ytp-ad-player-overlay-instream-info," +
-            ".ytp-ad-overlay-slot," +
-            ".ytp-ad-skip-button," +
-            ".ytp-ad-skip-button-modern," +
-            ".ytp-ad-skip-button-slot," +
-            ".ytp-ad-progress," +
-            ".ytp-ad-progress-bar," +
-            ".ytp-ad-countdown," +
-            ".ytp-ad-countdown-overlay," +
-            ".ytp-ad-badge," +
-            ".ytp-ad-badge-container," +
-            ".ytp-ad-visit-advertiser-button," +
-            ".ytp-ad-visit-advertiser-button-renderer," +
-            ".ytd-display-ad-renderer," +
-            ".ytd-statement-banner-renderer," +
-            ".ytd-ad-slot-renderer," +
-            ".ytd-in-feed-ad-layout-renderer," +
-            ".ytd-banner-promo-renderer," +
-            ".ytd-video-masthead-ad-v3-renderer," +
-            ".ytd-promoted-sparkles-web-renderer," +
-            ".ytd-promoted-video-renderer," +
-            ".ytd-primetime-promo-renderer," +
-            ".ytd-brand-video-singleton-renderer," +
-            ".ytd-brand-video-shelf-renderer," +
-            ".ytd-merch-shelf-renderer," +
-            ".ytd-carousel-ad-renderer," +
-            ".ytp-ad-overlay-container," +
-            ".ytp-ad-text-overlay," +
-            ".ytp-ad-image-overlay," +
-            ".ytp-ad-button-overlay," +
-            ".ytp-ad-player-overlay," +
-            ".ytp-ad-player-overlay-instream-info," +
-            ".ytp-ad-overlay-slot," +
-            ".ytp-ad-skip-button," +
-            ".ytp-ad-skip-button-modern," +
-            ".ytp-ad-skip-button-slot," +
-            ".ytp-ad-progress," +
-            ".ytp-ad-progress-bar," +
-            ".ytp-ad-countdown," +
-            ".ytp-ad-countdown-overlay," +
-            ".ytp-ad-badge," +
-            ".ytp-ad-badge-container," +
-            ".ytp-ad-visit-advertiser-button," +
-            ".ytp-ad-visit-advertiser-button-renderer," +
-            ".ytd-display-ad-renderer," +
-            ".ytd-statement-banner-renderer," +
-            ".ytd-ad-slot-renderer," +
-            ".ytd-in-feed-ad-layout-renderer," +
-            ".ytd-banner-promo-renderer," +
-            ".ytd-video-masthead-ad-v3-renderer," +
-            ".ytd-promoted-sparkles-web-renderer," +
-            ".ytd-promoted-video-renderer," +
-            ".ytd-primetime-promo-renderer," +
-            ".ytd-brand-video-singleton-renderer," +
-            ".ytd-brand-video-shelf-renderer," +
-            ".ytd-merch-shelf-renderer," +
-            ".ytd-carousel-ad-renderer," +
-            "{display:none!important;height:0!important;min-height:0!important;overflow:hidden!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:absolute!important;left:-9999px!important;}" +
-            "';" +
-            "document.head.appendChild(s);" +
-            "}catch(e){}})()",
-            null,
-        )
-    }
-
-    // YouTube ad skip/speed manipulation REMOVED for YouTube ToS compliance.
-
-    /**
-     * Block known ad elements via JavaScript injection.
-     * More targeted than CSS — removes elements from DOM.
-     * Only runs on non-YouTube pages to avoid breaking YouTube.
-     */
-    private fun applyDomBlocking() {
-        if (!blockerEnabled) return
-        evaluateJavascript(
-            "(function(){try{" +
-            "var url=window.location.href;" +
-            "if(url.indexOf('youtube.com')>=0||url.indexOf('youtu.be')>=0)return;" +
-            // Remove ad iframes
-            "var iframes=document.querySelectorAll('iframe');" +
-            "for(var i=0;i<iframes.length;i++){" +
-            "var f=iframes[i];" +
-            "var src=(f.src||'').toLowerCase();" +
-            "var cls=(f.className||'').toLowerCase();" +
-            "var id=(f.id||'').toLowerCase();" +
-            "if(src.indexOf('doubleclick')>=0||src.indexOf('googlesyndication')>=0||" +
-            "src.indexOf('googleadservices')>=0||src.indexOf('adnxs')>=0||" +
-            "src.indexOf('ad.')>=0||src.indexOf('ads.')>=0||" +
-            "cls.indexOf('ad')>=0||id.indexOf('ad')>=0){" +
-            "f.parentNode.removeChild(f);" +
-            "}" +
-            "}" +
-            // Remove ad divs
-            "var adDivs=document.querySelectorAll('div[class*=ad-],div[id*=ad-],div[data-ad]');" +
-            "for(var j=0;j<adDivs.length;j++){" +
-            "var d=adDivs[j];" +
-            "if(d.tagName==='VIDEO'||d.tagName==='AUDIO')continue;" +
-            "if(d.querySelector('video')||d.querySelector('audio'))continue;" +
-            "d.parentNode.removeChild(d);" +
-            "}" +
-            "}catch(e){}})()",
-            null,
-        )
-    }
-
     /** Host == rule or endsWith ".rule" (e.g. "doubleclick.net" also matches
      *  "ad.doubleclick.net"). Conservative: no substring matching. */
     private fun matchesAnyHost(host: String, rules: Set<String>): Boolean {
@@ -668,8 +525,16 @@ private class VShotsBackgroundMediaWebView(
         return false
     }
 
+    private fun isDeniedJioHost(host: String): Boolean {
+        val h = host.lowercase(Locale.US)
+        if (h == "api.jiosaavn.com" || h.endsWith(".api.jiosaavn.com")) return true
+        if (h == "saavn.me" || h.endsWith(".saavn.me")) return true
+        return false
+    }
+
     private fun isAllowedHost(host: String): Boolean {
         val h = host.lowercase(Locale.US)
+        if (isDeniedJioHost(h)) return false
         val allowed = listOf(
             "youtube.com",
             "youtu.be",
@@ -711,8 +576,19 @@ private class VShotsBackgroundMediaWebView(
 
     fun load(url: String) {
         if (!url.startsWith("https://")) return
+        val host = Uri.parse(url).host?.lowercase(Locale.US) ?: return
+        if (isDeniedJioHost(host)) return
         endedReported = false
+        nearEndReported = false
+        adActive = false
+        adJustEndedAt = 0L
         loadUrl(url)
+    }
+
+    /** Toggles the YouTube ad assist (remote flag from Dart). */
+    fun setAdAssist(enabled: Boolean) {
+        adAssistEnabled = enabled
+        Log.d(TAG, "ad assist ${if (enabled) "enabled" else "disabled"}")
     }
 
     /** Applies the compiled blocker configuration from Dart. Cheap sets only —
@@ -734,6 +610,9 @@ private class VShotsBackgroundMediaWebView(
 
     fun reloadCurrent() {
         endedReported = false
+        nearEndReported = false
+        adActive = false
+        adJustEndedAt = 0L
         reload()
     }
 
@@ -780,6 +659,21 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
+    fun pauseMedia() {
+        evaluateJavascript(
+            """
+            (function(){
+              var v=document.querySelector('video,audio');
+              if(!v){return 'none';}
+              if(!v.paused){ v.pause(); }
+              return 'paused';
+            })()
+            """.trimIndent(),
+        ) { result ->
+            setMediaPlaying(false)
+        }
+    }
+
     fun togglePlayback() {
         evaluateJavascript(
             """
@@ -810,11 +704,21 @@ private class VShotsBackgroundMediaWebView(
      * blocks unmuted autoplay, the real YouTube control remains visible.
      */
     private fun attemptAutoplayWithAudio() {
+        // YouTube pages ONLY: the pass exists to unmute/autoplay the official
+        // YouTube player. It must never run on JioSaavn pages — clicking
+        // random controls or forcing play there would start the wrong song.
+        // (This class extends WebView, so the page URL is `url` — not an
+        // outer `webView` reference.)
+        val currentUrl = url ?: return
+        val currentHost = currentUrl.lowercase(Locale.US)
+        if (!currentHost.contains("youtube.com") &&
+            !currentHost.contains("youtu.be")
+        ) return
         evaluateJavascript(
             """
             (function(){
               try {
-                var v=document.querySelector('video');
+                var v=document.querySelector('video,audio');
                 var buttons=document.querySelectorAll('button,[role="button"]');
                 for(var i=0;i<buttons.length;i++){
                   var b=buttons[i];
@@ -896,9 +800,13 @@ private class VShotsBrowserPlatformView(
                     webView.togglePlayback()
                     result.success(null)
                 }
+                "pause" -> {
+                    webView.pauseMedia()
+                    result.success(null)
+                }
                 "play" -> {
                     webView.evaluateJavascript(
-                        "(function(){var v=document.querySelector('video');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
+                        "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
                     ) { value ->
                         webView.setMediaPlaying(clean(value) == "playing")
                     }
@@ -917,6 +825,10 @@ private class VShotsBrowserPlatformView(
                         // A blocker-config error must never take the browser down.
                         result.success(null)
                     }
+                }
+                "setAdAssist" -> {
+                    webView.setAdAssist((call.arguments as? Boolean) ?: true)
+                    result.success(null)
                 }
                 "dispose" -> {
                     webView.disposeMedia()
