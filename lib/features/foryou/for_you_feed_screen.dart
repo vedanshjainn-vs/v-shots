@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ads/ad_config.dart';
+import '../../core/ads/ad_policy.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/config/discovery_filters.dart';
 import '../../core/config/discovery_remote.dart';
@@ -64,8 +65,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   // The feed is a vertical PageView. Every [AdConfig.discoveryAdEvery] organic
   // videos we insert one clearly-separated ad page, mapping a PageView page
   // index to a song index via [_songIndexForPage]; ad pages never touch the
-  // browser. Ads are only inserted when ads are enabled (production config).
-  bool get _adsEnabled => AdConfig.adsEnabled;
+  // browser. Ads are only inserted when the central policy allows them
+  // (enabled + not ad-free + consent settled). Never every swipe: one ad
+  // page per 9 organic videos, with an explicit Continue control.
+  bool get _adsEnabled =>
+      AdPolicy.instance.canShowNative(AdPlacement.forYouFeed);
 
   /// Number of ad pages inserted for [songCount] songs (one after every
   /// [AdConfig.discoveryAdEvery] songs).
@@ -1191,7 +1195,10 @@ class _ForYouAdCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              const NativeAdWidget(height: 180),
+              const NativeAdWidget(
+                height: 180,
+                placement: AdPlacement.forYouFeed,
+              ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
                 onPressed: onSkip,

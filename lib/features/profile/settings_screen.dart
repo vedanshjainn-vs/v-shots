@@ -13,6 +13,7 @@ import '../../core/motion/motion.dart';
 import '../../core/navigation/app_navigator.dart';
 import '../../core/player/sleep_timer.dart';
 import '../../core/recommendation/signal_store.dart';
+import 'rewards_sheet.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/storage/personalization_store.dart';
 import '../../core/theme/app_colors.dart';
@@ -263,6 +264,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Ads & Rewards
+          const _SectionHeader('Ads & Rewards'),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(
+                Icons.card_giftcard_rounded,
+                color: AppColors.accent,
+              ),
+              title: const Text(
+                'Rewards',
+                style: TextStyle(color: AppColors.textMain, fontSize: 15),
+              ),
+              subtitle: const Text(
+                'Watch a short ad for a temporary perk',
+                style: TextStyle(color: AppColors.textSubtle, fontSize: 12),
+              ),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppColors.textSubtle,
+              ),
+              onTap: () => RewardsSheet.show(context),
             ),
           ),
           const SizedBox(height: 20),

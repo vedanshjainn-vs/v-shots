@@ -41,6 +41,9 @@ jobs:
           GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
           YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
           ADMOB_NATIVE_AD_ID=${{ secrets.ADMOB_NATIVE_AD_ID }}
+          ADMOB_INTERSTITIAL_AD_ID=${{ secrets.ADMOB_INTERSTITIAL_AD_ID }}
+          ADMOB_REWARDED_AD_ID=${{ secrets.ADMOB_REWARDED_AD_ID }}
+          ADMOB_BANNER_AD_ID=${{ secrets.ADMOB_BANNER_AD_ID }}
           EOF
 
       - name: 4b. Inject Production AdMob App ID (when configured)

@@ -18,6 +18,10 @@ class ConsentManager {
   ConsentStatus _status = ConsentStatus.unknown;
   ConsentStatus get status => _status;
 
+  /// @visibleForTesting — replace the live consent status.
+  @visibleForTesting
+  void debugSetStatus(ConsentStatus value) => _status = value;
+
   /// Whether personalized ads may be served. True only when the user granted
   /// consent; otherwise requests are sent as non-personalized.
   bool get canRequestPersonalizedAds => _status == ConsentStatus.obtained;

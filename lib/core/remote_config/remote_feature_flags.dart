@@ -45,6 +45,11 @@ class RemoteFeatureFlags {
     'enable_youtube_ad_assist': true,
     'enable_discovery_remote_categories': false,
     'enable_social': false,
+    // EMERGENCY AD KILL SWITCH (ads system, 2026-08-23): default true (no
+    // behavior change when the row is absent). Set value=false in Supabase
+    // feature_flags (admin panel → Feature Flags) to disable ALL ads
+    // instantly, app-wide, without an app release.
+    'enable_ads': true,
   };
 
   Map<String, bool>? _override;

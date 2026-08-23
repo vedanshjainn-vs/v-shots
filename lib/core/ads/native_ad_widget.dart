@@ -8,26 +8,42 @@
 //   - is visually distinct from organic song cards (bordered card, tag, no
 //     play/like/next controls), so it can never be mistaken for content
 //   - never sits over the YouTube player or player controls
-//   - only renders when ads are enabled AND a native ad has loaded
+//   - only renders when AdPolicy allows (ads enabled AND not ad-free AND
+//     consent settled) AND a native ad has loaded
 //
-// No ad is ever shown in Home/Search unless AdConfig.adsEnabled is true, and
-// the widget returns an empty box otherwise (so dev builds never show test
-// ads to real users).
+// Fail-safe: any block/failure ⇒ renders an empty box (normal UI continues).
+//
+// No ad is ever shown unless the policy gate passes, and the widget returns
+// an empty box otherwise (dev/store builds never show test ads to real users
+// unless ADMOB_TEST_MODE is explicitly set in a debug build).
+//
 // ═════════════════════════════════════════════════════════════════════════
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../core/theme/app_colors.dart';
+import 'ad_analytics.dart';
 import 'ad_config.dart';
+import 'ad_manager.dart';
+import 'ad_policy.dart';
 import 'consent_manager.dart';
 
 /// A self-contained native ad card. Loads one native ad on init and disposes
 /// it on dispose. Renders nothing when ads are disabled or the ad fails.
+///
+/// [placement] is used for policy + analytics only.
 class NativeAdWidget extends StatefulWidget {
-  const NativeAdWidget({super.key, this.height = 132});
+  const NativeAdWidget({
+    super.key,
+    this.height = 132,
+    this.placement = AdPlacement.home,
+  });
 
   final double height;
+  final AdPlacement placement;
 
   @override
   State<NativeAdWidget> createState() => _NativeAdWidgetState();
@@ -40,9 +56,17 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
   @override
   void initState() {
     super.initState();
-    if (AdConfig.adsEnabled) {
-      _loadAd();
+    if (AdPolicy.instance.adsAvailable) {
+      unawaited(_loadWhenReady());
     }
+  }
+
+  Future<void> _loadWhenReady() async {
+    // Ad init is non-blocking at startup — wait a bounded moment so the SDK
+    // is ready; if it isn't, fail safe (no ad, normal UI).
+    await AdManager.instance.waitForReady(timeout: const Duration(seconds: 5));
+    if (!mounted || !AdPolicy.instance.adsAvailable) return;
+    _loadAd();
   }
 
   void _loadAd() {
@@ -64,17 +88,25 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
         cornerRadius: 12.0,
       ),
       listener: NativeAdListener(
-        onAdLoaded: (_) => setState(() => _loaded = true),
+        onAdLoaded: (_) {
+          AdAnalytics.log('native_rendered', placement: widget.placement.key);
+          if (mounted) setState(() => _loaded = true);
+        },
         onAdFailedToLoad: (ad, error) {
+          AdAnalytics.log('ad_load_failed',
+              placement: widget.placement.key, detail: error.message);
           ad.dispose();
           if (mounted) setState(() => _loaded = false);
         },
-        onAdImpression: (_) {},
-        onAdClicked: (_) {},
+        onAdImpression: (_) =>
+            AdAnalytics.log('ad_impression', placement: widget.placement.key),
+        onAdClicked: (_) =>
+            AdAnalytics.log('ad_closed', placement: widget.placement.key),
       ),
       request: ConsentManager.instance.buildAdRequest(),
     )..load();
     _nativeAd = ad;
+    AdAnalytics.log('ad_request', placement: widget.placement.key);
   }
 
   @override
@@ -85,7 +117,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (!AdConfig.adsEnabled || !_loaded || _nativeAd == null) {
+    if (!AdPolicy.instance.adsAvailable || !_loaded || _nativeAd == null) {
       return const SizedBox.shrink();
     }
     return Container(

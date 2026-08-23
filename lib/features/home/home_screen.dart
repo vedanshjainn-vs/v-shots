@@ -20,6 +20,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../core/ads/ad_policy.dart';
+import '../../core/ads/native_ad_widget.dart';
 import '../../core/motion/motion.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
@@ -209,9 +211,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               else
                 // Spotlight shelves render as the hero carousel above — skip
                 // them here so content never appears twice.
-                ..._shelves
-                    .where((s) => !_spotlightIds().contains(s.id))
-                    .map(_buildShelf),
+                ..._buildShelfSlivers(),
               _buildFooter(),
             ],
           ),
@@ -541,6 +541,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // ── Shelf rendering ────────────────────────────────────────────────────
+  /// Shelves + policy-gated native ad slots BETWEEN them.
+  ///
+  /// Conservative cadence (centralized in AdPolicy): first ad only after
+  /// [AdPolicy.homeFirstAdAfterShelves] organic shelves, then every
+  /// [AdPolicy.homeAdEveryShelves] shelves — never at the top of Home, never
+  /// two ads adjacent. When the policy denies ads (off / ad-free / consent
+  /// pending) this returns exactly the plain shelf list (no layout change).
+  List<Widget> _buildShelfSlivers() {
+    final visible = _shelves
+        .where((s) => !_spotlightIds().contains(s.id))
+        .toList(growable: false);
+    final slivers = <Widget>[];
+    final adsOn = AdPolicy.instance.canShowNative(AdPlacement.home);
+    for (var i = 0; i < visible.length; i++) {
+      slivers.add(_buildShelf(visible[i]));
+      final after = i + 1;
+      if (adsOn &&
+          after >= AdPolicy.homeFirstAdAfterShelves &&
+          (after - AdPolicy.homeFirstAdAfterShelves) %
+                  AdPolicy.homeAdEveryShelves ==
+              0) {
+        slivers.add(
+          const SliverToBoxAdapter(
+            child: NativeAdWidget(placement: AdPlacement.home),
+          ),
+        );
+      }
+    }
+    return slivers;
+  }
+
   Widget _buildShelf(HomeShelf shelf) {
     switch (shelf.status) {
       case HomeShelfStatus.hidden:
