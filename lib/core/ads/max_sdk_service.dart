@@ -68,6 +68,25 @@ class VShotsMax {
   bool rewardedReady = false;
   final Map<String, String> formatErrors = {};
 
+  /// Per-format activity trail for the diagnostics panel (Phase 12):
+  /// requested → loaded → shown / failed, with timestamps.
+  final Map<String, DateTime> lastActivityAt = {};
+  final Map<String, String> lastActivity = {};
+
+  void noteActivity(String format, String activity) {
+    lastActivityAt[format] = DateTime.now();
+    lastActivity[format] = activity;
+  }
+
+  String activityLine(String format) {
+    final at = lastActivityAt[format];
+    final what = lastActivity[format];
+    if (at == null || what == null) return 'no activity yet';
+    final t = at.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(t.hour)}:${two(t.minute)}:${two(t.second)} — $what';
+  }
+
   // ── Event hooks for VShotsAds bounded on-demand loads ──────────────────
   VoidCallback? onInterstitialLoaded;
   VoidCallback? onRewardedLoaded;
@@ -186,29 +205,36 @@ class VShotsMax {
       onAdLoadedCallback: (ad) {
         interstitialReady = true;
         formatErrors.remove('interstitial');
+        noteActivity('interstitial', 'LOADED (network: ${ad.networkName})');
         AdAnalytics.log('ad_loaded', placement: 'interstitial');
         onInterstitialLoaded?.call();
       },
       onAdLoadFailedCallback: (unitId, error) {
         interstitialReady = false;
-        formatErrors['interstitial'] = '${error.code.name}: ${error.message}';
+        final msg = '${error.code.name}: ${error.message}';
+        formatErrors['interstitial'] = msg;
+        noteActivity('interstitial', 'LOAD FAILED — $msg');
         AdAnalytics.log('ad_load_failed',
-            placement: 'interstitial',
-            detail: '${error.code.name}: ${error.message}');
+            placement: 'interstitial', detail: msg);
         onInterstitialLoaded?.call();
       },
-      onAdDisplayedCallback: (ad) =>
-          AdAnalytics.log('ad_impression', placement: 'interstitial'),
+      onAdDisplayedCallback: (ad) {
+        noteActivity('interstitial', 'SHOWN (impression)');
+        AdAnalytics.log('ad_impression', placement: 'interstitial');
+      },
       onAdDisplayFailedCallback: (ad, error) {
         interstitialReady = false;
-        formatErrors['interstitial'] =
-            'display ${error.code.name}: ${error.message}';
+        final msg = 'display ${error.code.name}: ${error.message}';
+        formatErrors['interstitial'] = msg;
+        noteActivity('interstitial', 'SHOW FAILED — $msg');
         AdAnalytics.log('ad_load_failed',
-            placement: 'interstitial',
-            detail: 'display: ${error.code.name}: ${error.message}');
+            placement: 'interstitial', detail: 'display: $msg');
       },
-      onAdClickedCallback: (ad) {},
+      onAdClickedCallback: (ad) {
+        noteActivity('interstitial', 'CLICKED');
+      },
       onAdHiddenCallback: (ad) {
+        noteActivity('interstitial', 'closed');
         AdAnalytics.log('ad_closed', placement: 'interstitial');
         interstitialReady = false;
         _preloadIfAllowed();
@@ -220,37 +246,43 @@ class VShotsMax {
       onAdLoadedCallback: (ad) {
         rewardedReady = true;
         formatErrors.remove('rewarded');
+        noteActivity('rewarded', 'LOADED (network: ${ad.networkName})');
         AdAnalytics.log('ad_loaded', placement: 'rewarded');
         onRewardedLoaded?.call();
       },
       onAdLoadFailedCallback: (unitId, error) {
         rewardedReady = false;
-        formatErrors['rewarded'] = '${error.code.name}: ${error.message}';
-        AdAnalytics.log('ad_load_failed',
-            placement: 'rewarded',
-            detail: '${error.code.name}: ${error.message}');
+        final msg = '${error.code.name}: ${error.message}';
+        formatErrors['rewarded'] = msg;
+        noteActivity('rewarded', 'LOAD FAILED — $msg');
+        AdAnalytics.log('ad_load_failed', placement: 'rewarded', detail: msg);
         onRewardedLoaded?.call();
       },
-      onAdDisplayedCallback: (ad) {},
+      onAdDisplayedCallback: (ad) {
+        noteActivity('rewarded', 'SHOWN (playing)');
+      },
       onAdDisplayFailedCallback: (ad, error) {
         rewardedReady = false;
-        formatErrors['rewarded'] =
-            'display ${error.code.name}: ${error.message}';
+        final msg = 'display ${error.code.name}: ${error.message}';
+        formatErrors['rewarded'] = msg;
+        noteActivity('rewarded', 'SHOW FAILED — $msg');
         AdAnalytics.log('ad_load_failed',
-            placement: 'rewarded',
-            detail: 'display: ${error.code.name}: ${error.message}');
+            placement: 'rewarded', detail: 'display: $msg');
       },
       onAdClickedCallback: (ad) {},
       onAdReceivedRewardCallback: (ad, reward) {
         final session = rewardSession;
         if (session != null) {
           session.granted = true;
+          noteActivity(
+              'rewarded', 'REWARD CONFIRMED (amount=${reward.amount})');
           AdAnalytics.log('rewarded_completed',
               detail: 'amount=${reward.amount} label=${reward.label}');
           session.onGrant();
         }
       },
       onAdHiddenCallback: (ad) {
+        noteActivity('rewarded', 'closed');
         AdAnalytics.log('ad_closed', placement: 'rewarded');
         rewardedReady = false;
         final session = rewardSession;
@@ -280,5 +312,56 @@ class VShotsMax {
       if (MaxConfig.unitIdFor(entry.key) == unitId) return entry.key;
     }
     return null;
+  }
+
+  // ── Development-only test actions (Phase 8) ──────────────────────────
+  // Called ONLY from the debug-only diagnostics panel. They bypass the
+  // production frequency policy on purpose (waiting for a natural 180 s
+  // session break is inefficient while debugging) and never affect the
+  // production rules themselves.
+
+  /// Loads + shows the configured interstitial test ad; reports the exact
+  /// result (including the exact MAX error when it fails).
+  Future<String> testInterstitial() async {
+    if (!MaxConfig.isConfigured) {
+      return 'FAILED — MAX SDK key MISSING in this build. Set '
+          'APPLOVIN_MAX_SDK_KEY (GitHub secret) and rebuild.';
+    }
+    final unitId = MaxConfig.unitIdFor(MaxPlacement.interstitialSessionBreak);
+    if (unitId == null) {
+      return 'FAILED — INTERSTITIAL_SESSION_BREAK_01 unit ID MISSING. '
+          'Set the matching APPLOVIN_MAX_UNIT_* secret and rebuild.';
+    }
+    if (!initSucceeded) {
+      return 'FAILED — MAX SDK not initialized'
+          '${initError != null ? ': $initError' : ''}';
+    }
+    noteActivity('interstitial', 'requested (test button)');
+    AdAnalytics.log('ad_request', placement: 'interstitial_test');
+    if (await max.AppLovinMAX.isInterstitialReady(unitId) ?? false) {
+      noteActivity('interstitial', 'loaded → showing (test button)');
+      max.AppLovinMAX.showInterstitial(unitId, placement: 'interstitial_test');
+      return 'LOADED — interstitial is showing now (test ad).';
+    }
+    final loaded = Completer<void>();
+    onInterstitialLoaded = () {
+      if (!loaded.isCompleted) loaded.complete();
+    };
+    max.AppLovinMAX.loadInterstitial(unitId);
+    try {
+      await loaded.future.timeout(const Duration(seconds: 30));
+    } catch (_) {
+      // timeout — report below
+    }
+    onInterstitialLoaded = null;
+    if (await max.AppLovinMAX.isInterstitialReady(unitId) ?? false) {
+      noteActivity('interstitial', 'loaded → showing (test button)');
+      max.AppLovinMAX.showInterstitial(unitId, placement: 'interstitial_test');
+      return 'LOADED — interstitial is showing now (test ad).';
+    }
+    final err = formatErrors['interstitial'];
+    return 'FAILED to load (30 s): ${err ?? 'no fill — check MAX dashboard: '
+        'is the unit created & active? is this device a registered TEST '
+        'device? are networks (AppLovin/Google) enabled on the unit?'}';
   }
 }

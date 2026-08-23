@@ -975,7 +975,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           SizedBox(
-            height: 206,
+            // Row height sized for the track card at FIXED text scale
+            // (150 artwork + 8 gap + title + artist + optional badge).
+            // The card texts use TextScaler.noScaling (below) so the height
+            // is deterministic on every device/font scale — this row can no
+            // longer overflow (was 206 + scaled text ⇒ "6.0 pixels" over).
+            height: 214,
             // Lazy per-shelf pagination: scrolling near the end fetches the
             // next page and appends, so shelves are endless instead of capped
             // at the first batch.
@@ -1085,10 +1090,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 8),
+                // Card labels use NO text scaling: the shelf row has a fixed
+                // height, so scaled system fonts would overflow it (the
+                // "BOTTOM OVERFLOWED BY 6.0 PIXELS" stripes). Fixed scale
+                // makes the card height deterministic on every device.
                 Text(
                   (track['title'] as String?) ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  textScaler: TextScaler.noScaling,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
@@ -1099,6 +1109,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   (track['artist'] as String?) ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  textScaler: TextScaler.noScaling,
                   style: const TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 12,
@@ -1117,6 +1128,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         SizedBox(width: 4),
                         Text(
                           'Official',
+                          textScaler: TextScaler.noScaling,
                           style: TextStyle(
                             color: AppColors.accent,
                             fontSize: 10.5,

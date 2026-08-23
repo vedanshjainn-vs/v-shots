@@ -71,9 +71,20 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   bool get _adsEnabled =>
       AdPolicy.instance.canShowNative(AdPlacement.forYouFeed);
 
-  /// Number of ad pages inserted for [songCount] songs (one after every
-  /// [AdConfig.discoveryAdEvery] songs).
-  int _adCountFor(int songCount) => songCount ~/ AdConfig.discoveryAdEvery;
+  /// Number of ad pages inserted for [songCount] songs.
+  ///
+  /// Two invariants (both were device-crash sources):
+  ///   1. When ads are DISABLED there are ZERO ad pages — the page count
+  ///      must equal the song count or deep swipes index past the last
+  ///      item (RangeError 0..23: 24 on a 24-item feed).
+  ///   2. There is no trailing ad after the LAST song (an ad page as the
+  ///      final page maps past the last song index and offers a Continue
+  ///      that goes nowhere). `(songCount - 1) ~/ N` keeps the
+  ///      page↔song math in [_songIndexForPage]/[_pageForSongIndex] exact.
+  int _adCountFor(int songCount) {
+    if (!_adsEnabled || songCount <= 0) return 0;
+    return (songCount - 1) ~/ AdConfig.discoveryAdEvery;
+  }
 
   /// Total PageView pages = songs + inserted ad pages.
   int get _pageCount => _items.length + _adCountFor(_items.length);
@@ -615,6 +626,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   );
                 }
                 final songIndex = _songIndexForPage(page);
+                // Defensive: a page that maps past the last item (transient
+                // state during load-more) must never index out of range.
+                if (songIndex < 0 || songIndex >= _items.length) {
+                  return const SizedBox.shrink();
+                }
                 final track = _items[songIndex];
                 return RepaintBoundary(
                   child: _ForYouCard(

@@ -21,6 +21,7 @@ import '../../core/theme/app_colors.dart';
 import 'ad_analytics.dart';
 import 'ad_policy.dart';
 import 'max_config.dart';
+import 'max_sdk_service.dart';
 
 /// A self-contained native ad card (MAX custom template).
 class NativeAdWidget extends StatefulWidget {
@@ -125,6 +126,8 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
                 placement: widget.placement.key,
                 listener: max.NativeAdListener(
                   onAdLoadedCallback: (ad) {
+                    VShotsMax.instance.noteActivity(
+                        'native', 'RENDERED (network: ${ad.networkName})');
                     AdAnalytics.log('native_rendered',
                         placement: widget.placement.key,
                         detail: ad.networkName);
@@ -132,6 +135,8 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
                   },
                   onAdLoadFailedCallback: (adUnitId, error) {
                     _loadError = '${error.code.name}: ${error.message}';
+                    VShotsMax.instance
+                        .noteActivity('native', 'LOAD FAILED — $_loadError');
                     AdAnalytics.log('ad_load_failed',
                         placement: widget.placement.key, detail: _loadError);
                     if (mounted) setState(() => _loaded = false);
