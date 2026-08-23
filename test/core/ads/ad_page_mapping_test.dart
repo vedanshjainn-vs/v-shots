@@ -59,7 +59,7 @@ void main() {
 
     test('REGRESSION: 24 songs, ads on ⇒ last page is a SONG, no trailing ad',
         () {
-      final songs = 24;
+      const songs = 24;
       final pages = pageCount(songs, true);
       // 5 ads (after songs 4, 8, 12, 16, 20) — NOT after the last song.
       expect(pages, songs + (songs - 1) ~/ n);
