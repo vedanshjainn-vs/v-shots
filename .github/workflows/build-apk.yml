@@ -40,10 +40,18 @@ jobs:
           GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
           YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
-          ADMOB_NATIVE_AD_ID=${{ secrets.ADMOB_NATIVE_AD_ID }}
-          ADMOB_INTERSTITIAL_AD_ID=${{ secrets.ADMOB_INTERSTITIAL_AD_ID }}
-          ADMOB_REWARDED_AD_ID=${{ secrets.ADMOB_REWARDED_AD_ID }}
-          ADMOB_BANNER_AD_ID=${{ secrets.ADMOB_BANNER_AD_ID }}
+          # AppLovin MAX (client-safe SDK key + stable placement unit IDs).
+          # All empty ⇒ honest CONFIG_NOT_SET state, ads off, app unaffected.
+          # SERVER keys (management/report/event) are NEVER injected here.
+          APPLOVIN_MAX_SDK_KEY=${{ secrets.APPLOVIN_MAX_SDK_KEY }}
+          APPLOVIN_MAX_UNIT_HOME_NATIVE_01=${{ secrets.APPLOVIN_MAX_UNIT_HOME_NATIVE_01 }}
+          APPLOVIN_MAX_UNIT_DISCOVERY_NATIVE_01=${{ secrets.APPLOVIN_MAX_UNIT_DISCOVERY_NATIVE_01 }}
+          APPLOVIN_MAX_UNIT_PLAYER_NATIVE_01=${{ secrets.APPLOVIN_MAX_UNIT_PLAYER_NATIVE_01 }}
+          APPLOVIN_MAX_UNIT_LIBRARY_NATIVE_01=${{ secrets.APPLOVIN_MAX_UNIT_LIBRARY_NATIVE_01 }}
+          APPLOVIN_MAX_UNIT_SEARCH_NATIVE_01=${{ secrets.APPLOVIN_MAX_UNIT_SEARCH_NATIVE_01 }}
+          APPLOVIN_MAX_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.APPLOVIN_MAX_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
+          APPLOVIN_MAX_UNIT_REWARDED_FEATURE_01=${{ secrets.APPLOVIN_MAX_UNIT_REWARDED_FEATURE_01 }}
+          APPLOVIN_MAX_UNIT_BANNER_HOME_01=${{ secrets.APPLOVIN_MAX_UNIT_BANNER_HOME_01 }}
           # DEBUG-ARTIFACT ONLY: enables official Google TEST ads in debug
           # builds (AdConfig gates this behind kDebugMode — the release
           # APK/AAB can never serve test IDs). Lets the owner verify every

@@ -1,29 +1,30 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V Shots — VShotsAds (central ad service / facade)
+// V Shots — VShotsAds (central ad facade, AppLovin MAX backed)
 //
-// UI → VShotsAds → (policy, frequency, consent) → google_mobile_ads → AdMob
+// UI → VShotsAds → VShotsMax → AppLovin MAX → mediated networks.
 //
-// Screens/widgets talk ONLY to this service (and to the self-contained
+// Screens/widgets talk ONLY to this facade (and the self-contained
 // NativeAdWidget / AdBannerWidget which are policy-gated internally).
 //
 // Guarantees (fail-safe, per spec):
-//   - no fill / SDK error / timeout / not-ready  ⇒  normal app behavior
+//   - no fill / SDK error / timeout / not-ready / not-configured
+//     ⇒ normal app behavior continues
 //   - no ad is ever shown when AdPolicy denies it
-//   - rewarded ads are USER-INITIATED ONLY; the reward is granted only when
-//     the SDK confirms completion (onUserEarnedReward)
-//   - every SDK interaction is wrapped — an ad bug can never crash the app
+//   - interstitials only at natural transitions, with the centralized
+//     cooldown / session cap / dwell guard (AdPolicy.frequency)
+//   - rewarded ads are USER-INITIATED ONLY; the reward is granted only
+//     when the MAX SDK confirms completion (onAdReceivedReward)
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
 
+import 'package:applovin_max/applovin_max.dart' as max;
 import 'package:flutter/foundation.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad_analytics.dart';
-import 'ad_config.dart';
-import 'ad_manager.dart';
 import 'ad_policy.dart';
-import 'consent_manager.dart';
+import 'max_config.dart';
+import 'max_sdk_service.dart';
 
 /// Result of a user-initiated rewarded ad session.
 enum RewardOutcome { completed, canceled, failed }
@@ -33,134 +34,56 @@ class VShotsAds {
 
   static final VShotsAds instance = VShotsAds._();
 
-  InterstitialAd? _readyInterstitial;
-  Completer<void>? _interstitialLoad;
+  // ── Interstitial (natural transitions only) ───────────────────────────
 
-  /// Waits (bounded) for AdMob init to finish. Never throws.
-  /// Returns true when the SDK is ready to serve ads.
-  Future<bool> ensureReady({
-    Duration timeout = const Duration(seconds: 5),
-  }) async {
-    try {
-      await AdManager.instance.waitForReady(timeout: timeout);
-    } catch (_) {
-      // fall through — caller checks isInitialized
-    }
-    return AdManager.instance.isInitialized;
-  }
-
-  /// Warm-up: called once from the shell after startup. Preloads the
-  /// interstitial so a later tab-switch ad is instant. No-op unless allowed.
-  Future<void> warmUp() async {
-    final p = AdPolicy.instance;
-    if (!p.adsAvailable || !p.interstitialEnabled) return;
-    await ensureReady();
-    _preloadInterstitial();
-  }
-
-  // ── Interstitials ───────────────────────────────────────────────────────
-
-  /// Preloads one interstitial in the background (policy allows it, none
-  /// ready, none in flight). Preload is NOT gated by the cooldown — an ad
-  /// loaded now may be shown after the cooldown passes.
-  void _preloadInterstitial() {
-    final p = AdPolicy.instance;
-    if (_readyInterstitial != null) return;
-    if (_interstitialLoad != null) return; // already in flight
-    if (!p.adsAvailable || !p.interstitialEnabled) return;
-
-    final loadDone = Completer<void>();
-    _interstitialLoad = loadDone;
-    AdAnalytics.log('ad_request', placement: 'interstitial');
-    unawaited(() async {
-      try {
-        await InterstitialAd.load(
-          adUnitId: AdConfig.interstitialAdUnitId,
-          request: ConsentManager.instance.buildAdRequest(),
-          adLoadCallback: InterstitialAdLoadCallback(
-            onAdLoaded: (ad) {
-              AdAnalytics.log('ad_loaded', placement: 'interstitial');
-              ad.fullScreenContentCallback =
-                  FullScreenContentCallback<InterstitialAd>(
-                onAdShowedFullScreenContent: (shown) {},
-                onAdDismissedFullScreenContent: (ad) {
-                  AdAnalytics.log('ad_closed', placement: 'interstitial');
-                  ad.dispose();
-                  _readyInterstitial = null;
-                  _preloadInterstitial();
-                },
-                onAdFailedToShowFullScreenContent: (ad, error) {
-                  AdAnalytics.log('ad_load_failed',
-                      placement: 'interstitial', detail: error.message);
-                  ad.dispose();
-                  _readyInterstitial = null;
-                  _preloadInterstitial();
-                },
-              );
-              _readyInterstitial = ad;
-            },
-            onAdFailedToLoad: (error) {
-              AdAnalytics.log('ad_load_failed',
-                  placement: 'interstitial', detail: error.message);
-              _readyInterstitial = null;
-            },
-          ),
-        );
-      } catch (e) {
-        AdAnalytics.log('ad_load_failed',
-            placement: 'interstitial', detail: e.toString());
-      } finally {
-        _interstitialLoad = null;
-        if (!loadDone.isCompleted) loadDone.complete();
-      }
-    }());
-  }
-
-  /// Shows an interstitial at a NATURAL transition (user-initiated tab
-  /// switch). Policy + cooldown + caps are enforced here; if anything is not
-  /// ready the app simply continues. Callers must NOT call this during
-  /// playback or right after launch/login — the frequency controller's
-  /// dwell guard also protects launch.
+  /// Shows an interstitial at a user-initiated transition (tab switch).
+  /// Cooldown (180 s), session cap (4) and the 60 s dwell guard live
+  /// centrally in AdPolicy. If anything is not ready, the app simply
+  /// continues. Callers must NOT call this during playback.
   Future<void> maybeShowInterstitial({required String trigger}) async {
-    final p = AdPolicy.instance;
-    if (!p.canShowInterstitial()) return;
+    final policy = AdPolicy.instance;
+    if (!policy.canShowInterstitial()) return;
+    final unitId = MaxConfig.unitIdFor(MaxPlacement.interstitialSessionBreak);
+    if (unitId == null) return;
 
-    InterstitialAd? ad = _readyInterstitial;
-    if (ad == null) {
-      // Nothing ready: kick (or join) a bounded on-demand load.
-      _preloadInterstitial();
-      final loader = _interstitialLoad;
-      if (loader != null) {
-        try {
-          await loader.future.timeout(const Duration(seconds: 2));
-        } catch (_) {
-          // timeout / error — proceed with whatever is ready
-        }
-        ad = _readyInterstitial;
+    await VShotsMax.instance.waitReady(timeout: const Duration(seconds: 2));
+    if (!VShotsMax.instance.initSucceeded) return;
+
+    var ready = await max.AppLovinMAX.isInterstitialReady(unitId) ?? false;
+    if (!ready) {
+      // Bounded on-demand load: request, wait for the listener event.
+      final loaded = Completer<void>();
+      VShotsMax.instance.onInterstitialLoaded = () {
+        if (!loaded.isCompleted) loaded.complete();
+      };
+      try {
+        max.AppLovinMAX.loadInterstitial(unitId);
+        await loaded.future.timeout(const Duration(seconds: 3));
+      } catch (_) {
+        // timeout / error — proceed with whatever is ready
+      } finally {
+        VShotsMax.instance.onInterstitialLoaded = null;
       }
+      ready = await max.AppLovinMAX.isInterstitialReady(unitId) ?? false;
     }
-    if (ad == null) return; // fail-safe: continue normal behavior
+    if (!ready) return; // fail-safe: continue normal behavior
 
-    _readyInterstitial = null;
+    policy.frequency.recordShown();
     AdAnalytics.log('interstitial_shown', placement: trigger);
-    p.frequency.recordShown();
     try {
-      unawaited(ad.show());
+      max.AppLovinMAX.showInterstitial(unitId, placement: trigger);
     } catch (e) {
-      // Presentation failure is also reported via the full-screen callback;
-      // nothing else to do — the app continues normally.
+      // Presentation failure is also reported via the listener; the app
+      // continues normally.
       debugPrint('[VShotsAds] interstitial show error: $e');
     }
   }
 
-  // ── Rewarded (user-initiated only) ──────────────────────────────────────
+  // ── Rewarded (user-initiated only) ────────────────────────────────────
 
   /// Shows a rewarded ad. MUST be called from an explicit user action
-  /// (there is no other path — no autoplay anywhere in this service).
-  ///
-  /// [onRewardGranted] is invoked ONLY when the SDK confirms the user earned
-  /// the reward (onUserEarnedReward). Canceling or failing returns without
-  /// granting anything.
+  /// (Settings → Rewards). The reward is granted ONLY when the MAX SDK
+  /// confirms completion. Canceling or failing grants nothing.
   Future<RewardOutcome> showRewarded({
     required String purpose,
     FutureOr<void> Function()? onRewardGranted,
@@ -168,74 +91,67 @@ class VShotsAds {
     if (!AdPolicy.instance.canShowRewarded()) {
       return RewardOutcome.failed;
     }
-    if (!await ensureReady(timeout: const Duration(seconds: 6))) {
-      return RewardOutcome.failed;
-    }
+    final unitId = MaxConfig.unitIdFor(MaxPlacement.rewardedFeature);
+    if (unitId == null) return RewardOutcome.failed;
+
+    await VShotsMax.instance.waitReady(timeout: const Duration(seconds: 6));
+    if (!VShotsMax.instance.initSucceeded) return RewardOutcome.failed;
+
     AdAnalytics.log('rewarded_started', placement: purpose);
 
-    final loaded = Completer<RewardedAd>();
-    final closed = Completer<void>();
-    bool earned = false;
+    var ready = await max.AppLovinMAX.isRewardedAdReady(unitId) ?? false;
+    if (!ready) {
+      final loaded = Completer<void>();
+      VShotsMax.instance.onRewardedLoaded = () {
+        if (!loaded.isCompleted) loaded.complete();
+      };
+      try {
+        max.AppLovinMAX.loadRewardedAd(unitId);
+        await loaded.future.timeout(const Duration(seconds: 8));
+      } catch (_) {
+        // timeout / error — proceed with whatever is ready
+      } finally {
+        VShotsMax.instance.onRewardedLoaded = null;
+      }
+      ready = await max.AppLovinMAX.isRewardedAdReady(unitId) ?? false;
+    }
+    if (!ready) return RewardOutcome.failed;
 
-    try {
-      AdAnalytics.log('ad_request', placement: purpose);
-      await RewardedAd.load(
-        adUnitId: AdConfig.rewardedAdUnitId,
-        request: ConsentManager.instance.buildAdRequest(),
-        rewardedAdLoadCallback: RewardedAdLoadCallback(
-          onAdLoaded: (ad) {
-            AdAnalytics.log('ad_loaded', placement: purpose);
-            ad.fullScreenContentCallback =
-                FullScreenContentCallback<RewardedAd>(
-              onAdShowedFullScreenContent: (shown) {},
-              onAdDismissedFullScreenContent: (ad) {
-                ad.dispose();
-                if (!closed.isCompleted) closed.complete();
-              },
-              onAdFailedToShowFullScreenContent: (ad, error) {
-                AdAnalytics.log('ad_load_failed',
-                    placement: purpose, detail: error.message);
-                ad.dispose();
-                if (!closed.isCompleted) closed.complete();
-              },
-            );
-            if (!loaded.isCompleted) loaded.complete(ad);
-          },
-          onAdFailedToLoad: (error) {
-            AdAnalytics.log('ad_load_failed',
-                placement: purpose, detail: error.message);
-            if (!loaded.isCompleted) {
-              loaded.completeError('rewarded load failed: ${error.message}');
-            }
-          },
-        ),
-      );
-
-      final ad = await loaded.future.timeout(const Duration(seconds: 8));
-      AdAnalytics.log('ad_request', placement: purpose, detail: 'presentation');
-      await ad.show(onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
-        earned = true;
-        AdAnalytics.log('rewarded_completed', placement: purpose);
+    // Wire the session: reward granted ONLY on SDK-confirmed completion.
+    bool granted = false;
+    final result = Completer<RewardOutcome>();
+    VShotsMax.instance.rewardSession = RewardSession(
+      onGrant: () {
+        granted = true;
         try {
           onRewardGranted?.call();
         } catch (e) {
           debugPrint('[VShotsAds] reward grant error: $e');
         }
-      });
+      },
+      onClosed: (wasEarned) {
+        if (!result.isCompleted) {
+          result.complete(
+              wasEarned ? RewardOutcome.completed : RewardOutcome.canceled);
+        }
+      },
+    );
 
-      // Wait for the user to close the ad (bounded) and settle the outcome.
-      try {
-        await closed.future.timeout(const Duration(seconds: 180));
-      } on TimeoutException {
-        // Ad still open after the bound — settle what we know so far.
-      }
-      return earned ? RewardOutcome.completed : RewardOutcome.canceled;
-    } on TimeoutException {
-      return earned ? RewardOutcome.completed : RewardOutcome.failed;
+    try {
+      max.AppLovinMAX.showRewardedAd(unitId, placement: purpose);
     } catch (e) {
-      AdAnalytics.log('ad_load_failed',
-          placement: purpose, detail: e.toString());
-      return earned ? RewardOutcome.completed : RewardOutcome.failed;
+      VShotsMax.instance.rewardSession = null;
+      AdAnalytics.log('ad_load_failed', placement: purpose, detail: 'show: $e');
+      return RewardOutcome.failed;
+    }
+
+    try {
+      return await result.future.timeout(const Duration(seconds: 180));
+    } on TimeoutException {
+      VShotsMax.instance.rewardSession = null;
+      // Timed out before the close event: honor a confirmed reward,
+      // otherwise fail safe.
+      return granted ? RewardOutcome.completed : RewardOutcome.failed;
     }
   }
 }

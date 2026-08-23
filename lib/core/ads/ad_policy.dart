@@ -5,13 +5,14 @@
 // call AdPolicy — they never initialize or manage ad SDKs directly.
 //
 // Central configuration (per spec):
-//   master switch ........ AdConfig unit-ID injection + ADMOB_TEST_MODE
+//   master switch ........ MAX configured in this build (MaxConfig)
 //   emergency kill switch  remote feature flag 'enable_ads' (Supabase admin)
-//   test / production .... AdConfig.isTestMode (test IDs vs injected IDs)
+//   test / production .... MAX session test mode (test devices) vs live
 //   per-format toggles .... native/interstitial/rewarded/banner (below)
 //   frequency ............. AdFrequencyController (cooldowns + session caps)
 //   premium / ad-free ..... AdFreeManager (temporary pass + future premium)
-//   consent ............... ConsentManager (UMP) — never bypassed
+//   consent ............... ConsentManager (UMP) — never bypassed; pushed
+//                           into MAX via VShotsMax.syncConsent
 //
 // Every gate fails CLOSED: any missing/failed check ⇒ no ad ⇒ normal UI.
 // ═════════════════════════════════════════════════════════════════════════
@@ -19,10 +20,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import 'ad_config.dart';
 import 'ad_free_manager.dart';
 import 'ad_frequency_controller.dart';
 import 'consent_manager.dart';
+import 'max_config.dart';
+import 'max_sdk_service.dart';
 import '../remote_config/remote_feature_flags.dart';
 
 /// Every ad placement in the app, identified for policy + analytics.
@@ -84,10 +86,11 @@ class AdPolicy {
 
   /// True when ads may be shown to this user AT ALL right now.
   ///
-  /// Fails closed on: no ad IDs configured, emergency remote flag OFF,
-  /// user is ad-free (premium / rewarded pass), or UMP consent still pending.
+  /// Fails closed on: MAX not configured (no SDK key/unit IDs in this
+  /// build), emergency remote flag OFF, user is ad-free (premium /
+  /// rewarded pass), or UMP consent still pending.
   bool get adsAvailable {
-    if (!AdConfig.adsEnabled) return false;
+    if (!MaxConfig.isConfigured) return false;
     if (RemoteFeatureFlags.instance.value('enable_ads', defaultValue: true) ==
         false) {
       return false; // EMERGENCY KILL SWITCH (Supabase feature_flags)
@@ -125,8 +128,9 @@ class AdPolicy {
   // ── Diagnostics (debug builds only — never surfaced to users) ──────────
 
   String describe() {
-    final mode =
-        AdConfig.isTestMode ? 'TEST' : (AdConfig.adsEnabled ? 'PROD' : 'OFF');
+    final mode = MaxConfig.isConfigured
+        ? (VShotsMax.instance.sdkTestMode == true ? 'TEST' : 'PROD')
+        : 'OFF';
     return 'AdPolicy mode=$mode '
         'native=$_nativeEnabled interstitial=$_interstitialEnabled '
         'rewarded=$_rewardedEnabled banners=$_bannersEnabled '

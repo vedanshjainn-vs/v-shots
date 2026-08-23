@@ -13,9 +13,10 @@ import 'package:shimmer/shimmer.dart';
 
 import 'core/ads/ad_config.dart';
 import 'core/ads/ad_free_manager.dart';
-import 'core/ads/ad_manager.dart';
 import 'core/ads/ad_policy.dart';
 import 'core/ads/ad_service.dart';
+import 'core/ads/consent_manager.dart';
+import 'core/ads/max_sdk_service.dart';
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
@@ -79,12 +80,17 @@ void main() async {
 
   await AuthService.instance.initializeGoogleSignIn();
 
-  // Initialize Google AdMob + UMP consent (no-op unless production ad IDs are
-  // configured via ADMOB_* secrets, or a debug build sets ADMOB_TEST_MODE).
-  // FIRE-AND-FORGET BY DESIGN: ads must never block first paint (performance
-  // requirement). Ad placements await AdManager.waitForReady() (bounded) and
-  // fail safe to the normal UI if the SDK is slow/unavailable.
-  unawaited(AdManager.instance.initialize());
+  // Ads (AppLovin MAX mediation): one-time, NON-BLOCKING init (Phase 18).
+  // The existing UMP consent system is REUSED as the single consent source;
+  // its decision is pushed into MAX on every status change (Phase 9) and
+  // the Google network inside MAX reads GMA's UMP state directly.
+  // FIRE-AND-FORGET BY DESIGN: ads must never block first paint. When MAX
+  // is not configured in this build these are no-ops and diagnostics
+  // report CONFIG_NOT_SET (honest state, app fully functional).
+  unawaited(ConsentManager.instance.initialize());
+  ConsentManager.instance.onStatusChanged =
+      () => VShotsMax.instance.syncConsent();
+  unawaited(VShotsMax.instance.initialize());
 
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),

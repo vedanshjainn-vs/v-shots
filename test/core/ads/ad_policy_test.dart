@@ -8,7 +8,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:v_shots/core/ads/ad_config.dart';
+import 'package:v_shots/core/ads/max_config.dart';
 import 'package:v_shots/core/ads/ad_free_manager.dart';
 import 'package:v_shots/core/ads/ad_frequency_controller.dart';
 import 'package:v_shots/core/ads/ad_policy.dart';
@@ -18,10 +18,10 @@ import 'package:v_shots/core/remote_config/remote_feature_flags.dart';
 void main() {
   group('AdPolicy', () {
     setUp(() {
-      // Deterministic baseline: no injected IDs (ads OFF), no overrides,
+      // Deterministic baseline: MAX not configured (ads OFF), no overrides,
       // consent settled (unknown = not required), not ad-free, all formats
       // on, frequency budget fresh with dwell already satisfied.
-      AdConfig.debugSetHasAnyAdUnitId(null);
+      MaxConfig.debugSetEnv(null);
       RemoteFeatureFlags.instance.debugOverride(null);
       ConsentManager.instance.debugSetStatus(ConsentStatus.unknown);
       AdFreeManager.instance.debugSet(permanent: false, adFreeUntil: null);
@@ -37,14 +37,14 @@ void main() {
     });
 
     tearDown(() {
-      AdConfig.debugSetHasAnyAdUnitId(null);
+      MaxConfig.debugSetEnv(null);
       RemoteFeatureFlags.instance.debugOverride(null);
     });
 
-    void enableMaster() => AdConfig.debugSetHasAnyAdUnitId(true);
+    void enableMaster() =>
+        MaxConfig.debugSetEnv({'APPLOVIN_MAX_SDK_KEY': 'test-sdk-key'});
 
-    test('fails closed when no ad IDs are configured (default store build)',
-        () {
+    test('fails closed when MAX is not configured (default store build)', () {
       final p = AdPolicy.instance;
       expect(p.adsAvailable, isFalse);
       expect(p.canShowNative(AdPlacement.home), isFalse);
@@ -53,7 +53,7 @@ void main() {
       expect(p.canShowBanner(AdPlacement.playlist), isFalse);
     });
 
-    test('opens when production IDs are injected', () {
+    test('opens when the MAX SDK key is configured', () {
       enableMaster();
       final p = AdPolicy.instance;
       expect(p.adsAvailable, isTrue);

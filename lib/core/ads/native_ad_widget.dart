@@ -1,40 +1,29 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V Shots — Premium Native Ad Widget
+// V Shots — Native Ad Widget (AppLovin MAX)
 //
-// Renders a Google AdMob NATIVE ad (medium template) as a clearly labeled,
-// premium card. It:
-//   - always shows an "Ad / Sponsored" label + Google AdChoices (the template
-//     includes AdChoices placement)
-//   - is visually distinct from organic song cards (bordered card, tag, no
-//     play/like/next controls), so it can never be mistaken for content
-//   - never sits over the YouTube player or player controls
-//   - only renders when AdPolicy allows (ads enabled AND not ad-free AND
-//     consent settled) AND a native ad has loaded
+// Renders a MAX native ad (custom template) as a clearly labeled card:
+//   • always shows an "Ad · Sponsored" label + the SDK AdChoices
+//     (MaxNativeAdOptionsView), so it can never be mistaken for content
+//   • visually follows the V Shots card system (bordered card, tag, no
+//     play/like/next controls)
+//   • policy-gated (AdPolicy): master + MAX config + consent + ad-free
+//   • fail-safe: unconfigured / blocked / no fill ⇒ SizedBox.shrink
 //
-// Fail-safe: any block/failure ⇒ renders an empty box (normal UI continues).
-//
-// No ad is ever shown unless the policy gate passes, and the widget returns
-// an empty box otherwise (dev/store builds never show test ads to real users
-// unless ADMOB_TEST_MODE is explicitly set in a debug build).
-//
+// The platform view mounts as soon as policy allows; before the first ad
+// loads a compact "Sponsored" strip is shown (clearly an ad slot, no
+// broken-looking empty card).
 // ═════════════════════════════════════════════════════════════════════════
 
-import 'dart:async';
 
+import 'package:applovin_max/applovin_max.dart' as max;
 import 'package:flutter/material.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../core/theme/app_colors.dart';
 import 'ad_analytics.dart';
-import 'ad_config.dart';
-import 'ad_manager.dart';
 import 'ad_policy.dart';
-import 'consent_manager.dart';
+import 'max_config.dart';
 
-/// A self-contained native ad card. Loads one native ad on init and disposes
-/// it on dispose. Renders nothing when ads are disabled or the ad fails.
-///
-/// [placement] is used for policy + analytics only.
+/// A self-contained native ad card (MAX custom template).
 class NativeAdWidget extends StatefulWidget {
   const NativeAdWidget({
     super.key,
@@ -42,6 +31,7 @@ class NativeAdWidget extends StatefulWidget {
     this.placement = AdPlacement.home,
   });
 
+  /// Height of the ad template area (the "Ad · Sponsored" tag sits above).
   final double height;
   final AdPlacement placement;
 
@@ -50,76 +40,54 @@ class NativeAdWidget extends StatefulWidget {
 }
 
 class _NativeAdWidgetState extends State<NativeAdWidget> {
-  NativeAd? _nativeAd;
   bool _loaded = false;
+  String? _loadError;
 
-  @override
-  void initState() {
-    super.initState();
-    if (AdPolicy.instance.adsAvailable) {
-      unawaited(_loadWhenReady());
-    }
-  }
-
-  Future<void> _loadWhenReady() async {
-    // Ad init is non-blocking at startup — wait a bounded moment so the SDK
-    // is ready; if it isn't, fail safe (no ad, normal UI).
-    await AdManager.instance.waitForReady(timeout: const Duration(seconds: 5));
-    if (!mounted || !AdPolicy.instance.adsAvailable) return;
-    _loadAd();
-  }
-
-  void _loadAd() {
-    final ad = NativeAd(
-      adUnitId: AdConfig.nativeAdUnitId,
-      nativeTemplateStyle: NativeTemplateStyle(
-        templateType: TemplateType.medium,
-        callToActionTextStyle: NativeTemplateTextStyle(
-          textColor: AppColors.accent,
-          style: NativeTemplateFontStyle.bold,
-        ),
-        primaryTextStyle: NativeTemplateTextStyle(
-          textColor: AppColors.textMain,
-        ),
-        secondaryTextStyle: NativeTemplateTextStyle(
-          textColor: AppColors.textMuted,
-        ),
-        mainBackgroundColor: AppColors.surface,
-        cornerRadius: 12.0,
-      ),
-      listener: NativeAdListener(
-        onAdLoaded: (_) {
-          AdAnalytics.log('native_rendered', placement: widget.placement.key);
-          if (mounted) setState(() => _loaded = true);
-        },
-        onAdFailedToLoad: (ad, error) {
-          AdAnalytics.log('ad_load_failed',
-              placement: widget.placement.key, detail: error.message);
-          ad.dispose();
-          if (mounted) setState(() => _loaded = false);
-        },
-        onAdImpression: (_) =>
-            AdAnalytics.log('ad_impression', placement: widget.placement.key),
-        onAdClicked: (_) =>
-            AdAnalytics.log('ad_closed', placement: widget.placement.key),
-      ),
-      request: ConsentManager.instance.buildAdRequest(),
-    )..load();
-    _nativeAd = ad;
-    AdAnalytics.log('ad_request', placement: widget.placement.key);
-  }
-
-  @override
-  void dispose() {
-    _nativeAd?.dispose();
-    super.dispose();
-  }
+  String? get _unitId => MaxConfig.unitIdFor(_maxPlacement(widget.placement));
 
   @override
   Widget build(BuildContext context) {
-    if (!AdPolicy.instance.adsAvailable || !_loaded || _nativeAd == null) {
+    final unitId = _unitId;
+    if (!AdPolicy.instance.adsAvailable || unitId == null) {
       return const SizedBox.shrink();
     }
+
+    // Pre-fill: compact clearly-labeled strip (ad slot, not content).
+    if (!_loaded) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border, width: 1),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.adb_rounded, size: 16, color: AppColors.hotPink),
+            SizedBox(width: 8),
+            Text(
+              'Ad · Sponsored',
+              style: TextStyle(
+                color: AppColors.hotPink,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+              ),
+            ),
+            Spacer(),
+            Text(
+              'Loading…',
+              style: TextStyle(
+                color: AppColors.textSubtle,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -153,11 +121,107 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
           RepaintBoundary(
             child: SizedBox(
               height: widget.height,
-              child: AdWidget(ad: _nativeAd!),
+              child: max.MaxNativeAdView(
+                adUnitId: unitId,
+                placement: widget.placement.key,
+                listener: max.NativeAdListener(
+                  onAdLoadedCallback: (ad) {
+                    AdAnalytics.log('native_rendered',
+                        placement: widget.placement.key,
+                        detail: ad.networkName);
+                    if (mounted) setState(() => _loaded = true);
+                  },
+                  onAdLoadFailedCallback: (adUnitId, error) {
+                    _loadError = '${error.code.name}: ${error.message}';
+                    AdAnalytics.log('ad_load_failed',
+                        placement: widget.placement.key, detail: _loadError);
+                    if (mounted) setState(() => _loaded = false);
+                  },
+                  onAdClickedCallback: (ad) {},
+                ),
+                child: _template(),
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  /// V Shots-style native template (dark, matches song cards).
+  Widget _template() {
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const max.MaxNativeAdIconView(width: 52, height: 52),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const max.MaxNativeAdTitleView(
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                const max.MaxNativeAdAdvertiserView(
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                max.MaxNativeAdCallToActionView(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent.withValues(alpha: 0.15),
+                    foregroundColor: AppColors.accent,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // AdChoices / options icon (required for native ads).
+          const max.MaxNativeAdOptionsView(width: 18, height: 18),
+        ],
+      ),
+    );
+  }
+
+  String _maxPlacement(AdPlacement placement) {
+    switch (placement) {
+      case AdPlacement.home:
+        return MaxPlacement.homeNative;
+      case AdPlacement.forYouFeed:
+        return MaxPlacement.discoveryNative;
+      case AdPlacement.player:
+        return MaxPlacement.playerNative; // reserved — never placed
+      case AdPlacement.playlist:
+      case AdPlacement.library:
+        return MaxPlacement.libraryNative;
+      case AdPlacement.search:
+        return MaxPlacement.searchNative;
+    }
   }
 }

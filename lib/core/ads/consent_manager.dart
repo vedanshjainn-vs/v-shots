@@ -18,9 +18,20 @@ class ConsentManager {
   ConsentStatus _status = ConsentStatus.unknown;
   ConsentStatus get status => _status;
 
+  /// Fired whenever the consent status changes (any source). Registered by
+  /// VShotsMax to push the decision into AppLovin MAX (Phase 9) — the UMP
+  /// system stays the single consent source of truth.
+  VoidCallback? onStatusChanged;
+
+  void _set(ConsentStatus value) {
+    if (value == _status) return;
+    _status = value;
+    onStatusChanged?.call();
+  }
+
   /// @visibleForTesting — replace the live consent status.
   @visibleForTesting
-  void debugSetStatus(ConsentStatus value) => _status = value;
+  void debugSetStatus(ConsentStatus value) => _set(value);
 
   /// Whether personalized ads may be served. True only when the user granted
   /// consent; otherwise requests are sent as non-personalized.
@@ -54,7 +65,7 @@ class ConsentManager {
       ConsentInformation.instance.requestConsentInfoUpdate(
         params,
         () async {
-          _status = await ConsentInformation.instance.getConsentStatus();
+          _set(await ConsentInformation.instance.getConsentStatus());
           debugPrint('[AdConsent] Status=$_status');
           // If a decision is still required, show the form automatically.
           if (_status == ConsentStatus.required) {
@@ -66,24 +77,24 @@ class ConsentManager {
                 // NON-PERSONALIZED ads instead of silently blocking all
                 // ads (canRequestPersonalizedAds stays false because
                 // status != obtained).
-                _status = ConsentStatus.notRequired;
+                _set(ConsentStatus.notRequired);
                 debugPrint(
                     '[AdConsent] Form error: ${error.message} → non-personalized mode');
                 return;
               }
-              _status = await ConsentInformation.instance.getConsentStatus();
+              _set(await ConsentInformation.instance.getConsentStatus());
               debugPrint('[AdConsent] Dismissed. Status=$_status');
             });
           }
         },
         (FormError error) {
           debugPrint('[AdConsent] Info update failed: ${error.message}');
-          _status = ConsentStatus.unknown;
+          _set(ConsentStatus.unknown);
         },
       );
     } catch (e) {
       debugPrint('[AdConsent] initialize error: $e');
-      _status = ConsentStatus.unknown;
+      _set(ConsentStatus.unknown);
     }
   }
 }
