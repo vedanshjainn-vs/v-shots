@@ -2,6 +2,7 @@
 // V Shots — SettingsScreen (Nova Design System)
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,7 @@ import '../../core/cache/search_cache.dart';
 import '../../core/config/app_version.dart';
 import '../../core/motion/motion.dart';
 import '../../core/navigation/app_navigator.dart';
+import '../../core/ads/ad_diagnostics.dart';
 import '../../core/player/sleep_timer.dart';
 import '../../core/recommendation/signal_store.dart';
 import 'rewards_sheet.dart';
@@ -270,6 +272,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // Ads & Rewards
           const _SectionHeader('Ads & Rewards'),
+          // Debug-only: on-device ad diagnostics (which build, which gate).
+          if (kDebugMode) const AdDiagnosticsPanel(),
           AppCard(
             padding: EdgeInsets.zero,
             child: ListTile(

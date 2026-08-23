@@ -27,6 +27,10 @@ class AdManager {
   bool _initialized = false;
   final Completer<void> _ready = Completer<void>();
 
+  /// Last MobileAds initialization result (diagnostics, debug builds).
+  InitializationStatus? _initStatus;
+  InitializationStatus? get initStatus => _initStatus;
+
   bool get isInitialized => _initialized;
 
   /// Initializes consent + MobileAds. Safe to call multiple times; only runs
@@ -42,7 +46,14 @@ class AdManager {
     // Consent first (UMP requirement), then SDK init.
     await ConsentManager.instance.initialize();
     try {
-      await MobileAds.instance.initialize();
+      _initStatus = await MobileAds.instance.initialize();
+      final adapters = _initStatus?.adapterStatuses ?? const {};
+      for (final entry in adapters.entries) {
+        if (entry.value.state != AdapterInitializationState.ready) {
+          debugPrint('[AdManager] adapter ${entry.key}: '
+              '${entry.value.state} — ${entry.value.description}');
+        }
+      }
     } catch (e) {
       // Fail-safe: SDK init failure ⇒ every ad placement degrades to the
       // normal UI (loads will simply fail). App never breaks.

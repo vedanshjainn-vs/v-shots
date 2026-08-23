@@ -1196,7 +1196,7 @@ class _ForYouAdCard extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               const NativeAdWidget(
-                height: 180,
+                height: 220,
                 placement: AdPlacement.forYouFeed,
               ),
               const SizedBox(height: 24),

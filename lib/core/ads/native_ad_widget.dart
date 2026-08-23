@@ -38,7 +38,7 @@ import 'consent_manager.dart';
 class NativeAdWidget extends StatefulWidget {
   const NativeAdWidget({
     super.key,
-    this.height = 144,
+    this.height = 172,
     this.placement = AdPlacement.home,
   });
 
