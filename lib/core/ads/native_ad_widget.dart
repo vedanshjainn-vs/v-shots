@@ -14,7 +14,6 @@
 // broken-looking empty card).
 // ═════════════════════════════════════════════════════════════════════════
 
-
 import 'package:applovin_max/applovin_max.dart' as max;
 import 'package:flutter/material.dart';
 
