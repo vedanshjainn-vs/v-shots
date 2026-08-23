@@ -43,12 +43,13 @@ class ConsentManager {
   Future<void> initialize() async {
     try {
       final params = ConsentRequestParameters(
-        consentDebugSettings: kDebugMode
-            ? ConsentDebugSettings(
-                debugGeography: DebugGeography.debugGeographyEea,
-                testIdentifiers: const ['TEST-DEVICE-HASH'],
-              )
-            : null,
+        // Use the user's REAL region — no forced EEA debug geography.
+        // (The previous forced-EEA + fake test-hash config could leave the
+        // status stuck at `required` on non-EEA debug devices, silently
+        // blocking EVERY ad placement. To test the EEA flow deliberately,
+        // set debugGeography: DebugGeography.debugGeographyEea with your
+        // own device hash in testIdentifiers.)
+        consentDebugSettings: null,
       );
       ConsentInformation.instance.requestConsentInfoUpdate(
         params,
@@ -58,8 +59,18 @@ class ConsentManager {
           // If a decision is still required, show the form automatically.
           if (_status == ConsentStatus.required) {
             await ConsentForm.loadAndShowConsentFormIfRequired((
-              FormError? _,
+              FormError? error,
             ) async {
+              if (error != null) {
+                // Form failed to load: per UMP guidance, proceed with
+                // NON-PERSONALIZED ads instead of silently blocking all
+                // ads (canRequestPersonalizedAds stays false because
+                // status != obtained).
+                _status = ConsentStatus.notRequired;
+                debugPrint(
+                    '[AdConsent] Form error: ${error.message} → non-personalized mode');
+                return;
+              }
               _status = await ConsentInformation.instance.getConsentStatus();
               debugPrint('[AdConsent] Dismissed. Status=$_status');
             });

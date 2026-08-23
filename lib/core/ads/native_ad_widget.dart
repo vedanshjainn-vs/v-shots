@@ -38,7 +38,7 @@ import 'consent_manager.dart';
 class NativeAdWidget extends StatefulWidget {
   const NativeAdWidget({
     super.key,
-    this.height = 132,
+    this.height = 144,
     this.placement = AdPlacement.home,
   });
 
@@ -150,9 +150,11 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
               ),
             ),
           ),
-          SizedBox(
-            height: widget.height,
-            child: AdWidget(ad: _nativeAd!),
+          RepaintBoundary(
+            child: SizedBox(
+              height: widget.height,
+              child: AdWidget(ad: _nativeAd!),
+            ),
           ),
         ],
       ),

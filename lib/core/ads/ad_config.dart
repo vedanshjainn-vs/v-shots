@@ -80,8 +80,10 @@ class AdConfig {
   static const int searchAdEvery = 8;
 
   /// Insert one clearly-separated Discovery ad page after this many organic
-  /// videos (Section 7: ~8-10 videos, never over the player).
-  static const int discoveryAdEvery = 9;
+  /// videos (owner-tuned 2026-08-23: 4 — "3-4 swipes, 9 is too many").
+  /// The ad remains a swipable in-feed page with a Continue control and
+  /// never touches the player.
+  static const int discoveryAdEvery = 4;
 
   /// Playlist pages: one native card after this many tracks (max 1/page).
   static const int playlistAdAfter = 10;

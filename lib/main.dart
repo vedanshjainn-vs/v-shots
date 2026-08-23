@@ -346,10 +346,9 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
     audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
     VShotsPlaybackManager.instance.browser.addListener(_syncPlayerExpanded);
-
-    // Ads: background warm-up (preloads the interstitial when policy allows).
-    // Never blocks the UI; no-op when ads are off / ad-free / not yet settled.
-    unawaited(VShotsAds.instance.warmUp());
+    // Ads: no startup work at all. The interstitial preloads on-demand at
+    // the first policy-eligible tab switch (see onTap below) — keeps first
+    // paint fast and leaves nothing pending for widget tests.
   }
 
   void _syncPlayerExpanded() {

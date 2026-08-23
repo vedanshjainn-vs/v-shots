@@ -27,28 +27,30 @@ int pageForSongIndex(int songIndex) =>
 void main() {
   group('Discovery ad page mapping (Section 7)', () {
     test('ad pages appear after every N songs and never first', () {
+      const n = AdConfig.discoveryAdEvery;
       for (var page = 0; page < 50; page++) {
         if (page == 0) {
           expect(isAdPage(page), isFalse, reason: 'page 0 is never an ad');
         } else {
-          final expected = (page - 9) % 10 == 0;
+          final expected = (page - n) % (n + 1) == 0;
           expect(isAdPage(page), expected, reason: 'page $page');
         }
       }
-      expect(isAdPage(9), isTrue);
-      expect(isAdPage(19), isTrue);
-      expect(isAdPage(29), isTrue);
-      expect(isAdPage(8), isFalse);
-      expect(isAdPage(10), isFalse);
+      expect(isAdPage(n), isTrue, reason: 'first ad right after $n songs');
+      expect(isAdPage(2 * n + 1), isTrue);
+      expect(isAdPage(3 * n + 2), isTrue);
+      expect(isAdPage(n - 1), isFalse);
+      expect(isAdPage(n + 1), isFalse);
     });
 
     test('songIndexForPage skips ad pages correctly', () {
-      // page 9 is an ad -> songs 0..8 at pages 0..8, song 9 at page 10
+      const n = AdConfig.discoveryAdEvery;
+      // pages 0..n-1 = songs 0..n-1; page n is the ad; song n at page n+1
       expect(songIndexForPage(0), 0);
-      expect(songIndexForPage(8), 8);
-      expect(songIndexForPage(10), 9);
-      expect(songIndexForPage(11), 10);
-      expect(songIndexForPage(20), 18);
+      expect(songIndexForPage(n - 1), n - 1);
+      expect(songIndexForPage(n + 1), n);
+      expect(songIndexForPage(n + 2), n + 1);
+      expect(songIndexForPage(2 * n + 3), 2 * n + 1);
     });
 
     test('pageForSongIndex round-trips through songIndexForPage', () {
