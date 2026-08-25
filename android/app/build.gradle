@@ -80,4 +80,13 @@ dependencies {
     implementation 'com.google.android.gms:play-services-appset:16.0.2'
     implementation 'com.google.android.gms:play-services-ads-identifier:18.0.1'
     implementation 'com.google.android.gms:play-services-basement:18.3.0'
+
+    // Unity Ads mediated network adapter (per official LevelPlay Android
+    // guide: docs.unity.com → LevelPlay → Networks → Unity Ads).
+    // Unity Ads is a BIDDING-ONLY network on LevelPlay (ERR-1404 on
+    // waterfall instance creation) — 3 bidder instances live since
+    // 2026-08-26: interstitial/rewarded/banner (Game ID 800362213,
+    // placements *_Android). Native is NOT supported by Unity Ads.
+    implementation 'com.unity3d.ads-mediation:unityads-adapter:5.5.0'
+    implementation 'com.unity3d.ads:unity-ads:4.16.6'
 }
