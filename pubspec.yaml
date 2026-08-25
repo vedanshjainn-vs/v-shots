@@ -71,7 +71,7 @@ dependencies:
   # (see lib/core/ads/ad_config.dart). See docs/legal/privacy_policy.md for
   # the advertising/consent disclosure.
   google_mobile_ads: ^5.3.0
-  applovin_max: ^4.6.4
+  unity_levelplay_mediation: ^9.2.0
 
 dev_dependencies:
   flutter_lints: ^5.0.0

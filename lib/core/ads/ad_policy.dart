@@ -5,14 +5,14 @@
 // call AdPolicy — they never initialize or manage ad SDKs directly.
 //
 // Central configuration (per spec):
-//   master switch ........ MAX configured in this build (MaxConfig)
+//   master switch ........ LevelPlay configured in this build (LevelPlayConfig)
 //   emergency kill switch  remote feature flag 'enable_ads' (Supabase admin)
 //   test / production .... MAX session test mode (test devices) vs live
 //   per-format toggles .... native/interstitial/rewarded/banner (below)
 //   frequency ............. AdFrequencyController (cooldowns + session caps)
 //   premium / ad-free ..... AdFreeManager (temporary pass + future premium)
 //   consent ............... ConsentManager (UMP) — never bypassed; pushed
-//                           into MAX via VShotsMax.syncConsent
+//                           into LevelPlay via VShotsLevelPlay.syncConsent
 //
 // Every gate fails CLOSED: any missing/failed check ⇒ no ad ⇒ normal UI.
 // ═════════════════════════════════════════════════════════════════════════
@@ -23,8 +23,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_free_manager.dart';
 import 'ad_frequency_controller.dart';
 import 'consent_manager.dart';
-import 'max_config.dart';
-import 'max_sdk_service.dart';
+import 'levelplay_config.dart';
 import '../remote_config/remote_feature_flags.dart';
 
 /// Every ad placement in the app, identified for policy + analytics.
@@ -90,7 +89,7 @@ class AdPolicy {
   /// build), emergency remote flag OFF, user is ad-free (premium /
   /// rewarded pass), or UMP consent still pending.
   bool get adsAvailable {
-    if (!MaxConfig.isConfigured) return false;
+    if (!LevelPlayConfig.isConfigured) return false;
     if (RemoteFeatureFlags.instance.value('enable_ads', defaultValue: true) ==
         false) {
       return false; // EMERGENCY KILL SWITCH (Supabase feature_flags)
@@ -128,8 +127,8 @@ class AdPolicy {
   // ── Diagnostics (debug builds only — never surfaced to users) ──────────
 
   String describe() {
-    final mode = MaxConfig.isConfigured
-        ? (VShotsMax.instance.sdkTestMode == true ? 'TEST' : 'PROD')
+    final mode = LevelPlayConfig.isConfigured
+        ? (LevelPlayConfig.usingTestCredentials ? 'TEST' : 'PROD')
         : 'OFF';
     return 'AdPolicy mode=$mode '
         'native=$_nativeEnabled interstitial=$_interstitialEnabled '

@@ -1,37 +1,39 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V Shots — Native Ad Widget (AppLovin MAX)
+// V Shots — Native Ad Widget (Unity LevelPlay)
 //
-// Renders a MAX native ad (custom template) as a clearly labeled card:
-//   • always shows an "Ad · Sponsored" label + the SDK AdChoices
-//     (MaxNativeAdOptionsView), so it can never be mistaken for content
+// Renders a LevelPlay NATIVE ad (predefined SMALL template) inside the V
+// Shots card system:
+//   • always shows the "Ad · Sponsored" label + the SDK's own AdChoices
+//     element (inside the template) — never mistaken for music content
 //   • visually follows the V Shots card system (bordered card, tag, no
 //     play/like/next controls)
-//   • policy-gated (AdPolicy): master + MAX config + consent + ad-free
-//   • fail-safe: unconfigured / blocked / no fill ⇒ SizedBox.shrink
+//   • policy-gated (AdPolicy): master + LevelPlay config + consent + ad-free
+//   • fail-safe: unconfigured / blocked / no fill ⇒ SizedBox.shrink (the
+//     normal V Shots UI remains — no fake/empty ad cards)
 //
-// The platform view mounts as soon as policy allows; before the first ad
-// loads a compact "Sponsored" strip is shown (clearly an ad slot, no
-// broken-looking empty card).
+// LevelPlay native = ONE native ad unit per app (resolved from the app
+// key); the V Shots stable placement name is passed per request for
+// pacing/reporting.
 // ═════════════════════════════════════════════════════════════════════════
 
-import 'package:applovin_max/applovin_max.dart' as max;
 import 'package:flutter/material.dart';
+import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
 import '../../core/theme/app_colors.dart';
 import 'ad_analytics.dart';
 import 'ad_policy.dart';
-import 'max_config.dart';
-import 'max_sdk_service.dart';
+import 'levelplay_config.dart';
+import 'levelplay_service.dart';
 
-/// A self-contained native ad card (MAX custom template).
+/// A self-contained native ad card (LevelPlay SMALL template).
 class NativeAdWidget extends StatefulWidget {
   const NativeAdWidget({
     super.key,
-    this.height = 172,
+    this.height = 175,
     this.placement = AdPlacement.home,
   });
 
-  /// Height of the ad template area (the "Ad · Sponsored" tag sits above).
+  /// Height of the native template area (recommended SMALL = 175).
   final double height;
   final AdPlacement placement;
 
@@ -39,193 +41,171 @@ class NativeAdWidget extends StatefulWidget {
   State<NativeAdWidget> createState() => _NativeAdWidgetState();
 }
 
-class _NativeAdWidgetState extends State<NativeAdWidget> {
+class _NativeAdWidgetState extends State<NativeAdWidget>
+    with LevelPlayNativeAdListener {
+  LevelPlayNativeAd? _nativeAd;
   bool _loaded = false;
   String? _loadError;
 
-  String? get _unitId => MaxConfig.unitIdFor(_maxPlacement(widget.placement));
+  String get _placementName => _vShotsPlacement(widget.placement);
+
+  String _vShotsPlacement(AdPlacement placement) {
+    switch (placement) {
+      case AdPlacement.home:
+        return LevelPlayPlacement.homeNative;
+      case AdPlacement.forYouFeed:
+        return LevelPlayPlacement.discoveryNative;
+      case AdPlacement.player:
+        return LevelPlayPlacement.playerNative; // reserved — never placed
+      case AdPlacement.playlist:
+      case AdPlacement.library:
+        return LevelPlayPlacement.libraryNative;
+      case AdPlacement.search:
+        return LevelPlayPlacement.searchNative;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (AdPolicy.instance.adsAvailable &&
+        VShotsLevelPlay.instance.initSucceeded) {
+      _createAd();
+    } else if (AdPolicy.instance.adsAvailable) {
+      // SDK still initializing: wait (bounded) then create if ready.
+      _initWhenReady();
+    }
+  }
+
+  void _initWhenReady() {
+    if (VShotsLevelPlay.instance.initSucceeded) {
+      _createAd();
+      return;
+    }
+    // Wait via the ready notifier (no timers — test-safe).
+    VShotsLevelPlay.instance.readyNotifier.addListener(_onReadyChanged);
+  }
+
+  void _onReadyChanged() {
+    VShotsLevelPlay.instance.readyNotifier.removeListener(_onReadyChanged);
+    if (mounted &&
+        AdPolicy.instance.adsAvailable &&
+        VShotsLevelPlay.instance.initSucceeded) {
+      _createAd();
+    }
+  }
+
+  void _createAd() {
+    if (!mounted) return;
+    AdAnalytics.log('ad_request',
+        placement: widget.placement.key, detail: 'native');
+    _nativeAd = LevelPlayNativeAd.builder()
+        .withPlacementName(_placementName)
+        .withListener(this)
+        .build();
+  }
+
+  @override
+  void dispose() {
+    VShotsLevelPlay.instance.readyNotifier.removeListener(_onReadyChanged);
+    _nativeAd?.destroyAd();
+    super.dispose();
+  }
+
+  // ── LevelPlayNativeAdListener ──────────────────────────────────────────
+
+  @override
+  void onAdLoaded(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    VShotsLevelPlay.instance
+        .noteActivity('native', 'RENDERED (network: ${adInfo.adNetwork})');
+    AdAnalytics.log('native_rendered',
+        placement: widget.placement.key, detail: adInfo.adNetwork ?? '-');
+    if (mounted) setState(() => _loaded = true);
+  }
+
+  @override
+  void onAdImpression(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    AdAnalytics.log('ad_impression',
+        placement: widget.placement.key,
+        detail:
+            'network=${adInfo.adNetwork ?? '-'} revenue=${adInfo.revenue ?? 0}');
+  }
+
+  @override
+  void onAdClicked(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    VShotsLevelPlay.instance.noteActivity('native', 'CLICKED');
+  }
+
+  @override
+  void onAdLoadFailed(LevelPlayNativeAd nativeAd, dynamic error) {
+    _loadError = '$error';
+    VShotsLevelPlay.instance
+        .noteActivity('native', 'LOAD FAILED — $_loadError');
+    AdAnalytics.log('ad_load_failed',
+        placement: widget.placement.key, detail: _loadError);
+    if (mounted) setState(() => _loaded = false);
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final unitId = _unitId;
-    if (!AdPolicy.instance.adsAvailable || unitId == null) {
+    final ad = _nativeAd;
+    if (!AdPolicy.instance.adsAvailable ||
+        ad == null ||
+        !VShotsLevelPlay.instance.initSucceeded ||
+        !_loaded) {
+      // Honest fail-safe: normal V Shots UI, no fake/empty ad card.
       return const SizedBox.shrink();
     }
-
-    // Pre-fill: compact clearly-labeled strip (ad slot, not content).
-    if (!_loaded) {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border, width: 1),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.adb_rounded, size: 16, color: AppColors.hotPink),
-            SizedBox(width: 8),
-            Text(
-              'Ad · Sponsored',
-              style: TextStyle(
-                color: AppColors.hotPink,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.4,
-              ),
-            ),
-            Spacer(),
-            Text(
-              'Loading…',
-              style: TextStyle(
-                color: AppColors.textSubtle,
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Clearly-labeled Ad tag.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.hotPink.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: const Text(
-                'Ad · Sponsored',
-                style: TextStyle(
-                  color: AppColors.hotPink,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 300.0;
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border, width: 1),
           ),
-          RepaintBoundary(
-            child: SizedBox(
-              height: widget.height,
-              child: max.MaxNativeAdView(
-                adUnitId: unitId,
-                placement: widget.placement.key,
-                listener: max.NativeAdListener(
-                  onAdLoadedCallback: (ad) {
-                    VShotsMax.instance.noteActivity(
-                        'native', 'RENDERED (network: ${ad.networkName})');
-                    AdAnalytics.log('native_rendered',
-                        placement: widget.placement.key,
-                        detail: ad.networkName);
-                    if (mounted) setState(() => _loaded = true);
-                  },
-                  onAdLoadFailedCallback: (adUnitId, error) {
-                    _loadError = '${error.code.name}: ${error.message}';
-                    VShotsMax.instance
-                        .noteActivity('native', 'LOAD FAILED — $_loadError');
-                    AdAnalytics.log('ad_load_failed',
-                        placement: widget.placement.key, detail: _loadError);
-                    if (mounted) setState(() => _loaded = false);
-                  },
-                  onAdClickedCallback: (ad) {},
-                ),
-                child: _template(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// V Shots-style native template (dark, matches song cards).
-  Widget _template() {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const max.MaxNativeAdIconView(width: 52, height: 52),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const max.MaxNativeAdTitleView(
-                  style: TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
-                    height: 1.2,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Clearly-labeled Ad tag.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.hotPink.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                const max.MaxNativeAdAdvertiserView(
-                  style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 12,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                max.MaxNativeAdCallToActionView(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent.withValues(alpha: 0.15),
-                    foregroundColor: AppColors.accent,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    textStyle: const TextStyle(
-                      fontSize: 11.5,
+                  child: const Text(
+                    'Ad · Sponsored',
+                    style: TextStyle(
+                      color: AppColors.hotPink,
+                      fontSize: 10,
                       fontWeight: FontWeight.w800,
+                      letterSpacing: 0.4,
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+              RepaintBoundary(
+                child: LevelPlayNativeAdView(
+                  nativeAd: ad,
+                  templateType: LevelPlayTemplateType.SMALL,
+                  width: width - 8,
+                  height: widget.height,
+                  onPlatformViewCreated: ad.loadAd,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          // AdChoices / options icon (required for native ads).
-          const max.MaxNativeAdOptionsView(width: 18, height: 18),
-        ],
-      ),
+        );
+      },
     );
-  }
-
-  String _maxPlacement(AdPlacement placement) {
-    switch (placement) {
-      case AdPlacement.home:
-        return MaxPlacement.homeNative;
-      case AdPlacement.forYouFeed:
-        return MaxPlacement.discoveryNative;
-      case AdPlacement.player:
-        return MaxPlacement.playerNative; // reserved — never placed
-      case AdPlacement.playlist:
-      case AdPlacement.library:
-        return MaxPlacement.libraryNative;
-      case AdPlacement.search:
-        return MaxPlacement.searchNative;
-    }
   }
 }

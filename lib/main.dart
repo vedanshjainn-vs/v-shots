@@ -16,7 +16,7 @@ import 'core/ads/ad_free_manager.dart';
 import 'core/ads/ad_policy.dart';
 import 'core/ads/ad_service.dart';
 import 'core/ads/consent_manager.dart';
-import 'core/ads/max_sdk_service.dart';
+import 'core/ads/levelplay_service.dart';
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
@@ -89,8 +89,8 @@ void main() async {
   // report CONFIG_NOT_SET (honest state, app fully functional).
   unawaited(ConsentManager.instance.initialize());
   ConsentManager.instance.onStatusChanged =
-      () => VShotsMax.instance.syncConsent();
-  unawaited(VShotsMax.instance.initialize());
+      () => VShotsLevelPlay.instance.syncConsent();
+  unawaited(VShotsLevelPlay.instance.initialize());
 
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),

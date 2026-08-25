@@ -1,29 +1,30 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V Shots — Ad Diagnostics Panel (DEBUG BUILDS ONLY, AppLovin MAX)
+// V Shots — Ad Diagnostics Panel (DEBUG BUILDS ONLY, Unity LevelPlay)
 //
-// On-device ground truth (Phases 2/8/9/12). Reports HONEST states only:
-//   • system state (CONFIG_NOT_SET / SDK_INITIALIZING / SDK_NOT_READY /
-//     CONSENT_REQUIRED / AD_FREE / DISABLED / READY)
-//   • SDK key + every placement unit: CONFIGURED / MISSING (no secrets shown)
-//   • per-format activity trail: requested → loaded → shown / failed,
-//     with timestamps and exact MAX error codes
-//   • recent analytics events (REQUESTED / LOADED / SHOWN / IMPRESSION)
-//   • development-only TEST INTERSTITIAL / TEST REWARDED actions (bypass the
-//     production frequency rules on purpose; production rules unchanged)
+// On-device ground truth (Phase 21). Reports HONEST states only:
+//   • LEVELPLAY SDK: INITIALIZED / FAILED / INITIALIZING
+//   • APP KEY: CONFIGURED / MISSING (+ TEST CREDENTIALS indicator)
+//   • every placement unit: CONFIGURED / MISSING (no secrets shown)
+//   • per-format activity trail: requested → loaded → shown / failed with
+//     timestamps + exact LevelPlay errors
+//   • last revenue (impression-level, per network)
+//   • development-only TEST INTERSTITIAL / TEST REWARDED /
+//     LAUNCH INTEGRATION TEST SUITE actions (debug builds only)
 //
+// "ADS AVAILABLE" is NEVER shown merely because a flag is true.
 // kDebugMode-gated at the call site — NEVER visible in release builds.
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
 import 'ad_analytics.dart';
 import 'ad_free_manager.dart';
 import 'ad_policy.dart';
-import 'ad_service.dart';
 import 'ad_state.dart';
 import 'consent_manager.dart';
-import 'max_config.dart';
-import 'max_sdk_service.dart';
+import 'levelplay_config.dart';
+import 'levelplay_service.dart';
 import '../remote_config/remote_feature_flags.dart';
 
 class AdDiagnosticsPanel extends StatefulWidget {
@@ -31,68 +32,58 @@ class AdDiagnosticsPanel extends StatefulWidget {
 
   /// Bump on every ads-related rebuild so the owner can confirm which APK
   /// is installed straight from the Settings screen.
-  static const String buildMarker = 'ads-v5-device-20260823';
+  static const String buildMarker = 'ads-v6-levelplay-20260823';
 
   @override
   State<AdDiagnosticsPanel> createState() => _AdDiagnosticsPanelState();
 }
 
 class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
-  bool _testingInter = false;
-  bool _testingRew = false;
+  bool _busyInter = false;
+  bool _busyRew = false;
   String? _interResult;
   String? _rewResult;
 
   Future<void> _testInterstitial() async {
     setState(() {
-      _testingInter = true;
+      _busyInter = true;
       _interResult = 'requesting…';
     });
-    final result = await VShotsMax.instance.testInterstitial();
+    final result = await VShotsLevelPlay.instance.testInterstitial();
     if (!mounted) return;
     setState(() {
-      _testingInter = false;
+      _busyInter = false;
       _interResult = result;
     });
   }
 
   Future<void> _testRewarded() async {
     setState(() {
-      _testingRew = true;
+      _busyRew = true;
       _rewResult = 'requesting… (watch it to the end — reward is granted '
-          'only when MAX confirms completion)';
+          'only when LevelPlay confirms completion)';
     });
-    bool rewardConfirmed = false;
-    final outcome = await VShotsAds.instance.showRewarded(
-      purpose: 'diag_test',
-      onRewardGranted: () => rewardConfirmed = true,
-    );
+    final result = await VShotsLevelPlay.instance.testRewarded();
     if (!mounted) return;
     setState(() {
-      _testingRew = false;
-      _rewResult = switch (outcome) {
-        RewardOutcome.completed => rewardConfirmed
-            ? 'COMPLETED — reward callback fired (MAX-confirmed) ✓'
-            : 'COMPLETED (reward callback did not fire — inspect)',
-        RewardOutcome.canceled => 'closed without completion — no reward '
-            '(correct behaviour)',
-        RewardOutcome.failed =>
-          'FAILED to load/show — check unit/network/test device in MAX '
-              'dashboard (exact error is in the events below)',
-      };
+      _busyRew = false;
+      _rewResult = result;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final max = VShotsMax.instance;
-    final state = max.systemState();
+    final lp = VShotsLevelPlay.instance;
+    final state = lp.systemState();
     final consent = ConsentManager.instance.status.name;
     final flag =
         RemoteFeatureFlags.instance.value('enable_ads', defaultValue: true);
-    final sdkKeyMasked = MaxConfig.sdkKey == null
+
+    final appKeyState = !LevelPlayConfig.isConfigured
         ? 'MISSING'
-        : 'CONFIGURED (${MaxConfig.sdkKey!.length} chars)';
+        : (LevelPlayConfig.usingTestCredentials
+            ? 'CONFIGURED (official Unity TEST key — debug only)'
+            : 'CONFIGURED');
 
     Widget kv(String label, String value, {bool alert = false}) {
       return Padding(
@@ -102,9 +93,10 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
           children: [
             SizedBox(
               width: 150,
-              child: Text(label,
-                  style:
-                      const TextStyle(color: Color(0xFF9AA3B2), fontSize: 11)),
+              child: Text(
+                label,
+                style: const TextStyle(color: Color(0xFF9AA3B2), fontSize: 11),
+              ),
             ),
             Expanded(
               child: Text(
@@ -122,13 +114,23 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
       );
     }
 
-    Widget unitRow(String placement) {
-      final configured = MaxConfig.unitConfigured(placement);
+    Widget unitRow(String placement, {String? label}) {
+      final configured = LevelPlayConfig.unitConfigured(placement);
       return kv(
-        placement,
+        label ?? placement,
         configured ? 'CONFIGURED' : 'MISSING',
         alert: !configured,
       );
+    }
+
+    // Last revenue/display event (if any).
+    final recent = AdAnalytics.session.toList(growable: false);
+    AdEvent? revenueEvent;
+    for (final e in recent.reversed) {
+      if (e.kind == 'ad_revenue' || e.kind == 'ad_displayed') {
+        revenueEvent = e;
+        break;
+      }
     }
 
     return Container(
@@ -153,18 +155,23 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
           ),
           const SizedBox(height: 6),
           kv(
-            'System state',
-            '${state.label}'
-                '${state == AdSystemState.ready ? ' — ads can be requested' : ''}',
-            alert:
-                state != AdSystemState.ready && state != AdSystemState.adFree,
-          ),
-          kv('MAX SDK key', sdkKeyMasked, alert: MaxConfig.sdkKey == null),
-          kv('MAX session',
-              max.initSucceeded ? 'INITIALIZED' : 'NOT INITIALIZED',
-              alert: !max.initSucceeded),
-          if (max.sdkTestMode != null)
-            kv('MAX test mode', max.sdkTestMode! ? 'ON (test ads)' : 'off'),
+              'System state',
+              '${state.label}'
+                  '${state == AdSystemState.ready ? ' — ads can be requested' : ''}',
+              alert: state != AdSystemState.ready &&
+                  state != AdSystemState.adFree),
+          kv(
+              'LevelPlay SDK',
+              lp.initSucceeded
+                  ? 'INITIALIZED'
+                  : (lp.initStarted ? 'INITIALIZING' : 'NOT STARTED'),
+              alert: !lp.initSucceeded),
+          if (lp.initError != null)
+            kv('Init error', lp.initError!, alert: true),
+          kv('LevelPlay App Key', appKeyState,
+              alert: !LevelPlayConfig.isConfigured),
+          kv('Units configured',
+              '${LevelPlayConfig.configuredUnitCount()} / ${LevelPlayConfig.unitEnvKeys.length}'),
           kv('Consent (UMP)', consent),
           kv(
               'Personalized ads',
@@ -181,20 +188,25 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
           kv('Policy gate (adsAvailable)',
               AdPolicy.instance.adsAvailable ? 'OPEN' : 'BLOCKED'),
           const SizedBox(height: 4),
-          const Text('UNITS',
+          const Text('UNITS (V Shots stable placement → LevelPlay unit)',
               style: TextStyle(
                   color: Color(0xFF4DD0E1),
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5)),
-          unitRow(MaxPlacement.homeNative),
-          unitRow(MaxPlacement.discoveryNative),
-          unitRow(MaxPlacement.playerNative),
-          unitRow(MaxPlacement.libraryNative),
-          unitRow(MaxPlacement.searchNative),
-          unitRow(MaxPlacement.interstitialSessionBreak),
-          unitRow(MaxPlacement.rewardedFeature),
-          unitRow(MaxPlacement.bannerHome),
+          unitRow(LevelPlayPlacement.homeNative,
+              label: 'HOME_NATIVE_01 (native, app-level unit)'),
+          unitRow(LevelPlayPlacement.discoveryNative,
+              label: 'DISCOVERY_NATIVE_01 (native, app-level unit)'),
+          unitRow(LevelPlayPlacement.libraryNative,
+              label: 'LIBRARY_NATIVE_01 (native, app-level unit)'),
+          unitRow(LevelPlayPlacement.searchNative,
+              label: 'SEARCH_NATIVE_01 (native, app-level unit)'),
+          unitRow(LevelPlayPlacement.interstitialSessionBreak,
+              label: 'INTERSTITIAL_SESSION_BREAK_01'),
+          unitRow(LevelPlayPlacement.rewardedFeature,
+              label: 'REWARDED_FEATURE_01'),
+          unitRow(LevelPlayPlacement.bannerHome, label: 'BANNER_HOME_01'),
           const SizedBox(height: 4),
           const Text('FORMAT ACTIVITY (requested → loaded → shown)',
               style: TextStyle(
@@ -202,23 +214,27 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5)),
-          kv('native', max.activityLine('native')),
+          kv('native', lp.activityLine('native')),
           kv('interstitial',
-              '${max.activityLine('interstitial')} · ready=${max.interstitialReady}'),
+              '${lp.activityLine('interstitial')} · ready=${lp.interstitialReady}'),
           kv('rewarded',
-              '${max.activityLine('rewarded')} · ready=${max.rewardedReady}'),
-          kv('banner', max.activityLine('widget_ad_view')),
-          if (max.formatErrors.isNotEmpty)
-            ...max.formatErrors.entries.map(
+              '${lp.activityLine('rewarded')} · ready=${lp.rewardedReady}'),
+          kv('banner', lp.activityLine('widget_ad_view')),
+          if (lp.formatErrors.isNotEmpty)
+            ...lp.formatErrors.entries.map(
               (e) => kv('last error: ${e.key}', e.value, alert: true),
             ),
+          if (revenueEvent != null)
+            kv('last impression',
+                '${revenueEvent.kind} ${revenueEvent.detail ?? ''}',
+                alert: false),
           const SizedBox(height: 6),
           // ── Development-only test actions (never in release builds) ──
           Row(
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _testingInter ? null : _testInterstitial,
+                  onPressed: _busyInter ? null : _testInterstitial,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFF4DD0E1),
                     side: const BorderSide(color: Color(0xFF4DD0E1)),
@@ -226,13 +242,13 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                     textStyle: const TextStyle(
                         fontSize: 11, fontWeight: FontWeight.w800),
                   ),
-                  child: Text(_testingInter ? 'loading…' : 'TEST INTERSTITIAL'),
+                  child: Text(_busyInter ? 'loading…' : 'TEST INTERSTITIAL'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _testingRew ? null : _testRewarded,
+                  onPressed: _busyRew ? null : _testRewarded,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFFF7AC3),
                     side: const BorderSide(color: Color(0xFFFF7AC3)),
@@ -240,10 +256,23 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                     textStyle: const TextStyle(
                         fontSize: 11, fontWeight: FontWeight.w800),
                   ),
-                  child: Text(_testingRew ? 'playing…' : 'TEST REWARDED'),
+                  child: Text(_busyRew ? 'playing…' : 'TEST REWARDED'),
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          OutlinedButton(
+            onPressed: lp.initSucceeded ? LevelPlay.launchTestSuite : null,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF9AA3B2),
+              side: const BorderSide(color: Color(0xFF9AA3B2)),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              textStyle:
+                  const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+            ),
+            child: const Text(
+                'LAUNCH LEVELPLAY INTEGRATION TEST SUITE (networks/adapters check)'),
           ),
           if (_interResult != null) ...[
             const SizedBox(height: 4),
@@ -278,10 +307,11 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
               ),
           const SizedBox(height: 4),
           const Text(
-            'Test ads require this device to be a registered TEST DEVICE in '
-            'the MAX dashboard (the device ID appears in the MAX log once '
-            'verbose logging runs). Debug builds have verbose logging + the '
-            'creative debugger ON (flip the screen twice on a fullscreen ad).',
+            'For LIVE (non-test) ads: register this device as a TEST DEVICE '
+            'in the LevelPlay dashboard (Settings → Test devices, use the '
+            'Advertising ID shown in the integration test suite). Debug '
+            'builds have adapters-debug + integration test suite ON. '
+            'Native/banner test ads appear in-feed on Home/Library/Playlist.',
             style:
                 TextStyle(color: Color(0xFF9AA3B2), fontSize: 10, height: 1.35),
           ),

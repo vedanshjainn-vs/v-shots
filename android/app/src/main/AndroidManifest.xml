@@ -2,14 +2,20 @@
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Required by Unity LevelPlay for Android 12+ (advertising ID). -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
+
     <!-- Required by audio_service and Discovery browser background media. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- tools:replace: the unity_levelplay_mediation plugin manifest carries
+         its own android:label; keep V Shots' label on merge. -->
     <application
         android:label="V Shots"
+        tools:replace="android:label"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
