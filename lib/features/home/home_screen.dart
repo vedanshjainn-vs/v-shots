@@ -20,6 +20,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../core/ads/ad_policy.dart';
+import '../../core/ads/native_ad_widget.dart';
 import '../../core/motion/motion.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
@@ -209,9 +211,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               else
                 // Spotlight shelves render as the hero carousel above — skip
                 // them here so content never appears twice.
-                ..._shelves
-                    .where((s) => !_spotlightIds().contains(s.id))
-                    .map(_buildShelf),
+                ..._buildShelfSlivers(),
               _buildFooter(),
             ],
           ),
@@ -541,6 +541,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // ── Shelf rendering ────────────────────────────────────────────────────
+  /// Shelves + policy-gated native ad slots BETWEEN them.
+  ///
+  /// Conservative cadence (centralized in AdPolicy): first ad only after
+  /// [AdPolicy.homeFirstAdAfterShelves] organic shelves, then every
+  /// [AdPolicy.homeAdEveryShelves] shelves — never at the top of Home, never
+  /// two ads adjacent. When the policy denies ads (off / ad-free / consent
+  /// pending) this returns exactly the plain shelf list (no layout change).
+  List<Widget> _buildShelfSlivers() {
+    final visible = _shelves
+        .where((s) => !_spotlightIds().contains(s.id))
+        .toList(growable: false);
+    final slivers = <Widget>[];
+    final adsOn = AdPolicy.instance.canShowNative(AdPlacement.home);
+    for (var i = 0; i < visible.length; i++) {
+      slivers.add(_buildShelf(visible[i]));
+      final after = i + 1;
+      if (adsOn &&
+          after >= AdPolicy.homeFirstAdAfterShelves &&
+          (after - AdPolicy.homeFirstAdAfterShelves) %
+                  AdPolicy.homeAdEveryShelves ==
+              0) {
+        slivers.add(
+          const SliverToBoxAdapter(
+            child: NativeAdWidget(placement: AdPlacement.home),
+          ),
+        );
+      }
+    }
+    return slivers;
+  }
+
   Widget _buildShelf(HomeShelf shelf) {
     switch (shelf.status) {
       case HomeShelfStatus.hidden:
@@ -944,7 +975,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
           SizedBox(
-            height: 206,
+            // Row height sized for the track card at FIXED text scale
+            // (150 artwork + 8 gap + title + artist + optional badge).
+            // The card texts use TextScaler.noScaling (below) so the height
+            // is deterministic on every device/font scale — this row can no
+            // longer overflow (was 206 + scaled text ⇒ "6.0 pixels" over).
+            height: 214,
             // Lazy per-shelf pagination: scrolling near the end fetches the
             // next page and appends, so shelves are endless instead of capped
             // at the first batch.
@@ -1054,10 +1090,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   ),
                 ),
                 const SizedBox(height: 8),
+                // Card labels use NO text scaling: the shelf row has a fixed
+                // height, so scaled system fonts would overflow it (the
+                // "BOTTOM OVERFLOWED BY 6.0 PIXELS" stripes). Fixed scale
+                // makes the card height deterministic on every device.
                 Text(
                   (track['title'] as String?) ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  textScaler: TextScaler.noScaling,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
@@ -1068,6 +1109,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   (track['artist'] as String?) ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  textScaler: TextScaler.noScaling,
                   style: const TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 12,
@@ -1086,6 +1128,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         SizedBox(width: 4),
                         Text(
                           'Official',
+                          textScaler: TextScaler.noScaling,
                           style: TextStyle(
                             color: AppColors.accent,
                             fontSize: 10.5,
