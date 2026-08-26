@@ -1,56 +1,28 @@
 // ═════════════════════════════════════════════════════════════════════════
-// V Shots — Ad Configuration
+// V Shots — Ad Placement Cadence
 //
-// Ads use Google AdMob NATIVE ads. Development builds use Google's official
-// TEST ad unit IDs; PRODUCTION IDs are injected at build time via secure
-// configuration (GitHub Actions secrets -> .env -> flutter_dotenv). Real ad
-// IDs are NEVER committed to source control.
+// In-feed ad spacing constants (kept here for the placement screens and
+// tests). All availability/config decisions live in AdPolicy / MaxConfig /
+// VShotsMax — this file has NO credentials and NO SDK logic.
 //
+// (Pre-MAX-migration this file held Google AdMob unit IDs; those are
+// obsolete — AdMob demand now flows through AppLovin MAX mediation and is
+// configured in the MAX dashboard, not on the client.)
 // ═════════════════════════════════════════════════════════════════════════
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
-/// Central ad configuration. Switches between test and production IDs based
-/// on whether production IDs have been injected.
 class AdConfig {
   AdConfig._();
 
-  /// Official Google TEST ad unit ID for native ads on Android.
-  static const String testNativeAdUnitId =
-      'ca-app-pub-3940256099942544/2247696110';
-
-  /// Whether AdMob is enabled at all. Toggled off for store/developer builds
-  /// where no production config is present, so ads never show placeholder/test
-  /// content to real users.
-  static bool get adsEnabled {
-    final prod = _prodNativeAdUnitId;
-    return prod != null && prod.isNotEmpty;
-  }
-
-  static String? get _prodNativeAdUnitId {
-    if (dotenv.isInitialized) {
-      final fromEnv = dotenv.maybeGet('ADMOB_NATIVE_AD_ID');
-      if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
-    }
-    const compileTime = String.fromEnvironment('ADMOB_NATIVE_AD_ID');
-    if (compileTime.isNotEmpty) return compileTime;
-    return null;
-  }
-
-  /// The native ad unit ID actually used at runtime: production when
-  /// configured, otherwise the official Google test ID (never shown to real
-  /// users unless ads are explicitly enabled in a dev build).
-  static String get nativeAdUnitId => _prodNativeAdUnitId ?? testNativeAdUnitId;
-
-  /// Ad placement cadence: insert an ad after roughly this many organic items.
-  static const int homeAdEvery = 8;
+  /// Search: insert one clearly-labeled native ad after this many organic
+  /// results.
   static const int searchAdEvery = 8;
 
-  /// Insert one clearly-separated Discovery ad page after this many organic
-  /// videos (Section 7: ~8-10 videos, never over the player).
-  static const int discoveryAdEvery = 9;
+  /// Discover (For You): insert one clearly-separated ad page after this
+  /// many organic videos (owner-tuned 2026-08-23: 4). The ad remains a
+  /// swipable in-feed page with a Continue control and never touches the
+  /// player.
+  static const int discoveryAdEvery = 4;
 
-  /// If true, real-user builds should be treated as test devices for AdMob.
-  /// Production builds should keep this false.
-  static bool get isTestMode => !adsEnabled;
+  /// Playlist pages: one native card after this many tracks (max 1/page).
+  static const int playlistAdAfter = 10;
 }

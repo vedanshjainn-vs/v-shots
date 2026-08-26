@@ -9,7 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ads/ad_config.dart';
+import '../../core/ads/ad_policy.dart';
 import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/player_sponsored_ad_policy.dart';
+import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
 import '../../core/config/discovery_remote.dart';
 import '../../core/playback/playback_router.dart';
@@ -64,12 +67,26 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   // The feed is a vertical PageView. Every [AdConfig.discoveryAdEvery] organic
   // videos we insert one clearly-separated ad page, mapping a PageView page
   // index to a song index via [_songIndexForPage]; ad pages never touch the
-  // browser. Ads are only inserted when ads are enabled (production config).
-  bool get _adsEnabled => AdConfig.adsEnabled;
+  // browser. Ads are only inserted when the central policy allows them
+  // (enabled + not ad-free + consent settled). Never every swipe: one ad
+  // page per 9 organic videos, with an explicit Continue control.
+  bool get _adsEnabled =>
+      AdPolicy.instance.canShowNative(AdPlacement.forYouFeed);
 
-  /// Number of ad pages inserted for [songCount] songs (one after every
-  /// [AdConfig.discoveryAdEvery] songs).
-  int _adCountFor(int songCount) => songCount ~/ AdConfig.discoveryAdEvery;
+  /// Number of ad pages inserted for [songCount] songs.
+  ///
+  /// Two invariants (both were device-crash sources):
+  ///   1. When ads are DISABLED there are ZERO ad pages — the page count
+  ///      must equal the song count or deep swipes index past the last
+  ///      item (RangeError 0..23: 24 on a 24-item feed).
+  ///   2. There is no trailing ad after the LAST song (an ad page as the
+  ///      final page maps past the last song index and offers a Continue
+  ///      that goes nowhere). `(songCount - 1) ~/ N` keeps the
+  ///      page↔song math in [_songIndexForPage]/[_pageForSongIndex] exact.
+  int _adCountFor(int songCount) {
+    if (!_adsEnabled || songCount <= 0) return 0;
+    return (songCount - 1) ~/ AdConfig.discoveryAdEvery;
+  }
 
   /// Total PageView pages = songs + inserted ad pages.
   int get _pageCount => _items.length + _adCountFor(_items.length);
@@ -457,6 +474,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   void _onPageChanged(int page) {
     // On an ad page nothing changes — the current card stays as-is.
     if (_isAdPage(page)) {
+      // Keep the in-card player sponsored card at a respectful distance
+      // from the in-feed ad page (shared frequency clock — see
+      // player_sponsored_ad_policy.dart).
+      PlayerSponsoredAdPolicy.instance.noteExternalAdShown();
       setState(() {});
       return;
     }
@@ -611,6 +632,11 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   );
                 }
                 final songIndex = _songIndexForPage(page);
+                // Defensive: a page that maps past the last item (transient
+                // state during load-more) must never index out of range.
+                if (songIndex < 0 || songIndex >= _items.length) {
+                  return const SizedBox.shrink();
+                }
                 final track = _items[songIndex];
                 return RepaintBoundary(
                   child: _ForYouCard(
@@ -1191,7 +1217,10 @@ class _ForYouAdCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              const NativeAdWidget(height: 180),
+              const NativeAdWidget(
+                height: 220,
+                placement: AdPlacement.forYouFeed,
+              ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
                 onPressed: onSkip,
@@ -1542,6 +1571,18 @@ class _ForYouCardState extends State<_ForYouCard>
             ),
           ),
         ),
+
+        // ── Premium player sponsored card (LevelPlay native) ──────────────
+        // Mounted ONLY on the active card: it swipes naturally with the
+        // song page, appears after ~10–15 s of genuine listening (never a
+        // placeholder, never on pause/skip), and hides itself entirely
+        // when unavailable. Read-only playback observation — nothing in
+        // the playback stack is touched. Sits between the artwork layer
+        // and the metadata/controls layer so player controls always win.
+        if (isActive)
+          Positioned.fill(
+            child: PlayerSponsoredCard(trackId: trackId, coverSide: coverSide),
+          ),
 
         // Bottom metadata + play controls (safe double-tap region, BELOW the
         // YouTube player — double-tap here to like without hijacking the

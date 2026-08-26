@@ -18,6 +18,21 @@ class ConsentManager {
   ConsentStatus _status = ConsentStatus.unknown;
   ConsentStatus get status => _status;
 
+  /// Fired whenever the consent status changes (any source). Registered by
+  /// VShotsMax to push the decision into AppLovin MAX (Phase 9) — the UMP
+  /// system stays the single consent source of truth.
+  VoidCallback? onStatusChanged;
+
+  void _set(ConsentStatus value) {
+    if (value == _status) return;
+    _status = value;
+    onStatusChanged?.call();
+  }
+
+  /// @visibleForTesting — replace the live consent status.
+  @visibleForTesting
+  void debugSetStatus(ConsentStatus value) => _set(value);
+
   /// Whether personalized ads may be served. True only when the user granted
   /// consent; otherwise requests are sent as non-personalized.
   bool get canRequestPersonalizedAds => _status == ConsentStatus.obtained;
@@ -39,36 +54,47 @@ class ConsentManager {
   Future<void> initialize() async {
     try {
       final params = ConsentRequestParameters(
-        consentDebugSettings: kDebugMode
-            ? ConsentDebugSettings(
-                debugGeography: DebugGeography.debugGeographyEea,
-                testIdentifiers: const ['TEST-DEVICE-HASH'],
-              )
-            : null,
+        // Use the user's REAL region — no forced EEA debug geography.
+        // (The previous forced-EEA + fake test-hash config could leave the
+        // status stuck at `required` on non-EEA debug devices, silently
+        // blocking EVERY ad placement. To test the EEA flow deliberately,
+        // set debugGeography: DebugGeography.debugGeographyEea with your
+        // own device hash in testIdentifiers.)
+        consentDebugSettings: null,
       );
       ConsentInformation.instance.requestConsentInfoUpdate(
         params,
         () async {
-          _status = await ConsentInformation.instance.getConsentStatus();
+          _set(await ConsentInformation.instance.getConsentStatus());
           debugPrint('[AdConsent] Status=$_status');
           // If a decision is still required, show the form automatically.
           if (_status == ConsentStatus.required) {
             await ConsentForm.loadAndShowConsentFormIfRequired((
-              FormError? _,
+              FormError? error,
             ) async {
-              _status = await ConsentInformation.instance.getConsentStatus();
+              if (error != null) {
+                // Form failed to load: per UMP guidance, proceed with
+                // NON-PERSONALIZED ads instead of silently blocking all
+                // ads (canRequestPersonalizedAds stays false because
+                // status != obtained).
+                _set(ConsentStatus.notRequired);
+                debugPrint(
+                    '[AdConsent] Form error: ${error.message} → non-personalized mode');
+                return;
+              }
+              _set(await ConsentInformation.instance.getConsentStatus());
               debugPrint('[AdConsent] Dismissed. Status=$_status');
             });
           }
         },
         (FormError error) {
           debugPrint('[AdConsent] Info update failed: ${error.message}');
-          _status = ConsentStatus.unknown;
+          _set(ConsentStatus.unknown);
         },
       );
     } catch (e) {
       debugPrint('[AdConsent] initialize error: $e');
-      _status = ConsentStatus.unknown;
+      _set(ConsentStatus.unknown);
     }
   }
 }

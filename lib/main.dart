@@ -12,7 +12,11 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 
 import 'core/ads/ad_config.dart';
-import 'core/ads/ad_manager.dart';
+import 'core/ads/ad_free_manager.dart';
+import 'core/ads/ad_policy.dart';
+import 'core/ads/ad_service.dart';
+import 'core/ads/consent_manager.dart';
+import 'core/ads/levelplay_service.dart';
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
@@ -69,15 +73,24 @@ void main() async {
     SignalStore.instance.initialize(),
     PersonalizationStore.instance.initialize(),
     RemoteConfigService.instance.init(),
+    AdFreeManager.instance.init(),
     AppVersion.load(),
   ]);
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
   await AuthService.instance.initializeGoogleSignIn();
 
-  // Initialize Google AdMob + UMP consent (no-op unless production ad IDs are
-  // configured via ADMOB_NATIVE_AD_ID).
-  await AdManager.instance.initialize();
+  // Ads (AppLovin MAX mediation): one-time, NON-BLOCKING init (Phase 18).
+  // The existing UMP consent system is REUSED as the single consent source;
+  // its decision is pushed into MAX on every status change (Phase 9) and
+  // the Google network inside MAX reads GMA's UMP state directly.
+  // FIRE-AND-FORGET BY DESIGN: ads must never block first paint. When MAX
+  // is not configured in this build these are no-ops and diagnostics
+  // report CONFIG_NOT_SET (honest state, app fully functional).
+  unawaited(ConsentManager.instance.initialize());
+  ConsentManager.instance.onStatusChanged =
+      () => VShotsLevelPlay.instance.syncConsent();
+  unawaited(VShotsLevelPlay.instance.initialize());
 
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),
@@ -339,6 +352,9 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
     audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
     VShotsPlaybackManager.instance.browser.addListener(_syncPlayerExpanded);
+    // Ads: no startup work at all. The interstitial preloads on-demand at
+    // the first policy-eligible tab switch (see onTap below) — keeps first
+    // paint fast and leaves nothing pending for widget tests.
   }
 
   void _syncPlayerExpanded() {
@@ -469,10 +485,21 @@ class _MainShellState extends State<MainShell> {
             return BottomTabBar(
               currentIndex: _index.clamp(0, 3),
               onTap: (i) {
+                final target = i.clamp(0, 3);
+                final changed = target != _index;
                 setState(() {
-                  _index = i.clamp(0, 3);
-                  currentTabIndexNotifier.value = i.clamp(0, 3);
+                  _index = target;
+                  currentTabIndexNotifier.value = target;
                 });
+                // Interstitial at a NATURAL transition (user-initiated tab
+                // switch only). Cooldown (180 s), session cap (4) and the
+                // 60 s dwell guard live centrally in AdPolicy — never on
+                // launch, never during playback, never on song changes.
+                if (changed && !VShotsPlaybackManager.instance.browser.isOpen) {
+                  unawaited(VShotsAds.instance.maybeShowInterstitial(
+                    trigger: 'tab_switch_$target',
+                  ));
+                }
               },
             );
           },
@@ -1267,10 +1294,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResultsList() {
     // Insert one clearly-labeled native ad after ~8 organic results. When ads
-    // are not enabled (no production ad config) the ad slot count is 0, so the
-    // list behaves exactly as before.
-    final bool showAd =
-        AdConfig.adsEnabled && _results.length >= AdConfig.searchAdEvery;
+    // are not enabled (no production ad config / ad-free / consent pending)
+    // the ad slot count is 0, so the list behaves exactly as before.
+    final bool showAd = AdPolicy.instance.canShowNative(AdPlacement.search) &&
+        _results.length >= AdConfig.searchAdEvery;
     final int adCount = showAd ? 1 : 0;
     final int footerIndex = _results.length + adCount;
     final artists = _derivedArtists();

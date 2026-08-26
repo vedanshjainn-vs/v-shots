@@ -11,6 +11,9 @@
 
 import 'package:flutter/material.dart';
 
+import '../../core/ads/ad_banner_widget.dart';
+import '../../core/ads/ad_policy.dart';
+import '../../core/ads/native_ad_widget.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart' show playTrack;
@@ -139,6 +142,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     );
                   }),
                 ],
+                // Policy-gated ads (only when allowed): one native card + one
+                // banner at the BOTTOM of the list — never between history
+                // entries, never interfering with selecting/playing songs.
+                if (AdPolicy.instance.canShowNative(AdPlacement.library))
+                  const NativeAdWidget(placement: AdPlacement.library),
+                if (AdPolicy.instance.canShowBanner(AdPlacement.library))
+                  const AdBannerWidget(placement: AdPlacement.library),
               ],
             ),
     );
