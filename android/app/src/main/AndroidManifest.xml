@@ -38,8 +38,9 @@
         <activity
             android:name="com.facebook.ads.AudienceNetworkActivity"
             android:hardwareAccelerated="true"
-            android:configChanges="keyboardHidden|orientation|screenSize"
-            android:exported="false" />
+            android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout"
+            android:exported="false"
+            tools:replace="android:configChanges" />
 
         <service android:name="com.ryanheise.audioservice.AudioService"
             android:foregroundServiceType="mediaPlayback"
