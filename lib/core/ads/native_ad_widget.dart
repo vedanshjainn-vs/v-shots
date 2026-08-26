@@ -116,6 +116,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget>
 
   @override
   void onAdLoaded(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    VShotsLevelPlay.instance.noteFill('native', adInfo.adNetwork);
     VShotsLevelPlay.instance
         .noteActivity('native', 'RENDERED (network: ${adInfo.adNetwork})');
     AdAnalytics.log('native_rendered',

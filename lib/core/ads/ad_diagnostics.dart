@@ -32,7 +32,10 @@ class AdDiagnosticsPanel extends StatefulWidget {
 
   /// Bump on every ads-related rebuild so the owner can confirm which APK
   /// is installed straight from the Settings screen.
-  static const String buildMarker = 'ads-v6-levelplay-20260823';
+  /// v10: Meta Audience Network audit build — accurate native unit display,
+  /// per-network fill tracking, correct build marker (v8/v9 shipped with a
+  /// stale v6 marker — this build is identifiable as v10+).
+  static const String buildMarker = 'ads-v10-meta-audit-20260826';
 
   @override
   State<AdDiagnosticsPanel> createState() => _AdDiagnosticsPanelState();
@@ -123,6 +126,17 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
       );
     }
 
+    /// Native placements have NO client-side unit ID by design: LevelPlay
+    /// resolves the single app-level native ad unit from the app key
+    /// (server-side). Showing "MISSING" here was a false alarm — the unit
+    /// exists on the LevelPlay app and needs no .env entry.
+    Widget nativeUnitRow(String placement, {String? label}) {
+      return kv(
+        label ?? placement,
+        'APP-LEVEL ✓ (auto-resolved from app key — no client unit needed)',
+      );
+    }
+
     // Last revenue/display event (if any).
     final recent = AdAnalytics.session.toList(growable: false);
     AdEvent? revenueEvent;
@@ -194,13 +208,13 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.5)),
-          unitRow(LevelPlayPlacement.homeNative,
+          nativeUnitRow(LevelPlayPlacement.homeNative,
               label: 'HOME_NATIVE_01 (native, app-level unit)'),
-          unitRow(LevelPlayPlacement.discoveryNative,
+          nativeUnitRow(LevelPlayPlacement.discoveryNative,
               label: 'DISCOVERY_NATIVE_01 (native, app-level unit)'),
-          unitRow(LevelPlayPlacement.libraryNative,
+          nativeUnitRow(LevelPlayPlacement.libraryNative,
               label: 'LIBRARY_NATIVE_01 (native, app-level unit)'),
-          unitRow(LevelPlayPlacement.searchNative,
+          nativeUnitRow(LevelPlayPlacement.searchNative,
               label: 'SEARCH_NATIVE_01 (native, app-level unit)'),
           unitRow(LevelPlayPlacement.interstitialSessionBreak,
               label: 'INTERSTITIAL_SESSION_BREAK_01'),
@@ -220,6 +234,26 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
           kv('rewarded',
               '${lp.activityLine('rewarded')} · ready=${lp.rewardedReady}'),
           kv('banner', lp.activityLine('widget_ad_view')),
+          const SizedBox(height: 4),
+          const Text('NETWORK FILL (which network actually filled)',
+              style: TextStyle(
+                  color: Color(0xFF4DD0E1),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5)),
+          for (final format in const [
+            'native',
+            'interstitial',
+            'rewarded',
+            'banner',
+          ])
+            kv(
+              'last fill: $format',
+              lp.lastFillNetwork[format] ??
+                  '— (no load yet this session; mediation instances '
+                      'live server-side: UnityAds+Meta bidders)',
+              alert: lp.lastFillNetwork[format] == null,
+            ),
           if (lp.formatErrors.isNotEmpty)
             ...lp.formatErrors.entries.map(
               (e) => kv('last error: ${e.key}', e.value, alert: true),

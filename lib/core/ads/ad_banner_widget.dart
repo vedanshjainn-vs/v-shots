@@ -55,6 +55,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget>
 
   @override
   void onAdLoaded(LevelPlayAdInfo adInfo) {
+    VShotsLevelPlay.instance.noteFill('banner', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
         'widget_ad_view', 'LOADED (network: ${adInfo.adNetwork})');
     AdAnalytics.log('ad_loaded',

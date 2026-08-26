@@ -77,6 +77,17 @@ class VShotsLevelPlay {
   final Map<String, DateTime> lastActivityAt = {};
   final Map<String, String> lastActivity = {};
 
+  /// The network that ACTUALLY filled the last load per format
+  /// (e.g. 'meta', 'unityAds') — surfaced in the diagnostics panel so the
+  /// owner can see WHO filled, not just that LevelPlay requested.
+  final Map<String, String> lastFillNetwork = {};
+
+  /// Records which network filled [format] (called from every ad listener).
+  void noteFill(String format, String? network) {
+    if (network == null || network.isEmpty) return;
+    lastFillNetwork[format] = network;
+  }
+
   void noteActivity(String format, String activity) {
     lastActivityAt[format] = DateTime.now();
     lastActivity[format] = activity;
@@ -385,9 +396,11 @@ class _InterstitialListener with LevelPlayInterstitialAdListener {
   void onAdLoaded(LevelPlayAdInfo adInfo) {
     service.interstitialReady = true;
     service.formatErrors.remove('interstitial');
+    service.noteFill('interstitial', adInfo.adNetwork);
     service.noteActivity(
         'interstitial', 'LOADED (network: ${adInfo.adNetwork})');
-    AdAnalytics.log('ad_loaded', placement: 'interstitial');
+    AdAnalytics.log('ad_loaded',
+        placement: 'interstitial', detail: 'network=${adInfo.adNetwork}');
     service.interstitialLoadedHook?.call();
   }
 
@@ -445,6 +458,7 @@ class _RewardedListener with LevelPlayRewardedAdListener {
   void onAdLoaded(LevelPlayAdInfo adInfo) {
     service.rewardedReady = true;
     service.formatErrors.remove('rewarded');
+    service.noteFill('rewarded', adInfo.adNetwork);
     service.noteActivity('rewarded', 'LOADED (network: ${adInfo.adNetwork})');
     AdAnalytics.log('ad_loaded', placement: 'rewarded');
     service.rewardedLoadedHook?.call();

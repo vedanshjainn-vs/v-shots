@@ -219,6 +219,7 @@ class _PlayerSponsoredCardState extends State<PlayerSponsoredCard>
 
   @override
   void onAdLoaded(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    VShotsLevelPlay.instance.noteFill('native', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
       'player_native',
       'LOADED (network: ${adInfo.adNetwork})',
