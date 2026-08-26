@@ -63,7 +63,7 @@ class _OfflineBannerState extends State<OfflineBanner>
       if (offline != _isOffline) {
         setState(() => _isOffline = offline);
         if (offline) {
-          _slideController.forward();
+          unawaited(_slideController.forward());
         }
       }
     } catch (_) {
