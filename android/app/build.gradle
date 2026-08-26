@@ -4,9 +4,29 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace "com.vshots.live"
     compileSdk 36
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
 
     defaultConfig {
         applicationId "com.vshots.live"
@@ -19,31 +39,33 @@ android {
 
     signingConfigs {
         release {
-            def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
-            if (keystorePath != null) {
-                storeFile file(keystorePath)
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            def keystoreFile = System.getenv("ANDROID_KEYSTORE_PATH") ?: keystoreProperties['storeFile']
+            if (keystoreFile != null && file(keystoreFile).exists()) {
+                storeFile file(keystoreFile)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: keystoreProperties['storePassword']
+                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: keystoreProperties['keyAlias']
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: keystoreProperties['keyPassword']
             }
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
     }
 
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            def hasReleaseSigning = signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()
+            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
             minifyEnabled false
             shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
+        debug {
+            signingConfig signingConfigs.debug
+        }
     }
 }
 
@@ -52,7 +74,6 @@ flutter {
 }
 
 // Unity LevelPlay mediation — current Android network adapters.
-// The LevelPlay Flutter plugin provides the core LevelPlay SDK.
 dependencies {
     implementation 'com.google.android.gms:play-services-appset:16.0.2'
     implementation 'com.google.android.gms:play-services-ads-identifier:18.0.1'
