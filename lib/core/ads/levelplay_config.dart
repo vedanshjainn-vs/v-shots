@@ -13,11 +13,11 @@
 // app key); V Shots stable placement names are passed per request for
 // pacing/reporting.
 //
-// Debug-only test fallback: when no key is configured AND this is a DEBUG
-// build, the OFFICIAL Unity LevelPlay test credentials (published in the
-// official ironsource-mobile/Flutter-SDK demo repo for integration
-// verification) are used so test ads can be verified on-device. Release
-// builds have NO fallback — they must be configured via secrets.
+// Debug builds intentionally use the official Unity LevelPlay TEST
+// credentials even when CI also injects production credentials. This keeps
+// the debug diagnostics deterministic and prevents a production unit's
+// "Mediation No Fill" from being mistaken for an SDK integration failure.
+// Release builds always use the configured production credentials.
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:io' show Platform;
@@ -56,8 +56,8 @@ class LevelPlayConfig {
 
   // Official Unity LevelPlay TEST credentials (public in the official
   // ironsource-mobile/Flutter-SDK demo repository — for integration
-  // verification only). Used ONLY as a debug-build fallback when no
-  // production key is configured.
+  // verification only). Used by DEBUG builds so integration testing is
+  // deterministic even when production secrets are present in CI.
   static const String _testAppKey = '25b63cf85';
   static const String _testInterstitialUnit = 'h3xw38h9214adgxo';
   static const String _testRewardedUnit = 'syz3d8ekts22q0or';
@@ -97,32 +97,39 @@ class LevelPlayConfig {
     return null;
   }
 
-  /// Debug-build fallback flag: true when official Unity test credentials
-  /// are in use (no production key configured + debug build).
-  static bool get _useTestFallback =>
-      _env('LEVELPLAY_APP_KEY') == null &&
+  /// Debug builds use official test credentials by default. A developer can
+  /// explicitly opt into production credentials for a debug build by setting
+  /// LEVELPLAY_DEBUG_USE_PRODUCTION=true in the debug environment.
+  static bool get _useDebugTestCredentials =>
       kDebugMode &&
       debugTestFallbackEnabled &&
-      !debugIsRunningInTests;
+      !debugIsRunningInTests &&
+      _env('LEVELPLAY_DEBUG_USE_PRODUCTION')?.toLowerCase() != 'true';
 
-  /// The LevelPlay app key in effect (production secret or debug test key).
+  /// The production configuration is considered present independently of
+  /// which credentials the current build chooses to use.
+  static bool get hasProductionConfig => _env('LEVELPLAY_APP_KEY') != null;
+
+  /// Whether the current build uses the official Unity TEST credentials.
+  static bool get usingTestCredentials =>
+      _useDebugTestCredentials ||
+      (!hasProductionConfig && kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests);
+
+  /// The LevelPlay app key in effect.
   static String? get appKey =>
-      _env('LEVELPLAY_APP_KEY') ?? (_useTestFallback ? _testAppKey : null);
+      _useDebugTestCredentials
+          ? _testAppKey
+          : (_env('LEVELPLAY_APP_KEY') ??
+              (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
+                  ? _testAppKey
+                  : null));
 
   /// Whether the advertising layer is configured at all.
   static bool get isConfigured => appKey != null;
 
-  /// Whether the in-use key is the official Unity TEST key (diagnostics).
-  static bool get usingTestCredentials =>
-      appKey != null && appKey == _testAppKey;
-
   /// LevelPlay ad unit ID for a placement, or null when not configured.
   static String? unitIdFor(String placement) {
-    final key = unitEnvKeys[placement];
-    if (key == null) return null; // native placements: app-level unit
-    final prod = _env(key);
-    if (prod != null) return prod;
-    if (_useTestFallback) {
+    if (_useDebugTestCredentials) {
       switch (placement) {
         case LevelPlayPlacement.interstitialSessionBreak:
           return _testInterstitialUnit;
@@ -132,7 +139,10 @@ class LevelPlayConfig {
           return _testBannerUnit;
       }
     }
-    return null;
+
+    final key = unitEnvKeys[placement];
+    if (key == null) return null; // native placements: app-level unit
+    return _env(key);
   }
 
   static bool unitConfigured(String placement) => unitIdFor(placement) != null;
