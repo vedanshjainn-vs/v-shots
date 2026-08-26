@@ -113,16 +113,18 @@ class LevelPlayConfig {
   /// Whether the current build uses the official Unity TEST credentials.
   static bool get usingTestCredentials =>
       _useDebugTestCredentials ||
-      (!hasProductionConfig && kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests);
+      (!hasProductionConfig &&
+          kDebugMode &&
+          debugTestFallbackEnabled &&
+          !debugIsRunningInTests);
 
   /// The LevelPlay app key in effect.
-  static String? get appKey =>
-      _useDebugTestCredentials
-          ? _testAppKey
-          : (_env('LEVELPLAY_APP_KEY') ??
-              (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
-                  ? _testAppKey
-                  : null));
+  static String? get appKey => _useDebugTestCredentials
+      ? _testAppKey
+      : (_env('LEVELPLAY_APP_KEY') ??
+          (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
+              ? _testAppKey
+              : null));
 
   /// Whether the advertising layer is configured at all.
   static bool get isConfigured => appKey != null;

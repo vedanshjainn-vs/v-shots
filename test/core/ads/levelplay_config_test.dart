@@ -59,7 +59,9 @@ void main() {
       }
     });
 
-    test('debug build uses official Unity TEST credentials even when prod is injected', () {
+    test(
+        'debug build uses official Unity TEST credentials even when prod is injected',
+        () {
       LevelPlayConfig.debugSetEnv({
         'LEVELPLAY_APP_KEY': 'prod-app-key',
         'LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01': 'prod-inter-unit',
@@ -118,7 +120,9 @@ void main() {
       }
     });
 
-    test('debug build falls back to official Unity TEST credentials when no prod key exists', () {
+    test(
+        'debug build falls back to official Unity TEST credentials when no prod key exists',
+        () {
       LevelPlayConfig.debugSetEnv({});
       final wasInTests = LevelPlayConfig.debugIsRunningInTests;
       LevelPlayConfig.debugIsRunningInTests = false;
