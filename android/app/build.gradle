@@ -4,16 +4,38 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-}
-
 android {
     namespace "com.vshots.live"
     compileSdk 36
-    ndkVersion flutter.ndkVersion
+
+    defaultConfig {
+        applicationId "com.vshots.live"
+        minSdk 24
+        targetSdk 36
+        versionCode 45
+        versionName "5.9.2"
+        multiDexEnabled true
+    }
+
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -21,51 +43,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = '17'
-    }
-
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
-    }
-
-    defaultConfig {
-        applicationId "com.vshots.live"
-        minSdk 24
-        targetSdk 36
-        versionCode 44
-        versionName "5.9.1"
-        multiDexEnabled true
-    }
-
-    signingConfigs {
-        release {
-            def keystoreFile = System.getenv("ANDROID_KEYSTORE_PATH") ?: keystoreProperties['storeFile']
-            if (keystoreFile != null && file(keystoreFile).exists()) {
-                storeFile file(keystoreFile)
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: keystoreProperties['storePassword']
-                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: keystoreProperties['keyAlias']
-                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: keystoreProperties['keyPassword']
-            }
-            v1SigningEnabled true
-            v2SigningEnabled true
-        }
-        debug {
-            v1SigningEnabled true
-            v2SigningEnabled true
-        }
-    }
-
-    buildTypes {
-        release {
-            def hasReleaseSigning = signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()
-            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
-            minifyEnabled false
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-        debug {
-            signingConfig signingConfigs.debug
-        }
+        jvmTarget = "17"
     }
 }
 
@@ -73,30 +51,19 @@ flutter {
     source '../..'
 }
 
-// Unity LevelPlay (ironSource) mediation — required Play Services
-// dependencies (per official unity_levelplay_mediation plugin README).
-// The LevelPlay SDK/adapter dependency itself is bundled by the plugin.
+// Unity LevelPlay mediation — current Android network adapters.
+// The LevelPlay Flutter plugin provides the core LevelPlay SDK.
 dependencies {
     implementation 'com.google.android.gms:play-services-appset:16.0.2'
     implementation 'com.google.android.gms:play-services-ads-identifier:18.0.1'
     implementation 'com.google.android.gms:play-services-basement:18.3.0'
 
-    // Unity Ads mediated network adapter (per official LevelPlay Android
-    // guide: docs.unity.com → LevelPlay → Networks → Unity Ads).
-    // Unity Ads is a BIDDING-ONLY network on LevelPlay (ERR-1404 on
-    // waterfall instance creation) — 3 bidder instances live since
-    // 2026-08-26: interstitial/rewarded/banner (Game ID 800362213,
-    // placements *_Android). Native is NOT supported by Unity Ads.
-    implementation 'com.unity3d.ads-mediation:unityads-adapter:5.5.0'
-    implementation 'com.unity3d.ads:unity-ads:4.16.6'
+    // Unity Ads bidding demand.
+    implementation 'com.unity3d.ads-mediation:unityads-adapter:5.12.0'
+    implementation 'com.unity3d.ads:unity-ads:4.20.0'
 
-    // Meta Audience Network mediated network adapter (per official
-    // LevelPlay guide: docs.unity.com → LevelPlay → Networks → Meta
-    // Audience Network). Meta supplies NATIVE demand through the existing
-    // app-level LevelPlay native ad unit (Unity Ads has no native).
-    // Adapter 5.1.0 is adapter-range compatible with LevelPlay SDK 9.x.
-    // Meta App ID (numeric prefix of the Placement ID) + Placement ID are
-    // configured on the LevelPlay instance, never in the app binary.
-    implementation 'com.unity3d.ads-mediation:facebook-adapter:5.1.0'
-    implementation 'com.facebook.android:audience-network-sdk:6.21.0'
+    // Meta Audience Network bidding + native demand.
+    // Current Unity LevelPlay Android docs list adapter 5.4.0 / Meta SDK 6.22.0.
+    implementation 'com.unity3d.ads-mediation:facebook-adapter:5.4.0'
+    implementation 'com.facebook.android:audience-network-sdk:6.22.0'
 }
