@@ -89,4 +89,14 @@ dependencies {
     // placements *_Android). Native is NOT supported by Unity Ads.
     implementation 'com.unity3d.ads-mediation:unityads-adapter:5.5.0'
     implementation 'com.unity3d.ads:unity-ads:4.16.6'
+
+    // Meta Audience Network mediated network adapter (per official
+    // LevelPlay guide: docs.unity.com → LevelPlay → Networks → Meta
+    // Audience Network). Meta supplies NATIVE demand through the existing
+    // app-level LevelPlay native ad unit (Unity Ads has no native).
+    // Adapter 5.1.0 is adapter-range compatible with LevelPlay SDK 9.x.
+    // Meta App ID (numeric prefix of the Placement ID) + Placement ID are
+    // configured on the LevelPlay instance, never in the app binary.
+    implementation 'com.unity3d.ads-mediation:facebook-adapter:5.1.0'
+    implementation 'com.facebook.android:audience-network-sdk:6.21.0'
 }
