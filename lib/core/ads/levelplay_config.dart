@@ -32,7 +32,7 @@ abstract class LevelPlayPlacement {
   static const String homeNative = 'HOME_NATIVE_01';
   static const String discoveryNative = 'DISCOVERY_NATIVE_01';
   static const String playerNative =
-      'PLAYER_NATIVE_01'; // reserved — no player ads
+      'PLAYER_NATIVE_01'; // premium in-card player sponsored ad
   static const String libraryNative = 'LIBRARY_NATIVE_01';
   static const String searchNative = 'SEARCH_NATIVE_01';
   static const String interstitialSessionBreak =

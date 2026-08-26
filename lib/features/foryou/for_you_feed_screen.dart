@@ -11,6 +11,8 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
 import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/player_sponsored_ad_policy.dart';
+import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
 import '../../core/config/discovery_remote.dart';
 import '../../core/playback/playback_router.dart';
@@ -472,6 +474,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   void _onPageChanged(int page) {
     // On an ad page nothing changes — the current card stays as-is.
     if (_isAdPage(page)) {
+      // Keep the in-card player sponsored card at a respectful distance
+      // from the in-feed ad page (shared frequency clock — see
+      // player_sponsored_ad_policy.dart).
+      PlayerSponsoredAdPolicy.instance.noteExternalAdShown();
       setState(() {});
       return;
     }
@@ -1565,6 +1571,18 @@ class _ForYouCardState extends State<_ForYouCard>
             ),
           ),
         ),
+
+        // ── Premium player sponsored card (LevelPlay native) ──────────────
+        // Mounted ONLY on the active card: it swipes naturally with the
+        // song page, appears after ~10–15 s of genuine listening (never a
+        // placeholder, never on pause/skip), and hides itself entirely
+        // when unavailable. Read-only playback observation — nothing in
+        // the playback stack is touched. Sits between the artwork layer
+        // and the metadata/controls layer so player controls always win.
+        if (isActive)
+          Positioned.fill(
+            child: PlayerSponsoredCard(trackId: trackId, coverSide: coverSide),
+          ),
 
         // Bottom metadata + play controls (safe double-tap region, BELOW the
         // YouTube player — double-tap here to like without hijacking the
