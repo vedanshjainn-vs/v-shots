@@ -153,8 +153,22 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _loadInitialBatch();
   }
 
+  /// Coalesce browser/manager/tab listener callbacks into ONE setState per
+  /// frame — without this, a single track transition can fire all three
+  /// listeners, causing 3 redundant rebuilds of the entire feed subtree.
+  bool _discoverUpdateScheduled = false;
+
+  void _scheduleDiscoverRebuild() {
+    if (!mounted || _discoverUpdateScheduled) return;
+    _discoverUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _discoverUpdateScheduled = false;
+      if (mounted) setState(() {});
+    });
+  }
+
   void _onBrowserChanged() {
-    if (mounted) setState(() {});
+    _scheduleDiscoverRebuild();
   }
 
   /// Auto-advance synchronization: when the manager moves to a NEW track
@@ -194,7 +208,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
   void _onTabChanged() {
     if (!mounted) return;
-    setState(() {});
+    _scheduleDiscoverRebuild();
     // Entering Discovery auto-plays the active item in the in-app browser
     // (collapsed), so the experience starts immediately without a Play tap.
     // The browser is the ONLY playback owner in Discovery. App launch stays
@@ -1746,95 +1760,99 @@ class _ForYouCardState extends State<_ForYouCard>
         // translucent pill so the icons stay visible regardless of video
         // brightness/color (Section 5). Never overlaid on the YouTube player
         // itself — it sits beside/below the video frame.
+        // RepaintBoundary isolates these buttons from the expensive backdrop
+        // blur/animation repaints during scrolling.
         Positioned(
           right: 16,
           bottom: 150,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                StatefulBuilder(
-                  builder: (context, setLikeState) {
-                    final isLiked = LocalLibrary.instance.isLiked(trackId);
-                    return IconButton(
-                      icon: LikePop(
-                        liked: isLiked,
-                        child: Icon(
-                          isLiked
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          color: isLiked ? AppColors.hotPink : Colors.white,
-                          size: 32,
+          child: RepaintBoundary(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  StatefulBuilder(
+                    builder: (context, setLikeState) {
+                      final isLiked = LocalLibrary.instance.isLiked(trackId);
+                      return IconButton(
+                        icon: LikePop(
+                          liked: isLiked,
+                          child: Icon(
+                            isLiked
+                                ? Icons.favorite_rounded
+                                : Icons.favorite_border_rounded,
+                            color: isLiked ? AppColors.hotPink : Colors.white,
+                            size: 32,
+                          ),
                         ),
+                        onPressed: () {
+                          unawaited(HapticFeedback.lightImpact());
+                          final wasLiked = isLiked;
+                          LocalLibrary.instance.toggleLiked(track).then((_) {
+                            if (wasLiked) {
+                              playbackSignalTracker.onUnliked(track);
+                            } else {
+                              playbackSignalTracker.onLiked(track);
+                            }
+                            setLikeState(() {});
+                          });
+                        },
+                      );
+                    },
+                  ),
+                  if (RemoteFeatureFlags.instance.enableSocial) ...[
+                    const SizedBox(height: 12),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white,
+                        size: 28,
                       ),
                       onPressed: () {
                         unawaited(HapticFeedback.lightImpact());
-                        final wasLiked = isLiked;
-                        LocalLibrary.instance.toggleLiked(track).then((_) {
-                          if (wasLiked) {
-                            playbackSignalTracker.onUnliked(track);
-                          } else {
-                            playbackSignalTracker.onLiked(track);
-                          }
-                          setLikeState(() {});
-                        });
+                        CommentSheet.show(
+                          context,
+                          shotId: trackId,
+                          commentCount: 18,
+                        );
                       },
-                    );
-                  },
-                ),
-                if (RemoteFeatureFlags.instance.enableSocial) ...[
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   IconButton(
                     icon: const Icon(
-                      Icons.chat_bubble_outline_rounded,
+                      Icons.playlist_add_rounded,
                       color: Colors.white,
-                      size: 28,
+                      size: 30,
                     ),
                     onPressed: () {
                       unawaited(HapticFeedback.lightImpact());
-                      CommentSheet.show(
+                      showAddToPlaylistSheet(context, track);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.more_horiz_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      unawaited(HapticFeedback.lightImpact());
+                      showMoreOptionsSheet(
                         context,
-                        shotId: trackId,
-                        commentCount: 18,
+                        track,
+                        onNotInterested: onNotInterested,
                       );
                     },
                   ),
                 ],
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.playlist_add_rounded,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    showAddToPlaylistSheet(context, track);
-                  },
-                ),
-                const SizedBox(height: 12),
-                IconButton(
-                  icon: const Icon(
-                    Icons.more_horiz_rounded,
-                    color: Colors.white,
-                    size: 30,
-                  ),
-                  onPressed: () {
-                    unawaited(HapticFeedback.lightImpact());
-                    showMoreOptionsSheet(
-                      context,
-                      track,
-                      onNotInterested: onNotInterested,
-                    );
-                  },
-                ),
-              ],
+              ),
             ),
           ),
         ),

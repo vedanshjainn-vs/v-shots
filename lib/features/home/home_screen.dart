@@ -145,9 +145,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _onLibraryChanged() {
     if (!mounted) return;
-    // Continue Listening reads LocalLibrary directly; rebuild so new plays
-    // show up instantly without waiting for a full refresh.
-    setState(() {});
+    // Update Continue Listening data first, then coalesce into ONE rebuild
+    // via the existing frame-coalesced callback — avoids a stale-data
+    // rebuild and prevents a full-screen setState for a single shelf change.
     final continueShelf = _shelves.where(
       (s) => s.kind == HomeShelfKind.continueListening,
     );
@@ -158,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       s.status =
           s.tracks.isEmpty ? HomeShelfStatus.hidden : HomeShelfStatus.loaded;
     }
+    _onShelfUpdate();
   }
 
   Future<void> _load({required bool forceRefresh}) async {
@@ -1035,12 +1036,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        AppImage(
-                          (track['artwork'] as String?) ?? '',
-                          fit: BoxFit.cover,
-                          width: 150,
-                          height: 150,
-                          errorIconColor: AppColors.accent,
+                        ArtworkFadeIn(
+                          child: AppImage(
+                            (track['artwork'] as String?) ?? '',
+                            fit: BoxFit.cover,
+                            width: 150,
+                            height: 150,
+                            errorIconColor: AppColors.accent,
+                          ),
                         ),
                         Positioned(
                           right: 8,

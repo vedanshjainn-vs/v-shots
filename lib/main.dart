@@ -62,6 +62,7 @@ import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
+import 'shared/widgets/offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -461,6 +462,16 @@ class _MainShellState extends State<MainShell> {
               ],
             ),
 
+            // NON-BLOCKING offline indicator — mounted once, reacts to
+            // connectivity changes independently. Never delays startup,
+            // never rebuilds the rest of the app.
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: OfflineBanner(),
+            ),
+
             // GLOBAL PLAYER SHELL — the single in-app YouTube browser session
             // (native WebView engine) mounted ONCE at the app shell, above
             // every tab. Discovery (and, next phase, Home/Search/Library)
@@ -487,6 +498,11 @@ class _MainShellState extends State<MainShell> {
               onTap: (i) {
                 final target = i.clamp(0, 3);
                 final changed = target != _index;
+                // Subtle haptic on every tab switch — tactile confirmation
+                // without being excessive (only on actual change).
+                if (changed) {
+                  unawaited(HapticFeedback.selectionClick());
+                }
                 setState(() {
                   _index = target;
                   currentTabIndexNotifier.value = target;
