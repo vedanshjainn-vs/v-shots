@@ -40,15 +40,15 @@ jobs:
           GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
           YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
-          # Unity LevelPlay (client-safe app key + stable placement unit IDs).
-          # All empty ⇒ honest CONFIG_NOT_SET state (debug builds fall back
-          # to the official Unity TEST credentials so test ads can be
-          # verified on-device). SERVER keys (management/report) are NEVER
-          # injected here.
+          # Unity LevelPlay client configuration.
           LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
           LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
           LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
           LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          # Debug APK uses the configured production LevelPlay app/units so
+          # Meta + other mediated networks can be tested on a registered
+          # LevelPlay test device. Release builds are production by default.
+          LEVELPLAY_DEBUG_USE_PRODUCTION=true
           EOF
 
       - name: 4b. Inject Production AdMob App ID (when configured)
@@ -85,9 +85,6 @@ jobs:
             export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
             export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
           else
-            # No release keystore secret configured: generate an ephemeral CI
-            # signing key so APK/AAB artifacts are still produced (not for
-            # Play Store release — configure ANDROID_KEYSTORE_BASE64 for that).
             CI_PASS=$(openssl rand -hex 16)
             keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$CI_PASS" -alias ci-build -keypass "$CI_PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
             export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
