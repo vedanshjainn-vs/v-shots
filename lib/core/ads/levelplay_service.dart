@@ -36,10 +36,7 @@ import '../remote_config/remote_feature_flags.dart';
 /// One in-flight rewarded session (routes the global LevelPlay rewarded
 /// events to the caller that started the show).
 class RewardSession {
-  RewardSession({
-    required this.onGrant,
-    required this.onClosed,
-  });
+  RewardSession({required this.onGrant, required this.onClosed});
 
   bool granted = false;
   final void Function() onGrant;
@@ -130,20 +127,18 @@ class VShotsLevelPlay {
       try {
         // Official integration verification (debug only): adapter debug
         // logs + the LevelPlay integration test suite.
-        await LevelPlay.setMetaData(
-          {
-            'is_test_suite': ['enable'],
-            'is_adapters_debug': ['enable']
-          },
-        );
+        await LevelPlay.setMetaData({
+          'is_test_suite': ['enable'],
+          'is_adapters_debug': ['enable'],
+        });
         await LevelPlay.setAdaptersDebug(true);
       } catch (e) {
         debugPrint('[VShotsLevelPlay] debug tools error: $e');
       }
     }
     try {
-      final request =
-          LevelPlayInitRequest.builder(LevelPlayConfig.appKey!).build();
+      final request = LevelPlayInitRequest.builder(LevelPlayConfig.appKey!)
+          .build();
       await LevelPlay.init(
         initRequest: request,
         initListener: _InitListener(this),
@@ -165,10 +160,7 @@ class VShotsLevelPlay {
 
   void _onInitSuccess(LevelPlayConfiguration configuration) {
     _initSucceeded = true;
-    AdAnalytics.log(
-      'levelplay_initialized',
-      detail: configuration.toString(),
-    );
+    AdAnalytics.log('levelplay_initialized', detail: configuration.toString());
     if (kDebugMode) {
       // Launch the official integration test suite for on-device
       // verification (debug builds only).
@@ -188,15 +180,17 @@ class VShotsLevelPlay {
   }
 
   void _createAdObjects() {
-    final interUnit =
-        LevelPlayConfig.unitIdFor(LevelPlayPlacement.interstitialSessionBreak);
+    final interUnit = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.interstitialSessionBreak,
+    );
     if (interUnit != null && _interstitialAd == null) {
       _interstitialAd = LevelPlayInterstitialAd(adUnitId: interUnit);
       _interstitialAd!.setListener(_InterstitialListener(this));
       _preloadIfAllowed();
     }
-    final rewUnit =
-        LevelPlayConfig.unitIdFor(LevelPlayPlacement.rewardedFeature);
+    final rewUnit = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.rewardedFeature,
+    );
     if (rewUnit != null && _rewardedAd == null) {
       _rewardedAd = LevelPlayRewardedAd(adUnitId: rewUnit);
       _rewardedAd!.setListener(_RewardedListener(this));
@@ -269,8 +263,9 @@ class VShotsLevelPlay {
           '${initError != null ? ': $initError' : ''}';
     }
     final ad = _interstitialAd;
-    final unitId =
-        LevelPlayConfig.unitIdFor(LevelPlayPlacement.interstitialSessionBreak);
+    final unitId = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.interstitialSessionBreak,
+    );
     if (ad == null || unitId == null) {
       return 'FAILED — INTERSTITIAL_SESSION_BREAK_01 unit missing.';
     }
@@ -300,8 +295,8 @@ class VShotsLevelPlay {
     }
     final err = formatErrors['interstitial'];
     return 'FAILED to load (30 s): ${err ?? 'no fill — check the LevelPlay '
-        'dashboard: is the unit created & active? is this device a '
-        'registered TEST DEVICE? are networks enabled on the unit?'}';
+            'dashboard: is the unit created & active? is this device a '
+            'registered TEST DEVICE? are networks enabled on the unit?'}';
   }
 
   Future<String> testRewarded() async {
@@ -314,8 +309,9 @@ class VShotsLevelPlay {
           '${initError != null ? ': $initError' : ''}';
     }
     final ad = _rewardedAd;
-    final unitId =
-        LevelPlayConfig.unitIdFor(LevelPlayPlacement.rewardedFeature);
+    final unitId = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.rewardedFeature,
+    );
     if (ad == null || unitId == null) {
       return 'FAILED — REWARDED_FEATURE_01 unit missing.';
     }
@@ -398,9 +394,14 @@ class _InterstitialListener with LevelPlayInterstitialAdListener {
     service.formatErrors.remove('interstitial');
     service.noteFill('interstitial', adInfo.adNetwork);
     service.noteActivity(
-        'interstitial', 'LOADED (network: ${adInfo.adNetwork})');
-    AdAnalytics.log('ad_loaded',
-        placement: 'interstitial', detail: 'network=${adInfo.adNetwork}');
+      'interstitial',
+      'LOADED (network: ${adInfo.adNetwork})',
+    );
+    AdAnalytics.log(
+      'ad_loaded',
+      placement: 'interstitial',
+      detail: 'network=${adInfo.adNetwork}',
+    );
     service.interstitialLoadedHook?.call();
   }
 
@@ -417,10 +418,14 @@ class _InterstitialListener with LevelPlayInterstitialAdListener {
   @override
   void onAdDisplayed(LevelPlayAdInfo adInfo) {
     service.noteActivity(
-        'interstitial', 'SHOWN (network: ${adInfo.adNetwork})');
-    AdAnalytics.log('ad_displayed',
-        placement: 'interstitial',
-        detail: 'network=${adInfo.adNetwork} revenue=${adInfo.revenue}');
+      'interstitial',
+      'SHOWN (network: ${adInfo.adNetwork})',
+    );
+    AdAnalytics.log(
+      'ad_displayed',
+      placement: 'interstitial',
+      detail: 'network=${adInfo.adNetwork} revenue=${adInfo.revenue}',
+    );
   }
 
   @override
@@ -429,8 +434,11 @@ class _InterstitialListener with LevelPlayInterstitialAdListener {
     final msg = '$error';
     service.formatErrors['interstitial'] = 'display: $msg';
     service.noteActivity('interstitial', 'SHOW FAILED — $msg');
-    AdAnalytics.log('ad_load_failed',
-        placement: 'interstitial', detail: 'display: $msg');
+    AdAnalytics.log(
+      'ad_load_failed',
+      placement: 'interstitial',
+      detail: 'display: $msg',
+    );
   }
 
   @override
@@ -484,8 +492,11 @@ class _RewardedListener with LevelPlayRewardedAdListener {
     final msg = '$error';
     service.formatErrors['rewarded'] = 'display: $msg';
     service.noteActivity('rewarded', 'SHOW FAILED — $msg');
-    AdAnalytics.log('ad_load_failed',
-        placement: 'rewarded', detail: 'display: $msg');
+    AdAnalytics.log(
+      'ad_load_failed',
+      placement: 'rewarded',
+      detail: 'display: $msg',
+    );
   }
 
   @override
@@ -498,9 +509,11 @@ class _RewardedListener with LevelPlayRewardedAdListener {
     final session = service.rewardSession;
     if (session != null) {
       session.granted = true;
-      AdAnalytics.log('rewarded_completed',
-          detail:
-              'amount=${reward.amount} name=${reward.name} network=${adInfo.adNetwork}');
+      AdAnalytics.log(
+        'rewarded_completed',
+        detail:
+            'amount=${reward.amount} name=${reward.name} network=${adInfo.adNetwork}',
+      );
       session.onGrant();
     }
   }

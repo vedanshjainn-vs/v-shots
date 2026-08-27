@@ -32,6 +32,7 @@ import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_avatar.dart';
 import '../../shared/widgets/app_image.dart';
 import '../profile/artist_details_screen.dart';
+import '../profile/rewards_sheet.dart';
 import 'home_feed_service.dart';
 import 'playlist_page_screen.dart';
 
@@ -89,17 +90,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // shelves 6-7+" delay because prefetch starts much earlier.
     final loadedCount = _shelves
         .take(_maxLoadedShelves)
-        .where((s) =>
-            s.status == HomeShelfStatus.loaded ||
-            s.status == HomeShelfStatus.hidden)
+        .where(
+          (s) =>
+              s.status == HomeShelfStatus.loaded ||
+              s.status == HomeShelfStatus.hidden,
+        )
         .length;
     if (loadedCount < _maxLoadedShelves - _lazyLoadAheadShelves) return;
     final end = (_maxLoadedShelves + _lazyBatchSize).clamp(0, _shelves.length);
     _loadingMoreShelves = true;
     unawaited(
       homeFeedService
-          .loadShelfRange(_shelves, _maxLoadedShelves, end,
-              onUpdate: _onShelfUpdate)
+          .loadShelfRange(
+        _shelves,
+        _maxLoadedShelves,
+        end,
+        onUpdate: _onShelfUpdate,
+      )
           .whenComplete(() {
         _maxLoadedShelves = end;
         _loadingMoreShelves = false;
@@ -154,8 +161,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);
-    RemoteConfigService.instance.revision
-        .removeListener(_onRemoteConfigApplied);
+    RemoteConfigService.instance.revision.removeListener(
+      _onRemoteConfigApplied,
+    );
     _scrollController.removeListener(_onScrollForLazyLoad);
     _scrollController.dispose();
     super.dispose();
@@ -328,6 +336,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
+              ),
+            ),
+            // Rewarded ad button — watch ad for 60 min ad-free
+            GestureDetector(
+              onTap: () => RewardsSheet.show(context),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.card_giftcard_rounded,
+                        color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Free',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -843,8 +886,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.library_music_rounded,
-                      color: Colors.white, size: 28),
+                  child: const Icon(
+                    Icons.library_music_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -855,7 +901,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(12),
@@ -898,8 +946,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
@@ -907,8 +957,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.play_arrow_rounded,
-                          size: 18, color: Color(0xFF0F766E)),
+                      Icon(
+                        Icons.play_arrow_rounded,
+                        size: 18,
+                        color: Color(0xFF0F766E),
+                      ),
                       SizedBox(width: 3),
                       Text(
                         'Open',
@@ -1011,8 +1064,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             color: AppColors.accent,
                           ),
                         ),
-                        Icon(Icons.chevron_right_rounded,
-                            size: 18, color: AppColors.accent),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: AppColors.accent,
+                        ),
                       ],
                     ),
                   )
@@ -1020,13 +1076,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   IconButton(
                     tooltip: 'Shuffle play',
                     onPressed: () {
-                      final shuffled =
-                          List<Map<String, dynamic>>.from(shelf.tracks)
-                            ..shuffle();
+                      final shuffled = List<Map<String, dynamic>>.from(
+                        shelf.tracks,
+                      )..shuffle();
                       playTrack(context, shuffled.first, shuffled, 0);
                     },
-                    icon: const Icon(Icons.shuffle_rounded,
-                        size: 20, color: AppColors.textMuted),
+                    icon: const Icon(
+                      Icons.shuffle_rounded,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
                   ),
               ],
             ),

@@ -13,9 +13,17 @@
 // - Local notification reminder
 
 import 'dart:async';
+<<<<<<< HEAD
 import 'package:flutter/foundation.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+=======
+
+import 'package:flutter/foundation.dart';
+import 'package:in_app_update/in_app_update.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
 import 'notification_service.dart';
 
 class AppUpdateService {
@@ -46,6 +54,7 @@ class AppUpdateService {
 
       if (info.updateAvailability == UpdateAvailability.updateAvailable) {
         debugPrint(
+<<<<<<< HEAD
             '[AppUpdateService] Update available: ${info.availableVersionCode}');
 
         // Check if user previously dismissed this version
@@ -59,6 +68,24 @@ class AppUpdateService {
               .showUpdateNotification(info.availableVersionCode.toString());
         } else {
           debugPrint('[AppUpdateService] User dismissed this version, skipping');
+=======
+          '[AppUpdateService] Update available: ${info.availableVersionCode}',
+        );
+
+        // Check if user previously dismissed this version
+        final shouldShow = await NotificationService.instance
+            .shouldShowUpdateReminder(info.availableVersionCode.toString());
+
+        if (shouldShow) {
+          // Show local notification to prompt update
+          await NotificationService.instance.showUpdateNotification(
+            info.availableVersionCode.toString(),
+          );
+        } else {
+          debugPrint(
+            '[AppUpdateService] User dismissed this version, skipping',
+          );
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
         }
       } else {
         debugPrint('[AppUpdateService] No update available');

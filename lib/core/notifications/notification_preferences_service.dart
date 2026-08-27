@@ -6,6 +6,10 @@
 // Uses Supabase (existing infrastructure, free tier).
 
 import 'package:flutter/foundation.dart';
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
 import '../backend/supabase_service.dart';
 import '../models/notification_preferences_model.dart';
 
@@ -32,8 +36,14 @@ class NotificationPreferencesService {
           .eq('user_id', user.id)
           .single();
 
+<<<<<<< HEAD
       _cached =
           NotificationPreferences.fromJson(response as Map<String, dynamic>);
+=======
+      _cached = NotificationPreferences.fromJson(
+        response as Map<String, dynamic>,
+      );
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
       return _cached;
     } catch (e) {
       debugPrint('[NotifPrefs] Fetch failed: $e');
@@ -56,7 +66,12 @@ class NotificationPreferencesService {
 
     final prefs = await getPreferences();
 
+<<<<<<< HEAD
     final updated = prefs?.copyWith(
+=======
+    final updated =
+        prefs?.copyWith(
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
           notificationsEnabled: notificationsEnabled,
           newMusicEnabled: newMusicEnabled,
           recommendationsEnabled: recommendationsEnabled,

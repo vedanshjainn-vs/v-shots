@@ -39,9 +39,9 @@ class ConsentManager {
 
   /// Builds the AdRequest honoring the current consent decision.
   AdRequest buildAdRequest() => AdRequest(
-        keywords: const ['music'],
-        nonPersonalizedAds: !canRequestPersonalizedAds,
-      );
+    keywords: const ['music'],
+    nonPersonalizedAds: !canRequestPersonalizedAds,
+  );
 
   /// Resets consent (testing / user-initiated privacy options).
   Future<void> reset() async {
@@ -79,7 +79,8 @@ class ConsentManager {
                 // status != obtained).
                 _set(ConsentStatus.notRequired);
                 debugPrint(
-                    '[AdConsent] Form error: ${error.message} → non-personalized mode');
+                  '[AdConsent] Form error: ${error.message} → non-personalized mode',
+                );
                 return;
               }
               _set(await ConsentInformation.instance.getConsentStatus());

@@ -208,7 +208,7 @@ class PlayerSponsoredPlacementManager {
       PlayerSponsoredPlacementManager();
 
   PlayerSponsoredPlacementManager({Random? random})
-      : _random = random ?? Random();
+    : _random = random ?? Random();
 
   final Random _random;
   PlayerSponsoredVariant? _lastVariant;

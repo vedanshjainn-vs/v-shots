@@ -31,22 +31,21 @@ class MusicRecommendationEngine {
     MusicSeenStore? seenStore,
     MusicSessionState? session,
     MusicRecommendationConfig config = MusicRecommendationConfig.defaultConfig,
-  })  : _generator = MusicCandidateGenerator(search: search, config: config),
-        config = config,
-        _seenStore = seenStore ?? MusicSeenStore(),
-        _session = session ?? MusicSessionState();
+  }) : _generator = MusicCandidateGenerator(search: search, config: config),
+       config = config,
+       _seenStore = seenStore ?? MusicSeenStore(),
+       _session = session ?? MusicSessionState();
 
   factory MusicRecommendationEngine.withRepository(
     MusicRepository repository, {
     MusicSeenStore? seenStore,
     MusicSessionState? session,
-  }) =>
-      MusicRecommendationEngine(
-        search: (query, {required limit, excludeIds = const {}}) =>
-            repository.search(query, limit: limit, excludeIds: excludeIds),
-        seenStore: seenStore,
-        session: session,
-      );
+  }) => MusicRecommendationEngine(
+    search: (query, {required limit, excludeIds = const {}}) =>
+        repository.search(query, limit: limit, excludeIds: excludeIds),
+    seenStore: seenStore,
+    session: session,
+  );
 
   final MusicCandidateGenerator _generator;
   final MusicRecommendationConfig config;
@@ -107,13 +106,14 @@ class MusicRecommendationEngine {
 
     // Guarantee the configured exploration share (never 0 even if scores
     // bury it).
-    final primary =
-        diversified.where((s) => s.candidate.source != 'exploration').toList();
-    final exploration =
-        diversified.where((s) => s.candidate.source == 'exploration').toList();
-    final mixed = MusicExploration(
-      ratio: config.explorationRatio,
-    ).mix(primary, exploration);
+    final primary = diversified
+        .where((s) => s.candidate.source != 'exploration')
+        .toList();
+    final exploration = diversified
+        .where((s) => s.candidate.source == 'exploration')
+        .toList();
+    final mixed = MusicExploration(ratio: config.explorationRatio)
+        .mix(primary, exploration);
 
     final result = <Map<String, dynamic>>[];
     for (final s in mixed) {

@@ -42,12 +42,14 @@ class VShotsAds {
   Future<void> maybeShowInterstitial({required String trigger}) async {
     final policy = AdPolicy.instance;
     if (!policy.canShowInterstitial()) return;
-    final unitId =
-        LevelPlayConfig.unitIdFor(LevelPlayPlacement.interstitialSessionBreak);
+    final unitId = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.interstitialSessionBreak,
+    );
     if (unitId == null) return;
 
-    await VShotsLevelPlay.instance
-        .waitReady(timeout: const Duration(seconds: 2));
+    await VShotsLevelPlay.instance.waitReady(
+      timeout: const Duration(seconds: 2),
+    );
     if (!VShotsLevelPlay.instance.initSucceeded) return;
 
     final ad = VShotsLevelPlay.instance.peekInterstitial();
@@ -97,12 +99,14 @@ class VShotsAds {
     if (!AdPolicy.instance.canShowRewarded()) {
       return RewardOutcome.failed;
     }
-    final unitId =
-        LevelPlayConfig.unitIdFor(LevelPlayPlacement.rewardedFeature);
+    final unitId = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.rewardedFeature,
+    );
     if (unitId == null) return RewardOutcome.failed;
 
-    await VShotsLevelPlay.instance
-        .waitReady(timeout: const Duration(seconds: 6));
+    await VShotsLevelPlay.instance.waitReady(
+      timeout: const Duration(seconds: 6),
+    );
     if (!VShotsLevelPlay.instance.initSucceeded) return RewardOutcome.failed;
 
     final ad = VShotsLevelPlay.instance.peekRewarded();
@@ -142,7 +146,8 @@ class VShotsAds {
       onClosed: (wasEarned) {
         if (!result.isCompleted) {
           result.complete(
-              wasEarned ? RewardOutcome.completed : RewardOutcome.canceled);
+            wasEarned ? RewardOutcome.completed : RewardOutcome.canceled,
+          );
         }
       },
     );

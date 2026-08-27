@@ -60,9 +60,8 @@ class _RewardsSheetState extends State<RewardsSheet> {
     final outcome = await VShotsAds.instance.showRewarded(
       purpose: 'ad_free_pass_60m',
       onRewardGranted: () => AdFreeManager.instance.grantTemporaryPass(
-          duration: const Duration(
-        minutes: 60,
-      )),
+        duration: const Duration(minutes: 60),
+      ),
     );
 
     if (!mounted) return;
@@ -74,8 +73,7 @@ class _RewardsSheetState extends State<RewardsSheet> {
               '${remaining != null ? ' (Your previous ${_mins(remaining)} min pass was replaced.)' : ''}',
         RewardOutcome.canceled =>
           'No worries — nothing was unlocked. Try again whenever you like.',
-        RewardOutcome.failed =>
-          'Ads are not available right now. Your music is unaffected — try again later.',
+        RewardOutcome.failed => 'Ads are not available right now. Your music is unaffected — try again later.',
       };
     });
   }

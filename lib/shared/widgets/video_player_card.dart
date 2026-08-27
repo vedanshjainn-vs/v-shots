@@ -4,6 +4,7 @@
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class VideoPlayerCard extends StatefulWidget {
@@ -59,7 +60,8 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: widget.onTap ??
+      onTap:
+          widget.onTap ??
           () {
             setState(() => _isPlaying = !_isPlaying);
             widget.onPlayPause?.call();
@@ -169,8 +171,9 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: _isPlaying ? null : AppColors.primaryGradient,
-                  color:
-                      _isPlaying ? Colors.black.withValues(alpha: 0.5) : null,
+                  color: _isPlaying
+                      ? Colors.black.withValues(alpha: 0.5)
+                      : null,
                   border: Border.all(
                     color: Colors.white.withValues(alpha: 0.3),
                     width: 1.5,

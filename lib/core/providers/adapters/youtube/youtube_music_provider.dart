@@ -14,9 +14,9 @@ class YouTubeMusicProvider extends MusicProvider {
     YouTubeDataApiClient? apiClient,
     YoutubeMusicMapper mapper = const YoutubeMusicMapper(),
     LyricsService? lyricsService,
-  })  : _apiClient = apiClient ?? YouTubeDataApiClient(),
-        _mapper = mapper,
-        _lyrics = lyricsService ?? LyricsService.instance;
+  }) : _apiClient = apiClient ?? YouTubeDataApiClient(),
+       _mapper = mapper,
+       _lyrics = lyricsService ?? LyricsService.instance;
 
   final YouTubeDataApiClient _apiClient;
   final YoutubeMusicMapper _mapper;
@@ -30,14 +30,14 @@ class YouTubeMusicProvider extends MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-        ProviderCapability.search,
-        ProviderCapability.getTrack,
-        ProviderCapability.getArtwork,
-        ProviderCapability.getLyrics,
-        ProviderCapability.getTrending,
-        ProviderCapability.getRecommendations,
-        ProviderCapability.getChannel,
-      };
+    ProviderCapability.search,
+    ProviderCapability.getTrack,
+    ProviderCapability.getArtwork,
+    ProviderCapability.getLyrics,
+    ProviderCapability.getTrending,
+    ProviderCapability.getRecommendations,
+    ProviderCapability.getChannel,
+  };
 
   bool _initialized = false;
 
@@ -213,8 +213,10 @@ class YouTubeMusicProvider extends MusicProvider {
     if (!RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(id)) {
       return ProviderResult.failure('not a channel id');
     }
-    final videos =
-        await _apiClient.searchChannelVideos(id, maxResults: limit * 2);
+    final videos = await _apiClient.searchChannelVideos(
+      id,
+      maxResults: limit * 2,
+    );
     if (videos.isEmpty) {
       return ProviderResult.failure('channel returned no videos');
     }

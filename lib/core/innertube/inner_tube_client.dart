@@ -39,11 +39,11 @@ class InnerTubeClient {
     String? clientVersion,
     String? gl,
     String? hl,
-  })  : _http = httpClient ?? http.Client(),
-        _fixedKey = apiKey,
-        _fixedVersion = clientVersion,
-        _gl = gl ?? 'IN',
-        _hl = hl ?? 'en';
+  }) : _http = httpClient ?? http.Client(),
+       _fixedKey = apiKey,
+       _fixedVersion = clientVersion,
+       _gl = gl ?? 'IN',
+       _hl = hl ?? 'en';
 
   final http.Client _http;
   final String? _fixedKey;
@@ -68,7 +68,8 @@ class InnerTubeClient {
     _contextLoaded = true;
     _apiKey =
         _fixedKey ?? await _extractField('INNERTUBE_API_KEY') ?? _fallbackKey;
-    _clientVersion = _fixedVersion ??
+    _clientVersion =
+        _fixedVersion ??
         await _extractField('INNERTUBE_CLIENT_VERSION') ??
         _fallbackVersion;
   }
@@ -88,13 +89,13 @@ class InnerTubeClient {
   }
 
   Map<String, dynamic> _context({String? gl}) => {
-        'client': {
-          'clientName': 'WEB',
-          'clientVersion': _clientVersion ?? _fallbackVersion,
-          'hl': _hl,
-          'gl': gl ?? _gl,
-        },
-      };
+    'client': {
+      'clientName': 'WEB',
+      'clientVersion': _clientVersion ?? _fallbackVersion,
+      'hl': _hl,
+      'gl': gl ?? _gl,
+    },
+  };
 
   Future<Map<String, dynamic>?> _post(
     String endpoint,
@@ -223,10 +224,7 @@ class InnerTubeClient {
   }) async {
     final id = channelId.trim();
     if (id.isEmpty) return const [];
-    final json = await _post('browse', {
-      'context': _context(),
-      'browseId': id,
-    });
+    final json = await _post('browse', {'context': _context(), 'browseId': id});
     if (json == null) return const [];
     return _collectBrowseVideos(json).take(limit).toList();
   }
@@ -312,7 +310,8 @@ class InnerTubeClient {
     if (videoId == null || videoId.isEmpty) return null;
     final title = _runsText(v['title']) ?? '';
     if (title.isEmpty) return null;
-    final channel = _firstNonEmpty([
+    final channel =
+        _firstNonEmpty([
           _runsText(v['ownerText']),
           _runsText(v['longBylineText']),
           _runsText(v['shortBylineText']),
@@ -415,14 +414,15 @@ class InnerTubeClient {
     final lm = metadata?['lockupMetadataViewModel'] as Map<String, dynamic>?;
     final title =
         ((lm?['title'] as Map<String, dynamic>?)?['content'] as String?)
-                ?.trim() ??
-            '';
+            ?.trim() ??
+        '';
     if (title.isEmpty) return null;
     final channel = _firstMetadataPartText(lm?['metadata']);
     final image = lockup['contentImage'] as Map<String, dynamic>?;
     final sources =
         ((image?['thumbnailViewModel'] as Map<String, dynamic>?)?['image']
-            as Map<String, dynamic>?)?['sources'] as List?;
+                as Map<String, dynamic>?)?['sources']
+            as List?;
     final thumbnail = _bestThumbnail(sources);
     return InnerTubeVideoItem(
       videoId: videoId,

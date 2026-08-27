@@ -4,6 +4,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
@@ -103,8 +104,8 @@ void main() async {
   // is not configured in this build these are no-ops and diagnostics
   // report CONFIG_NOT_SET (honest state, app fully functional).
   unawaited(ConsentManager.instance.initialize());
-  ConsentManager.instance.onStatusChanged =
-      () => VShotsLevelPlay.instance.syncConsent();
+  ConsentManager.instance.onStatusChanged = () =>
+      VShotsLevelPlay.instance.syncConsent();
   unawaited(VShotsLevelPlay.instance.initialize());
 
   audioHandler = await AudioService.init(
@@ -483,12 +484,7 @@ class _MainShellState extends State<MainShell> {
             // NON-BLOCKING offline indicator — mounted once, reacts to
             // connectivity changes independently. Never delays startup,
             // never rebuilds the rest of the app.
-            const Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: OfflineBanner(),
-            ),
+            const Positioned(top: 0, left: 0, right: 0, child: OfflineBanner()),
 
             // GLOBAL PLAYER SHELL — the single in-app YouTube browser session
             // (native WebView engine) mounted ONCE at the app shell, above
@@ -539,9 +535,11 @@ class _MainShellState extends State<MainShell> {
                           });
                           if (changed &&
                               !VShotsPlaybackManager.instance.browser.isOpen) {
-                            unawaited(VShotsAds.instance.maybeShowInterstitial(
-                              trigger: 'tab_switch_$target',
-                            ));
+                            unawaited(
+                              VShotsAds.instance.maybeShowInterstitial(
+                                trigger: 'tab_switch_$target',
+                              ),
+                            );
                           }
                         },
                       ),
@@ -698,8 +696,9 @@ Future<void> playTrack(
   final resolvedQueue = await PlaybackRouter.instance.resolveQueue(
     queue.isEmpty ? [track] : queue,
   );
-  final safeIndex =
-      resolvedQueue.isEmpty ? 0 : index.clamp(0, resolvedQueue.length - 1);
+  final safeIndex = resolvedQueue.isEmpty
+      ? 0
+      : index.clamp(0, resolvedQueue.length - 1);
   final resolvedTrack = resolvedQueue.isEmpty
       ? await PlaybackRouter.instance.attachResolvedPlayback(track)
       : resolvedQueue[safeIndex];
@@ -861,8 +860,9 @@ class _SearchScreenState extends State<SearchScreen> {
       }
 
       // If cached exists and isFresh was false, merge with fresh results (deduped)
-      final merged =
-          cached != null && !isFresh ? <Map<String, dynamic>>[] : uniqueResults;
+      final merged = cached != null && !isFresh
+          ? <Map<String, dynamic>>[]
+          : uniqueResults;
       if (cached != null && !isFresh) {
         // Prefer fresh unique results, keep cached only if not duplicate
         merged.addAll(uniqueResults);
@@ -899,7 +899,8 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_isLoadingMore ||
         !_hasMore ||
         _lastQuery == null ||
-        _lastQuery!.isEmpty) return;
+        _lastQuery!.isEmpty)
+      return;
     if (_status != _SearchStatus.loaded) return;
     setState(() => _isLoadingMore = true);
     try {
@@ -1026,10 +1027,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const SizedBox(width: 16),
-                        const Icon(
-                          Icons.search,
-                          color: AppColors.textMuted,
-                        ),
+                        const Icon(Icons.search, color: AppColors.textMuted),
                         const SizedBox(width: 4),
                         InkWell(
                           borderRadius: BorderRadius.circular(12),
@@ -1461,7 +1459,8 @@ class _SearchScreenState extends State<SearchScreen> {
     // Insert one clearly-labeled native ad after ~8 organic results. When ads
     // are not enabled (no production ad config / ad-free / consent pending)
     // the ad slot count is 0, so the list behaves exactly as before.
-    final bool showAd = AdPolicy.instance.canShowNative(AdPlacement.search) &&
+    final bool showAd =
+        AdPolicy.instance.canShowNative(AdPlacement.search) &&
         _results.length >= AdConfig.searchAdEvery;
     final int adCount = showAd ? 1 : 0;
     final int footerIndex = _results.length + adCount;
@@ -1565,8 +1564,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 return const NativeAdWidget();
               }
               // Account for the ad slot offset when indexing results.
-              final int resultIndex =
-                  showAd && i > AdConfig.searchAdEvery ? i - 1 : i;
+              final int resultIndex = showAd && i > AdConfig.searchAdEvery
+                  ? i - 1
+                  : i;
               final track = _results[resultIndex];
               final title = (track['title'] as String?) ?? '';
               final artist = (track['artist'] as String?) ?? '';
@@ -1742,7 +1742,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget build(BuildContext context) {
     final user = SupabaseService.currentUser;
     final isSignedIn = user != null;
-    final profile = _profile ??
+    final profile =
+        _profile ??
         ProfileModel(
           id: 'self',
           username: 'vshots_listener',
@@ -1937,9 +1938,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         ),
                                       ).then((_) => _loadProfileData());
                                     } else {
-                                      AuthModal.show(
-                                        context,
-                                      ).then((_) => _loadProfileData());
+                                      AuthModal.show(context)
+                                          .then((_) => _loadProfileData());
                                     }
                                   },
                                 ),
@@ -2293,10 +2293,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   const Positioned(
                     left: 4,
                     bottom: 4,
-                    child: AnimatedEqualizer(
-                      size: 12,
-                      color: AppColors.accent,
-                    ),
+                    child: AnimatedEqualizer(size: 12, color: AppColors.accent),
                   ),
               ],
             ),
@@ -2433,10 +2430,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   const Positioned(
                     left: 4,
                     bottom: 4,
-                    child: AnimatedEqualizer(
-                      size: 12,
-                      color: AppColors.accent,
-                    ),
+                    child: AnimatedEqualizer(size: 12, color: AppColors.accent),
                   ),
               ],
             ),
@@ -2844,23 +2838,23 @@ class _LyricsScreenState extends State<LyricsScreen> {
               child: CircularProgressIndicator(color: AppColors.primaryLight),
             )
           : (_result == null || !_result!.hasAny)
-              ? const Center(
-                  child: Text(
-                    'No lyrics available for this track',
-                    style: TextStyle(color: AppColors.textMuted),
-                  ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _result!.plainText ?? 'Instrumental Track',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      height: 1.8,
-                      color: AppColors.textMain,
-                    ),
-                  ),
+          ? const Center(
+              child: Text(
+                'No lyrics available for this track',
+                style: TextStyle(color: AppColors.textMuted),
+              ),
+            )
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                _result!.plainText ?? 'Instrumental Track',
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.8,
+                  color: AppColors.textMain,
                 ),
+              ),
+            ),
     );
   }
 }

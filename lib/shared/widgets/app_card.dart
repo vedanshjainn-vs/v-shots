@@ -3,6 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class AppCard extends StatelessWidget {
@@ -34,8 +35,9 @@ class AppCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color ?? AppColors.surface,
         borderRadius: BorderRadius.circular(borderRadius),
-        border:
-            showBorder ? Border.all(color: AppColors.border, width: 1) : null,
+        border: showBorder
+            ? Border.all(color: AppColors.border, width: 1)
+            : null,
         boxShadow: showGlow
             ? [
                 BoxShadow(

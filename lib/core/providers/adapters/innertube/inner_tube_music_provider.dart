@@ -13,7 +13,9 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import '../../../innertube/inner_tube_client.dart';
+
 import 'package:flutter/foundation.dart';
+
 import '../../../innertube/inner_tube_normalizer.dart';
 import '../../music_provider.dart';
 import '../../provider_models.dart';
@@ -23,8 +25,8 @@ class InnerTubeMusicProvider extends MusicProvider {
   InnerTubeMusicProvider({
     InnerTubeClient? client,
     InnerTubeNormalizer normalizer = const InnerTubeNormalizer(),
-  })  : _client = client ?? InnerTubeClient(),
-        _normalizer = normalizer;
+  }) : _client = client ?? InnerTubeClient(),
+       _normalizer = normalizer;
 
   final InnerTubeClient _client;
   final InnerTubeNormalizer _normalizer;
@@ -37,13 +39,13 @@ class InnerTubeMusicProvider extends MusicProvider {
 
   @override
   Set<ProviderCapability> get capabilities => const {
-        ProviderCapability.search,
-        ProviderCapability.getTrending,
-        ProviderCapability.getRecommendations,
-        ProviderCapability.getRelated,
-        ProviderCapability.getPlaylist,
-        ProviderCapability.getChannel,
-      };
+    ProviderCapability.search,
+    ProviderCapability.getTrending,
+    ProviderCapability.getRecommendations,
+    ProviderCapability.getRelated,
+    ProviderCapability.getPlaylist,
+    ProviderCapability.getChannel,
+  };
 
   bool _initialized = false;
 

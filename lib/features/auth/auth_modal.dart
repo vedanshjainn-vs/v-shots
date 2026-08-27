@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../core/backend/auth_service.dart';
 import '../../core/backend/supabase_service.dart';
 import '../../core/theme/app_colors.dart';

@@ -5,6 +5,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../core/models/shot_model.dart';
 import '../../core/services/profile_service.dart';
 import '../../core/services/shots_service.dart';
@@ -267,8 +268,9 @@ class _ShotCardState extends State<ShotCard> {
                       _shot.isBookmarked
                           ? Icons.bookmark_rounded
                           : Icons.bookmark_border_rounded,
-                      color:
-                          _shot.isBookmarked ? AppColors.warning : Colors.white,
+                      color: _shot.isBookmarked
+                          ? AppColors.warning
+                          : Colors.white,
                       size: 22,
                     ),
                   ),

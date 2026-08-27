@@ -4,6 +4,7 @@
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class AppAvatar extends StatelessWidget {
@@ -29,12 +30,12 @@ class AppAvatar extends StatelessWidget {
     final hasImage = avatarUrl != null && avatarUrl!.trim().isNotEmpty;
     final initials = name.trim().isNotEmpty
         ? name
-            .trim()
-            .split(' ')
-            .map((e) => e.isNotEmpty ? e[0] : '')
-            .take(2)
-            .join()
-            .toUpperCase()
+              .trim()
+              .split(' ')
+              .map((e) => e.isNotEmpty ? e[0] : '')
+              .take(2)
+              .join()
+              .toUpperCase()
         : 'V';
 
     Widget innerAvatar;

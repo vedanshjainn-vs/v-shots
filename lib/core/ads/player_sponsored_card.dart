@@ -330,22 +330,19 @@ class _PlayerSponsoredCardState extends State<PlayerSponsoredCard>
     if (ad == null) return const SizedBox.shrink();
 
     Widget reveal(Widget child) => AnimatedOpacity(
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeOutCubic,
-          opacity: revealed ? 1 : 0,
-          child: AnimatedSlide(
-            duration: const Duration(milliseconds: 420),
-            curve: Curves.easeOutCubic,
-            offset: revealed ? Offset.zero : const Offset(0, 0.06),
-            child: ExcludeSemantics(
-              excluding: !revealed,
-              child: IgnorePointer(
-                ignoring: !revealed,
-                child: child,
-              ),
-            ),
-          ),
-        );
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+      opacity: revealed ? 1 : 0,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        offset: revealed ? Offset.zero : const Offset(0, 0.06),
+        child: ExcludeSemantics(
+          excluding: !revealed,
+          child: IgnorePointer(ignoring: !revealed, child: child),
+        ),
+      ),
+    );
 
     switch (_variant) {
       case PlayerSponsoredVariant.glassCard:
@@ -356,9 +353,7 @@ class _PlayerSponsoredCardState extends State<PlayerSponsoredCard>
         return Positioned(
           left: (cardWidth - cw) / 2,
           top: coverBottom - ch / 2 + 4,
-          child: reveal(
-            _GlassSponsoredCard(width: cw, height: ch, ad: ad),
-          ),
+          child: reveal(_GlassSponsoredCard(width: cw, height: ch, ad: ad)),
         );
       case PlayerSponsoredVariant.compactRow:
         // B) Compact sponsored row fully below the artwork.
@@ -367,9 +362,7 @@ class _PlayerSponsoredCardState extends State<PlayerSponsoredCard>
         return Positioned(
           left: (cardWidth - cw) / 2,
           top: coverBottom + 6,
-          child: reveal(
-            _CompactSponsoredCard(width: cw, height: ch, ad: ad),
-          ),
+          child: reveal(_CompactSponsoredCard(width: cw, height: ch, ad: ad)),
         );
       case PlayerSponsoredVariant.cornerCreative:
       case null:

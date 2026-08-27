@@ -87,8 +87,9 @@ class AdAnalytics {
     }
     if (kDebugMode) {
       debugPrint(
-          '[AdAnalytics] $kind${placement != null ? ' @ $placement' : ''}'
-          '${detail != null ? ' — $detail' : ''}');
+        '[AdAnalytics] $kind${placement != null ? ' @ $placement' : ''}'
+        '${detail != null ? ' — $detail' : ''}',
+      );
     }
   }
 

@@ -112,7 +112,8 @@ class MusicContentValidator {
       reasons.add('${variant.name.toUpperCase()}_VARIANT');
     }
 
-    var confidence = 0.5 * sourceTrust +
+    var confidence =
+        0.5 * sourceTrust +
         0.2 * entity +
         0.2 * artistEvidence +
         0.1 * metadataQuality +

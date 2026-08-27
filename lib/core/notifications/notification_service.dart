@@ -12,6 +12,7 @@
 // FCM integration is separate (see firebase_messaging_service.dart).
 
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -34,13 +35,15 @@ class NotificationService {
   // SharedPreferences keys
   static const String keyUpdateDismissed = 'update_dismissed_v';
   static const String keyUpdateReminderDate = 'update_reminder_date';
-  static const String keyNotifPermissionRequested = 'notif_permission_requested';
+  static const String keyNotifPermissionRequested =
+      'notif_permission_requested';
 
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
     const initSettings = InitializationSettings(android: androidSettings);
 
@@ -122,7 +125,7 @@ class NotificationService {
   // ── App Update Notifications ──────────────────────────────────────────
 
   Future<void> showUpdateNotification(String versionName) async {
-    final androidDetails = AndroidNotificationDetails(
+    const androidDetails = AndroidNotificationDetails(
       channelUpdates,
       'V Shots Updates',
       importance: Importance.high,
@@ -130,7 +133,7 @@ class NotificationService {
       icon: '@mipmap/ic_launcher',
     );
 
-    final details = NotificationDetails(android: androidDetails);
+    const details = NotificationDetails(android: androidDetails);
 
     await _plugin.show(
       1001, // Fixed ID for update notification
@@ -163,13 +166,7 @@ class NotificationService {
 
     const details = NotificationDetails(android: androidDetails);
 
-    await _plugin.show(
-      id,
-      title,
-      body,
-      details,
-      payload: payload,
-    );
+    await _plugin.show(id, title, body, details, payload: payload);
   }
 
   Future<void> cancelNotification(int id) async {
@@ -179,9 +176,10 @@ class NotificationService {
   // ── Permission Handling ───────────────────────────────────────────────
 
   Future<bool> requestNotificationPermission() async {
-    final androidPlugin =
-        _plugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     if (androidPlugin == null) return true; // Non-Android or already granted
 
@@ -201,7 +199,9 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyUpdateDismissed, version);
     await prefs.setString(
-        keyUpdateReminderDate, DateTime.now().toIso8601String());
+      keyUpdateReminderDate,
+      DateTime.now().toIso8601String(),
+    );
   }
 
   Future<bool> shouldShowUpdateReminder(String currentVersion) async {

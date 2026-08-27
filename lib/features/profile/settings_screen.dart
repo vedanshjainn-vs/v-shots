@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../core/backend/auth_service.dart';
 import '../../core/backend/supabase_service.dart';
 import '../../core/cache/search_cache.dart';

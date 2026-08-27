@@ -21,12 +21,7 @@ import 'home_cms_models.dart';
 /// by the engine, so any positive numbers work.
 abstract final class DiscoverSettingsDefaults {
   static const Map<String, dynamic> value = {
-    'weights': {
-      'personal': 50,
-      'trending': 25,
-      'fresh': 15,
-      'exploration': 10,
-    },
+    'weights': {'personal': 50, 'trending': 25, 'fresh': 15, 'exploration': 10},
     'enabled': {
       'personalization': true,
       'trending': true,
@@ -156,11 +151,13 @@ class RemoteConfigService {
       // BACKGROUND refresh — never awaited by callers that need first paint.
       if (stale) {
         unawaited(
-          refresh().then((_) {
-            debugPrint('[RemoteConfig] background refresh complete');
-          }).catchError((Object e) {
-            debugPrint('[RemoteConfig] background refresh failed: $e');
-          }),
+          refresh()
+              .then((_) {
+                debugPrint('[RemoteConfig] background refresh complete');
+              })
+              .catchError((Object e) {
+                debugPrint('[RemoteConfig] background refresh failed: $e');
+              }),
         );
       }
     } catch (e) {
@@ -250,8 +247,10 @@ class RemoteConfigService {
       }
 
       try {
-        final settingsRows =
-            await db.from('discover_settings').select().limit(1);
+        final settingsRows = await db
+            .from('discover_settings')
+            .select()
+            .limit(1);
         if (settingsRows.isNotEmpty) {
           final map = cmsAsMap(settingsRows.first);
           if (map != null) {
@@ -352,18 +351,18 @@ class RemoteConfigService {
   }
 
   static String _encodeCategories(List<DiscoveryCategory> list) => jsonEncode(
-        list
-            .map(
-              (c) => {
-                'id': c.id,
-                'label': c.label,
-                'icon': c.icon,
-                'query': c.query,
-                'fallbackCategory': c.fallbackCategory,
-              },
-            )
-            .toList(),
-      );
+    list
+        .map(
+          (c) => {
+            'id': c.id,
+            'label': c.label,
+            'icon': c.icon,
+            'query': c.query,
+            'fallbackCategory': c.fallbackCategory,
+          },
+        )
+        .toList(),
+  );
 
   static List<DiscoveryCategory> _decodeCategories(String json) {
     try {

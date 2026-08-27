@@ -54,7 +54,8 @@ class DiscoveryFilterCatalog {
     final decades = <DiscoveryFilterOption>[];
     final activities = <DiscoveryFilterOption>[];
 
-    final sorted = [...rows]..sort((a, b) {
+    final sorted = [...rows]
+      ..sort((a, b) {
         return cmsAsInt(
           a['sort_order'],
           0,

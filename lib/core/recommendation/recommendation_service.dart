@@ -3,6 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
+
 import '../backend/supabase_service.dart';
 import '../storage/local_library.dart';
 
@@ -20,11 +21,11 @@ class UserContext {
   List<String> preferredLanguages;
 
   Map<String, dynamic> toJson() => {
-        'selected_mood': selectedMood,
-        'selected_mood_query': selectedMoodQuery,
-        'location_region': locationRegion,
-        'preferred_languages': preferredLanguages,
-      };
+    'selected_mood': selectedMood,
+    'selected_mood_query': selectedMoodQuery,
+    'location_region': locationRegion,
+    'preferred_languages': preferredLanguages,
+  };
 }
 
 class RecommendationService {
@@ -57,7 +58,8 @@ class RecommendationService {
     try {
       await SupabaseService.client
           .from('profiles')
-          .update({'user_context': _context.toJson()}).eq('id', user.id);
+          .update({'user_context': _context.toJson()})
+          .eq('id', user.id);
     } catch (_) {
       // Non-fatal, local fallback is preserved
     }

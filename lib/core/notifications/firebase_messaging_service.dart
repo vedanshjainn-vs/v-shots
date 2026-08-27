@@ -13,8 +13,15 @@
 // - Deep link routing from notifications
 
 import 'dart:async';
+<<<<<<< HEAD
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+=======
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
 import '../backend/supabase_service.dart';
 import 'notification_service.dart';
 
@@ -56,7 +63,13 @@ class FirebaseMessagingService {
       }
 
       // Register background handler
+<<<<<<< HEAD
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+=======
+      FirebaseMessaging.onBackgroundMessage(
+        _firebaseMessagingBackgroundHandler,
+      );
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
 
       // Get initial token
       final token = await _messaging.getToken();
@@ -73,8 +86,14 @@ class FirebaseMessagingService {
       });
 
       // Handle foreground messages
+<<<<<<< HEAD
       _messageSubscription =
           FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+=======
+      _messageSubscription = FirebaseMessaging.onMessage.listen(
+        _handleForegroundMessage,
+      );
+>>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
 
       // Handle notification taps (when app is in background/terminated)
       final initialMessage = await _messaging.getInitialMessage();

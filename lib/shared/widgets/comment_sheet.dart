@@ -3,6 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+
 import '../../core/models/comment_model.dart';
 import '../../core/services/shots_service.dart';
 import '../../core/theme/app_colors.dart';
@@ -164,93 +165,93 @@ class _CommentSheetState extends State<CommentSheet> {
                     ),
                   )
                 : _comments.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.chat_bubble_outline_rounded,
-                              size: 36,
-                              color: AppColors.textSubtle,
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              'No comments yet. Be the first!',
-                              style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 36,
+                          color: AppColors.textSubtle,
                         ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
+                        SizedBox(height: 10),
+                        Text(
+                          'No comments yet. Be the first!',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 14,
+                          ),
                         ),
-                        itemCount: _comments.length,
-                        separatorBuilder: (context, index) =>
-                            const SizedBox(height: 16),
-                        itemBuilder: (context, index) {
-                          final c = _comments[index];
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              AppAvatar(
-                                avatarUrl: c.author?.avatarUrl,
-                                name: c.author?.fullName ?? 'User',
-                                size: 36,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    itemCount: _comments.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 16),
+                    itemBuilder: (context, index) {
+                      final c = _comments[index];
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AppAvatar(
+                            avatarUrl: c.author?.avatarUrl,
+                            name: c.author?.fullName ?? 'User',
+                            size: 36,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          c.author?.fullName ?? 'Creator',
-                                          style: const TextStyle(
-                                            color: AppColors.textMain,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '@${c.author?.username ?? 'user'}',
-                                          style: const TextStyle(
-                                            color: AppColors.textSubtle,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        const Spacer(),
-                                        Text(
-                                          _formatTimeAgo(c.createdAt),
-                                          style: const TextStyle(
-                                            color: AppColors.textSubtle,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
                                     Text(
-                                      c.body,
+                                      c.author?.fullName ?? 'Creator',
                                       style: const TextStyle(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 14,
-                                        height: 1.3,
+                                        color: AppColors.textMain,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '@${c.author?.username ?? 'user'}',
+                                      style: const TextStyle(
+                                        color: AppColors.textSubtle,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Text(
+                                      _formatTimeAgo(c.createdAt),
+                                      style: const TextStyle(
+                                        color: AppColors.textSubtle,
+                                        fontSize: 11,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  c.body,
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 14,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
           ),
 
           // Input Bar

@@ -80,8 +80,9 @@ class LevelPlayConfig {
   /// The test fallback must NEVER apply inside `flutter test` runs (the
   /// plugin channel is absent there); it only serves real debug builds.
   @visibleForTesting
-  static bool debugIsRunningInTests =
-      Platform.environment.containsKey('FLUTTER_TEST');
+  static bool debugIsRunningInTests = Platform.environment.containsKey(
+    'FLUTTER_TEST',
+  );
 
   static String? _env(String key) {
     final override = _debugEnv;
@@ -122,9 +123,9 @@ class LevelPlayConfig {
   static String? get appKey => _useDebugTestCredentials
       ? _testAppKey
       : (_env('LEVELPLAY_APP_KEY') ??
-          (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
-              ? _testAppKey
-              : null));
+            (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
+                ? _testAppKey
+                : null));
 
   /// Whether the advertising layer is configured at all.
   static bool get isConfigured => appKey != null;

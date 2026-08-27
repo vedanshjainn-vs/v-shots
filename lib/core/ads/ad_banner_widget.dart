@@ -21,10 +21,7 @@ import 'levelplay_service.dart';
 /// A self-contained in-flow banner (LevelPlay BANNER, 320×50).
 /// Renders nothing when the policy gate fails or the ad is not available.
 class AdBannerWidget extends StatefulWidget {
-  const AdBannerWidget({
-    super.key,
-    this.placement = AdPlacement.library,
-  });
+  const AdBannerWidget({super.key, this.placement = AdPlacement.library});
 
   final AdPlacement placement;
 
@@ -57,30 +54,45 @@ class _AdBannerWidgetState extends State<AdBannerWidget>
   void onAdLoaded(LevelPlayAdInfo adInfo) {
     VShotsLevelPlay.instance.noteFill('banner', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
-        'widget_ad_view', 'LOADED (network: ${adInfo.adNetwork})');
-    AdAnalytics.log('ad_loaded',
-        placement: widget.placement.key, detail: adInfo.adNetwork);
+      'widget_ad_view',
+      'LOADED (network: ${adInfo.adNetwork})',
+    );
+    AdAnalytics.log(
+      'ad_loaded',
+      placement: widget.placement.key,
+      detail: adInfo.adNetwork,
+    );
   }
 
   @override
   void onAdLoadFailed(LevelPlayAdError error) {
-    VShotsLevelPlay.instance
-        .noteActivity('widget_ad_view', 'LOAD FAILED — $error');
-    AdAnalytics.log('ad_load_failed',
-        placement: widget.placement.key, detail: '$error');
+    VShotsLevelPlay.instance.noteActivity(
+      'widget_ad_view',
+      'LOAD FAILED — $error',
+    );
+    AdAnalytics.log(
+      'ad_load_failed',
+      placement: widget.placement.key,
+      detail: '$error',
+    );
   }
 
   @override
   void onAdDisplayed(LevelPlayAdInfo adInfo) {
-    AdAnalytics.log('ad_displayed',
-        placement: widget.placement.key,
-        detail: 'network=${adInfo.adNetwork} revenue=${adInfo.revenue}');
+    AdAnalytics.log(
+      'ad_displayed',
+      placement: widget.placement.key,
+      detail: 'network=${adInfo.adNetwork} revenue=${adInfo.revenue}',
+    );
   }
 
   @override
   void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {
-    AdAnalytics.log('ad_load_failed',
-        placement: widget.placement.key, detail: 'display: $error');
+    AdAnalytics.log(
+      'ad_load_failed',
+      placement: widget.placement.key,
+      detail: 'display: $error',
+    );
   }
 
   @override

@@ -3,7 +3,9 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
 import '../../core/models/notification_model.dart';
 import '../../core/services/notifications_service.dart';
 import '../../core/theme/app_colors.dart';
@@ -136,27 +138,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     ),
                   )
                 : _filteredNotifications.isEmpty
-                    ? const EmptyState(
-                        title: 'All caught up!',
-                        subtitle:
-                            'When creators like, comment, or follow your shots, they will show up here.',
-                        icon: Icons.notifications_none_rounded,
-                      )
-                    : RefreshIndicator(
-                        onRefresh: _loadNotifications,
-                        color: AppColors.primaryLight,
-                        backgroundColor: AppColors.surface2,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _filteredNotifications.length,
-                          separatorBuilder: (context, index) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, index) {
-                            final n = _filteredNotifications[index];
-                            return _buildNotificationCard(n);
-                          },
-                        ),
-                      ),
+                ? const EmptyState(
+                    title: 'All caught up!',
+                    subtitle: 'When creators like, comment, or follow your shots, they will show up here.',
+                    icon: Icons.notifications_none_rounded,
+                  )
+                : RefreshIndicator(
+                    onRefresh: _loadNotifications,
+                    color: AppColors.primaryLight,
+                    backgroundColor: AppColors.surface2,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _filteredNotifications.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final n = _filteredNotifications[index];
+                        return _buildNotificationCard(n);
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
