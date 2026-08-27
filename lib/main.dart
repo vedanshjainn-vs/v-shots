@@ -43,6 +43,7 @@ import 'core/recommendation/signal_store.dart';
 import 'core/recommendation/taste_profile.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
+import 'shared/widgets/animated_equalizer.dart';
 import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
@@ -2119,16 +2120,31 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemBuilder: (context, index) {
         if (index < 0 || index >= liked.length) return const SizedBox.shrink();
         final t = liked[index];
+        final trackId = t['id'] as String? ?? '';
+        final isCurrentPlaying = currentTrackNotifier.value?['id'] == trackId;
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: ArtworkFadeIn(
-              child: AppImage(
-                t['artwork'] as String?,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-              ),
+            child: Stack(
+              children: [
+                ArtworkFadeIn(
+                  child: AppImage(
+                    t['artwork'] as String?,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (isCurrentPlaying)
+                  const Positioned(
+                    left: 4,
+                    bottom: 4,
+                    child: AnimatedEqualizer(
+                      size: 12,
+                      color: AppColors.accent,
+                    ),
+                  ),
+              ],
             ),
           ),
           title: Text(
@@ -2244,16 +2260,31 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemBuilder: (context, index) {
         if (index < 0 || index >= recent.length) return const SizedBox.shrink();
         final t = recent[index];
+        final trackId = t['id'] as String? ?? '';
+        final isCurrentPlaying = currentTrackNotifier.value?['id'] == trackId;
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: ArtworkFadeIn(
-              child: AppImage(
-                t['artwork'] as String?,
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-              ),
+            child: Stack(
+              children: [
+                ArtworkFadeIn(
+                  child: AppImage(
+                    t['artwork'] as String?,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (isCurrentPlaying)
+                  const Positioned(
+                    left: 4,
+                    bottom: 4,
+                    child: AnimatedEqualizer(
+                      size: 12,
+                      color: AppColors.accent,
+                    ),
+                  ),
+              ],
             ),
           ),
           title: Text(
