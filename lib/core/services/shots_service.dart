@@ -118,7 +118,8 @@ class ShotsService {
       userId: userId,
       caption: caption,
       videoUrl: videoUrl,
-      thumbnailUrl: thumbnailUrl ?? 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
+      thumbnailUrl: thumbnailUrl ??
+          'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&q=80',
       durationSeconds: durationSeconds,
       visibility: visibility,
       tags: tags,
@@ -250,7 +251,8 @@ class ShotsService {
             id: 'user-1',
             username: 'alexdev',
             fullName: 'Alex River',
-            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80',
+            avatarUrl:
+                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80',
           ),
           createdAt: DateTime.now().subtract(const Duration(minutes: 45)),
         ),
@@ -258,12 +260,14 @@ class ShotsService {
           id: 'mock-c2',
           shotId: shotId,
           userId: 'user-2',
-          body: 'What synth preset are you using here? That filter sweep is pure magic ✨',
+          body:
+              'What synth preset are you using here? That filter sweep is pure magic ✨',
           author: const ProfileModel(
             id: 'user-2',
             username: 'synthwave_queen',
             fullName: 'Elena Rostova',
-            avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
+            avatarUrl:
+                'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&q=80',
           ),
           createdAt: DateTime.now().subtract(const Duration(hours: 2)),
         ),
@@ -344,9 +348,8 @@ class ShotsService {
           .from(bucket)
           .uploadBinary(fileName, bytes);
 
-      final publicUrl = SupabaseService.client.storage
-          .from(bucket)
-          .getPublicUrl(fileName);
+      final publicUrl =
+          SupabaseService.client.storage.from(bucket).getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
       debugPrint('[ShotsService] uploadShotMedia error: $e');

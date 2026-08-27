@@ -95,7 +95,8 @@ class RecommendationScorer {
     );
 
     final userAffinity = profile.artistAffinity[track.artist] ?? 0.0;
-    final artistAffinity = userAffinity; // same signal, kept as a separate term per Part K's formula shape
+    final artistAffinity =
+        userAffinity; // same signal, kept as a separate term per Part K's formula shape
     final recency = _recencyScore(track.artist);
     final similarity = _similarityScore(tags, profile);
     final completionProbability = _completionProbabilityScore(track.artist);
@@ -103,13 +104,13 @@ class RecommendationScorer {
     final contextMatch = _contextMatchScore(tags);
     final novelty = _noveltyScore(track.artist, profile);
     final skipPenalty = profile.artistSkipPenalty[track.artist] ?? 0.0;
-    const repetitionPenalty = 0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
+    const repetitionPenalty =
+        0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
     // Official/verified uploads get a small, honest ranking boost (real
     // InnerTube badge metadata only — never guessed from channel names).
     final officialBoost = track.isOfficial ? 1.0 : 0.0;
 
-    final total =
-        config.weightUserAffinity * userAffinity +
+    final total = config.weightUserAffinity * userAffinity +
         config.weightArtistAffinity * artistAffinity +
         config.weightRecency * recency +
         config.weightSimilarity * similarity +
@@ -178,9 +179,8 @@ class RecommendationScorer {
           (e.type == SignalType.completed || e.type == SignalType.skip),
     );
     if (relevant.isEmpty) return 0.5;
-    final completions = relevant
-        .where((e) => e.type == SignalType.completed)
-        .length;
+    final completions =
+        relevant.where((e) => e.type == SignalType.completed).length;
     return completions / relevant.length;
   }
 

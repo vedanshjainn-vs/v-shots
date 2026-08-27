@@ -32,12 +32,7 @@ class NotificationPreferences {
       userId: json['user_id'] as String,
       notificationsEnabled: json['notifications_enabled'] as bool? ?? true,
       newMusicEnabled: json['new_music_enabled'] as bool? ?? true,
-<<<<<<< HEAD
-      recommendationsEnabled:
-          json['recommendations_enabled'] as bool? ?? true,
-=======
       recommendationsEnabled: json['recommendations_enabled'] as bool? ?? true,
->>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
       trendingEnabled: json['trending_enabled'] as bool? ?? true,
       winbackEnabled: json['winback_enabled'] as bool? ?? true,
       updateNotificationsEnabled:

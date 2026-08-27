@@ -69,16 +69,16 @@ class ProviderTrack {
   /// already produced; `isOfficial`/`channelId` are ADDITIVE keys, so no
   /// downstream consumer breaks.
   Map<String, dynamic> toTrackMap() => {
-    'id': id,
-    'title': title,
-    'artist': artist,
-    'artwork': artworkUrl,
-    'duration': durationSeconds,
-    if (isOfficial) 'isOfficial': true,
-    if (channelId != null && channelId!.isNotEmpty) 'channelId': channelId,
-    if (viewCount != null) 'views': viewCount,
-    if (publishedDaysAgo != null) 'ageDays': publishedDaysAgo,
-  };
+        'id': id,
+        'title': title,
+        'artist': artist,
+        'artwork': artworkUrl,
+        'duration': durationSeconds,
+        if (isOfficial) 'isOfficial': true,
+        if (channelId != null && channelId!.isNotEmpty) 'channelId': channelId,
+        if (viewCount != null) 'views': viewCount,
+        if (publishedDaysAgo != null) 'ageDays': publishedDaysAgo,
+      };
 
   /// Builds a [ProviderTrack] from the app's existing
   /// `Map<String, dynamic>` shape — used where existing code already

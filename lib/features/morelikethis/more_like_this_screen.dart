@@ -86,77 +86,78 @@ class _MoreLikeThisScreenState extends State<MoreLikeThisScreen> {
               child: CircularProgressIndicator(color: AppColors.accent),
             )
           : _error != null
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _error!,
-                    style: const TextStyle(color: AppColors.textMuted),
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton(onPressed: _load, child: const Text('Retry')),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
-              itemCount: _tracks.length + 1,
-              itemBuilder: (context, i) {
-                if (i == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 4, 4, 14),
-                    child: Text(
-                      'Similar to "$seedTitle"',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textMuted,
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _error!,
+                        style: const TextStyle(color: AppColors.textMuted),
                       ),
-                    ),
-                  );
-                }
-                final t = _tracks[i - 1];
-                final index = i - 1;
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: AppImage(
-                      t['artwork'] as String?,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                      errorIconColor: AppColors.accent,
-                    ),
+                      const SizedBox(height: 12),
+                      ElevatedButton(
+                          onPressed: _load, child: const Text('Retry')),
+                    ],
                   ),
-                  title: Text(
-                    (t['title'] as String?) ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      color: AppColors.textMain,
-                    ),
-                  ),
-                  subtitle: Text(
-                    (t['artist'] as String?) ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-                  trailing: const Icon(
-                    Icons.play_circle_fill_rounded,
-                    color: AppColors.accent,
-                  ),
-                  onTap: () => playTrack(context, t, _tracks, index),
-                );
-              },
-            ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+                  itemCount: _tracks.length + 1,
+                  itemBuilder: (context, i) {
+                    if (i == 0) {
+                      return Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 4, 4, 14),
+                        child: Text(
+                          'Similar to "$seedTitle"',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      );
+                    }
+                    final t = _tracks[i - 1];
+                    final index = i - 1;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 2),
+                      leading: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: AppImage(
+                          t['artwork'] as String?,
+                          width: 52,
+                          height: 52,
+                          fit: BoxFit.cover,
+                          errorIconColor: AppColors.accent,
+                        ),
+                      ),
+                      title: Text(
+                        (t['title'] as String?) ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: AppColors.textMain,
+                        ),
+                      ),
+                      subtitle: Text(
+                        (t['artist'] as String?) ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: AppColors.accent,
+                      ),
+                      onTap: () => playTrack(context, t, _tracks, index),
+                    );
+                  },
+                ),
     );
   }
 }

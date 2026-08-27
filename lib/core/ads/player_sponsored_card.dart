@@ -330,19 +330,19 @@ class _PlayerSponsoredCardState extends State<PlayerSponsoredCard>
     if (ad == null) return const SizedBox.shrink();
 
     Widget reveal(Widget child) => AnimatedOpacity(
-      duration: const Duration(milliseconds: 420),
-      curve: Curves.easeOutCubic,
-      opacity: revealed ? 1 : 0,
-      child: AnimatedSlide(
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeOutCubic,
-        offset: revealed ? Offset.zero : const Offset(0, 0.06),
-        child: ExcludeSemantics(
-          excluding: !revealed,
-          child: IgnorePointer(ignoring: !revealed, child: child),
-        ),
-      ),
-    );
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          opacity: revealed ? 1 : 0,
+          child: AnimatedSlide(
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+            offset: revealed ? Offset.zero : const Offset(0, 0.06),
+            child: ExcludeSemantics(
+              excluding: !revealed,
+              child: IgnorePointer(ignoring: !revealed, child: child),
+            ),
+          ),
+        );
 
     switch (_variant) {
       case PlayerSponsoredVariant.glassCard:

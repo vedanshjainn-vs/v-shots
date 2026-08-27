@@ -176,10 +176,8 @@ class NotificationService {
   // ── Permission Handling ───────────────────────────────────────────────
 
   Future<bool> requestNotificationPermission() async {
-    final androidPlugin = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
 
     if (androidPlugin == null) return true; // Non-Android or already granted
 

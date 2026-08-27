@@ -133,18 +133,18 @@ class VShotsMusicItem {
   /// The app's canonical track record — what flows into playback, queue,
   /// LocalLibrary.
   Map<String, dynamic> toTrackMap() => {
-    'id': id,
-    'title': title,
-    'artist': artistName ?? channelName ?? 'Unknown Artist',
-    'artwork': artworkUrl ?? thumbnailUrl ?? '',
-    'duration': durationSeconds ?? 0,
-    if (isOfficial) 'isOfficial': true,
-    if (channelId != null && channelId!.isNotEmpty) 'channelId': channelId,
-    if (channelName != null && channelName!.isNotEmpty)
-      'channelName': channelName,
-    if (viewCount != null) 'views': viewCount,
-    if (publishedDaysAgo != null) 'ageDays': publishedDaysAgo,
-  };
+        'id': id,
+        'title': title,
+        'artist': artistName ?? channelName ?? 'Unknown Artist',
+        'artwork': artworkUrl ?? thumbnailUrl ?? '',
+        'duration': durationSeconds ?? 0,
+        if (isOfficial) 'isOfficial': true,
+        if (channelId != null && channelId!.isNotEmpty) 'channelId': channelId,
+        if (channelName != null && channelName!.isNotEmpty)
+          'channelName': channelName,
+        if (viewCount != null) 'views': viewCount,
+        if (publishedDaysAgo != null) 'ageDays': publishedDaysAgo,
+      };
 
   factory VShotsMusicItem.fromTrackMap(Map<String, dynamic> map) {
     return VShotsMusicItem(

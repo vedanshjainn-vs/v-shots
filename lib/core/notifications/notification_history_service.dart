@@ -12,10 +12,7 @@
 // - Smart cooldown based on user interaction
 
 import 'package:flutter/foundation.dart';
-<<<<<<< HEAD
-=======
 
->>>>>>> 3f91a8f (fix: format all files + add rewarded ad button on home page)
 import '../backend/supabase_service.dart';
 
 class NotificationHistoryService {

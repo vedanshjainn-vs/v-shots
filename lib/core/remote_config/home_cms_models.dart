@@ -124,26 +124,26 @@ class HomeCmsSection {
   }
 
   Map<String, dynamic> toMap() => {
-    'id': id,
-    'section_key': sectionKey,
-    'title': title,
-    'subtitle': subtitle,
-    'section_type': sectionType,
-    'source_type': sourceType,
-    'source_value': sourceValue,
-    'query': query,
-    'sort_order': sortOrder,
-    'visible': visible,
-    'published': published,
-    'max_items': maxItems,
-    'region_code': regionCode,
-    'category_id': categoryId,
-    'refresh_minutes': refreshMinutes,
-    'provider': provider,
-    'playback_provider': playbackProvider,
-    'fallback_provider': fallbackProvider,
-    'is_spotlight': isSpotlight,
-  };
+        'id': id,
+        'section_key': sectionKey,
+        'title': title,
+        'subtitle': subtitle,
+        'section_type': sectionType,
+        'source_type': sourceType,
+        'source_value': sourceValue,
+        'query': query,
+        'sort_order': sortOrder,
+        'visible': visible,
+        'published': published,
+        'max_items': maxItems,
+        'region_code': regionCode,
+        'category_id': categoryId,
+        'refresh_minutes': refreshMinutes,
+        'provider': provider,
+        'playback_provider': playbackProvider,
+        'fallback_provider': fallbackProvider,
+        'is_spotlight': isSpotlight,
+      };
 }
 
 String normalizeCmsProvider(dynamic raw, {String fallback = 'auto'}) {
@@ -242,8 +242,8 @@ class HomeCmsItem {
       artworkUrl: artwork.isNotEmpty
           ? artwork
           : (videoId.isEmpty
-                ? ''
-                : 'https://img.youtube.com/vi/$videoId/hqdefault.jpg'),
+              ? ''
+              : 'https://img.youtube.com/vi/$videoId/hqdefault.jpg'),
       youtubeVideoId: videoId,
       sortOrder: cmsAsInt(row['sort_order'], 0),
       enabled: cmsAsBool(row['is_enabled']),
@@ -266,16 +266,14 @@ class HomeCmsItem {
   }) {
     final jio =
         (jiosaavnEnabled && jiosaavnUrl != null && jiosaavnUrl!.isNotEmpty)
-        ? jiosaavnUrl
-        : null;
-    final effectiveProvider =
-        provider == 'auto' &&
+            ? jiosaavnUrl
+            : null;
+    final effectiveProvider = provider == 'auto' &&
             providerOverride != null &&
             providerOverride != 'auto'
         ? providerOverride
         : provider;
-    final effectivePlayback =
-        playbackProvider == 'auto' &&
+    final effectivePlayback = playbackProvider == 'auto' &&
             playbackProviderOverride != null &&
             playbackProviderOverride != 'auto'
         ? playbackProviderOverride
@@ -283,8 +281,8 @@ class HomeCmsItem {
     final trackId = youtubeVideoId.isNotEmpty
         ? youtubeVideoId
         : (contentId.isNotEmpty
-              ? (contentId.startsWith('jsv_') ? contentId : 'jsv_$contentId')
-              : (id.isNotEmpty ? 'jsv_$id' : 'jsv_unknown'));
+            ? (contentId.startsWith('jsv_') ? contentId : 'jsv_$contentId')
+            : (id.isNotEmpty ? 'jsv_$id' : 'jsv_unknown'));
     return {
       'id': trackId,
       'title': title,
