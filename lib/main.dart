@@ -6,7 +6,6 @@
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
@@ -76,7 +75,6 @@ void main() async {
   final bootTimer = Stopwatch()..start();
 
   // Initialize Firebase first (required for FCM)
-  await Firebase.initializeApp();
   debugPrint('[Boot] Firebase initialized');
 
   await Future.wait([
@@ -92,7 +90,6 @@ void main() async {
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
   // Initialize FCM (non-blocking, fire-and-forget)
-  unawaited(FirebaseMessagingService.instance.initialize());
 
   await AuthService.instance.initializeGoogleSignIn();
 
