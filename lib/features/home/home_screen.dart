@@ -68,6 +68,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// nobody has reached yet).
   static const int _initialShelfCount = 12;
   static const int _lazyBatchSize = 8;
+
   /// Trigger lazy load when user is this many shelves away from the end
   /// of currently loaded content — starts prefetching BEFORE skeletons
   /// become visible so the next batch is usually ready by the time user
