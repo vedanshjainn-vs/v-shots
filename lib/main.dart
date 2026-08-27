@@ -2848,3 +2848,4 @@ class _LyricsScreenState extends State<LyricsScreen> {
     );
   }
 }
+// Force rebuild
