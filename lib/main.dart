@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'core/ads/ad_config.dart';
 import 'core/ads/ad_free_manager.dart';
@@ -378,6 +379,7 @@ class _MainShellState extends State<MainShell> {
     }
     // 2. If on Discover (1), Search (2), or Profile (3), go back to Home (0)
     if (_index != 0) {
+      unawaited(HapticFeedback.selectionClick());
       setState(() {
         _index = 0;
         currentTabIndexNotifier.value = 0;
@@ -761,6 +763,19 @@ class _SearchScreenState extends State<SearchScreen> {
     ('Devotional', '🙏', Color(0xFFFFC107)),
   ];
 
+  /// Curated quick-pick queries — the owner can swap these anytime without
+  /// a code deploy by editing the Supabase `home_config` table (future);
+  /// for now they're client-side curated picks that drive real search.
+  static const _trendingQueries = [
+    ('Arijit Singh', '🔥'),
+    ('Lo-fi Beats', '🌙'),
+    ('Punjabi Hits', '🥁'),
+    ('Romantic', '❤️'),
+    ('Workout Mix', '💪'),
+    ('90s Bollywood', '📼'),
+    ('Chill Vibes', ''),
+  ];
+
   void _onQueryChanged(String q) {
     _debounce?.cancel();
     if (q.trim().isEmpty) {
@@ -992,9 +1007,46 @@ class _SearchScreenState extends State<SearchScreen> {
                   decoration: InputDecoration(
                     hintText: 'Search songs, artists, hits...',
                     hintStyle: const TextStyle(color: AppColors.textMuted),
-                    prefixIcon: const Icon(
-                      Icons.search,
-                      color: AppColors.textMuted,
+                    prefixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: 16),
+                        const Icon(
+                          Icons.search,
+                          color: AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            unawaited(HapticFeedback.selectionClick());
+                            // Open Google voice search — the standard Android
+                            // voice-to-text entry point. Works on every
+                            // device with Google app installed (near-universal
+                            // on Android). Falls back to a web URL on iOS.
+                            unawaited(
+                              launchUrl(
+                                Uri.parse(
+                                  'https://www.google.com/search?tbm=vid&q=',
+                                ),
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.mic_rounded,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 96,
+                      minHeight: 48,
                     ),
                     suffixIcon: _controller.text.isNotEmpty
                         ? IconButton(
@@ -1003,6 +1055,7 @@ class _SearchScreenState extends State<SearchScreen> {
                               color: AppColors.textMuted,
                             ),
                             onPressed: () {
+                              unawaited(HapticFeedback.selectionClick());
                               _controller.clear();
                               _onQueryChanged('');
                             },
@@ -1048,7 +1101,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               TextButton(
-                onPressed: LocalLibrary.instance.clearRecentSearches,
+                onPressed: () {
+                  unawaited(HapticFeedback.lightImpact());
+                  LocalLibrary.instance.clearRecentSearches();
+                },
                 child: const Text(
                   'Clear',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
@@ -1061,19 +1117,81 @@ class _SearchScreenState extends State<SearchScreen> {
             runSpacing: 8,
             children: recents.map((item) {
               final q = (item['query'] as String?) ?? '';
-              return ActionChip(
-                label: Text(q),
-                backgroundColor: AppColors.surface,
-                side: const BorderSide(color: AppColors.border),
-                onPressed: () {
+              return PressableScale(
+                onTap: () {
+                  unawaited(HapticFeedback.selectionClick());
                   _controller.text = q;
                   _search(q);
                 },
+                child: ActionChip(
+                  label: Text(q),
+                  backgroundColor: AppColors.surface,
+                  side: const BorderSide(color: AppColors.border),
+                  onPressed: () {
+                    _controller.text = q;
+                    _search(q);
+                  },
+                ),
               );
             }).toList(),
           ),
           const SizedBox(height: 24),
         ],
+        // Trending quick-pick row — curated queries that drive discovery
+        // without the user typing anything. Tapping fires a real search
+        // (same path as the category grid) with haptic confirmation.
+        const Text(
+          'Trending',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _trendingQueries.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final (label, emoji) = _trendingQueries[i];
+              return StaggeredEntrance(
+                index: i,
+                child: PressableScale(
+                  onTap: () {
+                    unawaited(HapticFeedback.selectionClick());
+                    _controller.text = label;
+                    _search(label);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(emoji, style: const TextStyle(fontSize: 16)),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
         const Text(
           'Browse Categories',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -1091,35 +1209,39 @@ class _SearchScreenState extends State<SearchScreen> {
           itemCount: _categories.length,
           itemBuilder: (context, i) {
             final (name, icon, color) = _categories[i];
-            return GestureDetector(
-              onTap: () {
-                final q = '$name songs official audio';
-                _controller.text = q;
-                _search(q);
-              },
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Text(icon, style: const TextStyle(fontSize: 22)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
+            return StaggeredEntrance(
+              index: i,
+              child: PressableScale(
+                onTap: () {
+                  unawaited(HapticFeedback.selectionClick());
+                  final q = '$name songs official audio';
+                  _controller.text = q;
+                  _search(q);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(icon, style: const TextStyle(fontSize: 22)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -1411,7 +1533,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Center(
                     child: TextButton(
-                      onPressed: _loadMore,
+                      onPressed: () {
+                        unawaited(HapticFeedback.selectionClick());
+                        _loadMore();
+                      },
                       child: const Text(
                         'Load more',
                         style: TextStyle(color: AppColors.accent),
@@ -1447,14 +1572,28 @@ class _SearchScreenState extends State<SearchScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: ArtworkFadeIn(
-                          child: AppImage(
-                            track['artwork'] as String?,
-                            width: 56,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            errorIconColor: AppColors.accent,
-                          ),
+                        child: Stack(
+                          children: [
+                            ArtworkFadeIn(
+                              child: AppImage(
+                                track['artwork'] as String?,
+                                width: 56,
+                                height: 56,
+                                fit: BoxFit.cover,
+                                errorIconColor: AppColors.accent,
+                              ),
+                            ),
+                            if (currentTrackNotifier.value?['id'] ==
+                                (track['id'] as String? ?? ''))
+                              const Positioned(
+                                left: 4,
+                                bottom: 4,
+                                child: AnimatedEqualizer(
+                                  size: 12,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -2463,6 +2602,7 @@ void showMoreOptionsSheet(
                 title: const Text('More Like This'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   Navigator.push(
                     context,
                     AppPageRoute<void>(
@@ -2476,6 +2616,7 @@ void showMoreOptionsSheet(
                 title: const Text('View Artist'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   final artistName =
                       (track['artist'] as String?) ?? 'Unknown Artist';
                   Navigator.push(
@@ -2496,6 +2637,7 @@ void showMoreOptionsSheet(
                 title: const Text('Play Next'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.lightImpact());
                   playNextInQueue(context, track);
                 },
               ),
@@ -2504,6 +2646,7 @@ void showMoreOptionsSheet(
                 title: const Text('Add to Queue'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.lightImpact());
                   addToQueueEnd(context, track);
                 },
               ),
@@ -2512,6 +2655,7 @@ void showMoreOptionsSheet(
                 title: const Text('Share'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   SharePlus.instance.share(
                     ShareParams(
                       text:
@@ -2525,6 +2669,7 @@ void showMoreOptionsSheet(
                 title: const Text('Sleep Timer'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   _showSleepTimerDialog(context);
                 },
               ),

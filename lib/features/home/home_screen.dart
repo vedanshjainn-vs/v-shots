@@ -215,7 +215,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: RefreshIndicator(
           color: AppColors.primaryLight,
           backgroundColor: AppColors.surface2,
-          onRefresh: () => _load(forceRefresh: true),
+          onRefresh: () async {
+            unawaited(HapticFeedback.mediumImpact());
+            await _load(forceRefresh: true);
+          },
           child: CustomScrollView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),

@@ -2,7 +2,11 @@
 // V Shots — LikeButton (Nova Design System with Burst Animation)
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class LikeButton extends StatefulWidget {
@@ -71,6 +75,7 @@ class _LikeButtonState extends State<LikeButton>
   }
 
   void _handleTap() {
+    unawaited(HapticFeedback.mediumImpact());
     setState(() {
       _isLiked = !_isLiked;
       _count = _isLiked ? _count + 1 : (_count > 0 ? _count - 1 : 0);
