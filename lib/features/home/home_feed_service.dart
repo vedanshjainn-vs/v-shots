@@ -726,7 +726,7 @@ class HomeFeedService {
     required bool force,
     void Function()? onUpdate,
   }) async {
-    const chunkSize = 6;
+    const chunkSize = 4;
     for (var i = 0; i < shelves.length; i += chunkSize) {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(

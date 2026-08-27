@@ -64,18 +64,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Lazy shelf loading: with 50+ CMS shelves the initial Home load fetches
   /// only the first [_initialShelfCount] shelves; the rest load in batches
-  /// as the user scrolls near the bottom (fast first paint + no wasted
-  /// network for shelves nobody has reached yet).
-  static const int _initialShelfCount = 10;
+  /// as the user scrolls (fast first paint + no wasted network for shelves
+  /// nobody has reached yet).
+  static const int _initialShelfCount = 12;
   static const int _lazyBatchSize = 8;
+  /// Trigger lazy load when user is this many shelves away from the end
+  /// of currently loaded content — starts prefetching BEFORE skeletons
+  /// become visible so the next batch is usually ready by the time user
+  /// scrolls to it.
+  static const int _lazyLoadAheadShelves = 4;
   int _maxLoadedShelves = _initialShelfCount;
   bool _loadingMoreShelves = false;
   final ScrollController _scrollController = ScrollController();
 
   void _onScrollForLazyLoad() {
     if (!_scrollController.hasClients) return;
-    if (_scrollController.position.extentAfter > 1600) return;
-    if (_loadingMoreShelves || _maxLoadedShelves >= _shelves.length) return;
+    if (_loadingMoreShelves) return;
+    if (_maxLoadedShelves >= _shelves.length) return;
+    // Smart trigger: fire when the user has scrolled past
+    // (_maxLoadedShelves - _lazyLoadAheadShelves) shelves — i.e. start
+    // loading the next batch 4 shelves BEFORE the user reaches the end
+    // of currently loaded content. This eliminates the "skeletons for
+    // shelves 6-7+" delay because prefetch starts much earlier.
+    final loadedCount = _shelves
+        .take(_maxLoadedShelves)
+        .where((s) =>
+            s.status == HomeShelfStatus.loaded ||
+            s.status == HomeShelfStatus.hidden)
+        .length;
+    if (loadedCount < _maxLoadedShelves - _lazyLoadAheadShelves) return;
     final end = (_maxLoadedShelves + _lazyBatchSize).clamp(0, _shelves.length);
     _loadingMoreShelves = true;
     unawaited(
@@ -213,6 +230,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 // Spotlight shelves render as the hero carousel above — skip
                 // them here so content never appears twice.
                 ..._buildShelfSlivers(),
+              // "Loading more shelves" indicator — only visible while the
+              // lazy-load batch is in flight AND there are more shelves to
+              // load. Replaces the jarring "skeletons suddenly fill with
+              // content" with a smooth loading indicator.
+              if (_loadingMoreShelves && _maxLoadedShelves < _shelves.length)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primaryLight,
+                            ),
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Loading more shelves…',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               _buildFooter(),
             ],
           ),

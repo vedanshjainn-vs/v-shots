@@ -477,46 +477,57 @@ class _MainShellState extends State<MainShell> {
             // every tab. Discovery (and, next phase, Home/Search/Library)
             // route playback through VShotsPlaybackManager; this sheet is the
             // one persistent UI+media surface for all of them.
-            AnimatedBuilder(
-              animation: VShotsPlaybackManager.instance.browser,
-              builder: (context, _) {
-                final b = VShotsPlaybackManager.instance.browser;
-                if (!b.isOpen) return const SizedBox.shrink();
-                return Positioned.fill(
-                  child: DiscoveryBrowserSheet(controller: b),
-                );
-              },
+            // Positioned.fill MUST be a direct Stack child — MiniPlayerTransition
+            // wraps the inner content, not the Positioned itself.
+            Positioned.fill(
+              child: MiniPlayerTransition(
+                visible: VShotsPlaybackManager.instance.browser.isOpen,
+                child: AnimatedBuilder(
+                  animation: VShotsPlaybackManager.instance.browser,
+                  builder: (context, _) {
+                    final b = VShotsPlaybackManager.instance.browser;
+                    if (!b.isOpen) return const SizedBox.shrink();
+                    return DiscoveryBrowserSheet(controller: b);
+                  },
+                ),
+              ),
             ),
           ],
         ),
         bottomNavigationBar: ValueListenableBuilder<bool>(
           valueListenable: isPlayerExpandedNotifier,
           builder: (context, isExpanded, _) {
-            if (isExpanded) return const SizedBox.shrink();
-            return BottomTabBar(
-              currentIndex: _index.clamp(0, 3),
-              onTap: (i) {
-                final target = i.clamp(0, 3);
-                final changed = target != _index;
-                // Subtle haptic on every tab switch — tactile confirmation
-                // without being excessive (only on actual change).
-                if (changed) {
-                  unawaited(HapticFeedback.selectionClick());
-                }
-                setState(() {
-                  _index = target;
-                  currentTabIndexNotifier.value = target;
-                });
-                // Interstitial at a NATURAL transition (user-initiated tab
-                // switch only). Cooldown (180 s), session cap (4) and the
-                // 60 s dwell guard live centrally in AdPolicy — never on
-                // launch, never during playback, never on song changes.
-                if (changed && !VShotsPlaybackManager.instance.browser.isOpen) {
-                  unawaited(VShotsAds.instance.maybeShowInterstitial(
-                    trigger: 'tab_switch_$target',
-                  ));
-                }
-              },
+            return AnimatedSlide(
+              duration: const Duration(milliseconds: 220),
+              curve: isExpanded ? Curves.easeInCubic : Curves.easeOutCubic,
+              offset: isExpanded ? const Offset(0, 1) : Offset.zero,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                curve: isExpanded ? Curves.easeInCubic : Curves.easeOutCubic,
+                opacity: isExpanded ? 0 : 1,
+                child: isExpanded
+                    ? const SizedBox(height: 64)
+                    : BottomTabBar(
+                        currentIndex: _index.clamp(0, 3),
+                        onTap: (i) {
+                          final target = i.clamp(0, 3);
+                          final changed = target != _index;
+                          if (changed) {
+                            unawaited(HapticFeedback.selectionClick());
+                          }
+                          setState(() {
+                            _index = target;
+                            currentTabIndexNotifier.value = target;
+                          });
+                          if (changed &&
+                              !VShotsPlaybackManager.instance.browser.isOpen) {
+                            unawaited(VShotsAds.instance.maybeShowInterstitial(
+                              trigger: 'tab_switch_$target',
+                            ));
+                          }
+                        },
+                      ),
+              ),
             );
           },
         ),
