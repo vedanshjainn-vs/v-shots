@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'package:audio_service/audio_service.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
@@ -23,6 +24,9 @@ import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
+import 'core/notifications/app_update_service.dart';
+import 'core/notifications/firebase_messaging_service.dart';
+import 'core/notifications/notification_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/remote_config/remote_feature_flags.dart';
 import 'core/backend/supabase_service.dart';
@@ -70,6 +74,10 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
 
+  // Initialize Firebase first (required for FCM)
+  await Firebase.initializeApp();
+  debugPrint('[Boot] Firebase initialized');
+
   await Future.wait([
     SupabaseService.initialize(),
     LocalLibrary.instance.initialize(),
@@ -78,8 +86,12 @@ void main() async {
     RemoteConfigService.instance.init(),
     AdFreeManager.instance.init(),
     AppVersion.load(),
+    NotificationService.instance.initialize(),
   ]);
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
+
+  // Initialize FCM (non-blocking, fire-and-forget)
+  unawaited(FirebaseMessagingService.instance.initialize());
 
   await AuthService.instance.initializeGoogleSignIn();
 
@@ -110,6 +122,9 @@ void main() async {
   );
   debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
   runApp(const VShotsApp());
+
+  // Check for app updates (non-blocking, fire-and-forget)
+  unawaited(AppUpdateService.instance.checkForUpdate());
 }
 
 // ═══════════════════════════════════════════════
