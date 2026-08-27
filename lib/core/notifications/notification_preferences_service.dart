@@ -34,7 +34,7 @@ class NotificationPreferencesService {
           .single();
 
       _cached = NotificationPreferences.fromJson(
-        response as Map<String, dynamic>,
+        response,
       );
       return _cached;
     } catch (e) {

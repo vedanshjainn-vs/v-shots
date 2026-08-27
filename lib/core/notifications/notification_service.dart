@@ -63,7 +63,7 @@ class NotificationService {
 
     // Music player channel (for media notifications)
     await androidPlugin.createNotificationChannel(
-      AndroidNotificationChannel(
+      const AndroidNotificationChannel(
         channelMusicPlayer,
         'V Shots Music Player',
         description: 'Media playback controls',
@@ -74,7 +74,7 @@ class NotificationService {
 
     // Updates channel
     await androidPlugin.createNotificationChannel(
-      AndroidNotificationChannel(
+      const AndroidNotificationChannel(
         channelUpdates,
         'V Shots Updates',
         description: 'App update notifications',
@@ -84,7 +84,7 @@ class NotificationService {
 
     // Recommendations channel
     await androidPlugin.createNotificationChannel(
-      AndroidNotificationChannel(
+      const AndroidNotificationChannel(
         channelRecommendations,
         'V Shots Recommendations',
         description: 'Personalized music recommendations',
@@ -94,7 +94,7 @@ class NotificationService {
 
     // New music channel
     await androidPlugin.createNotificationChannel(
-      AndroidNotificationChannel(
+      const AndroidNotificationChannel(
         channelNewMusic,
         'V Shots New Music',
         description: 'New music releases',
