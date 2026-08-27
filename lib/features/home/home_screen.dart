@@ -364,10 +364,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: SizedBox(
                     width: 132,
                     height: 132,
-                    child: AppImage(
-                      track['artwork'] as String?,
-                      fit: BoxFit.cover,
-                      errorIconColor: AppColors.primaryLight,
+                    child: ArtworkFadeIn(
+                      child: AppImage(
+                        track['artwork'] as String?,
+                        fit: BoxFit.cover,
+                        errorIconColor: AppColors.primaryLight,
+                      ),
                     ),
                   ),
                 ),
@@ -1443,11 +1445,13 @@ class _MoodGenreScreenState extends State<MoodGenreScreen> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 2),
                       leading: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: AppImage(
-                          t['artwork'] as String?,
-                          width: 52,
-                          height: 52,
-                          fit: BoxFit.cover,
+                        child: ArtworkFadeIn(
+                          child: AppImage(
+                            t['artwork'] as String?,
+                            width: 52,
+                            height: 52,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       title: Text(
@@ -1639,10 +1643,12 @@ class _SpotlightCarouselState extends State<_SpotlightCarousel> {
                       offset: const Offset(34, 0),
                       child: Opacity(
                         opacity: 0.6,
-                        child: AppImage(
-                          artwork,
-                          fit: BoxFit.cover,
-                          errorIconColor: Colors.white24,
+                        child: ArtworkFadeIn(
+                          child: AppImage(
+                            artwork,
+                            fit: BoxFit.cover,
+                            errorIconColor: Colors.white24,
+                          ),
                         ),
                       ),
                     ),

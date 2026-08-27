@@ -1446,12 +1446,14 @@ class _SearchScreenState extends State<SearchScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: AppImage(
-                          track['artwork'] as String?,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorIconColor: AppColors.accent,
+                        child: ArtworkFadeIn(
+                          child: AppImage(
+                            track['artwork'] as String?,
+                            width: 56,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorIconColor: AppColors.accent,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -2120,11 +2122,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(
-              t['artwork'] as String?,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
+            child: ArtworkFadeIn(
+              child: AppImage(
+                t['artwork'] as String?,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           title: Text(
@@ -2243,11 +2247,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(
-              t['artwork'] as String?,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
+            child: ArtworkFadeIn(
+              child: AppImage(
+                t['artwork'] as String?,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           title: Text(
@@ -2399,11 +2405,13 @@ void showMoreOptionsSheet(
               ListTile(
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: AppImage(
-                    track['artwork'] as String?,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
+                  child: ArtworkFadeIn(
+                    child: AppImage(
+                      track['artwork'] as String?,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 title: Text(

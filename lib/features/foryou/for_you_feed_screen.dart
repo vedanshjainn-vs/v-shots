@@ -1503,7 +1503,9 @@ class _ForYouCardState extends State<_ForYouCard>
                         fit: StackFit.expand,
                         children: [
                           if (artwork.isNotEmpty)
-                            AppImage(artwork, fit: BoxFit.cover)
+                            ArtworkFadeIn(
+                              child: AppImage(artwork, fit: BoxFit.cover),
+                            )
                           else
                             Container(color: AppColors.surface),
                           // Small play affordance on the cover.
