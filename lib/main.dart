@@ -25,7 +25,6 @@ import 'core/backend/auth_service.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
 import 'core/notifications/app_update_service.dart';
-import 'core/notifications/firebase_messaging_service.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/remote_config/remote_feature_flags.dart';
