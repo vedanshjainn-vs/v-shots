@@ -721,6 +721,18 @@ Future<void> playTrack(
     expanded: expanded,
   );
 
+  // Update the OS media notification with track metadata
+  final artworkUrl = (resolvedTrack['artwork'] as String?) ?? '';
+  audioHandler?.updateNowPlaying(MediaItem(
+    id: (resolvedTrack['id'] as String?) ?? '',
+    title: (resolvedTrack['title'] as String?) ?? 'Unknown',
+    artist: (resolvedTrack['artist'] as String?) ?? 'Unknown Artist',
+    artUri: artworkUrl.isNotEmpty ? Uri.parse(artworkUrl) : null,
+    duration: (resolvedTrack['duration'] as int?) != null
+        ? Duration(seconds: resolvedTrack['duration'] as int)
+        : null,
+  ));
+
   currentTrack = resolvedTrack;
   currentTrackNotifier.value = resolvedTrack;
   currentQueue = List<Map<String, dynamic>>.from(
