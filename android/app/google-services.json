@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "105125884222",
+    "project_id": "project-lyra-6e5af",
+    "storage_bucket": "project-lyra-6e5af.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:105125884222:android:3fbc119ab33aa673cc7c6f",
+        "android_client_info": {
+          "package_name": "com.vshots.live"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdseBzdRVuvnTmJGtXp_sbCdBtuQtqORI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
