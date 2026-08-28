@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../core/ads/ad_free_manager.dart';
 import '../../core/ads/ad_policy.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/motion/motion.dart';
@@ -235,6 +236,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _buildHeroHeader(),
               _buildContinueListeningHero(),
               _buildMoodChips(),
+              _buildRewardedAdFreeCard(),
               _buildSpotlightSliver(),
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
@@ -815,6 +817,84 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             s.tracks.isNotEmpty,
       )
       .toList();
+
+  /// Small rewarded ad card — lets users watch a short ad to get 60
+  /// minutes ad-free. Shown only when the user is NOT already ad-free.
+  /// Tapping opens the existing RewardsSheet which handles the full
+  /// rewarded-ad flow (VShotsAds.showRewarded → AdFreeManager grant).
+  Widget _buildRewardedAdFreeCard() {
+    if (AdFreeManager.instance.isAdFree) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        child: GestureDetector(
+          onTap: () => RewardsSheet.show(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock_open_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Remove ads for 60 min',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Watch a short video • Free',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.play_circle_fill_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildSpotlightSliver() {
     final spots = _spotlightShelves();
