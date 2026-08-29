@@ -496,16 +496,15 @@ class _MainShellState extends State<MainShell> {
             // Positioned.fill MUST be a direct Stack child — MiniPlayerTransition
             // wraps the inner content, not the Positioned itself.
             Positioned.fill(
-              child: MiniPlayerTransition(
-                visible: VShotsPlaybackManager.instance.browser.isOpen,
-                child: AnimatedBuilder(
-                  animation: VShotsPlaybackManager.instance.browser,
-                  builder: (context, _) {
-                    final b = VShotsPlaybackManager.instance.browser;
-                    if (!b.isOpen) return const SizedBox.shrink();
-                    return DiscoveryBrowserSheet(controller: b);
-                  },
-                ),
+              child: AnimatedBuilder(
+                animation: VShotsPlaybackManager.instance.browser,
+                builder: (context, _) {
+                  final b = VShotsPlaybackManager.instance.browser;
+                  return MiniPlayerTransition(
+                    visible: b.isOpen,
+                    child: b.isOpen ? DiscoveryBrowserSheet(controller: b) : const SizedBox.shrink(),
+                  );
+                },
               ),
             ),
           ],
