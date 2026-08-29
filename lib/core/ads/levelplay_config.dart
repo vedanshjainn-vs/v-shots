@@ -123,9 +123,9 @@ class LevelPlayConfig {
   static String? get appKey => _useDebugTestCredentials
       ? _testAppKey
       : (_env('LEVELPLAY_APP_KEY') ??
-          (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
-              ? _testAppKey
-              : null));
+            (kDebugMode && debugTestFallbackEnabled && !debugIsRunningInTests
+                ? _testAppKey
+                : null));
 
   /// Whether the advertising layer is configured at all.
   static bool get isConfigured => appKey != null;

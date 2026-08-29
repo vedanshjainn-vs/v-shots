@@ -34,7 +34,7 @@ class MusicRepository {
   /// page (null when exhausted). Routed through ProviderManager, so the
   /// primary (InnerTube) provider is tried first with failover to YouTube.
   Future<({List<Map<String, dynamic>> tracks, String? nextPageToken})>
-      searchPaginated(
+  searchPaginated(
     String query, {
     String order = 'relevance',
     int limit = 20,
@@ -50,17 +50,17 @@ class MusicRepository {
     );
     final ({List<Map<String, dynamic>> tracks, String? nextPageToken}) page =
         result.isSuccess && result.data != null
-            ? (
-                tracks: result.data!.tracks.map((t) => t.toTrackMap()).toList(),
-                nextPageToken: result.data!.nextPageToken,
-              )
-            : (tracks: <Map<String, dynamic>>[], nextPageToken: null);
+        ? (
+            tracks: result.data!.tracks.map((t) => t.toTrackMap()).toList(),
+            nextPageToken: result.data!.nextPageToken,
+          )
+        : (tracks: <Map<String, dynamic>>[], nextPageToken: null);
     return page;
   }
 
   /// Detailed search that preserves success/failure distinction.
   Future<({bool success, List<Map<String, dynamic>> tracks, String? error})>
-      searchDetailed(
+  searchDetailed(
     String query, {
     String order = 'relevance',
     int limit = 20,

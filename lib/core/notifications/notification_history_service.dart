@@ -121,10 +121,13 @@ class NotificationHistoryService {
 
   Future<void> recordOpened(String notificationId) async {
     try {
-      await SupabaseService.client.from('notification_history').update({
-        'opened_at': DateTime.now().toIso8601String(),
-        'clicked': true,
-      }).eq('id', notificationId);
+      await SupabaseService.client
+          .from('notification_history')
+          .update({
+            'opened_at': DateTime.now().toIso8601String(),
+            'clicked': true,
+          })
+          .eq('id', notificationId);
     } catch (e) {
       debugPrint('[NotifHistory] Opened record failed: $e');
     }

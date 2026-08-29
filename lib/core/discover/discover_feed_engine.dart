@@ -108,10 +108,10 @@ class DiscoverFeedEngine {
     RecommendationEngine? recommendationEngine,
     MusicRecommendationEngine? musicEngine,
     @visibleForTesting Map<String, double>? artistScoresOverride,
-  })  : _repository = repository,
-        _recommendationEngine = recommendationEngine,
-        _musicEngine = musicEngine,
-        _artistScoresOverride = artistScoresOverride;
+  }) : _repository = repository,
+       _recommendationEngine = recommendationEngine,
+       _musicEngine = musicEngine,
+       _artistScoresOverride = artistScoresOverride;
 
   final MusicRepository? _repository;
   final RecommendationEngine? _recommendationEngine;
@@ -264,22 +264,21 @@ class DiscoverFeedEngine {
   /// matches those picks (personal stays the top bucket but every pool gets
   /// the filter tokens applied to its queries).
   static DiscoverWeights _filterFirstWeights() => const DiscoverWeights(
-        personal: 0.50,
-        trending: 0.10,
-        fresh: 0.25,
-        exploration: 0.15,
-      );
+    personal: 0.50,
+    trending: 0.10,
+    fresh: 0.25,
+    exploration: 0.15,
+  );
 
   static List<String> _filterTokens(
     List<String> languages,
     List<String> moods,
     List<String> regions,
-  ) =>
-      <String>[
-        ...moods,
-        ...languages,
-        ...regions,
-      ].where((t) => t.trim().isNotEmpty).toList();
+  ) => <String>[
+    ...moods,
+    ...languages,
+    ...regions,
+  ].where((t) => t.trim().isNotEmpty).toList();
 
   Future<List<_ScoredCandidate>> _personalPool(
     Set<String> excludeIds,
@@ -317,35 +316,36 @@ class DiscoverFeedEngine {
                   .toList(),
             )
             .catchError((Object e) {
-          debugPrint('[DiscoverEngine] music engine pool failed: $e');
-          return <_ScoredCandidate>[];
-        }),
+              debugPrint('[DiscoverEngine] music engine pool failed: $e');
+              return <_ScoredCandidate>[];
+            }),
       if (rec != null)
         rec
             .generateFeed(
-          intent: FeedIntent.forYou,
-          excludeIds: excludeIds,
-          count: 12,
-          forceRefresh: true,
-        )
+              intent: FeedIntent.forYou,
+              excludeIds: excludeIds,
+              count: 12,
+              forceRefresh: true,
+            )
             .then<List<_ScoredCandidate>>((scored) {
-          final list = <_ScoredCandidate>[];
-          for (final s in scored) {
-            final map = s.track.toTrackMap();
-            map['discoverSourceQuery'] = 'personal';
-            list.add(
-              _ScoredCandidate(
-                map,
-                DiscoverBucket.personal,
-                'taste-engine',
-              ),
-            );
-          }
-          return list;
-        }).catchError((Object e) {
-          debugPrint('[DiscoverEngine] rec engine pool failed: $e');
-          return <_ScoredCandidate>[];
-        }),
+              final list = <_ScoredCandidate>[];
+              for (final s in scored) {
+                final map = s.track.toTrackMap();
+                map['discoverSourceQuery'] = 'personal';
+                list.add(
+                  _ScoredCandidate(
+                    map,
+                    DiscoverBucket.personal,
+                    'taste-engine',
+                  ),
+                );
+              }
+              return list;
+            })
+            .catchError((Object e) {
+              debugPrint('[DiscoverEngine] rec engine pool failed: $e');
+              return <_ScoredCandidate>[];
+            }),
     ]);
     for (final list in engineResults) {
       out.addAll(list);
@@ -412,9 +412,9 @@ class DiscoverFeedEngine {
                   .toList(),
             )
             .catchError((Object e) {
-          debugPrint('[DiscoverEngine] trending pool failed: $e');
-          return <_ScoredCandidate>[];
-        }),
+              debugPrint('[DiscoverEngine] trending pool failed: $e');
+              return <_ScoredCandidate>[];
+            }),
       _queryPool(
         'trending songs official music video',
         excludeIds,
@@ -592,11 +592,13 @@ class DiscoverFeedEngine {
     );
 
     // 1. Taste match (30%) — long-term artist/genre affinity.
-    final maxArtistScore =
-        artistScores.isEmpty ? 1.0 : artistScores.values.reduce(max);
+    final maxArtistScore = artistScores.isEmpty
+        ? 1.0
+        : artistScores.values.reduce(max);
     final artistTaste = artistScores[artist] ?? artistScores[artistKey] ?? 0.0;
-    final artistMatch =
-        maxArtistScore <= 0 ? 0.0 : artistTaste / maxArtistScore;
+    final artistMatch = maxArtistScore <= 0
+        ? 0.0
+        : artistTaste / maxArtistScore;
     final genreMatch = activeGenres.isEmpty
         ? 0.0
         : (genres.where(activeGenres.contains).length / max(1, genres.length));
@@ -619,8 +621,9 @@ class DiscoverFeedEngine {
 
     // 5. Freshness (10%) — release age decay 0..14 days.
     final age = (track['ageDays'] as num?)?.toDouble();
-    final fresh =
-        age == null ? 0.5 : (1 - (age.clamp(0, 14) / 14)).clamp(0.0, 1.0);
+    final fresh = age == null
+        ? 0.5
+        : (1 - (age.clamp(0, 14) / 14)).clamp(0.0, 1.0);
 
     // 6. Popularity (5%).
     final popularity = trending * 0.5;
@@ -631,8 +634,8 @@ class DiscoverFeedEngine {
     // 8. Diversity (5%) — bonus when artist is absent from the window.
     final diversity =
         recentArtists.any((a) => a.trim().toLowerCase() == artistKey)
-            ? 0.0
-            : 1.0;
+        ? 0.0
+        : 1.0;
 
     // 9. Exploration (5%) — bucket bonus.
     final exploration = bucket == DiscoverBucket.exploration ? 1.0 : 0.0;
@@ -668,7 +671,8 @@ class DiscoverFeedEngine {
     }
     final artist = (track['artist'] as String?) ?? '';
     final artistKey = artist.trim().toLowerCase();
-    final inTasteProfile = artistKey.isNotEmpty &&
+    final inTasteProfile =
+        artistKey.isNotEmpty &&
         (artistScores[artist] != null || artistScores[artistKey] != null);
     if (inTasteProfile) {
       return 'because_you_listened_to_$artist';

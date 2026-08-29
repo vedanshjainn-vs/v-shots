@@ -103,16 +103,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     unawaited(
       homeFeedService
           .loadShelfRange(
-        _shelves,
-        _maxLoadedShelves,
-        end,
-        onUpdate: _onShelfUpdate,
-      )
+            _shelves,
+            _maxLoadedShelves,
+            end,
+            onUpdate: _onShelfUpdate,
+          )
           .whenComplete(() {
-        _maxLoadedShelves = end;
-        _loadingMoreShelves = false;
-        _onShelfUpdate();
-      }),
+            _maxLoadedShelves = end;
+            _loadingMoreShelves = false;
+            _onShelfUpdate();
+          }),
     );
   }
 
@@ -182,8 +182,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       s.tracks = List<Map<String, dynamic>>.from(
         LocalLibrary.instance.recentlyPlayed.value,
       ).take(s.limit).toList();
-      s.status =
-          s.tracks.isEmpty ? HomeShelfStatus.hidden : HomeShelfStatus.loaded;
+      s.status = s.tracks.isEmpty
+          ? HomeShelfStatus.hidden
+          : HomeShelfStatus.loaded;
     }
     _onShelfUpdate();
   }
@@ -291,8 +292,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final greeting = hour < 12
         ? 'Good morning'
         : hour < 17
-            ? 'Good afternoon'
-            : 'Good evening';
+        ? 'Good afternoon'
+        : 'Good evening';
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 4),
@@ -344,8 +345,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             GestureDetector(
               onTap: () => RewardsSheet.show(context),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(12),
@@ -360,8 +363,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.card_giftcard_rounded,
-                        color: Colors.white, size: 16),
+                    Icon(
+                      Icons.card_giftcard_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
                     SizedBox(width: 4),
                     Text(
                       'Free',
@@ -875,10 +881,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       SizedBox(height: 2),
                       Text(
                         'Watch a short video • Free',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                     ],
                   ),
@@ -1258,10 +1261,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: (isThisPlaying
-                                              ? AppColors.primary
-                                              : AppColors.accent)
-                                          .withValues(alpha: 0.4),
+                                      color:
+                                          (isThisPlaying
+                                                  ? AppColors.primary
+                                                  : AppColors.accent)
+                                              .withValues(alpha: 0.4),
                                       blurRadius: 8,
                                     ),
                                   ],
@@ -1565,64 +1569,63 @@ class _MoodGenreScreenState extends State<MoodGenreScreen> {
               child: CircularProgressIndicator(color: AppColors.accent),
             )
           : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _error!,
-                        style: const TextStyle(color: AppColors.textMuted),
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                          onPressed: _load, child: const Text('Retry')),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.textMuted),
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
-                  itemCount: _tracks.length,
-                  itemBuilder: (c, i) {
-                    final t = _tracks[i];
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(vertical: 2),
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: ArtworkFadeIn(
-                          child: AppImage(
-                            t['artwork'] as String?,
-                            width: 52,
-                            height: 52,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(onPressed: _load, child: const Text('Retry')),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+              itemCount: _tracks.length,
+              itemBuilder: (c, i) {
+                final t = _tracks[i];
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 2),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: ArtworkFadeIn(
+                      child: AppImage(
+                        t['artwork'] as String?,
+                        width: 52,
+                        height: 52,
+                        fit: BoxFit.cover,
                       ),
-                      title: Text(
-                        (t['title'] as String?) ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                      ),
-                      subtitle: Text(
-                        (t['artist'] as String?) ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                      trailing: const Icon(
-                        Icons.play_circle_filled_rounded,
-                        color: AppColors.accent,
-                      ),
-                      onTap: () => playTrack(context, t, _tracks, i),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                  title: Text(
+                    (t['title'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: Text(
+                    (t['artist'] as String?) ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                  trailing: const Icon(
+                    Icons.play_circle_filled_rounded,
+                    color: AppColors.accent,
+                  ),
+                  onTap: () => playTrack(context, t, _tracks, i),
+                );
+              },
+            ),
     );
   }
 }

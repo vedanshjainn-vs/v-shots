@@ -45,7 +45,8 @@ class DiversityFilter {
       int chosenIndex = 0;
       for (var i = 0; i < remaining.length; i++) {
         final candidateArtist = remaining[i].track.artist;
-        final wouldViolate = candidateArtist == lastArtist &&
+        final wouldViolate =
+            candidateArtist == lastArtist &&
             consecutiveCount >= config.maxConsecutiveSameArtist;
         if (!wouldViolate) {
           chosenIndex = i;

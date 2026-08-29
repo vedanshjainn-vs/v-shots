@@ -15,8 +15,8 @@ class MusicRecommendationContext {
     this.excludeIds = const {},
     MusicSeenStore? seenStore,
     MusicSessionState? session,
-  })  : seenStore = seenStore ?? MusicSeenStore(),
-        session = session ?? MusicSessionState();
+  }) : seenStore = seenStore ?? MusicSeenStore(),
+       session = session ?? MusicSessionState();
 
   /// 'for_you' | 'trending' | 'new' | 'viral' | 'popular' | 'latest'.
   final String mode;

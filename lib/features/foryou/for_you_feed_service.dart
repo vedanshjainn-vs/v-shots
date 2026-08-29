@@ -14,7 +14,7 @@ import '../../core/storage/local_library.dart';
 
 class ForYouFeedService {
   ForYouFeedService({MusicRepository? repository})
-      : _repository = repository ?? buildMusicRepository();
+    : _repository = repository ?? buildMusicRepository();
 
   final MusicRepository _repository;
   final _random = Random();
@@ -382,9 +382,10 @@ class ForYouFeedService {
       if (roll < 0.45) {
         return '$artist songs official audio';
       } else {
-        final template = _genreDiscoveryTemplates[_random.nextInt(
-          _genreDiscoveryTemplates.length,
-        )];
+        final template =
+            _genreDiscoveryTemplates[_random.nextInt(
+              _genreDiscoveryTemplates.length,
+            )];
         return template.replaceAll('{artist}', artist);
       }
     }
@@ -397,8 +398,8 @@ class ForYouFeedService {
     final pool = hour >= 22 || hour < 5
         ? _nightQueries
         : hour >= 17
-            ? _eveningQueries
-            : _dayQueries;
+        ? _eveningQueries
+        : _dayQueries;
     return pool[_random.nextInt(pool.length)];
   }
 }

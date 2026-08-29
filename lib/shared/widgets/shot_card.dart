@@ -268,8 +268,9 @@ class _ShotCardState extends State<ShotCard> {
                       _shot.isBookmarked
                           ? Icons.bookmark_rounded
                           : Icons.bookmark_border_rounded,
-                      color:
-                          _shot.isBookmarked ? AppColors.warning : Colors.white,
+                      color: _shot.isBookmarked
+                          ? AppColors.warning
+                          : Colors.white,
                       size: 22,
                     ),
                   ),

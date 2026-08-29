@@ -30,12 +30,12 @@ class AppAvatar extends StatelessWidget {
     final hasImage = avatarUrl != null && avatarUrl!.trim().isNotEmpty;
     final initials = name.trim().isNotEmpty
         ? name
-            .trim()
-            .split(' ')
-            .map((e) => e.isNotEmpty ? e[0] : '')
-            .take(2)
-            .join()
-            .toUpperCase()
+              .trim()
+              .split(' ')
+              .map((e) => e.isNotEmpty ? e[0] : '')
+              .take(2)
+              .join()
+              .toUpperCase()
         : 'V';
 
     Widget innerAvatar;

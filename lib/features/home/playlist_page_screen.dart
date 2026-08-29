@@ -220,7 +220,8 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
     // native card after the 10th track (when the list is long enough) and an
     // in-flow banner at the bottom. When policy denies, the list is exactly
     // the plain track list (no layout change).
-    final bool showNative = _tracks.length >= AdConfig.playlistAdAfter &&
+    final bool showNative =
+        _tracks.length >= AdConfig.playlistAdAfter &&
         AdPolicy.instance.canShowNative(AdPlacement.playlist);
     final bool showBanner = AdPolicy.instance.canShowBanner(
       AdPlacement.playlist,
@@ -233,8 +234,9 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
         if (showNative && i == AdConfig.playlistAdAfter) {
           return const NativeAdWidget(placement: AdPlacement.playlist);
         }
-        final int trackIndex =
-            showNative && i > AdConfig.playlistAdAfter ? i - 1 : i;
+        final int trackIndex = showNative && i > AdConfig.playlistAdAfter
+            ? i - 1
+            : i;
         if (i == _tracks.length + (showNative ? 1 : 0)) {
           return const AdBannerWidget(placement: AdPlacement.playlist);
         }

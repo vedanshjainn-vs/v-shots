@@ -33,9 +33,7 @@ class NotificationPreferencesService {
           .eq('user_id', user.id)
           .single();
 
-      _cached = NotificationPreferences.fromJson(
-        response,
-      );
+      _cached = NotificationPreferences.fromJson(response);
       return _cached;
     } catch (e) {
       debugPrint('[NotifPrefs] Fetch failed: $e');
@@ -58,7 +56,8 @@ class NotificationPreferencesService {
 
     final prefs = await getPreferences();
 
-    final updated = prefs?.copyWith(
+    final updated =
+        prefs?.copyWith(
           notificationsEnabled: notificationsEnabled,
           newMusicEnabled: newMusicEnabled,
           recommendationsEnabled: recommendationsEnabled,

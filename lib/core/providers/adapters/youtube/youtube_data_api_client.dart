@@ -54,7 +54,8 @@ class YouTubeVideoItem {
     final high = thumbnails['high']?['url'] as String?;
     final medium = thumbnails['medium']?['url'] as String?;
     final def = thumbnails['default']?['url'] as String?;
-    final thumb = maxres ??
+    final thumb =
+        maxres ??
         high ??
         medium ??
         def ??
@@ -129,8 +130,8 @@ class YouTubeDataApiClient {
   };
 
   YouTubeDataApiClient({http.Client? httpClient, String? apiKey})
-      : _http = httpClient ?? http.Client(),
-        _customApiKey = apiKey;
+    : _http = httpClient ?? http.Client(),
+      _customApiKey = apiKey;
 
   final http.Client _http;
   final String? _customApiKey;
@@ -264,13 +265,16 @@ class YouTubeDataApiClient {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       if (items.isEmpty) return null;
-      final snippet = (items.first as Map<String, dynamic>)['snippet']
-          as Map<String, dynamic>?;
+      final snippet =
+          (items.first as Map<String, dynamic>)['snippet']
+              as Map<String, dynamic>?;
       if (snippet == null) return null;
       final thumbs = (snippet['thumbnails'] as Map<String, dynamic>?) ?? {};
-      final url = (thumbs['high']?['url'] ??
-          thumbs['medium']?['url'] ??
-          thumbs['default']?['url']) as String?;
+      final url =
+          (thumbs['high']?['url'] ??
+                  thumbs['medium']?['url'] ??
+                  thumbs['default']?['url'])
+              as String?;
       return (url == null || url.isEmpty) ? null : url;
     } catch (e) {
       debugPrint('[YouTubeDataApiClient] resolveChannelAvatar error: $e');
@@ -314,8 +318,8 @@ class YouTubeDataApiClient {
       if (pageToken != null && pageToken.isNotEmpty) {
         params['pageToken'] = pageToken;
       }
-      final uri =
-          Uri.parse('$_baseUrl/search').replace(queryParameters: params);
+      final uri = Uri.parse('$_baseUrl/search')
+          .replace(queryParameters: params);
       final response = await _http
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));
@@ -390,8 +394,9 @@ class YouTubeDataApiClient {
           'part': 'snippet,contentDetails',
           'chart': 'mostPopular',
           'videoCategoryId': '10',
-          'regionCode':
-              region.trim().isEmpty ? 'IN' : region.trim().toUpperCase(),
+          'regionCode': region.trim().isEmpty
+              ? 'IN'
+              : region.trim().toUpperCase(),
           'maxResults': maxResults.clamp(1, 50).toString(),
           'key': key,
         },
@@ -422,8 +427,9 @@ class YouTubeDataApiClient {
   Future<String?> resolveHandleToChannelId(String handle) async {
     final key = apiKey;
     if (key.isEmpty) return null;
-    final h =
-        handle.trim().startsWith('@') ? handle.trim() : '@${handle.trim()}';
+    final h = handle.trim().startsWith('@')
+        ? handle.trim()
+        : '@${handle.trim()}';
     try {
       final uri = Uri.parse('$_baseUrl/channels')
           .replace(queryParameters: {'part': 'id', 'forHandle': h, 'key': key});

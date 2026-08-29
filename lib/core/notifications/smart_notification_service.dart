@@ -14,8 +14,10 @@
 
 import 'dart:async';
 import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../storage/local_library.dart';
 import 'notification_service.dart';
 
@@ -131,7 +133,8 @@ class SmartNotificationService {
         return _SmartNotification(
           id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
           title: 'Continue listening 🎵',
-          body: 'Pick up where you left off with ${track['title'] ?? 'your music'}',
+          body:
+              'Pick up where you left off with ${track['title'] ?? 'your music'}',
           payload: 'song:${track['id'] ?? ''}',
         );
 
@@ -178,7 +181,9 @@ class SmartNotificationService {
 
     await prefs.setInt(keyNotificationCount, count + 1);
     await prefs.setString(
-        keyLastNotificationTime, DateTime.now().toIso8601String());
+      keyLastNotificationTime,
+      DateTime.now().toIso8601String(),
+    );
   }
 
   void dispose() {

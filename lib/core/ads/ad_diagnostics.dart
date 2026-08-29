@@ -63,7 +63,8 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
   Future<void> _testRewarded() async {
     setState(() {
       _busyRew = true;
-      _rewResult = 'requesting… (watch it to the end — reward is granted '
+      _rewResult =
+          'requesting… (watch it to the end — reward is granted '
           'only when LevelPlay confirms completion)';
     });
     final result = await VShotsLevelPlay.instance.testRewarded();
@@ -87,8 +88,8 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
     final appKeyState = !LevelPlayConfig.isConfigured
         ? 'MISSING'
         : (LevelPlayConfig.usingTestCredentials
-            ? 'CONFIGURED (official Unity TEST key — debug only)'
-            : 'CONFIGURED');
+              ? 'CONFIGURED (official Unity TEST key — debug only)'
+              : 'CONFIGURED');
 
     Widget kv(String label, String value, {bool alert = false}) {
       return Padding(
@@ -107,8 +108,9 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
               child: Text(
                 value,
                 style: TextStyle(
-                  color:
-                      alert ? const Color(0xFFFFB4B4) : const Color(0xFFF2F4F8),
+                  color: alert
+                      ? const Color(0xFFFFB4B4)
+                      : const Color(0xFFF2F4F8),
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
@@ -387,7 +389,11 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
               letterSpacing: 0.5,
             ),
           ),
-          ...AdAnalytics.session.toList(growable: false).reversed.take(6).map(
+          ...AdAnalytics.session
+              .toList(growable: false)
+              .reversed
+              .take(6)
+              .map(
                 (e) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 1),
                   child: Text(
