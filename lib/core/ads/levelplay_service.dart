@@ -296,8 +296,8 @@ class VShotsLevelPlay {
     }
     final err = formatErrors['interstitial'];
     return 'FAILED to load (30 s): ${err ?? 'no fill — check the LevelPlay '
-            'dashboard: is the unit created & active? is this device a '
-            'registered TEST DEVICE? are networks enabled on the unit?'}';
+        'dashboard: is the unit created & active? is this device a '
+        'registered TEST DEVICE? are networks enabled on the unit?'}';
   }
 
   Future<String> testRewarded() async {

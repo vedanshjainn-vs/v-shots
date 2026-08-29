@@ -155,8 +155,8 @@ class VShotsPlaybackManager extends ChangeNotifier {
     if (_shuffle && _shuffleOrder.length == _queue.length) {
       final pos = _shuffleOrder.indexOf(_index);
       final safePos = pos == -1 ? 0 : pos;
-      return _shuffleOrder[(safePos + delta + _shuffleOrder.length) %
-          _shuffleOrder.length];
+      return _shuffleOrder[
+          (safePos + delta + _shuffleOrder.length) % _shuffleOrder.length];
     }
     return (_index + delta + _queue.length) % _queue.length;
   }

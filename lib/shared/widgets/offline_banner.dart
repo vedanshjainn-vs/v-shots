@@ -42,8 +42,8 @@ class _OfflineBannerState extends State<OfflineBanner>
     );
     _slideAnimation =
         Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(
-          CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-        );
+      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
+    );
 
     // Check initial connectivity state (non-blocking).
     unawaited(_checkInitial());

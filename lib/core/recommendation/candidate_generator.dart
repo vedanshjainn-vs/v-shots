@@ -133,10 +133,9 @@ class CandidateGenerator {
     // artists, not just their own catalog).
     final topArtists = profile.topArtists.take(5).toList();
     for (final artist in topArtists) {
-      final template =
-          _genreDiscoveryTemplates[_random.nextInt(
-            _genreDiscoveryTemplates.length,
-          )];
+      final template = _genreDiscoveryTemplates[_random.nextInt(
+        _genreDiscoveryTemplates.length,
+      )];
       candidates.add(
         CandidateQuery(
           query: template.replaceAll('{artist}', artist),
@@ -220,11 +219,10 @@ class CandidateGenerator {
 
     // 8. Exploration — genres OUTSIDE the user's current top genres,
     // for real discovery rather than an echo chamber (Part O).
-    final unexploredGenres =
-        _allKnownGenreQueries.keys
-            .where((g) => !profile.topGenres.take(3).contains(g))
-            .toList()
-          ..shuffle(_random);
+    final unexploredGenres = _allKnownGenreQueries.keys
+        .where((g) => !profile.topGenres.take(3).contains(g))
+        .toList()
+      ..shuffle(_random);
     for (final genre in unexploredGenres.take(2)) {
       candidates.add(
         CandidateQuery(

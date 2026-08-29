@@ -19,12 +19,11 @@ import 'music_candidate.dart';
 import 'music_entity_resolver.dart';
 import 'music_validator.dart';
 
-typedef MusicSearch =
-    Future<List<Map<String, dynamic>>> Function(
-      String query, {
-      required int limit,
-      Set<String> excludeIds,
-    });
+typedef MusicSearch = Future<List<Map<String, dynamic>>> Function(
+  String query, {
+  required int limit,
+  Set<String> excludeIds,
+});
 
 class MusicCandidateGenerator {
   MusicCandidateGenerator({
@@ -32,9 +31,9 @@ class MusicCandidateGenerator {
     MusicEntityResolver resolver = const MusicEntityResolver(),
     MusicContentValidator validator = const MusicContentValidator(),
     this.config = MusicRecommendationConfig.defaultConfig,
-  }) : _search = search,
-       _resolver = resolver,
-       _validator = validator;
+  })  : _search = search,
+        _resolver = resolver,
+        _validator = validator;
 
   final MusicSearch _search;
   final MusicEntityResolver _resolver;
@@ -292,9 +291,10 @@ class MusicCandidateGenerator {
       add('exploration', '$filterTokens playlist official audio', 1);
     } else {
       final explored = profile.topGenres.take(3).toSet();
-      final unknown =
-          _genreQueries.keys.where((g) => !explored.contains(g)).toList()
-            ..shuffle();
+      final unknown = _genreQueries.keys
+          .where((g) => !explored.contains(g))
+          .toList()
+        ..shuffle();
       for (final genre in unknown.take(quotas['exploration'] ?? 0)) {
         add('exploration', _genreQueries[genre]!, 1, seedGenre: genre);
       }

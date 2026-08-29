@@ -49,21 +49,19 @@ class ProviderConfig {
   );
 
   Map<String, dynamic> toJson() => {
-    'activeProvider': activeProvider,
-    'enabledProviders': enabledProviders,
-    'providerPriority': providerPriority,
-  };
+        'activeProvider': activeProvider,
+        'enabledProviders': enabledProviders,
+        'providerPriority': providerPriority,
+      };
 
   factory ProviderConfig.fromJson(Map<String, dynamic> json) {
     return ProviderConfig(
       activeProvider: json['activeProvider'] as String? ?? 'innertube',
-      enabledProviders:
-          (json['enabledProviders'] as List?)
+      enabledProviders: (json['enabledProviders'] as List?)
               ?.map((e) => e as String)
               .toList() ??
           const ['innertube', 'youtube'],
-      providerPriority:
-          (json['providerPriority'] as List?)
+      providerPriority: (json['providerPriority'] as List?)
               ?.map((e) => e as String)
               .toList() ??
           const ['innertube', 'youtube'],

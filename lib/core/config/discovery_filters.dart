@@ -219,14 +219,15 @@ class DiscoveryFilterConfig {
     List<DiscoveryFilterOption>? genres,
     List<DiscoveryFilterOption>? decades,
     List<DiscoveryFilterOption>? activities,
-  }) => DiscoveryFilterConfig(
-    source: source ?? this.source,
-    moods: moods ?? this.moods,
-    languages: languages ?? this.languages,
-    genres: genres ?? this.genres,
-    decades: decades ?? this.decades,
-    activities: activities ?? this.activities,
-  );
+  }) =>
+      DiscoveryFilterConfig(
+        source: source ?? this.source,
+        moods: moods ?? this.moods,
+        languages: languages ?? this.languages,
+        genres: genres ?? this.genres,
+        decades: decades ?? this.decades,
+        activities: activities ?? this.activities,
+      );
 }
 
 String buildDiscoveryQuery({

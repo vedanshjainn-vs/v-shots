@@ -56,8 +56,7 @@ class NotificationPreferencesService {
 
     final prefs = await getPreferences();
 
-    final updated =
-        prefs?.copyWith(
+    final updated = prefs?.copyWith(
           notificationsEnabled: notificationsEnabled,
           newMusicEnabled: newMusicEnabled,
           recommendationsEnabled: recommendationsEnabled,

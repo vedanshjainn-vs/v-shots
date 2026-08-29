@@ -37,9 +37,8 @@ class AdFreeManager {
       final prefs = await SharedPreferences.getInstance();
       _permanent = prefs.getBool(_premiumKey) ?? false;
       final until = prefs.getInt(_adFreeUntilKey);
-      _adFreeUntil = until != null
-          ? DateTime.fromMillisecondsSinceEpoch(until)
-          : null;
+      _adFreeUntil =
+          until != null ? DateTime.fromMillisecondsSinceEpoch(until) : null;
     } catch (e) {
       // Fail-safe: unreadable prefs ⇒ NOT ad-free (normal behavior).
       debugPrint('[AdFree] init error: $e');

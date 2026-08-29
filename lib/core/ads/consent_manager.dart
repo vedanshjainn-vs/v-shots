@@ -39,9 +39,9 @@ class ConsentManager {
 
   /// Builds the AdRequest honoring the current consent decision.
   AdRequest buildAdRequest() => AdRequest(
-    keywords: const ['music'],
-    nonPersonalizedAds: !canRequestPersonalizedAds,
-  );
+        keywords: const ['music'],
+        nonPersonalizedAds: !canRequestPersonalizedAds,
+      );
 
   /// Resets consent (testing / user-initiated privacy options).
   Future<void> reset() async {

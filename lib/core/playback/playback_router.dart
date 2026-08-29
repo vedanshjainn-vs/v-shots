@@ -29,11 +29,11 @@ class PlaybackTarget {
   });
 
   factory PlaybackTarget.unavailable(String reason) => PlaybackTarget(
-    source: PlaybackSource.youtube,
-    url: '',
-    available: false,
-    unavailableReason: reason,
-  );
+        source: PlaybackSource.youtube,
+        url: '',
+        available: false,
+        unavailableReason: reason,
+      );
 
   final PlaybackSource source;
   final String url;

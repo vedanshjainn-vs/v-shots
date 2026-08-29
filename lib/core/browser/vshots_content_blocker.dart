@@ -46,7 +46,7 @@ class AdBlockRule {
 /// Every V Shots browser WebView MUST use this class.
 class VShotsContentBlocker {
   VShotsContentBlocker({List<String> essentialHosts = const []})
-    : _additionalEssentialHosts = essentialHosts;
+      : _additionalEssentialHosts = essentialHosts;
 
   static const _kUserAllow = 'v_shots.content_blocker.user_allow.v1';
 
