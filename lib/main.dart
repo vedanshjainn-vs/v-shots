@@ -500,9 +500,11 @@ class _MainShellState extends State<MainShell> {
                 animation: VShotsPlaybackManager.instance.browser,
                 builder: (context, _) {
                   final b = VShotsPlaybackManager.instance.browser;
-                  return MiniPlayerTransition(
-                    visible: b.isOpen,
-                    child: b.isOpen ? DiscoveryBrowserSheet(controller: b) : const SizedBox.shrink(),
+                  return RepaintBoundary(
+                    child: MiniPlayerTransition(
+                      visible: b.isOpen,
+                      child: b.isOpen ? DiscoveryBrowserSheet(controller: b) : const SizedBox.shrink(),
+                    ),
                   );
                 },
               ),
