@@ -109,8 +109,12 @@ void main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.vshots.live.channel.audio',
       androidNotificationChannelName: 'V Shots playback',
+      androidNotificationChannelDescription: 'Media playback controls for V Shots',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidShowNotificationBadge: true,
+      androidNotificationClickStartsActivity: true,
     ),
   );
 
@@ -723,15 +727,26 @@ Future<void> playTrack(
 
   // Update the OS media notification with track metadata
   final artworkUrl = (resolvedTrack['artwork'] as String?) ?? '';
+  final trackTitle = (resolvedTrack['title'] as String?) ?? 'Unknown';
+  final trackArtist = (resolvedTrack['artist'] as String?) ?? 'Unknown Artist';
+  final trackId = (resolvedTrack['id'] as String?) ?? '';
+  final trackDuration = resolvedTrack['duration'] as int?;
+
+  debugPrint('[VShots] Updating media notification: $trackTitle by $trackArtist');
+  debugPrint('[VShots] Artwork URL: $artworkUrl');
+
   audioHandler?.updateNowPlaying(MediaItem(
-    id: (resolvedTrack['id'] as String?) ?? '',
-    title: (resolvedTrack['title'] as String?) ?? 'Unknown',
-    artist: (resolvedTrack['artist'] as String?) ?? 'Unknown Artist',
-    artUri: artworkUrl.isNotEmpty ? Uri.parse(artworkUrl) : null,
-    duration: (resolvedTrack['duration'] as int?) != null
-        ? Duration(seconds: resolvedTrack['duration'] as int)
-        : null,
+    id: trackId,
+    title: trackTitle,
+    artist: trackArtist,
+    artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,
+    duration: trackDuration != null ? Duration(seconds: trackDuration) : null,
   ));
+
+  // Ensure audio_service starts the foreground notification
+  if (!audioPlayer.playing) {
+    unawaited(audioHandler?.play());
+  }
 
   currentTrack = resolvedTrack;
   currentTrackNotifier.value = resolvedTrack;
