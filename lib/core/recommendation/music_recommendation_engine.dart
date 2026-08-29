@@ -112,8 +112,9 @@ class MusicRecommendationEngine {
     final exploration = diversified
         .where((s) => s.candidate.source == 'exploration')
         .toList();
-    final mixed = MusicExploration(ratio: config.explorationRatio)
-        .mix(primary, exploration);
+    final mixed = MusicExploration(
+      ratio: config.explorationRatio,
+    ).mix(primary, exploration);
 
     final result = <Map<String, dynamic>>[];
     for (final s in mixed) {

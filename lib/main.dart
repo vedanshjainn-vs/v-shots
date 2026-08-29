@@ -1971,8 +1971,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         ),
                                       ).then((_) => _loadProfileData());
                                     } else {
-                                      AuthModal.show(context)
-                                          .then((_) => _loadProfileData());
+                                      AuthModal.show(
+                                        context,
+                                      ).then((_) => _loadProfileData());
                                     }
                                   },
                                 ),
@@ -2891,5 +2892,6 @@ class _LyricsScreenState extends State<LyricsScreen> {
     );
   }
 }
+
 // Force rebuild
 // CI trigger

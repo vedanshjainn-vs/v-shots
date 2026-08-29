@@ -318,8 +318,9 @@ class YouTubeDataApiClient {
       if (pageToken != null && pageToken.isNotEmpty) {
         params['pageToken'] = pageToken;
       }
-      final uri = Uri.parse('$_baseUrl/search')
-          .replace(queryParameters: params);
+      final uri = Uri.parse(
+        '$_baseUrl/search',
+      ).replace(queryParameters: params);
       final response = await _http
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));
@@ -431,8 +432,9 @@ class YouTubeDataApiClient {
         ? handle.trim()
         : '@${handle.trim()}';
     try {
-      final uri = Uri.parse('$_baseUrl/channels')
-          .replace(queryParameters: {'part': 'id', 'forHandle': h, 'key': key});
+      final uri = Uri.parse(
+        '$_baseUrl/channels',
+      ).replace(queryParameters: {'part': 'id', 'forHandle': h, 'key': key});
       final response = await _http
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));

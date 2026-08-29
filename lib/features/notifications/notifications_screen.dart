@@ -140,7 +140,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 : _filteredNotifications.isEmpty
                 ? const EmptyState(
                     title: 'All caught up!',
-                    subtitle: 'When creators like, comment, or follow your shots, they will show up here.',
+                    subtitle:
+                        'When creators like, comment, or follow your shots, they will show up here.',
                     icon: Icons.notifications_none_rounded,
                   )
                 : RefreshIndicator(

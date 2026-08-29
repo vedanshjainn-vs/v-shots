@@ -64,13 +64,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, dynamic>> _pages = [
     {
       'title': 'Discover Your Next Song',
-      'subtitle': 'Explore trending music, new releases, timeless hits, and songs picked for your taste — all in one place.',
+      'subtitle':
+          'Explore trending music, new releases, timeless hits, and songs picked for your taste — all in one place.',
       'icon': Icons.music_note_rounded,
       'gradient': AppColors.primaryGradient,
     },
     {
       'title': 'Music That Gets You',
-      'subtitle': 'V SHOTS learns what you listen to and helps you discover songs, artists, moods, and sounds you\u2019ll actually love.',
+      'subtitle':
+          'V SHOTS learns what you listen to and helps you discover songs, artists, moods, and sounds you\u2019ll actually love.',
       'icon': Icons.graphic_eq_rounded,
       'gradient': const LinearGradient(
         colors: [AppColors.accent, AppColors.primaryLight],
@@ -80,7 +82,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     },
     {
       'title': 'Explore Without Limits',
-      'subtitle': 'Discover music by mood, language, genre, region, artists, and what\u2019s trending right now.',
+      'subtitle':
+          'Discover music by mood, language, genre, region, artists, and what\u2019s trending right now.',
       'icon': Icons.public_rounded,
       'gradient': const LinearGradient(
         colors: [AppColors.hotPink, AppColors.warning],

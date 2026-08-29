@@ -137,8 +137,9 @@ class VShotsLevelPlay {
       }
     }
     try {
-      final request = LevelPlayInitRequest.builder(LevelPlayConfig.appKey!)
-          .build();
+      final request = LevelPlayInitRequest.builder(
+        LevelPlayConfig.appKey!,
+      ).build();
       await LevelPlay.init(
         initRequest: request,
         initListener: _InitListener(this),

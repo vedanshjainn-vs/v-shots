@@ -19,11 +19,12 @@ import 'music_candidate.dart';
 import 'music_entity_resolver.dart';
 import 'music_validator.dart';
 
-typedef MusicSearch = Future<List<Map<String, dynamic>>> Function(
-  String query, {
-  required int limit,
-  Set<String> excludeIds,
-});
+typedef MusicSearch =
+    Future<List<Map<String, dynamic>>> Function(
+      String query, {
+      required int limit,
+      Set<String> excludeIds,
+    });
 
 class MusicCandidateGenerator {
   MusicCandidateGenerator({

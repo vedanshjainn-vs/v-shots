@@ -73,7 +73,8 @@ class _RewardsSheetState extends State<RewardsSheet> {
               '${remaining != null ? ' (Your previous ${_mins(remaining)} min pass was replaced.)' : ''}',
         RewardOutcome.canceled =>
           'No worries — nothing was unlocked. Try again whenever you like.',
-        RewardOutcome.failed => 'Ads are not available right now. Your music is unaffected — try again later.',
+        RewardOutcome.failed =>
+          'Ads are not available right now. Your music is unaffected — try again later.',
       };
     });
   }

@@ -15,7 +15,8 @@ class ProfileService {
     id: 'self',
     username: 'vshots_creator',
     fullName: 'V Shots Creator',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
+    avatarUrl:
+        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80',
     bio: 'Creating short visual vibes & synth wave music on V Shots 🎬✨',
     followersCount: 1420,
     followingCount: 280,
