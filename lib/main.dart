@@ -26,6 +26,7 @@ import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
 import 'core/notifications/app_update_service.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/notifications/smart_notification_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/remote_config/remote_feature_flags.dart';
 import 'core/backend/supabase_service.dart';
@@ -85,6 +86,7 @@ void main() async {
     AdFreeManager.instance.init(),
     AppVersion.load(),
     NotificationService.instance.initialize(),
+    SmartNotificationService.instance.initialize(),
   ]);
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
