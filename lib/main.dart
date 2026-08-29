@@ -48,6 +48,7 @@ import 'core/recommendation/signal_store.dart';
 import 'core/recommendation/taste_profile.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_theme.dart';
 import 'shared/widgets/animated_equalizer.dart';
 import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
@@ -145,12 +146,9 @@ class VShotsApp extends StatelessWidget {
       title: 'V Shots',
       navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorSchemeSeed: AppColors.accent,
-        scaffoldBackgroundColor: AppColors.background,
-      ),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const SplashScreen(),
     );
   }
