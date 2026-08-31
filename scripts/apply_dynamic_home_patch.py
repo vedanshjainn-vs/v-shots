@@ -100,14 +100,71 @@ def patch_home_feed_service() -> None:
 def patch_home_screen() -> None:
     path = ROOT / 'lib/features/home/home_screen.dart'
     text = path.read_text()
-    old = "  static const Duration _minRefreshInterval = Duration(minutes: 5);"
-    new = "  static const Duration _minRefreshInterval = Duration(seconds: 90);"
-    if old in text:
-        text = text.replace(old, new, 1)
+
+    if "import 'dynamic_home_sections.dart';" not in text:
+        anchor = "import 'home_feed_service.dart';\n"
+        if anchor not in text:
+            raise SystemExit('home_screen.dart: import anchor not found')
+        text = text.replace(anchor, anchor + "import 'dynamic_home_sections.dart';\n", 1)
+
+    old_build = """              _buildHeroHeader(),\n              _buildContinueListeningHero(),\n              _buildMoodChips(),\n"""
+    new_build = """              _buildHeroHeader(),\n              _buildContinueListeningHero(),\n              if (_dynamicForYouShelf() != null)\n                DynamicForYouHero(\n                  track: _dynamicForYouShelf()!.tracks.first,\n                  onPlay: () {\n                    final shelf = _dynamicForYouShelf()!;\n                    playTrack(context, shelf.tracks.first, shelf.tracks, 0);\n                  },\n                ),\n              _buildMoodChips(),\n"""
+    if old_build in text:
+        text = text.replace(old_build, new_build, 1)
+
+    old_spot = """              _buildRewardedAdFreeCard(),\n              _buildSpotlightSliver(),\n              if (_initialLoading)\n"""
+    new_spot = """              _buildRewardedAdFreeCard(),\n              _buildSpotlightSliver(),\n              _buildQuickPicksSliver(),\n              if (_initialLoading)\n"""
+    if old_spot in text:
+        text = text.replace(old_spot, new_spot, 1)
+
+    method_anchor = "  // ── Mood / genre chips ─────────────────────────────────────────────────\n"
+    if "HomeShelf? _dynamicForYouShelf()" not in text:
+        methods = r'''  HomeShelf? _dynamicForYouShelf() {
+    for (final shelf in _shelves) {
+      if (shelf.id == 'dynamic_mfy' &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.isNotEmpty) {
+        return shelf;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildQuickPicksSliver() {
+    HomeShelf? source;
+    for (final shelf in _shelves) {
+      if ((shelf.id == 'dynamic_tfy' ||
+              shelf.id == 'dynamic_discover' ||
+              shelf.id == 'dynamic_mfy') &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.length >= 2) {
+        source = shelf;
+        break;
+      }
+    }
+    if (source == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    return SliverToBoxAdapter(
+      child: DynamicQuickPicks(
+        tracks: source.tracks,
+        onPlay: (index) => playTrack(
+          context,
+          source!.tracks[index],
+          source.tracks,
+          index,
+        ),
+      ),
+    );
+  }
+
+'''
+        if method_anchor not in text:
+            raise SystemExit('home_screen.dart: mood section anchor not found')
+        text = text.replace(method_anchor, methods + method_anchor, 1)
+
     path.write_text(text)
 
 
 if __name__ == '__main__':
     patch_home_feed_service()
     patch_home_screen()
-    print('Dynamic Home recommendation patch applied.')
+    print('Dynamic Home recommendation/layout patch applied.')
