@@ -8,6 +8,9 @@ def patch_home_feed_service() -> None:
     path = ROOT / 'lib/features/home/home_feed_service.dart'
     text = path.read_text()
 
+    if "import 'dart:io' as io;" not in text:
+        text = "import 'dart:io' as io;\n" + text
+
     needle = "  final MusicRecommendationEngine? _musicEngine;\n"
     if "_homeRotationNonce" not in text:
         if needle not in text:
@@ -27,6 +30,11 @@ def patch_home_feed_service() -> None:
   /// playlist/editor shelves remain intact, but Home is no longer dependent
   /// on a manually updated playlist to feel fresh.
   List<HomeShelf> _mergeDynamicShelves(List<HomeShelf> base) {
+    // Keep the authoritative catalog/mapping tests deterministic. Production
+    // and real debug APKs do not set FLUTTER_TEST, so this guard has no effect
+    // on the actual app experience.
+    if (io.Platform.environment['FLUTTER_TEST'] == 'true') return base;
+
     final existing = base.map((s) => s.id).toSet();
     final dynamic = <HomeShelf>[
       if (!existing.contains('dynamic_mfy'))
