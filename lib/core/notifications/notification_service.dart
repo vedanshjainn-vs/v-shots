@@ -1,21 +1,11 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // V Shots — Notification Service
 // ═════════════════════════════════════════════════════════════════════════════
-//
-// Manages all local notifications:
-// - App update reminders
-// - Smart engagement notifications
-// - Notification permission handling
-// - Notification channel management
-//
-// Uses flutter_local_notifications for local scheduling (free, no backend).
-// FCM integration is separate (see firebase_messaging_service.dart).
-
-import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
   NotificationService._();
@@ -26,54 +16,67 @@ class NotificationService {
 
   bool _initialized = false;
 
-  // Notification channel IDs
   static const String channelMusicPlayer = 'vshots_music_player';
   static const String channelUpdates = 'vshots_updates';
   static const String channelRecommendations = 'vshots_recommendations';
   static const String channelNewMusic = 'vshots_new_music';
 
-  // SharedPreferences keys
   static const String keyUpdateDismissed = 'update_dismissed_v';
   static const String keyUpdateReminderDate = 'update_reminder_date';
   static const String keyNotifPermissionRequested =
       'notif_permission_requested';
 
+  static const int smartNotificationIdStart = 20000;
+  static const int smartNotificationIdEnd = 20999;
+
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
 
-    const initSettings = InitializationSettings(android: androidSettings);
-
     await _plugin.initialize(
-      initSettings,
+      const InitializationSettings(
+        android: androidSettings,
+        iOS: darwinSettings,
+      ),
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
     await _createNotificationChannels();
-
     _initialized = true;
+
+    // Request only after plugin initialization. The flag prevents repeatedly
+    // prompting users after a denial; Android itself owns the final permission.
+    final prefs = await SharedPreferences.getInstance();
+    final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;
+    if (!requested) {
+      await requestNotificationPermission();
+      await prefs.setBool(keyNotifPermissionRequested, true);
+    }
+
     debugPrint('[NotificationService] Initialized');
   }
 
   Future<void> _createNotificationChannels() async {
-    final androidPlugin = AndroidFlutterLocalNotificationsPlugin();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android == null) return;
 
-    // Music player channel (for media notifications)
-    await androidPlugin.createNotificationChannel(
+    await android.createNotificationChannel(
       const AndroidNotificationChannel(
         channelMusicPlayer,
         'V Shots Music Player',
         description: 'Media playback controls',
-        importance: Importance.high,
+        importance: Importance.low,
         showBadge: false,
       ),
     );
-
-    // Updates channel
-    await androidPlugin.createNotificationChannel(
+    await android.createNotificationChannel(
       const AndroidNotificationChannel(
         channelUpdates,
         'V Shots Updates',
@@ -81,24 +84,20 @@ class NotificationService {
         importance: Importance.defaultImportance,
       ),
     );
-
-    // Recommendations channel
-    await androidPlugin.createNotificationChannel(
+    await android.createNotificationChannel(
       const AndroidNotificationChannel(
         channelRecommendations,
         'V Shots Recommendations',
         description: 'Personalized music recommendations',
-        importance: Importance.low,
+        importance: Importance.defaultImportance,
       ),
     );
-
-    // New music channel
-    await androidPlugin.createNotificationChannel(
+    await android.createNotificationChannel(
       const AndroidNotificationChannel(
         channelNewMusic,
         'V Shots New Music',
         description: 'New music releases',
-        importance: Importance.low,
+        importance: Importance.defaultImportance,
       ),
     );
   }
@@ -106,23 +105,115 @@ class NotificationService {
   void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
     if (payload == null || payload.isEmpty) return;
-
     debugPrint('[NotificationService] Tapped: $payload');
-
-    // Parse payload and navigate
-    // Format: "type:id" (e.g., "song:123", "artist:456", "update:")
-    final parts = payload.split(':');
-    if (parts.length < 2) return;
-
-    final type = parts[0];
-    final id = parts[1];
-
-    // Dispatch to navigation handler
-    // (This will be wired to the app's navigation system)
-    debugPrint('[NotificationService] Navigate to $type/$id');
+    // Navigation is handled by the app's global navigation layer. The payload
+    // remains stable: song:<id>, trending:, new_music:, recommendation:, update:.
   }
 
-  // ── App Update Notifications ──────────────────────────────────────────
+  // ── Scheduled smart notifications ─────────────────────────────────────
+
+  Future<void> scheduleSmartNotification({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+    required tz.TZDateTime scheduledDate,
+  }) async {
+    if (!_initialized) return;
+
+    const androidDetails = AndroidNotificationDetails(
+      channelRecommendations,
+      'V Shots Recommendations',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      icon: '@mipmap/ic_launcher',
+      category: AndroidNotificationCategory.recommendation,
+    );
+    const details = NotificationDetails(android: androidDetails);
+
+    await _plugin.zonedSchedule(
+      id,
+      title,
+      body,
+      scheduledDate,
+      details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: payload,
+    );
+  }
+
+  Future<void> cancelSmartNotifications() async {
+    for (var id = smartNotificationIdStart;
+        id <= smartNotificationIdEnd;
+        id++) {
+      await _plugin.cancel(id);
+    }
+  }
+
+  Future<void> showSmartNotification({
+    required int id,
+    required String title,
+    required String body,
+    required String payload,
+    String channelId = channelRecommendations,
+  }) async {
+    final androidDetails = AndroidNotificationDetails(
+      channelId,
+      channelId == channelNewMusic
+          ? 'V Shots New Music'
+          : 'V Shots Recommendations',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      icon: '@mipmap/ic_launcher',
+    );
+    await _plugin.show(
+      id,
+      title,
+      body,
+      NotificationDetails(android: androidDetails),
+      payload: payload,
+    );
+  }
+
+  Future<void> cancelNotification(int id) async {
+    await _plugin.cancel(id);
+  }
+
+  // ── Permission handling ────────────────────────────────────────────────
+
+  Future<bool> requestNotificationPermission() async {
+    var granted = true;
+
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      granted = (await android.requestNotificationsPermission()) ?? false;
+    }
+
+    final ios = _plugin.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin>();
+    if (ios != null) {
+      granted = await ios.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          granted;
+    }
+
+    return granted;
+  }
+
+  Future<bool> hasNotificationPermission() async {
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      return await android.areNotificationsEnabled() ?? false;
+    }
+    return true;
+  }
+
+  // ── App update notifications ───────────────────────────────────────────
 
   Future<void> showUpdateNotification(String versionName) async {
     const androidDetails = AndroidNotificationDetails(
@@ -132,14 +223,11 @@ class NotificationService {
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
     );
-
-    const details = NotificationDetails(android: androidDetails);
-
     await _plugin.show(
-      1001, // Fixed ID for update notification
-      'Vshots Update Available 🎵',
+      1001,
+      'V Shots Update Available 🎵',
       'Update to v$versionName for the latest features and improvements.',
-      details,
+      const NotificationDetails(android: androidDetails),
       payload: 'update:',
     );
   }
@@ -147,51 +235,6 @@ class NotificationService {
   Future<void> cancelUpdateNotification() async {
     await _plugin.cancel(1001);
   }
-
-  // ── Smart Notification Helpers ────────────────────────────────────────
-
-  Future<void> showSmartNotification({
-    required int id,
-    required String title,
-    required String body,
-    required String payload,
-    String channelId = channelRecommendations,
-  }) async {
-    const androidDetails = AndroidNotificationDetails(
-      channelRecommendations,
-      'V Shots Recommendations',
-      importance: Importance.defaultImportance,
-      icon: '@mipmap/ic_launcher',
-    );
-
-    const details = NotificationDetails(android: androidDetails);
-
-    await _plugin.show(id, title, body, details, payload: payload);
-  }
-
-  Future<void> cancelNotification(int id) async {
-    await _plugin.cancel(id);
-  }
-
-  // ── Permission Handling ───────────────────────────────────────────────
-
-  Future<bool> requestNotificationPermission() async {
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-
-    if (androidPlugin == null) return true; // Non-Android or already granted
-
-    final granted = await androidPlugin.requestNotificationsPermission();
-    return granted ?? false;
-  }
-
-  Future<bool> hasNotificationPermission() async {
-    // Simplified check - actual permission is requested via FCM
-    // For local notifications, we assume permission if FCM is authorized
-    return true;
-  }
-
-  // ── Update Reminder Logic ─────────────────────────────────────────────
 
   Future<void> saveUpdateDismissed(String version) async {
     final prefs = await SharedPreferences.getInstance();
@@ -202,21 +245,16 @@ class NotificationService {
     );
   }
 
-  Future<bool> shouldShowUpdateReminder(String currentVersion) async {
+  Future<bool> shouldShowUpdateReminder(String version) async {
     final prefs = await SharedPreferences.getInstance();
     final dismissedVersion = prefs.getString(keyUpdateDismissed);
     final reminderDateStr = prefs.getString(keyUpdateReminderDate);
 
-    // If version changed, show update
-    if (dismissedVersion != currentVersion) return true;
+    if (dismissedVersion != version) return true;
+    if (reminderDateStr == null) return true;
 
-    // Check if enough time has passed (3 days)
-    if (reminderDateStr != null) {
-      final reminderDate = DateTime.parse(reminderDateStr);
-      final daysSince = DateTime.now().difference(reminderDate).inDays;
-      return daysSince >= 3;
-    }
-
-    return true;
+    final reminderDate = DateTime.tryParse(reminderDateStr);
+    if (reminderDate == null) return true;
+    return DateTime.now().difference(reminderDate).inDays >= 3;
   }
 }
