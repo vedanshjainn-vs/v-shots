@@ -59,7 +59,7 @@ jobs:
       - name: 5b. Apply Dynamic Home Recommendation Patch
         run: |
           python3 scripts/apply_dynamic_home_patch.py
-          dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart lib/features/home/dynamic_home_sections.dart
+          dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart lib/features/home/dynamic_home_sections.dart lib/core/notifications/notification_service.dart lib/core/notifications/smart_notification_service.dart
 
       - name: 6. Run Formatting Check
         run: |
