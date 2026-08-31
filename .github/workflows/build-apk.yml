@@ -61,7 +61,9 @@ jobs:
         run: flutter pub get
 
       - name: 5b. Apply Dynamic Home Recommendation Patch
-        run: python3 scripts/apply_dynamic_home_patch.py
+        run: |
+          python3 scripts/apply_dynamic_home_patch.py
+          dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart
 
       - name: 6. Run Formatting Check
         run: |
