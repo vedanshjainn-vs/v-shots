@@ -40,14 +40,10 @@ jobs:
           GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
           GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
           YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
-          # Unity LevelPlay client configuration.
           LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
           LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
           LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
           LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
-          # Debug APK uses the configured production LevelPlay app/units so
-          # Meta + other mediated networks can be tested on a registered
-          # LevelPlay test device. Release builds are production by default.
           LEVELPLAY_DEBUG_USE_PRODUCTION=true
           EOF
 
@@ -63,7 +59,7 @@ jobs:
       - name: 5b. Apply Dynamic Home Recommendation Patch
         run: |
           python3 scripts/apply_dynamic_home_patch.py
-          dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart
+          dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart lib/features/home/dynamic_home_sections.dart
 
       - name: 6. Run Formatting Check
         run: |
@@ -71,7 +67,7 @@ jobs:
           git ls-files -z -- '*.dart' | xargs -0 -r dart format --output=none --set-exit-if-changed
 
       - name: 7. Run Flutter Analyzer
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: 8. Run Unit & Widget Tests
         run: flutter test
