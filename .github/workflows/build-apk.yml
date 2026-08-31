@@ -60,6 +60,9 @@ jobs:
       - name: 5. Install Dependencies
         run: flutter pub get
 
+      - name: 5b. Apply Dynamic Home Recommendation Patch
+        run: python3 scripts/apply_dynamic_home_patch.py
+
       - name: 6. Run Formatting Check
         run: |
           set -e
@@ -134,7 +137,7 @@ jobs:
         run: |
           RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@build/app/outputs/flutter-apk/app-release.apk" -F "custom_id=v-shots-ci-${{ github.run_number }}")
           echo "$RESPONSE"
-          APP_URL=$(echo "$RESPONSE" | grep -o '"app_url":"[^"]*"' | cut -d'"' -f4)
+          APP_URL=$(echo "$RESPONSE" | grep -o '\"app_url\":\"[^\"]*\"' | cut -d'\"' -f4)
           [ -z "$APP_URL" ] || echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
 
       - name: 16. Run BrowserStack Real-Device Smoke Test
