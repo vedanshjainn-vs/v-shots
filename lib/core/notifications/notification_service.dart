@@ -11,106 +11,77 @@ class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
-
+  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
   static const String channelMusicPlayer = 'vshots_music_player';
   static const String channelUpdates = 'vshots_updates';
   static const String channelRecommendations = 'vshots_recommendations';
   static const String channelNewMusic = 'vshots_new_music';
-
   static const String keyUpdateDismissed = 'update_dismissed_v';
   static const String keyUpdateReminderDate = 'update_reminder_date';
-  static const String keyNotifPermissionRequested =
-      'notif_permission_requested';
-
+  static const String keyNotifPermissionRequested = 'notif_permission_requested';
   static const int smartNotificationIdStart = 20000;
   static const int smartNotificationIdEnd = 20999;
 
   Future<void> initialize() async {
     if (_initialized) return;
-
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwinSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
-
     await _plugin.initialize(
-      const InitializationSettings(
-        android: androidSettings,
-        iOS: darwinSettings,
-      ),
+      const InitializationSettings(android: androidSettings, iOS: darwinSettings),
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
-
     await _createNotificationChannels();
     _initialized = true;
-
-    // Request only after plugin initialization. The flag prevents repeatedly
-    // prompting users after a denial; Android itself owns the final permission.
     final prefs = await SharedPreferences.getInstance();
     final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;
     if (!requested) {
       await requestNotificationPermission();
       await prefs.setBool(keyNotifPermissionRequested, true);
     }
-
     debugPrint('[NotificationService] Initialized');
   }
 
   Future<void> _createNotificationChannels() async {
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) return;
-
-    await android.createNotificationChannel(
-      const AndroidNotificationChannel(
-        channelMusicPlayer,
-        'V Shots Music Player',
-        description: 'Media playback controls',
-        importance: Importance.low,
-        showBadge: false,
-      ),
-    );
-    await android.createNotificationChannel(
-      const AndroidNotificationChannel(
-        channelUpdates,
-        'V Shots Updates',
-        description: 'App update notifications',
-        importance: Importance.defaultImportance,
-      ),
-    );
-    await android.createNotificationChannel(
-      const AndroidNotificationChannel(
-        channelRecommendations,
-        'V Shots Recommendations',
-        description: 'Personalized music recommendations',
-        importance: Importance.defaultImportance,
-      ),
-    );
-    await android.createNotificationChannel(
-      const AndroidNotificationChannel(
-        channelNewMusic,
-        'V Shots New Music',
-        description: 'New music releases',
-        importance: Importance.defaultImportance,
-      ),
-    );
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      channelMusicPlayer,
+      'V Shots Music Player',
+      description: 'Media playback controls',
+      importance: Importance.low,
+      showBadge: false,
+    ));
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      channelUpdates,
+      'V Shots Updates',
+      description: 'App update notifications',
+      importance: Importance.defaultImportance,
+    ));
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      channelRecommendations,
+      'V Shots Recommendations',
+      description: 'Personalized music recommendations',
+      importance: Importance.defaultImportance,
+    ));
+    await android.createNotificationChannel(const AndroidNotificationChannel(
+      channelNewMusic,
+      'V Shots New Music',
+      description: 'New music releases',
+      importance: Importance.defaultImportance,
+    ));
   }
 
   void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
     if (payload == null || payload.isEmpty) return;
     debugPrint('[NotificationService] Tapped: $payload');
-    // Navigation is handled by the app's global navigation layer. The payload
-    // remains stable: song:<id>, trending:, new_music:, recommendation:, update:.
   }
-
-  // ── Scheduled smart notifications ─────────────────────────────────────
 
   Future<void> scheduleSmartNotification({
     required int id,
@@ -120,7 +91,6 @@ class NotificationService {
     required tz.TZDateTime scheduledDate,
   }) async {
     if (!_initialized) return;
-
     const androidDetails = AndroidNotificationDetails(
       channelRecommendations,
       'V Shots Recommendations',
@@ -130,7 +100,6 @@ class NotificationService {
       category: AndroidNotificationCategory.recommendation,
     );
     const details = NotificationDetails(android: androidDetails);
-
     await _plugin.zonedSchedule(
       id,
       title,
@@ -138,14 +107,13 @@ class NotificationService {
       scheduledDate,
       details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
     );
   }
 
   Future<void> cancelSmartNotifications() async {
-    for (var id = smartNotificationIdStart;
-        id <= smartNotificationIdEnd;
-        id++) {
+    for (var id = smartNotificationIdStart; id <= smartNotificationIdEnd; id++) {
       await _plugin.cancel(id);
     }
   }
@@ -159,9 +127,7 @@ class NotificationService {
   }) async {
     final androidDetails = AndroidNotificationDetails(
       channelId,
-      channelId == channelNewMusic
-          ? 'V Shots New Music'
-          : 'V Shots Recommendations',
+      channelId == channelNewMusic ? 'V Shots New Music' : 'V Shots Recommendations',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       icon: '@mipmap/ic_launcher',
@@ -175,45 +141,24 @@ class NotificationService {
     );
   }
 
-  Future<void> cancelNotification(int id) async {
-    await _plugin.cancel(id);
-  }
-
-  // ── Permission handling ────────────────────────────────────────────────
+  Future<void> cancelNotification(int id) async => _plugin.cancel(id);
 
   Future<bool> requestNotificationPermission() async {
     var granted = true;
-
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) {
-      granted = (await android.requestNotificationsPermission()) ?? false;
-    }
-
-    final ios = _plugin.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) granted = (await android.requestNotificationsPermission()) ?? false;
+    final ios = _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
     if (ios != null) {
-      granted = await ios.requestPermissions(
-            alert: true,
-            badge: true,
-            sound: true,
-          ) ??
-          granted;
+      granted = await ios.requestPermissions(alert: true, badge: true, sound: true) ?? granted;
     }
-
     return granted;
   }
 
   Future<bool> hasNotificationPermission() async {
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) {
-      return await android.areNotificationsEnabled() ?? false;
-    }
+    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) return await android.areNotificationsEnabled() ?? false;
     return true;
   }
-
-  // ── App update notifications ───────────────────────────────────────────
 
   Future<void> showUpdateNotification(String versionName) async {
     const androidDetails = AndroidNotificationDetails(
@@ -232,27 +177,20 @@ class NotificationService {
     );
   }
 
-  Future<void> cancelUpdateNotification() async {
-    await _plugin.cancel(1001);
-  }
+  Future<void> cancelUpdateNotification() async => _plugin.cancel(1001);
 
   Future<void> saveUpdateDismissed(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyUpdateDismissed, version);
-    await prefs.setString(
-      keyUpdateReminderDate,
-      DateTime.now().toIso8601String(),
-    );
+    await prefs.setString(keyUpdateReminderDate, DateTime.now().toIso8601String());
   }
 
   Future<bool> shouldShowUpdateReminder(String version) async {
     final prefs = await SharedPreferences.getInstance();
     final dismissedVersion = prefs.getString(keyUpdateDismissed);
     final reminderDateStr = prefs.getString(keyUpdateReminderDate);
-
     if (dismissedVersion != version) return true;
     if (reminderDateStr == null) return true;
-
     final reminderDate = DateTime.tryParse(reminderDateStr);
     if (reminderDate == null) return true;
     return DateTime.now().difference(reminderDate).inDays >= 3;
