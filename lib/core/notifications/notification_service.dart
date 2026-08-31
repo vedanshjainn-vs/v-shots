@@ -25,7 +25,9 @@ class NotificationService {
   static const int smartNotificationIdEnd = 20999;
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized) {
+      return;
+    }
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwinSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
@@ -49,7 +51,9 @@ class NotificationService {
 
   Future<void> _createNotificationChannels() async {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    if (android == null) return;
+    if (android == null) {
+      return;
+    }
     await android.createNotificationChannel(const AndroidNotificationChannel(
       channelMusicPlayer,
       'V Shots Music Player',
@@ -79,7 +83,9 @@ class NotificationService {
 
   void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
-    if (payload == null || payload.isEmpty) return;
+    if (payload == null || payload.isEmpty) {
+      return;
+    }
     debugPrint('[NotificationService] Tapped: $payload');
   }
 
@@ -90,7 +96,9 @@ class NotificationService {
     required String payload,
     required tz.TZDateTime scheduledDate,
   }) async {
-    if (!_initialized) return;
+    if (!_initialized) {
+      return;
+    }
     const androidDetails = AndroidNotificationDetails(
       channelRecommendations,
       'V Shots Recommendations',
@@ -156,7 +164,9 @@ class NotificationService {
 
   Future<bool> hasNotificationPermission() async {
     final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) return await android.areNotificationsEnabled() ?? false;
+    if (android != null) {
+      return await android.areNotificationsEnabled() ?? false;
+    }
     return true;
   }
 

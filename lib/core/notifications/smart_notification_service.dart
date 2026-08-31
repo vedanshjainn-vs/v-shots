@@ -77,6 +77,7 @@ class SmartNotificationService with WidgetsBindingObserver {
       var dayKey = _calendarKey(cursor);
       var dayCount = 0;
       var scheduled = 0;
+      // ignore: prefer_const_declarations
       final maxToSchedule = daysToScheduleAhead * maxNotificationsPerDay;
 
       while (scheduled < maxToSchedule) {
@@ -90,7 +91,6 @@ class SmartNotificationService with WidgetsBindingObserver {
           continue;
         }
         final item = _generateSmartNotification(random, prefs);
-        if (item == null) break;
         if (!cursor.isAfter(tz.TZDateTime.now(tz.local))) {
           cursor = cursor.add(const Duration(minutes: 1));
           continue;
