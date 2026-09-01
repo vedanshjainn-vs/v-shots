@@ -66,6 +66,8 @@ jobs:
         run: |
           python3 scripts/apply_smart_listening_v2.py
           dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
+          dart fix --apply
+          dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
