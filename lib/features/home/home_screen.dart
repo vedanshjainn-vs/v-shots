@@ -22,7 +22,8 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../core/ads/ad_free_manager.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
+import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/motion/motion.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
@@ -671,7 +672,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               0) {
         slivers.add(
           const SliverToBoxAdapter(
-            child: NativeAdWidget(placement: AdPlacement.home),
+            child: PremiumMRECAdCard(placement: MRECPlacement.home),
           ),
         );
       }

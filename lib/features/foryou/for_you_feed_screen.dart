@@ -10,7 +10,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
+import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/ads/player_sponsored_ad_policy.dart';
 import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
@@ -134,6 +135,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   DateTime? _cardShownAt;
   Map<String, dynamic>? _prevCard;
 
+  /// Dwell-time MREC ad timer
+  Timer? _dwellTimer;
+  bool _showDwellAd = false;
+
   @override
   void initState() {
     super.initState();
@@ -151,6 +156,31 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     VShotsPlaybackManager.instance.addListener(_onManagerChanged);
     currentTabIndexNotifier.addListener(_onTabChanged);
     _loadInitialBatch();
+
+    // Start dwell timer for MREC ad after 15 seconds of listening
+    _startDwellTimer();
+  }
+
+  void _startDwellTimer() {
+    _dwellTimer?.cancel();
+    _dwellTimer = Timer(
+      const Duration(seconds: MRECConfig.discoverDwellTime),
+      () {
+        if (mounted && !_showDwellAd) {
+          // Check if user is still on Discover tab and song is playing
+          if (_onDiscoverTab && VShotsPlaybackManager.instance.isOpen) {
+            setState(() {
+              _showDwellAd = true;
+            });
+          }
+        }
+      },
+    );
+  }
+
+  void _cancelDwellTimer() {
+    _dwellTimer?.cancel();
+    _dwellTimer = null;
   }
 
   /// Coalesce browser/manager/tab listener callbacks into ONE setState per
@@ -216,12 +246,20 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (_onDiscoverTab && _items.isNotEmpty && !_browser.isOpen) {
       unawaited(_playCurrent(expanded: false));
     }
+
+    // Restart dwell timer when user returns to Discover tab
+    if (_onDiscoverTab && !_showDwellAd) {
+      _startDwellTimer();
+    } else {
+      _cancelDwellTimer();
+    }
   }
 
   bool get _onDiscoverTab => currentTabIndexNotifier.value == 1;
 
   @override
   void dispose() {
+    _cancelDwellTimer();
     VShotsPlaybackManager.instance.removeListener(_onManagerChanged);
     currentTabIndexNotifier.removeListener(_onTabChanged);
     // The global browser is owned by VShotsPlaybackManager — do NOT dispose
@@ -797,6 +835,35 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               ),
             ),
           ),
+
+          // Dwell-time MREC ad — appears after 15 seconds of listening
+          // without disturbing playback. Positioned at bottom-center.
+          if (_showDwellAd)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: _browser.isOpen ? 100 : 16,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeInOut,
+                  child: PremiumMRECAdCard(
+                    placement: MRECPlacement.discoverDwell,
+                    onLoad: () {
+                      debugPrint('[Discover] Dwell MREC loaded');
+                    },
+                    onFailure: () {
+                      debugPrint('[Discover] Dwell MREC failed');
+                      if (mounted) {
+                        setState(() {
+                          _showDwellAd = false;
+                        });
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1231,9 +1298,8 @@ class _ForYouAdCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              const NativeAdWidget(
-                height: 220,
-                placement: AdPlacement.forYouFeed,
+              const PremiumMRECAdCard(
+                placement: MRECPlacement.discoverFeed,
               ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
