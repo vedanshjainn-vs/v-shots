@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/foundation.dart';
@@ -28,8 +27,6 @@ class MusicRegionProfile {
   static bool _initialized = false;
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
-  /// Starts a short, best-effort public-IP country lookup. It never blocks
-  /// app startup and falls back to the device locale if the lookup fails.
   static Future<void> initialize() async {
     if (_initialized || _initializing) return;
     _initializing = true;
