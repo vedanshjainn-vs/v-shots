@@ -6,10 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Lightweight regional context for music discovery.
 ///
-/// Device locale is only the immediate fallback. On startup we resolve the
-/// public network country so a phone whose UI locale is `en-US` but is
-/// physically/network-connected in India does not get labelled as United
-/// States. No GPS permission is requested and no precise location is stored.
+/// The country is resolved without GPS. A cached/network country is preferred;
+/// the device locale is the fallback. If the device is on India Standard Time,
+/// India wins over a conflicting UI locale such as `en-US`, avoiding the exact
+/// false "Personalized for United States" state seen on Indian devices.
 class MusicRegionProfile {
   const MusicRegionProfile({
     required this.countryCode,
@@ -55,10 +55,10 @@ class MusicRegionProfile {
           revision.value++;
         }
       } catch (_) {
-        // Locale/cached region remains the safe fallback.
+        // Locale/timezone/cached region remains the safe fallback.
       }
     } catch (_) {
-      // Region is enrichment only; recommendation generation must never fail.
+      // Region is enrichment only; recommendations must never fail because of it.
     } finally {
       _initialized = true;
       _initializing = false;
@@ -72,8 +72,12 @@ class MusicRegionProfile {
 
   static String _localeCountryCode() {
     final locale = PlatformDispatcher.instance.locale;
-    final code = _normalizeCountry(locale.countryCode);
-    return code ?? 'IN';
+    final localeCode = _normalizeCountry(locale.countryCode);
+    // India Standard Time is UTC+05:30 year-round. This is deliberately only
+    // a country-level fallback and never stores precise location information.
+    final ist = DateTime.now().timeZoneOffset == const Duration(hours: 5, minutes: 30);
+    if (ist) return 'IN';
+    return localeCode ?? 'IN';
   }
 
   static String? _normalizeCountry(String? value) {
