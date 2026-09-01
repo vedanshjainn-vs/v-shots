@@ -3,18 +3,6 @@ from pathlib import Path
 ROOT = Path('.')
 
 
-def patch(path: str, old: str, new: str, label: str, required: bool = True) -> None:
-    p = ROOT / path
-    text = p.read_text()
-    if new in text:
-        return
-    if old not in text:
-        if required:
-            raise SystemExit(f'{label}: anchor not found in {path}')
-        return
-    p.write_text(text.replace(old, new, 1))
-
-
 def patch_main() -> None:
     p = ROOT / 'lib/main.dart'
     text = p.read_text()
@@ -34,37 +22,29 @@ def patch_main() -> None:
     AppVersion.load(),
   ]);
 
-  // NotificationService must finish before the smart scheduler starts. The
-  // previous Future.wait race could schedule into an uninitialized plugin.
+  // NotificationService must be ready before the smart scheduler starts.
   await NotificationService.instance.initialize();
   await SmartNotificationService.instance.initialize();
 '''
     if old_boot in text:
         text = text.replace(old_boot, new_boot, 1)
-    elif 'await SmartNotificationService.instance.initialize();' not in text:
-        raise SystemExit('main notification boot anchor not found')
     marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
         if marker not in text:
             raise SystemExit('main runApp anchor not found')
         text = text.replace(
             marker,
-            "  // Resolve public network country in the background; never delay first paint.\n  unawaited(MusicRegionProfile.initialize());\n" + marker,
+            "  // Resolve network country after core boot without delaying first paint.\n"
+            "  unawaited(MusicRegionProfile.initialize());\n" + marker,
             1,
         )
     p.write_text(text)
 
 
 def patch_home() -> None:
-    path = 'lib/features/home/home_screen.dart'
-    p = ROOT / path
+    p = ROOT / 'lib/features/home/home_screen.dart'
     text = p.read_text()
-    text = text.replace(
-        '  DateTime? _lastRefresh;\n  static const Duration _minRefreshInterval = Duration(minutes: 5);\n',
-        '',
-        1,
-    )
-    old_lifecycle = '''  @override
+    old = '''  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Silent refresh when the user returns, rate-limited.
     if (state == AppLifecycleState.resumed) {
@@ -77,52 +57,33 @@ def patch_home() -> None:
     }
   }
 '''
-    new_lifecycle = '''  @override
+    new = '''  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Returning from another screen must not reload the entire Home feed.
-    // Manual pull-to-refresh remains the explicit full-refresh path.
+    // Returning from another screen must not re-fetch/rebuild the whole Home.
+    // Pull-to-refresh remains the explicit full refresh action.
   }
 '''
-    if old_lifecycle in text:
-        text = text.replace(old_lifecycle, new_lifecycle, 1)
-
-    old_library_tail = '''      s.status =
-          s.tracks.isEmpty ? HomeShelfStatus.hidden : HomeShelfStatus.loaded;
-    }
-    _onShelfUpdate();
-  }
-'''
-    new_library_tail = '''      s.status =
-          s.tracks.isEmpty ? HomeShelfStatus.hidden : HomeShelfStatus.loaded;
-    }
-  }
-'''
-    if old_library_tail in text:
-        text = text.replace(old_library_tail, new_library_tail, 1)
-
-    patch_line = '              _buildContinueListeningHero(),\n'
-    replacement = '''              ValueListenableBuilder<List<Map<String, dynamic>>>(
-                valueListenable: LocalLibrary.instance.recentlyPlayed,
-                builder: (context, _, __) => _buildContinueListeningHero(),
-              ),
-'''
-    if patch_line in text and 'builder: (context, _, __) => _buildContinueListeningHero()' not in text:
-        text = text.replace(patch_line, replacement, 1)
+    if old in text:
+        text = text.replace(old, new, 1)
+    text = text.replace(
+        '  DateTime? _lastRefresh;\n  static const Duration _minRefreshInterval = Duration(minutes: 5);\n',
+        '',
+        1,
+    )
     p.write_text(text)
 
 
 def patch_discover() -> None:
-    path = 'lib/core/discover/discover_feed_engine.dart'
-    p = ROOT / path
+    p = ROOT / 'lib/core/discover/discover_feed_engine.dart'
     text = p.read_text()
     if "import '../recommendation/smart_listening_service.dart';" not in text:
         text = text.replace(
             "import '../recommendation/recommendation_service.dart';\n",
-            "import '../recommendation/recommendation_service.dart';\nimport '../recommendation/smart_listening_service.dart';\n",
+            "import '../recommendation/recommendation_service.dart';\n"
+            "import '../recommendation/smart_listening_service.dart';\n",
             1,
         )
-    anchor = '''    final engineResults = await Future.wait([
-'''
+    anchor = '    final engineResults = await Future.wait([\n'
     if anchor in text and 'smart-listening-home' not in text:
         injection = '''    final smartHome = SmartListeningService.instance;
     final smartHomePool = smartHome.isConfigured
@@ -145,8 +106,9 @@ def patch_discover() -> None:
 '''
         text = text.replace(anchor, injection + anchor, 1)
         text = text.replace(
-            '    final engineResults = await Future.wait([\n',
-            '    final engineResults = await Future.wait<List<_ScoredCandidate>>([\n      smartHomePool,\n',
+            anchor,
+            '    final engineResults = await Future.wait<List<_ScoredCandidate>>([\n'
+            '      smartHomePool,\n',
             1,
         )
     p.write_text(text)
