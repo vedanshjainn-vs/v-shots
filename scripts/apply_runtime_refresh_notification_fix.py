@@ -24,7 +24,6 @@ def patch_main() -> None:
             "import 'core/recommendation/music_recommendation_engine.dart';\nimport 'core/recommendation/music_region_profile.dart';\n",
             1,
         )
-
     old_boot = '''    AdFreeManager.instance.init(),
     AppVersion.load(),
     NotificationService.instance.initialize(),
@@ -44,7 +43,6 @@ def patch_main() -> None:
         text = text.replace(old_boot, new_boot, 1)
     elif 'await SmartNotificationService.instance.initialize();' not in text:
         raise SystemExit('main notification boot anchor not found')
-
     marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
         if marker not in text:
@@ -61,13 +59,11 @@ def patch_home() -> None:
     path = 'lib/features/home/home_screen.dart'
     p = ROOT / path
     text = p.read_text()
-
     text = text.replace(
         '  DateTime? _lastRefresh;\n  static const Duration _minRefreshInterval = Duration(minutes: 5);\n',
         '',
         1,
     )
-
     old_lifecycle = '''  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Silent refresh when the user returns, rate-limited.
@@ -90,9 +86,6 @@ def patch_home() -> None:
     if old_lifecycle in text:
         text = text.replace(old_lifecycle, new_lifecycle, 1)
 
-    # Keep the existing library listener so Continue Listening data is updated,
-    # but do not call setState on the whole Home tree. The localized
-    # ValueListenableBuilder below owns that repaint.
     old_library_tail = '''      s.status =
           s.tracks.isEmpty ? HomeShelfStatus.hidden : HomeShelfStatus.loaded;
     }
@@ -107,17 +100,13 @@ def patch_home() -> None:
     if old_library_tail in text:
         text = text.replace(old_library_tail, new_library_tail, 1)
 
-    # Only the Continue Listening sliver listens directly to recentlyPlayed.
-    # Everything else keeps its existing widget identity and scroll position.
     patch_line = '              _buildContinueListeningHero(),\n'
     replacement = '''              ValueListenableBuilder<List<Map<String, dynamic>>>(
                 valueListenable: LocalLibrary.instance.recentlyPlayed,
-                builder: (context, _, child) =>
-                    child ?? _buildContinueListeningHero(),
-                child: _buildContinueListeningHero(),
+                builder: (context, _, __) => _buildContinueListeningHero(),
               ),
 '''
-    if patch_line in text and 'valueListenable: LocalLibrary.instance.recentlyPlayed' not in text:
+    if patch_line in text and 'builder: (context, _, __) => _buildContinueListeningHero()' not in text:
         text = text.replace(patch_line, replacement, 1)
     p.write_text(text)
 
@@ -132,7 +121,6 @@ def patch_discover() -> None:
             "import '../recommendation/recommendation_service.dart';\nimport '../recommendation/smart_listening_service.dart';\n",
             1,
         )
-
     anchor = '''    final engineResults = await Future.wait([
 '''
     if anchor in text and 'smart-listening-home' not in text:
