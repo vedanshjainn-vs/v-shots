@@ -66,6 +66,11 @@ jobs:
           python3 scripts/apply_stability_patch.py
           dart format lib/features/home/home_feed_service.dart lib/features/foryou/for_you_feed_screen.dart lib/core/discover/discover_feed_engine.dart lib/core/notifications/notification_service.dart lib/main.dart
 
+      - name: 5d. Apply Regional + Content Policy Patch
+        run: |
+          python3 scripts/apply_content_policy_patch.py
+          dart format lib/core/music/music_validator.dart lib/core/discover/discover_feed_engine.dart lib/core/recommendation/music_recommendation_engine.dart lib/core/recommendation/music_region_profile.dart
+
       - name: 6. Run Formatting Check
         run: |
           set -e
