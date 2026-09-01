@@ -61,6 +61,11 @@ jobs:
           python3 scripts/apply_dynamic_home_patch.py
           dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart lib/features/home/dynamic_home_sections.dart lib/core/notifications/notification_service.dart lib/core/notifications/smart_notification_service.dart
 
+      - name: 5c. Apply Stability Audit Patch
+        run: |
+          python3 scripts/apply_stability_patch.py
+          dart format lib/features/home/home_feed_service.dart lib/features/foryou/for_you_feed_screen.dart lib/core/discover/discover_feed_engine.dart lib/core/notifications/notification_service.dart lib/main.dart
+
       - name: 6. Run Formatting Check
         run: |
           set -e
