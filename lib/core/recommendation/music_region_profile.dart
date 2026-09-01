@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -75,9 +76,6 @@ class MusicRegionProfile {
   static String _localeCountryCode() {
     final locale = PlatformDispatcher.instance.locale;
     final code = _normalizeCountry(locale.countryCode);
-    // India is the app's cold-start fallback rather than United States. This
-    // avoids the previous misleading "Personalized for United States" label
-    // on devices using an English/US UI locale without a country override.
     return code ?? 'IN';
   }
 
