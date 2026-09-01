@@ -18,20 +18,17 @@ jobs:
     steps:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
-
       - name: 2. Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: 3. Setup Flutter (Stable 3.44.9)
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.9'
           channel: 'stable'
           cache: true
-
       - name: 4. Configure Environment (.env)
         run: |
           cat <<EOF > .env
@@ -46,47 +43,41 @@ jobs:
           LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
           LEVELPLAY_DEBUG_USE_PRODUCTION=true
           EOF
-
       - name: 4b. Inject Production AdMob App ID (when configured)
         run: |
           if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
             sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" android/app/src/main/AndroidManifest.xml
           fi
-
       - name: 5. Install Dependencies
         run: flutter pub get
-
       - name: 5b. Apply Dynamic Home Recommendation Patch
         run: |
           python3 scripts/apply_dynamic_home_patch.py
           dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart lib/features/home/dynamic_home_sections.dart lib/core/notifications/notification_service.dart lib/core/notifications/smart_notification_service.dart
-
       - name: 5c. Apply Stability Audit Patch
         run: |
           python3 scripts/apply_stability_patch.py
           dart format lib/features/home/home_feed_service.dart lib/features/foryou/for_you_feed_screen.dart lib/core/discover/discover_feed_engine.dart lib/core/notifications/notification_service.dart lib/main.dart
-
       - name: 5d. Apply Regional + Content Policy Patch
         run: |
           python3 scripts/apply_content_policy_patch.py
           dart format lib/core/music/music_validator.dart lib/core/discover/discover_feed_engine.dart lib/core/recommendation/music_recommendation_engine.dart lib/core/recommendation/music_region_profile.dart
-
       - name: 5e. Apply Smart Listening V2 Patch
         run: |
           python3 scripts/apply_smart_listening_patch.py
           dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
-
+      - name: 5f. Apply Smart Queue Resilience Fix
+        run: |
+          python3 scripts/apply_smart_queue_fix.py
+          dart format lib/core/playback/vshots_playback_manager.dart lib/features/home/smart_listening_section.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
           git ls-files -z -- '*.dart' | xargs -0 -r dart format --output=none --set-exit-if-changed
-
       - name: 7. Run Flutter Analyzer
         run: flutter analyze --no-fatal-infos
-
       - name: 8. Run Unit & Widget Tests
         run: flutter test
-
       - name: 9. Setup Keystore & Build Release APK/AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -110,38 +101,32 @@ jobs:
           fi
           flutter build apk --release
           flutter build appbundle --release
-
       - name: 10. Build Debug APK
         run: flutter build apk --debug
-
       - name: 11. Validate Generated APKs & AAB
         run: |
           set -e
           [ -f build/app/outputs/flutter-apk/app-debug.apk ]
           [ -f build/app/outputs/flutter-apk/app-release.apk ]
           [ -f build/app/outputs/bundle/release/app-release.aab ]
-
       - name: 12. Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 90
-
       - name: 13. Upload Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 90
-
       - name: 14. Upload Release AAB Artifact
         uses: actions/upload-artifact@v4
         with:
           name: v-shots-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 90
-
       - name: 15. Upload APK to BrowserStack App Automate
         if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}
         continue-on-error: true
@@ -153,7 +138,6 @@ jobs:
           echo "$RESPONSE"
           APP_URL=$(echo "$RESPONSE" | grep -o '\"app_url\":\"[^\"]*\"' | cut -d'\"' -f4)
           [ -z "$APP_URL" ] || echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
-
       - name: 16. Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
         continue-on-error: true
