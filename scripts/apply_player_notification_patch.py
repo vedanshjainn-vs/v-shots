@@ -17,7 +17,6 @@ def patch_native_browser() -> None:
     path = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt'
     p = ROOT / path
     text = p.read_text()
-
     patch(path, '    init {\n        setBackgroundColor(Color.BLACK)\n', '    init {\n        VShotsBrowserPlaybackService.eventChannel = events\n        setBackgroundColor(Color.BLACK)\n')
     patch(path, '''    fun setMediaPlaying(value: Boolean) {
         if (mediaPlaying == value) return
@@ -121,7 +120,6 @@ def patch_session() -> None:
     path = 'lib/features/foryou/vshots_browser_session.dart'
     p = ROOT / path
     text = p.read_text()
-
     if 'onNotificationAction' not in text:
         text = text.replace('    this.onAdState,\n', '    this.onAdState,\n    this.onNotificationAction,\n', 1)
         text = text.replace('  final void Function(bool adActive)? onAdState;\n', '''  final void Function(bool adActive)? onAdState;
@@ -130,7 +128,6 @@ def patch_session() -> None:
   /// the single global playback manager.
   final Future<void> Function(String action)? onNotificationAction;
 ''', 1)
-
     if "case 'notificationAction':" not in text:
         text = text.replace("      case 'adState':\n        onAdState?.call(call.arguments == true);\n        break;\n", '''      case 'adState':
         onAdState?.call(call.arguments == true);
@@ -142,7 +139,6 @@ def patch_session() -> None:
         }
         break;
 ''', 1)
-
     if 'Future<void> updateNotification({' not in text:
         text = text.replace('  Future<void> _autoplayPass() async {\n', '''  Future<void> updateNotification({
     required String title,
@@ -169,7 +165,8 @@ def patch_sheet() -> None:
     path = 'lib/features/foryou/discovery_browser_sheet.dart'
     p = ROOT / path
     text = p.read_text()
-
+    if "import 'dart:async';" not in text:
+        text = "import 'dart:async';\n\n" + text
     if 'onNotificationAction:' not in text:
         text = text.replace('      onAdState: (on) => widget.controller.setAdActive(on),\n', '''      onAdState: (on) => widget.controller.setAdActive(on),
       onNotificationAction: (action) async {
@@ -189,7 +186,6 @@ def patch_sheet() -> None:
         }
       },
 ''', 1)
-
     if "_session.updateNotification(" not in text:
         text = text.replace('    widget.controller.setError(null);\n    await _session.load(url);\n', '''    widget.controller.setError(null);
     unawaited(
