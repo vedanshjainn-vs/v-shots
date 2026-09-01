@@ -71,7 +71,8 @@ class MRECAdManager extends ChangeNotifier {
   void markDisplayed() {
     _lastShownAt = DateTime.now();
     _isLoaded = false;
-    AdAnalytics.log('mrec_impression', placement: _currentPlacement?.name ?? '');
+    AdAnalytics.log('mrec_impression',
+        placement: _currentPlacement?.name ?? '');
     notifyListeners();
   }
 
@@ -100,7 +101,8 @@ class MRECAdManager extends ChangeNotifier {
   void onAdLoadFailed(String error) {
     debugPrint('[MREC] Load failed: $error');
     _isLoaded = false;
-    AdAnalytics.log('mrec_load_failed', placement: _currentPlacement?.name ?? '');
+    AdAnalytics.log('mrec_load_failed',
+        placement: _currentPlacement?.name ?? '');
     notifyListeners();
   }
 
