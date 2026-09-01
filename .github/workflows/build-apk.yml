@@ -75,6 +75,10 @@ jobs:
           dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
           dart fix --apply
           dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
+      - name: 5g. Apply Interactive Player Notification Patch
+        run: |
+          python3 scripts/apply_player_notification_patch.py
+          dart format lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
