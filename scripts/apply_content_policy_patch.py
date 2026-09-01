@@ -29,6 +29,14 @@ patch(
     "    final reasons = <String>[];\n\n    // STRONG non-music rejection (shared keyword set).",
     "    final reasons = <String>[];\n\n    // HARD POLICY: unofficial AI uploads are not recommendation content.\n    // Explicitly official/verified catalog items are allowed to continue.\n    if (!isOfficial &&\n        _vShotsLooksLikeUnofficialAi(title, artist, channelTitle)) {\n      return const MusicValidationResult(\n        isMusic: false,\n        confidence: 0.0,\n        reasons: ['UNOFFICIAL_AI_CONTENT'],\n        rejectionReason: 'UNOFFICIAL_AI_CONTENT',\n        sourceTrustScore: 0.0,\n      );\n    }\n\n    // STRONG non-music rejection (shared keyword set).")
 
+# RecommendationEngine: invalid/AI content is a HARD rejection, not merely a
+# low quality score. This prevents a high-affinity but unsafe candidate from
+# surviving diversity/exploration ranking.
+patch(
+    'lib/core/recommendation/music_recommendation_engine.dart',
+    "    for (final candidate in candidates) {\n      final score = scoreForYou(",
+    "    for (final candidate in candidates) {\n      final validation = _validator.validate(candidate.track.toTrackMap());\n      if (!validation.isMusic) continue;\n      final score = scoreForYou(")
+
 # Discovery's regional trending pool should follow the device country rather
 # than the remote-config default (which historically defaulted to IN).
 patch(
@@ -40,3 +48,21 @@ patch(
     'lib/core/discover/discover_feed_engine.dart',
     "    final region = (cfg['region'] as String?)?.trim().isNotEmpty == true\n        ? (cfg['region'] as String).trim()\n        : 'IN';",
     "    // Country is automatic and permission-free. Explore filters still\n    // override the feed when explicitly selected by the user.\n    final region = MusicRegionProfile.current().countryCode;")
+
+# Discovery also receives direct provider candidates from trending/query pools;
+# apply the same hard content policy before ranking so unofficial AI content can
+# never be selected by a later diversity/exploration step.
+patch(
+    'lib/core/discover/discover_feed_engine.dart',
+    "import '../music/music_ranker.dart';\nimport '../providers/music_repository.dart';",
+    "import '../music/music_ranker.dart';\nimport '../music/music_validator.dart';\nimport '../providers/music_repository.dart';")
+
+patch(
+    'lib/core/discover/discover_feed_engine.dart',
+    "    // Fallback: pools empty (network hiccup) → one safe popular query so\n    // Discover is NEVER blank.",
+    "    // HARD CONTENT POLICY: remove non-music/unofficial AI candidates before\n    // fallback or ranking. This is intentionally before scoring/diversity.\n    final validator = const MusicContentValidator();\n    candidates.removeWhere(\n      (candidate) => !validator.validate(candidate.track).isMusic,\n    );\n\n    // Fallback: pools empty (network hiccup) → one safe popular query so\n    // Discover is NEVER blank.")
+
+patch(
+    'lib/core/discover/discover_feed_engine.dart',
+    "    final ranked = _rankCandidates(candidates, excludeIds, quotas, count);",
+    "    // Fallback results must pass the exact same hard policy.\n    candidates.removeWhere(\n      (candidate) => !validator.validate(candidate.track).isMusic,\n    );\n    final ranked = _rankCandidates(candidates, excludeIds, quotas, count);")
