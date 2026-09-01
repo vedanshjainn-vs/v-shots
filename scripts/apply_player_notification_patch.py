@@ -18,16 +18,8 @@ def patch_native_browser() -> None:
     p = ROOT / path
     text = p.read_text()
 
-    old_init = '''    init {
-        setBackgroundColor(Color.BLACK)
-'''
-    new_init = '''    init {
-        VShotsBrowserPlaybackService.eventChannel = events
-        setBackgroundColor(Color.BLACK)
-'''
-    patch(path, old_init, new_init)
-
-    old_set_state = '''    fun setMediaPlaying(value: Boolean) {
+    patch(path, '    init {\n        setBackgroundColor(Color.BLACK)\n', '    init {\n        VShotsBrowserPlaybackService.eventChannel = events\n        setBackgroundColor(Color.BLACK)\n')
+    patch(path, '''    fun setMediaPlaying(value: Boolean) {
         if (mediaPlaying == value) return
         mediaPlaying = value
         if (value) {
@@ -37,8 +29,7 @@ def patch_native_browser() -> None:
         }
         events.invokeMethod("playbackState", value)
     }
-'''
-    new_set_state = '''    fun setMediaPlaying(value: Boolean) {
+''', '''    fun setMediaPlaying(value: Boolean) {
         if (mediaPlaying == value) {
             updatePlaybackNotification(value)
             return
@@ -51,10 +42,8 @@ def patch_native_browser() -> None:
     fun updateNotification(title: String, artist: String, playing: Boolean) {
         startPlaybackForegroundService(title = title, artist = artist, playing = playing)
     }
-'''
-    patch(path, old_set_state, new_set_state)
-
-    old_start = '''    private fun startPlaybackForegroundService() {
+''')
+    patch(path, '''    private fun startPlaybackForegroundService() {
         val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -66,15 +55,14 @@ def patch_native_browser() -> None:
             // FGS startup is a hardening layer and must never crash Discovery.
         }
     }
-'''
-    new_start = '''    private fun startPlaybackForegroundService(
+''', '''    private fun startPlaybackForegroundService(
         title: String? = null,
         artist: String? = null,
         playing: Boolean = mediaPlaying,
     ) {
         val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java).apply {
             action = VShotsBrowserPlaybackService.ACTION_UPDATE
-            putExtra("title", title ?: this@VShotsBackgroundMediaWebView.url?.let { "V Shots" })
+            putExtra("title", title ?: "V Shots")
             putExtra("artist", artist ?: "Music playback")
             putExtra("playing", playing)
         }
@@ -92,17 +80,14 @@ def patch_native_browser() -> None:
     private fun updatePlaybackNotification(playing: Boolean) {
         startPlaybackForegroundService(playing = playing)
     }
-'''
-    patch(path, old_start, new_start)
-
-    old_dispose = '''    fun disposeMedia() {
+''')
+    patch(path, '''    fun disposeMedia() {
         stopPlaybackPolling()
         setMediaPlaying(false)
         stopLoading()
         loadUrl("about:blank")
     }
-'''
-    new_dispose = '''    fun disposeMedia() {
+''', '''    fun disposeMedia() {
         stopPlaybackPolling()
         stopPlaybackForegroundService()
         if (VShotsBrowserPlaybackService.eventChannel === events) {
@@ -112,15 +97,12 @@ def patch_native_browser() -> None:
         stopLoading()
         loadUrl("about:blank")
     }
-'''
-    patch(path, old_dispose, new_dispose)
-
-    old_case = '''                "setAdAssist" -> {
+''')
+    patch(path, '''                "setAdAssist" -> {
                     webView.setAdAssist((call.arguments as? Boolean) ?: true)
                     result.success(null)
                 }
-'''
-    new_case = '''                "setAdAssist" -> {
+''', '''                "setAdAssist" -> {
                     webView.setAdAssist((call.arguments as? Boolean) ?: true)
                     result.success(null)
                 }
@@ -132,8 +114,7 @@ def patch_native_browser() -> None:
                     webView.updateNotification(title, artist, playing)
                     result.success(null)
                 }
-'''
-    patch(path, old_case, new_case)
+''')
 
 
 def patch_session() -> None:
@@ -141,37 +122,17 @@ def patch_session() -> None:
     p = ROOT / path
     text = p.read_text()
 
-    old_ctor = '''    this.onVideoEnded,
-    this.onAdState,
-    VShotsContentBlocker? contentBlocker,
-'''
-    new_ctor = '''    this.onVideoEnded,
-    this.onAdState,
-    this.onNotificationAction,
-    VShotsContentBlocker? contentBlocker,
-'''
-    patch(path, old_ctor, new_ctor)
+    if 'onNotificationAction' not in text:
+        text = text.replace('    this.onAdState,\n', '    this.onAdState,\n    this.onNotificationAction,\n', 1)
+        text = text.replace('  final void Function(bool adActive)? onAdState;\n', '''  final void Function(bool adActive)? onAdState;
 
-    old_fields = '''  final void Function(bool adActive)? onAdState;
-
-  /// The general-purpose content blocker for this browser session.
-'''
-    new_fields = '''  final void Function(bool adActive)? onAdState;
-
-  /// Android lock-screen/notification media actions. The sheet routes these
-  /// back through VShotsPlaybackManager so there is still one queue owner.
+  /// Android notification/lock-screen media actions are routed back through
+  /// the single global playback manager.
   final Future<void> Function(String action)? onNotificationAction;
+''', 1)
 
-  /// The general-purpose content blocker for this browser session.
-'''
-    patch(path, old_fields, new_fields)
-
-    old_handler = '''      case 'adState':
-        onAdState?.call(call.arguments == true);
-        break;
-      case 'blocked':
-'''
-    new_handler = '''      case 'adState':
+    if "case 'notificationAction':" not in text:
+        text = text.replace("      case 'adState':\n        onAdState?.call(call.arguments == true);\n        break;\n", '''      case 'adState':
         onAdState?.call(call.arguments == true);
         break;
       case 'notificationAction':
@@ -180,13 +141,10 @@ def patch_session() -> None:
           await onNotificationAction?.call(action);
         }
         break;
-      case 'blocked':
-'''
-    patch(path, old_handler, new_handler)
+''', 1)
 
-    anchor = '''  Future<void> _autoplayPass() async {
-'''
-    method = '''  Future<void> updateNotification({
+    if 'Future<void> updateNotification({' not in text:
+        text = text.replace('  Future<void> _autoplayPass() async {\n', '''  Future<void> updateNotification({
     required String title,
     required String artist,
     required bool playing,
@@ -202,11 +160,8 @@ def patch_session() -> None:
     } catch (_) {}
   }
 
-'''
-    if 'Future<void> updateNotification({' not in text:
-        if anchor not in text:
-            raise SystemExit('session notification insertion anchor not found')
-        text = text.replace(anchor, method + anchor, 1)
+  Future<void> _autoplayPass() async {
+''', 1)
     p.write_text(text)
 
 
@@ -215,10 +170,8 @@ def patch_sheet() -> None:
     p = ROOT / path
     text = p.read_text()
 
-    old_session = '''      onAdState: (on) => widget.controller.setAdActive(on),
-      // Player-essential hosts are ALWAYS allowed, so the general content
-'''
-    new_session = '''      onAdState: (on) => widget.controller.setAdActive(on),
+    if 'onNotificationAction:' not in text:
+        text = text.replace('      onAdState: (on) => widget.controller.setAdActive(on),\n', '''      onAdState: (on) => widget.controller.setAdActive(on),
       onNotificationAction: (action) async {
         switch (action) {
           case 'toggle':
@@ -235,16 +188,10 @@ def patch_sheet() -> None:
             break;
         }
       },
-      // Player-essential hosts are ALWAYS allowed, so the general content
-'''
-    patch(path, old_session, new_session)
+''', 1)
 
-    old_load = '''    widget.controller.setLoading(true);
-    widget.controller.setError(null);
-    await _session.load(url);
-'''
-    new_load = '''    widget.controller.setLoading(true);
-    widget.controller.setError(null);
+    if "_session.updateNotification(" not in text:
+        text = text.replace('    widget.controller.setError(null);\n    await _session.load(url);\n', '''    widget.controller.setError(null);
     unawaited(
       _session.updateNotification(
         title: widget.controller.title ?? 'V Shots',
@@ -253,9 +200,7 @@ def patch_sheet() -> None:
       ),
     );
     await _session.load(url);
-'''
-    patch(path, old_load, new_load)
-
+''', 1)
     p.write_text(text)
 
 
