@@ -108,7 +108,7 @@ def patch_home_screen() -> None:
         text = text.replace(anchor, anchor + "import 'dynamic_home_sections.dart';\n", 1)
 
     old_build = """              _buildHeroHeader(),\n              _buildContinueListeningHero(),\n              _buildMoodChips(),\n"""
-    new_build = """              _buildHeroHeader(),\n              _buildContinueListeningHero(),\n              if (_dynamicForYouShelf() != null)\n                DynamicForYouHero(\n                  track: _dynamicForYouShelf()!.tracks.first,\n                  onPlay: () {\n                    final shelf = _dynamicForYouShelf()!;\n                    playTrack(context, shelf.tracks.first, shelf.tracks, 0);\n                  },\n                ),\n              _buildMoodChips(),\n"""
+    new_build = """              _buildHeroHeader(),\n              _buildContinueListeningHero(),\n              if (_dynamicForYouShelf() != null)\n                SliverToBoxAdapter(\n                  child: DynamicForYouHero(\n                    track: _dynamicForYouShelf()!.tracks.first,\n                    onPlay: () {\n                      final shelf = _dynamicForYouShelf()!;\n                      playTrack(context, shelf.tracks.first, shelf.tracks, 0);\n                    },\n                  ),\n                ),\n              _buildMoodChips(),\n"""
     if old_build in text:
         text = text.replace(old_build, new_build, 1)
 
