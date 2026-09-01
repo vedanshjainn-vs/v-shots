@@ -69,6 +69,12 @@ jobs:
           dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
           dart fix --apply
           dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
+      - name: 5f. Apply Runtime Refresh + Notification Fix
+        run: |
+          python3 scripts/apply_runtime_refresh_notification_fix.py
+          dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
+          dart fix --apply
+          dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
