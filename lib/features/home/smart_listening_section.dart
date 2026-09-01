@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 
 import '../../core/playback/vshots_playback_manager.dart';
 import '../../core/recommendation/music_region_profile.dart';
+import '../../core/recommendation/signal_store.dart';
 import '../../core/recommendation/smart_listening_service.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 
 /// Home entry point for the core listening loop: Smart Next, Song Radio,
-/// Daily Mix and personalized mood mixes. Network work is kept out of build
-/// and the existing global player remains the only playback owner.
+/// Daily Mix and personalized mood mixes. Only this section reacts to taste
+/// or region changes; the rest of Home stays mounted and does not refresh.
 class SmartListeningSection extends StatefulWidget {
   const SmartListeningSection({super.key});
 
@@ -33,10 +34,30 @@ class _SmartListeningSectionState extends State<SmartListeningSection> {
   @override
   void initState() {
     super.initState();
-    _nextFuture = SmartListeningService.instance.nextSongQueue(
+    _nextFuture = _buildNextFuture();
+    SignalStore.instance.revision.addListener(_onRecommendationChanged);
+    MusicRegionProfile.revision.addListener(_onRecommendationChanged);
+  }
+
+  Future<List<Map<String, dynamic>>> _buildNextFuture() {
+    return SmartListeningService.instance.nextSongQueue(
       seed: _seed,
       count: 8,
     );
+  }
+
+  void _onRecommendationChanged() {
+    if (!mounted) return;
+    setState(() {
+      _nextFuture = _buildNextFuture();
+    });
+  }
+
+  @override
+  void dispose() {
+    SignalStore.instance.revision.removeListener(_onRecommendationChanged);
+    MusicRegionProfile.revision.removeListener(_onRecommendationChanged);
+    super.dispose();
   }
 
   Future<void> _playNext() async {
@@ -105,10 +126,7 @@ class _SmartListeningSectionState extends State<SmartListeningSection> {
             const SizedBox(height: 3),
             Text(
               'Personalized for ${region.countryName} • learns from every play',
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textMuted,
-              ),
+              style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
             const SizedBox(height: 12),
             Row(
