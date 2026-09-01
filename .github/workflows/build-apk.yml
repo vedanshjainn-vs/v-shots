@@ -64,12 +64,9 @@ jobs:
           dart format lib/core/music/music_validator.dart lib/core/discover/discover_feed_engine.dart lib/core/recommendation/music_recommendation_engine.dart lib/core/recommendation/music_region_profile.dart
       - name: 5e. Apply Smart Listening V2 Patch
         run: |
-          python3 scripts/apply_smart_listening_patch.py
-          dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
-      - name: 5f. Apply Smart Queue Resilience Fix
-        run: |
+          python3 scripts/apply_smart_listening_v2.py
           python3 scripts/apply_smart_queue_fix.py
-          dart format lib/core/playback/vshots_playback_manager.dart lib/features/home/smart_listening_section.dart
+          dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
