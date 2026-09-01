@@ -6,10 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Lightweight regional context for music discovery.
 ///
-/// The country is resolved without GPS. A cached/network country is preferred;
-/// the device locale is the fallback. If the device is on India Standard Time,
-/// India wins over a conflicting UI locale such as `en-US`, avoiding the exact
-/// false "Personalized for United States" state seen on Indian devices.
+/// Country resolution is permission-free. A network country is used when it
+/// is reliable, while India Standard Time is treated as a deterministic local
+/// fallback so a stale `US` cache or `en-US` UI locale cannot label an Indian
+/// device as United States.
 class MusicRegionProfile {
   const MusicRegionProfile({
     required this.countryCode,
@@ -27,14 +27,21 @@ class MusicRegionProfile {
   static bool _initialized = false;
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
+  static bool get _isIndiaTimeZone =>
+      DateTime.now().timeZoneOffset == const Duration(hours: 5, minutes: 30);
+
   static Future<void> initialize() async {
     if (_initialized || _initializing) return;
     _initializing = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       final cached = _normalizeCountry(prefs.getString(_storedCountryKey));
-      if (cached != null) {
+      if (cached != null && !_isIndiaTimeZone) {
         _resolvedCountryCode = cached;
+        revision.value++;
+      } else if (_isIndiaTimeZone && cached != 'IN') {
+        _resolvedCountryCode = 'IN';
+        await prefs.setString(_storedCountryKey, 'IN');
         revision.value++;
       }
 
@@ -46,16 +53,19 @@ class MusicRegionProfile {
             )
             .timeout(const Duration(seconds: 3));
         final networkCode = _normalizeCountry(response.body);
+        // For Indian Standard Time, do not let a stale/proxy network result
+        // immediately flip the device back to US/another country.
+        final acceptedCode = _isIndiaTimeZone ? 'IN' : networkCode;
         if (response.statusCode >= 200 &&
             response.statusCode < 300 &&
-            networkCode != null &&
-            networkCode != _resolvedCountryCode) {
-          _resolvedCountryCode = networkCode;
-          await prefs.setString(_storedCountryKey, networkCode);
+            acceptedCode != null &&
+            acceptedCode != _resolvedCountryCode) {
+          _resolvedCountryCode = acceptedCode;
+          await prefs.setString(_storedCountryKey, acceptedCode);
           revision.value++;
         }
       } catch (_) {
-        // Locale/timezone/cached region remains the safe fallback.
+        // Cached/locale/timezone region remains the safe fallback.
       }
     } catch (_) {
       // Region is enrichment only; recommendations must never fail because of it.
@@ -66,18 +76,16 @@ class MusicRegionProfile {
   }
 
   static MusicRegionProfile current() {
-    final code = _resolvedCountryCode ?? _localeCountryCode();
+    // Immediate and deterministic India fix before async IP resolution.
+    final code = _isIndiaTimeZone
+        ? 'IN'
+        : (_resolvedCountryCode ?? _localeCountryCode());
     return _forCountry(code);
   }
 
   static String _localeCountryCode() {
     final locale = PlatformDispatcher.instance.locale;
-    final localeCode = _normalizeCountry(locale.countryCode);
-    // India Standard Time is UTC+05:30 year-round. This is deliberately only
-    // a country-level fallback and never stores precise location information.
-    final ist = DateTime.now().timeZoneOffset == const Duration(hours: 5, minutes: 30);
-    if (ist) return 'IN';
-    return localeCode ?? 'IN';
+    return _normalizeCountry(locale.countryCode) ?? 'IN';
   }
 
   static String? _normalizeCountry(String? value) {
