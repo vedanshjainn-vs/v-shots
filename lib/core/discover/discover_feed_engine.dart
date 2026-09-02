@@ -43,6 +43,7 @@ import '../recommendation/music_recommendation_engine.dart';
 import '../recommendation/recommendation_engine.dart';
 import '../recommendation/recommendation_service.dart';
 import '../remote_config/remote_config_service.dart';
+import '../storage/local_library.dart';
 
 /// Adaptive bucket weights. All values 0..1, sum == 1.
 @immutable
@@ -709,6 +710,12 @@ class DiscoverFeedEngine {
         activeGenres: activeGenres,
         recentArtists: recent,
       );
+      // Recently surfaced cards are a soft negative, not a hard exclusion:
+      // fresh candidates win whenever the provider can supply them, while a
+      // thin result set can still fall back instead of going blank.
+      if (LocalLibrary.instance.recentlyShownIds.contains(id)) {
+        c.score *= 0.42;
+      }
       c.reason = _reasonFor(c.track, c.bucket, artistScores);
       scored.add(c);
     }

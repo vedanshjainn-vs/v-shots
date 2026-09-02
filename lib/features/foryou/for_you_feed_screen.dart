@@ -191,6 +191,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         _items[_currentIndex],
         outcome: DiscoverSwipeOutcome.completed,
       );
+      unawaited(
+        LocalLibrary.instance.recordRecentlyPlayed(_items[_currentIndex]),
+      );
       _cardShownAt = DateTime.now();
       _prevCard = _items[idx];
     }
@@ -286,6 +289,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _seenIds.addAll(batch.map((t) => t['id'] as String));
       _initialLoading = false;
     });
+    if (batch.isNotEmpty) {
+      final first = batch.first;
+      final id = first['id'] as String? ?? '';
+      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
+      _cardShownAt = DateTime.now();
+      _prevCard = first;
+    }
   }
 
   /// Play tap on a Discovery card → open the selected video in the in-app
@@ -521,6 +531,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _prevCard = track;
 
     setState(() => _currentIndex = index);
+    final shownId = track['id'] as String? ?? '';
+    if (shownId.isNotEmpty) LocalLibrary.instance.recordShownSong(shownId);
 
     // Programmatic move (auto-advance): the manager ALREADY owns playback
     // for this item — do not re-trigger playQueue (prevents a feedback loop).
@@ -1303,17 +1315,15 @@ class _ForYouCardState extends State<_ForYouCard>
   @override
   void initState() {
     super.initState();
-    if (widget.isActive) _bgCtl.repeat(reverse: true);
   }
 
   @override
   void didUpdateWidget(covariant _ForYouCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isActive && !_bgCtl.isAnimating) {
-      _bgCtl.repeat(reverse: true);
-    } else if (!widget.isActive && _bgCtl.isAnimating) {
-      _bgCtl.stop();
-    }
+    // Deliberately keep the expensive backdrop controller stopped. Discovery
+    // lives inside MainShell's IndexedStack, so a background animation would
+    // consume frames while Home/Search/Profile are active.
+    if (_bgCtl.isAnimating) _bgCtl.stop();
   }
 
   @override
@@ -1778,31 +1788,37 @@ class _ForYouCardState extends State<_ForYouCard>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  StatefulBuilder(
-                    builder: (context, setLikeState) {
+                  ValueListenableBuilder<List<Map<String, dynamic>>>(
+                    valueListenable: LocalLibrary.instance.likedSongs,
+                    builder: (context, _, __) {
                       final isLiked = LocalLibrary.instance.isLiked(trackId);
                       return IconButton(
-                        icon: LikePop(
-                          liked: isLiked,
-                          child: Icon(
-                            isLiked
-                                ? Icons.favorite_rounded
-                                : Icons.favorite_border_rounded,
-                            color: isLiked ? AppColors.hotPink : Colors.white,
-                            size: 32,
+                        splashColor: Colors.transparent,
+                        highlightColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        icon: RepaintBoundary(
+                          child: LikePop(
+                            liked: isLiked,
+                            child: Icon(
+                              isLiked
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              color: isLiked ? AppColors.hotPink : Colors.white,
+                              size: 32,
+                            ),
                           ),
                         ),
                         onPressed: () {
                           unawaited(HapticFeedback.lightImpact());
                           final wasLiked = isLiked;
-                          LocalLibrary.instance.toggleLiked(track).then((_) {
-                            if (wasLiked) {
-                              playbackSignalTracker.onUnliked(track);
-                            } else {
-                              playbackSignalTracker.onLiked(track);
-                            }
-                            setLikeState(() {});
-                          });
+                          unawaited(LocalLibrary.instance.toggleLiked(track));
+                          if (wasLiked) {
+                            playbackSignalTracker.onUnliked(track);
+                          } else {
+                            playbackSignalTracker.onLiked(track);
+                          }
                         },
                       );
                     },

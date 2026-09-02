@@ -35,6 +35,7 @@ import '../../shared/widgets/app_image.dart';
 import '../profile/artist_details_screen.dart';
 import '../profile/rewards_sheet.dart';
 import 'home_feed_service.dart';
+import 'dynamic_home_sections.dart';
 import 'playlist_page_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -241,9 +242,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             slivers: [
               _buildHeroHeader(),
               _buildContinueListeningHero(),
+              if (_dynamicForYouShelf() != null)
+                SliverToBoxAdapter(
+                  child: DynamicForYouHero(
+                    track: _dynamicForYouShelf()!.tracks.first,
+                    onPlay: () {
+                      final shelf = _dynamicForYouShelf()!;
+                      playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+                    },
+                  ),
+                ),
               _buildMoodChips(),
               _buildRewardedAdFreeCard(),
               _buildSpotlightSliver(),
+              _buildQuickPicksSliver(),
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
               else
@@ -507,6 +519,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  HomeShelf? _dynamicForYouShelf() {
+    for (final shelf in _shelves) {
+      if (shelf.id == 'dynamic_mfy' &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.isNotEmpty) {
+        return shelf;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildQuickPicksSliver() {
+    HomeShelf? source;
+    for (final shelf in _shelves) {
+      if ((shelf.id == 'dynamic_tfy' ||
+              shelf.id == 'dynamic_discover' ||
+              shelf.id == 'dynamic_mfy') &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.length >= 2) {
+        source = shelf;
+        break;
+      }
+    }
+    if (source == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    return SliverToBoxAdapter(
+      child: DynamicQuickPicks(
+        tracks: source.tracks,
+        onPlay: (index) => playTrack(
+          context,
+          source!.tracks[index],
+          source.tracks,
+          index,
         ),
       ),
     );

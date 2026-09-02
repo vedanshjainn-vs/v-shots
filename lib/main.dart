@@ -87,8 +87,12 @@ void main() async {
     AdFreeManager.instance.init(),
     AppVersion.load(),
     NotificationService.instance.initialize(),
-    SmartNotificationService.instance.initialize(),
   ]);
+  // NotificationService MUST be ready before SmartNotificationService: the
+  // scheduler calls into it during initialization. Running both in the same
+  // Future.wait caused the first schedule build to race the plugin init and
+  // silently schedule zero notifications.
+  await SmartNotificationService.instance.initialize();
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
   // Initialize FCM (non-blocking, fire-and-forget)
