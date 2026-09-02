@@ -50,8 +50,7 @@ class NotificationService {
       _initialized = true;
 
       final prefs = await SharedPreferences.getInstance();
-      final requested =
-          prefs.getBool(keyNotifPermissionRequested) ?? false;
+      final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;
       if (!requested) {
         await requestNotificationPermission();
         await prefs.setBool(keyNotifPermissionRequested, true);
@@ -128,7 +127,6 @@ class NotificationService {
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       icon: '@mipmap/ic_launcher',
-      category: AndroidNotificationCategory.recommendation,
     );
     await _plugin.zonedSchedule(
       id,
