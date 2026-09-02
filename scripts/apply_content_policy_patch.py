@@ -66,3 +66,22 @@ patch(
     'lib/core/discover/discover_feed_engine.dart',
     "    final ranked = _rankCandidates(candidates, excludeIds, quotas, count);",
     "    // Fallback results must pass the exact same hard policy.\n    candidates.removeWhere(\n      (candidate) => !validator.validate(candidate.track).isMusic,\n    );\n    final ranked = _rankCandidates(candidates, excludeIds, quotas, count);")
+
+# Connect the Discover feed to the same real-time taste/region engine used by
+# Home. Mood/category browsing keeps its explicit query path; the default feed
+# becomes recommendation-first so location + listening interest actually drive
+# what appears instead of a generic random search query.
+patch(
+    'lib/features/foryou/for_you_feed_service.dart',
+    "import '../../core/recommendation/recommendation_service.dart';\nimport '../../core/storage/local_library.dart';",
+    "import '../../core/recommendation/recommendation_service.dart';\nimport '../../core/recommendation/music_recommendation_engine.dart';\nimport '../../core/storage/local_library.dart';")
+
+patch(
+    'lib/features/foryou/for_you_feed_service.dart',
+    "  final MusicRepository _repository;\n  final _random = Random();",
+    "  final MusicRepository _repository;\n  final _random = Random();\n  MusicRecommendationEngine? _personalizedEngine;\n\n  MusicRecommendationEngine get _engine =>\n      _personalizedEngine ??= MusicRecommendationEngine.withRepository(\n        _repository,\n      );")
+
+patch(
+    'lib/features/foryou/for_you_feed_service.dart',
+    "  }) async {\n    final query = _pickQuery();",
+    "  }) async {\n    // Default Discover is now recommendation-first and uses the same taste\n    // signals + automatic device region as Home. Explicit mood queries keep\n    // their dedicated search behavior.\n    if (activeMoodQuery == null || activeMoodQuery!.isEmpty) {\n      try {\n        final personalized = await _engine.generateForYou(\n          excludeIds: excludeIds,\n          count: count,\n        );\n        if (personalized.isNotEmpty) {\n          for (final track in personalized) {\n            final id = track['id'] as String?;\n            if (id != null) LocalLibrary.instance.recordShownSong(id);\n          }\n          return personalized;\n        }\n      } catch (e) {\n        debugPrint('[ForYouFeedService] personalized Discover failed: $e');\n      }\n    }\n\n    final query = _pickQuery();")
