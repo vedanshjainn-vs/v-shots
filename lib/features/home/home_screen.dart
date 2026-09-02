@@ -20,8 +20,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shimmer/shimmer.dart';
 
+import '../../core/ads/ad_free_manager.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
+import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/motion/motion.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
@@ -32,7 +34,9 @@ import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_avatar.dart';
 import '../../shared/widgets/app_image.dart';
 import '../profile/artist_details_screen.dart';
+import '../profile/rewards_sheet.dart';
 import 'home_feed_service.dart';
+import 'dynamic_home_sections.dart';
 import 'playlist_page_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -64,24 +68,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Lazy shelf loading: with 50+ CMS shelves the initial Home load fetches
   /// only the first [_initialShelfCount] shelves; the rest load in batches
-  /// as the user scrolls near the bottom (fast first paint + no wasted
-  /// network for shelves nobody has reached yet).
-  static const int _initialShelfCount = 10;
+  /// as the user scrolls (fast first paint + no wasted network for shelves
+  /// nobody has reached yet).
+  static const int _initialShelfCount = 12;
   static const int _lazyBatchSize = 8;
+
+  /// Trigger lazy load when user is this many shelves away from the end
+  /// of currently loaded content — starts prefetching BEFORE skeletons
+  /// become visible so the next batch is usually ready by the time user
+  /// scrolls to it.
+  static const int _lazyLoadAheadShelves = 4;
   int _maxLoadedShelves = _initialShelfCount;
   bool _loadingMoreShelves = false;
   final ScrollController _scrollController = ScrollController();
 
   void _onScrollForLazyLoad() {
-    if (!_scrollController.hasClients) return;
-    if (_scrollController.position.extentAfter > 1600) return;
-    if (_loadingMoreShelves || _maxLoadedShelves >= _shelves.length) return;
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    if (_loadingMoreShelves) {
+      return;
+    }
+    if (_maxLoadedShelves >= _shelves.length) {
+      return;
+    }
+    // Smart trigger: fire when the user has scrolled past
+    // (_maxLoadedShelves - _lazyLoadAheadShelves) shelves — i.e. start
+    // loading the next batch 4 shelves BEFORE the user reaches the end
+    // of currently loaded content. This eliminates the "skeletons for
+    // shelves 6-7+" delay because prefetch starts much earlier.
+    final loadedCount = _shelves
+        .take(_maxLoadedShelves)
+        .where(
+          (s) =>
+              s.status == HomeShelfStatus.loaded ||
+              s.status == HomeShelfStatus.hidden,
+        )
+        .length;
+    if (loadedCount < _maxLoadedShelves - _lazyLoadAheadShelves) return;
     final end = (_maxLoadedShelves + _lazyBatchSize).clamp(0, _shelves.length);
     _loadingMoreShelves = true;
     unawaited(
       homeFeedService
-          .loadShelfRange(_shelves, _maxLoadedShelves, end,
-              onUpdate: _onShelfUpdate)
+          .loadShelfRange(
+        _shelves,
+        _maxLoadedShelves,
+        end,
+        onUpdate: _onShelfUpdate,
+      )
           .whenComplete(() {
         _maxLoadedShelves = end;
         _loadingMoreShelves = false;
@@ -136,8 +170,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);
-    RemoteConfigService.instance.revision
-        .removeListener(_onRemoteConfigApplied);
+    RemoteConfigService.instance.revision.removeListener(
+      _onRemoteConfigApplied,
+    );
     _scrollController.removeListener(_onScrollForLazyLoad);
     _scrollController.dispose();
     super.dispose();
@@ -145,9 +180,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _onLibraryChanged() {
     if (!mounted) return;
-    // Continue Listening reads LocalLibrary directly; rebuild so new plays
-    // show up instantly without waiting for a full refresh.
-    setState(() {});
+    // Update Continue Listening data first, then coalesce into ONE rebuild
+    // via the existing frame-coalesced callback — avoids a stale-data
+    // rebuild and prevents a full-screen setState for a single shelf change.
     final continueShelf = _shelves.where(
       (s) => s.kind == HomeShelfKind.continueListening,
     );
@@ -158,6 +193,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       s.status =
           s.tracks.isEmpty ? HomeShelfStatus.hidden : HomeShelfStatus.loaded;
     }
+    _onShelfUpdate();
   }
 
   Future<void> _load({required bool forceRefresh}) async {
@@ -197,21 +233,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: RefreshIndicator(
           color: AppColors.primaryLight,
           backgroundColor: AppColors.surface2,
-          onRefresh: () => _load(forceRefresh: true),
+          onRefresh: () async {
+            unawaited(HapticFeedback.mediumImpact());
+            await _load(forceRefresh: true);
+          },
           child: CustomScrollView(
             controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               _buildHeroHeader(),
               _buildContinueListeningHero(),
+              if (_dynamicForYouShelf() != null)
+                SliverToBoxAdapter(
+                  child: DynamicForYouHero(
+                    track: _dynamicForYouShelf()!.tracks.first,
+                    onPlay: () {
+                      final shelf = _dynamicForYouShelf()!;
+                      playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+                    },
+                  ),
+                ),
               _buildMoodChips(),
+              _buildRewardedAdFreeCard(),
               _buildSpotlightSliver(),
+              _buildQuickPicksSliver(),
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
               else
                 // Spotlight shelves render as the hero carousel above — skip
                 // them here so content never appears twice.
                 ..._buildShelfSlivers(),
+              // "Loading more shelves" indicator — only visible while the
+              // lazy-load batch is in flight AND there are more shelves to
+              // load. Replaces the jarring "skeletons suddenly fill with
+              // content" with a smooth loading indicator.
+              if (_loadingMoreShelves && _maxLoadedShelves < _shelves.length)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primaryLight,
+                            ),
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Loading more shelves…',
+                            style: TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               _buildFooter(),
             ],
           ),
@@ -275,6 +359,46 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
             ),
+            // Rewarded ad button — watch ad for 60 min ad-free
+            GestureDetector(
+              onTap: () => RewardsSheet.show(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.card_giftcard_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      'Free',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -313,10 +437,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: SizedBox(
                     width: 132,
                     height: 132,
-                    child: AppImage(
-                      track['artwork'] as String?,
-                      fit: BoxFit.cover,
-                      errorIconColor: AppColors.primaryLight,
+                    child: ArtworkFadeIn(
+                      child: AppImage(
+                        track['artwork'] as String?,
+                        fit: BoxFit.cover,
+                        errorIconColor: AppColors.primaryLight,
+                      ),
                     ),
                   ),
                 ),
@@ -394,6 +520,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  HomeShelf? _dynamicForYouShelf() {
+    for (final shelf in _shelves) {
+      if (shelf.id == 'dynamic_mfy' &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.isNotEmpty) {
+        return shelf;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildQuickPicksSliver() {
+    HomeShelf? source;
+    for (final shelf in _shelves) {
+      if ((shelf.id == 'dynamic_tfy' ||
+              shelf.id == 'dynamic_discover' ||
+              shelf.id == 'dynamic_mfy') &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.length >= 2) {
+        source = shelf;
+        break;
+      }
+    }
+    if (source == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    return SliverToBoxAdapter(
+      child: DynamicQuickPicks(
+        tracks: source.tracks,
+        onPlay: (index) => playTrack(
+          context,
+          source!.tracks[index],
+          source.tracks,
+          index,
         ),
       ),
     );
@@ -564,7 +727,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               0) {
         slivers.add(
           const SliverToBoxAdapter(
-            child: NativeAdWidget(placement: AdPlacement.home),
+            child: PremiumMRECAdCard(placement: MRECPlacement.home),
           ),
         );
       }
@@ -716,6 +879,81 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       )
       .toList();
 
+  /// Small rewarded ad card — lets users watch a short ad to get 60
+  /// minutes ad-free. Shown only when the user is NOT already ad-free.
+  /// Tapping opens the existing RewardsSheet which handles the full
+  /// rewarded-ad flow (VShotsAds.showRewarded → AdFreeManager grant).
+  Widget _buildRewardedAdFreeCard() {
+    if (AdFreeManager.instance.isAdFree) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        child: GestureDetector(
+          onTap: () => RewardsSheet.show(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock_open_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Remove ads for 60 min',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Watch a short video • Free',
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.play_circle_fill_rounded,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSpotlightSliver() {
     final spots = _spotlightShelves();
     if (spots.isEmpty) {
@@ -786,8 +1024,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.library_music_rounded,
-                      color: Colors.white, size: 28),
+                  child: const Icon(
+                    Icons.library_music_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -798,7 +1039,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.18),
                               borderRadius: BorderRadius.circular(12),
@@ -841,8 +1084,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
@@ -850,8 +1095,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.play_arrow_rounded,
-                          size: 18, color: Color(0xFF0F766E)),
+                      Icon(
+                        Icons.play_arrow_rounded,
+                        size: 18,
+                        color: Color(0xFF0F766E),
+                      ),
                       SizedBox(width: 3),
                       Text(
                         'Open',
@@ -954,8 +1202,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             color: AppColors.accent,
                           ),
                         ),
-                        Icon(Icons.chevron_right_rounded,
-                            size: 18, color: AppColors.accent),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: AppColors.accent,
+                        ),
                       ],
                     ),
                   )
@@ -963,13 +1214,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   IconButton(
                     tooltip: 'Shuffle play',
                     onPressed: () {
-                      final shuffled =
-                          List<Map<String, dynamic>>.from(shelf.tracks)
-                            ..shuffle();
+                      final shuffled = List<Map<String, dynamic>>.from(
+                        shelf.tracks,
+                      )..shuffle();
                       playTrack(context, shuffled.first, shuffled, 0);
                     },
-                    icon: const Icon(Icons.shuffle_rounded,
-                        size: 20, color: AppColors.textMuted),
+                    icon: const Icon(
+                      Icons.shuffle_rounded,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
                   ),
               ],
             ),
@@ -1035,12 +1289,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        AppImage(
-                          (track['artwork'] as String?) ?? '',
-                          fit: BoxFit.cover,
-                          width: 150,
-                          height: 150,
-                          errorIconColor: AppColors.accent,
+                        ArtworkFadeIn(
+                          child: AppImage(
+                            (track['artwork'] as String?) ?? '',
+                            fit: BoxFit.cover,
+                            width: 150,
+                            height: 150,
+                            errorIconColor: AppColors.accent,
+                          ),
                         ),
                         Positioned(
                           right: 8,
@@ -1390,11 +1646,13 @@ class _MoodGenreScreenState extends State<MoodGenreScreen> {
                       contentPadding: const EdgeInsets.symmetric(vertical: 2),
                       leading: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: AppImage(
-                          t['artwork'] as String?,
-                          width: 52,
-                          height: 52,
-                          fit: BoxFit.cover,
+                        child: ArtworkFadeIn(
+                          child: AppImage(
+                            t['artwork'] as String?,
+                            width: 52,
+                            height: 52,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                       ),
                       title: Text(
@@ -1586,10 +1844,12 @@ class _SpotlightCarouselState extends State<_SpotlightCarousel> {
                       offset: const Offset(34, 0),
                       child: Opacity(
                         opacity: 0.6,
-                        child: AppImage(
-                          artwork,
-                          fit: BoxFit.cover,
-                          errorIconColor: Colors.white24,
+                        child: ArtworkFadeIn(
+                          child: AppImage(
+                            artwork,
+                            fit: BoxFit.cover,
+                            errorIconColor: Colors.white24,
+                          ),
                         ),
                       ),
                     ),

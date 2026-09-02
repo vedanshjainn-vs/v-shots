@@ -4,12 +4,14 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'core/ads/ad_config.dart';
 import 'core/ads/ad_free_manager.dart';
@@ -17,11 +19,15 @@ import 'core/ads/ad_policy.dart';
 import 'core/ads/ad_service.dart';
 import 'core/ads/consent_manager.dart';
 import 'core/ads/levelplay_service.dart';
-import 'core/ads/native_ad_widget.dart';
+import 'core/ads/premium_mrec_ad_card.dart';
+import 'core/ads/mrec_ad_manager.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
+import 'core/notifications/app_update_service.dart';
+import 'core/notifications/notification_service.dart';
+import 'core/notifications/smart_notification_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/remote_config/remote_feature_flags.dart';
 import 'core/backend/supabase_service.dart';
@@ -43,6 +49,8 @@ import 'core/recommendation/signal_store.dart';
 import 'core/recommendation/taste_profile.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
+import 'core/theme/app_theme.dart';
+import 'shared/widgets/animated_equalizer.dart';
 import 'shared/widgets/app_avatar.dart';
 import 'shared/widgets/app_button.dart';
 import 'shared/widgets/app_image.dart';
@@ -62,10 +70,14 @@ import 'features/profile/artist_details_screen.dart';
 import 'features/profile/edit_profile_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
+import 'shared/widgets/offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
+
+  // Initialize Firebase first (required for FCM)
+  debugPrint('[Boot] Firebase initialized');
 
   await Future.wait([
     SupabaseService.initialize(),
@@ -75,8 +87,16 @@ void main() async {
     RemoteConfigService.instance.init(),
     AdFreeManager.instance.init(),
     AppVersion.load(),
+    NotificationService.instance.initialize(),
   ]);
+  // NotificationService MUST be ready before SmartNotificationService: the
+  // scheduler calls into it during initialization. Running both in the same
+  // Future.wait caused the first schedule build to race the plugin init and
+  // silently schedule zero notifications.
+  await SmartNotificationService.instance.initialize();
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
+
+  // Initialize FCM (non-blocking, fire-and-forget)
 
   await AuthService.instance.initializeGoogleSignIn();
 
@@ -97,8 +117,13 @@ void main() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.vshots.live.channel.audio',
       androidNotificationChannelName: 'V Shots playback',
+      androidNotificationChannelDescription:
+          'Media playback controls for V Shots',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidShowNotificationBadge: true,
+      androidNotificationClickStartsActivity: true,
     ),
   );
 
@@ -107,6 +132,9 @@ void main() async {
   );
   debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
   runApp(const VShotsApp());
+
+  // Check for app updates (non-blocking, fire-and-forget)
+  unawaited(AppUpdateService.instance.checkForUpdate());
 }
 
 // ═══════════════════════════════════════════════
@@ -123,12 +151,9 @@ class VShotsApp extends StatelessWidget {
       title: 'V Shots',
       navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorSchemeSeed: AppColors.accent,
-        scaffoldBackgroundColor: AppColors.background,
-      ),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const SplashScreen(),
     );
   }
@@ -376,6 +401,7 @@ class _MainShellState extends State<MainShell> {
     }
     // 2. If on Discover (1), Search (2), or Profile (3), go back to Home (0)
     if (_index != 0) {
+      unawaited(HapticFeedback.selectionClick());
       setState(() {
         _index = 0;
         currentTabIndexNotifier.value = 0;
@@ -461,46 +487,72 @@ class _MainShellState extends State<MainShell> {
               ],
             ),
 
+            // NON-BLOCKING offline indicator — mounted once, reacts to
+            // connectivity changes independently. Never delays startup,
+            // never rebuilds the rest of the app.
+            const Positioned(top: 0, left: 0, right: 0, child: OfflineBanner()),
+
             // GLOBAL PLAYER SHELL — the single in-app YouTube browser session
             // (native WebView engine) mounted ONCE at the app shell, above
             // every tab. Discovery (and, next phase, Home/Search/Library)
             // route playback through VShotsPlaybackManager; this sheet is the
             // one persistent UI+media surface for all of them.
-            AnimatedBuilder(
-              animation: VShotsPlaybackManager.instance.browser,
-              builder: (context, _) {
-                final b = VShotsPlaybackManager.instance.browser;
-                if (!b.isOpen) return const SizedBox.shrink();
-                return Positioned.fill(
-                  child: DiscoveryBrowserSheet(controller: b),
-                );
-              },
+            // Positioned.fill MUST be a direct Stack child — MiniPlayerTransition
+            // wraps the inner content, not the Positioned itself.
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: VShotsPlaybackManager.instance.browser,
+                builder: (context, _) {
+                  final b = VShotsPlaybackManager.instance.browser;
+                  return RepaintBoundary(
+                    child: MiniPlayerTransition(
+                      visible: b.isOpen,
+                      child: b.isOpen
+                          ? DiscoveryBrowserSheet(controller: b)
+                          : const SizedBox.shrink(),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
         bottomNavigationBar: ValueListenableBuilder<bool>(
           valueListenable: isPlayerExpandedNotifier,
           builder: (context, isExpanded, _) {
-            if (isExpanded) return const SizedBox.shrink();
-            return BottomTabBar(
-              currentIndex: _index.clamp(0, 3),
-              onTap: (i) {
-                final target = i.clamp(0, 3);
-                final changed = target != _index;
-                setState(() {
-                  _index = target;
-                  currentTabIndexNotifier.value = target;
-                });
-                // Interstitial at a NATURAL transition (user-initiated tab
-                // switch only). Cooldown (180 s), session cap (4) and the
-                // 60 s dwell guard live centrally in AdPolicy — never on
-                // launch, never during playback, never on song changes.
-                if (changed && !VShotsPlaybackManager.instance.browser.isOpen) {
-                  unawaited(VShotsAds.instance.maybeShowInterstitial(
-                    trigger: 'tab_switch_$target',
-                  ));
-                }
-              },
+            return AnimatedSlide(
+              duration: const Duration(milliseconds: 220),
+              curve: isExpanded ? Curves.easeInCubic : Curves.easeOutCubic,
+              offset: isExpanded ? const Offset(0, 1) : Offset.zero,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 220),
+                curve: isExpanded ? Curves.easeInCubic : Curves.easeOutCubic,
+                opacity: isExpanded ? 0 : 1,
+                child: isExpanded
+                    ? const SizedBox(height: 64)
+                    : BottomTabBar(
+                        currentIndex: _index.clamp(0, 3),
+                        onTap: (i) {
+                          final target = i.clamp(0, 3);
+                          final changed = target != _index;
+                          if (changed) {
+                            unawaited(HapticFeedback.selectionClick());
+                          }
+                          setState(() {
+                            _index = target;
+                            currentTabIndexNotifier.value = target;
+                          });
+                          if (changed &&
+                              !VShotsPlaybackManager.instance.browser.isOpen) {
+                            unawaited(
+                              VShotsAds.instance.maybeShowInterstitial(
+                                trigger: 'tab_switch_$target',
+                              ),
+                            );
+                          }
+                        },
+                      ),
+              ),
             );
           },
         ),
@@ -682,6 +734,33 @@ Future<void> playTrack(
     expanded: expanded,
   );
 
+  // Update the OS media notification with track metadata
+  final artworkUrl = (resolvedTrack['artwork'] as String?) ?? '';
+  final trackTitle = (resolvedTrack['title'] as String?) ?? 'Unknown';
+  final trackArtist = (resolvedTrack['artist'] as String?) ?? 'Unknown Artist';
+  final trackId = (resolvedTrack['id'] as String?) ?? '';
+  final trackDuration = resolvedTrack['duration'] as int?;
+
+  debugPrint(
+    '[VShots] Updating media notification: $trackTitle by $trackArtist',
+  );
+  debugPrint('[VShots] Artwork URL: $artworkUrl');
+
+  audioHandler?.updateNowPlaying(
+    MediaItem(
+      id: trackId,
+      title: trackTitle,
+      artist: trackArtist,
+      artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,
+      duration: trackDuration != null ? Duration(seconds: trackDuration) : null,
+    ),
+  );
+
+  // Ensure audio_service starts the foreground notification
+  if (!audioPlayer.playing) {
+    unawaited(audioHandler?.play());
+  }
+
   currentTrack = resolvedTrack;
   currentTrackNotifier.value = resolvedTrack;
   currentQueue = List<Map<String, dynamic>>.from(
@@ -731,6 +810,19 @@ class _SearchScreenState extends State<SearchScreen> {
     ('Chill', '😌', Color(0xFF4CAF50)),
     ('Workout', '💪', Color(0xFFFF5722)),
     ('Devotional', '🙏', Color(0xFFFFC107)),
+  ];
+
+  /// Curated quick-pick queries — the owner can swap these anytime without
+  /// a code deploy by editing the Supabase `home_config` table (future);
+  /// for now they're client-side curated picks that drive real search.
+  static const _trendingQueries = [
+    ('Arijit Singh', '🔥'),
+    ('Lo-fi Beats', '🌙'),
+    ('Punjabi Hits', '🥁'),
+    ('Romantic', '❤️'),
+    ('Workout Mix', '💪'),
+    ('90s Bollywood', '📼'),
+    ('Chill Vibes', ''),
   ];
 
   void _onQueryChanged(String q) {
@@ -964,9 +1056,43 @@ class _SearchScreenState extends State<SearchScreen> {
                   decoration: InputDecoration(
                     hintText: 'Search songs, artists, hits...',
                     hintStyle: const TextStyle(color: AppColors.textMuted),
-                    prefixIcon: const Icon(
-                      Icons.search,
-                      color: AppColors.textMuted,
+                    prefixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(width: 16),
+                        const Icon(Icons.search, color: AppColors.textMuted),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            unawaited(HapticFeedback.selectionClick());
+                            // Open Google voice search — the standard Android
+                            // voice-to-text entry point. Works on every
+                            // device with Google app installed (near-universal
+                            // on Android). Falls back to a web URL on iOS.
+                            unawaited(
+                              launchUrl(
+                                Uri.parse(
+                                  'https://www.google.com/search?tbm=vid&q=',
+                                ),
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.mic_rounded,
+                              color: AppColors.accent,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    prefixIconConstraints: const BoxConstraints(
+                      minWidth: 96,
+                      minHeight: 48,
                     ),
                     suffixIcon: _controller.text.isNotEmpty
                         ? IconButton(
@@ -975,6 +1101,7 @@ class _SearchScreenState extends State<SearchScreen> {
                               color: AppColors.textMuted,
                             ),
                             onPressed: () {
+                              unawaited(HapticFeedback.selectionClick());
                               _controller.clear();
                               _onQueryChanged('');
                             },
@@ -1020,7 +1147,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               TextButton(
-                onPressed: LocalLibrary.instance.clearRecentSearches,
+                onPressed: () {
+                  unawaited(HapticFeedback.lightImpact());
+                  LocalLibrary.instance.clearRecentSearches();
+                },
                 child: const Text(
                   'Clear',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
@@ -1033,19 +1163,81 @@ class _SearchScreenState extends State<SearchScreen> {
             runSpacing: 8,
             children: recents.map((item) {
               final q = (item['query'] as String?) ?? '';
-              return ActionChip(
-                label: Text(q),
-                backgroundColor: AppColors.surface,
-                side: const BorderSide(color: AppColors.border),
-                onPressed: () {
+              return PressableScale(
+                onTap: () {
+                  unawaited(HapticFeedback.selectionClick());
                   _controller.text = q;
                   _search(q);
                 },
+                child: ActionChip(
+                  label: Text(q),
+                  backgroundColor: AppColors.surface,
+                  side: const BorderSide(color: AppColors.border),
+                  onPressed: () {
+                    _controller.text = q;
+                    _search(q);
+                  },
+                ),
               );
             }).toList(),
           ),
           const SizedBox(height: 24),
         ],
+        // Trending quick-pick row — curated queries that drive discovery
+        // without the user typing anything. Tapping fires a real search
+        // (same path as the category grid) with haptic confirmation.
+        const Text(
+          'Trending',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _trendingQueries.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final (label, emoji) = _trendingQueries[i];
+              return StaggeredEntrance(
+                index: i,
+                child: PressableScale(
+                  onTap: () {
+                    unawaited(HapticFeedback.selectionClick());
+                    _controller.text = label;
+                    _search(label);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(emoji, style: const TextStyle(fontSize: 16)),
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
         const Text(
           'Browse Categories',
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
@@ -1063,35 +1255,39 @@ class _SearchScreenState extends State<SearchScreen> {
           itemCount: _categories.length,
           itemBuilder: (context, i) {
             final (name, icon, color) = _categories[i];
-            return GestureDetector(
-              onTap: () {
-                final q = '$name songs official audio';
-                _controller.text = q;
-                _search(q);
-              },
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    Text(icon, style: const TextStyle(fontSize: 22)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
+            return StaggeredEntrance(
+              index: i,
+              child: PressableScale(
+                onTap: () {
+                  unawaited(HapticFeedback.selectionClick());
+                  final q = '$name songs official audio';
+                  _controller.text = q;
+                  _search(q);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: color.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(icon, style: const TextStyle(fontSize: 22)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -1383,7 +1579,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Center(
                     child: TextButton(
-                      onPressed: _loadMore,
+                      onPressed: () {
+                        unawaited(HapticFeedback.selectionClick());
+                        _loadMore();
+                      },
                       child: const Text(
                         'Load more',
                         style: TextStyle(color: AppColors.accent),
@@ -1392,9 +1591,11 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 );
               }
-              // Native ad slot after the 8th organic result.
+              // MREC ad slot after the 8th organic result.
               if (showAd && i == AdConfig.searchAdEvery) {
-                return const NativeAdWidget();
+                return PremiumMRECAdCard(
+                  placement: MRECPlacement.search,
+                );
               }
               // Account for the ad slot offset when indexing results.
               final int resultIndex =
@@ -1419,12 +1620,28 @@ class _SearchScreenState extends State<SearchScreen> {
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: AppImage(
-                          track['artwork'] as String?,
-                          width: 56,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorIconColor: AppColors.accent,
+                        child: Stack(
+                          children: [
+                            ArtworkFadeIn(
+                              child: AppImage(
+                                track['artwork'] as String?,
+                                width: 56,
+                                height: 56,
+                                fit: BoxFit.cover,
+                                errorIconColor: AppColors.accent,
+                              ),
+                            ),
+                            if (currentTrackNotifier.value?['id'] ==
+                                (track['id'] as String? ?? ''))
+                              const Positioned(
+                                left: 4,
+                                bottom: 4,
+                                child: AnimatedEqualizer(
+                                  size: 12,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -2090,14 +2307,28 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemBuilder: (context, index) {
         if (index < 0 || index >= liked.length) return const SizedBox.shrink();
         final t = liked[index];
+        final trackId = t['id'] as String? ?? '';
+        final isCurrentPlaying = currentTrackNotifier.value?['id'] == trackId;
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(
-              t['artwork'] as String?,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
+            child: Stack(
+              children: [
+                ArtworkFadeIn(
+                  child: AppImage(
+                    t['artwork'] as String?,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (isCurrentPlaying)
+                  const Positioned(
+                    left: 4,
+                    bottom: 4,
+                    child: AnimatedEqualizer(size: 12, color: AppColors.accent),
+                  ),
+              ],
             ),
           ),
           title: Text(
@@ -2213,14 +2444,28 @@ class _ProfileScreenState extends State<ProfileScreen>
       itemBuilder: (context, index) {
         if (index < 0 || index >= recent.length) return const SizedBox.shrink();
         final t = recent[index];
+        final trackId = t['id'] as String? ?? '';
+        final isCurrentPlaying = currentTrackNotifier.value?['id'] == trackId;
         return ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: AppImage(
-              t['artwork'] as String?,
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
+            child: Stack(
+              children: [
+                ArtworkFadeIn(
+                  child: AppImage(
+                    t['artwork'] as String?,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (isCurrentPlaying)
+                  const Positioned(
+                    left: 4,
+                    bottom: 4,
+                    child: AnimatedEqualizer(size: 12, color: AppColors.accent),
+                  ),
+              ],
             ),
           ),
           title: Text(
@@ -2372,11 +2617,13 @@ void showMoreOptionsSheet(
               ListTile(
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: AppImage(
-                    track['artwork'] as String?,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
+                  child: ArtworkFadeIn(
+                    child: AppImage(
+                      track['artwork'] as String?,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 title: Text(
@@ -2397,6 +2644,7 @@ void showMoreOptionsSheet(
                 title: const Text('More Like This'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   Navigator.push(
                     context,
                     AppPageRoute<void>(
@@ -2410,6 +2658,7 @@ void showMoreOptionsSheet(
                 title: const Text('View Artist'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   final artistName =
                       (track['artist'] as String?) ?? 'Unknown Artist';
                   Navigator.push(
@@ -2430,6 +2679,7 @@ void showMoreOptionsSheet(
                 title: const Text('Play Next'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.lightImpact());
                   playNextInQueue(context, track);
                 },
               ),
@@ -2438,6 +2688,7 @@ void showMoreOptionsSheet(
                 title: const Text('Add to Queue'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.lightImpact());
                   addToQueueEnd(context, track);
                 },
               ),
@@ -2446,6 +2697,7 @@ void showMoreOptionsSheet(
                 title: const Text('Share'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   SharePlus.instance.share(
                     ShareParams(
                       text:
@@ -2459,6 +2711,7 @@ void showMoreOptionsSheet(
                 title: const Text('Sleep Timer'),
                 onTap: () {
                   Navigator.pop(ctx);
+                  unawaited(HapticFeedback.selectionClick());
                   _showSleepTimerDialog(context);
                 },
               ),
@@ -2638,3 +2891,6 @@ class _LyricsScreenState extends State<LyricsScreen> {
     );
   }
 }
+
+// Force rebuild
+// CI trigger

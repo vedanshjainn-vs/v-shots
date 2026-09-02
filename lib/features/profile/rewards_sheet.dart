@@ -60,9 +60,8 @@ class _RewardsSheetState extends State<RewardsSheet> {
     final outcome = await VShotsAds.instance.showRewarded(
       purpose: 'ad_free_pass_60m',
       onRewardGranted: () => AdFreeManager.instance.grantTemporaryPass(
-          duration: const Duration(
-        minutes: 60,
-      )),
+        duration: const Duration(minutes: 60),
+      ),
     );
 
     if (!mounted) return;

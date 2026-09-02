@@ -5,6 +5,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../../core/models/shot_model.dart';
 import '../../core/services/profile_service.dart';
 import '../../core/services/shots_service.dart';

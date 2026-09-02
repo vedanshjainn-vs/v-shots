@@ -79,8 +79,10 @@ class MusicCandidateGenerator {
     // trips one after another — the biggest Discover cold-start cost.
     // Results are merged in QUERY ORDER so ranking stays deterministic.
     const waveSize = 4;
-    final perQuery =
-        List<List<Map<String, dynamic>>?>.filled(queries.length, null);
+    final perQuery = List<List<Map<String, dynamic>>?>.filled(
+      queries.length,
+      null,
+    );
     for (var i = 0; i < queries.length; i += waveSize) {
       final wave = queries.skip(i).take(waveSize).toList();
       final waveResults = await Future.wait(

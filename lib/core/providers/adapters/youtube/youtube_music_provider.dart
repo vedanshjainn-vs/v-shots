@@ -213,8 +213,10 @@ class YouTubeMusicProvider extends MusicProvider {
     if (!RegExp(r'^UC[A-Za-z0-9_-]{22}$').hasMatch(id)) {
       return ProviderResult.failure('not a channel id');
     }
-    final videos =
-        await _apiClient.searchChannelVideos(id, maxResults: limit * 2);
+    final videos = await _apiClient.searchChannelVideos(
+      id,
+      maxResults: limit * 2,
+    );
     if (videos.isEmpty) {
       return ProviderResult.failure('channel returned no videos');
     }

@@ -25,12 +25,14 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/browser/vshots_content_blocker.dart';
+import '../../core/motion/motion.dart';
 import '../../core/playback/vshots_playback_manager.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
+import '../../shared/widgets/animated_equalizer.dart';
+import '../../shared/widgets/app_image.dart';
 import '../../main.dart'
     show LyricsScreen, playbackSignalTracker, showAddToPlaylistSheet;
-import '../../shared/widgets/app_image.dart';
 import 'discovery_browser_controller.dart';
 import 'vshots_browser_session.dart';
 
@@ -466,12 +468,14 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: AppImage(
-                    artwork,
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorIconColor: AppColors.accent,
+                  child: ArtworkFadeIn(
+                    child: AppImage(
+                      artwork,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorIconColor: AppColors.accent,
+                    ),
                   ),
                 ),
                 if (widget.controller.isLoading)
@@ -490,6 +494,25 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                             color: AppColors.accent,
                           ),
                         ),
+                      ),
+                    ),
+                  ),
+                // Live equalizer overlay — 3-bar animation on the artwork
+                // when the track is actively playing. Instantly communicates
+                // "now playing" without reading the text.
+                if (widget.controller.pagePlaying != false)
+                  Positioned(
+                    left: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const AnimatedEqualizer(
+                        size: 14,
+                        color: AppColors.accent,
                       ),
                     ),
                   ),
@@ -838,11 +861,26 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                         : Colors.transparent,
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: AppImage(
-                        t['artwork'] as String?,
-                        width: 36,
-                        height: 36,
-                        fit: BoxFit.cover,
+                      child: Stack(
+                        children: [
+                          ArtworkFadeIn(
+                            child: AppImage(
+                              t['artwork'] as String?,
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          if (isCurrent)
+                            const Positioned(
+                              left: 3,
+                              bottom: 3,
+                              child: AnimatedEqualizer(
+                                size: 12,
+                                color: AppColors.accent,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     title: Text(

@@ -21,12 +21,7 @@ import 'home_cms_models.dart';
 /// by the engine, so any positive numbers work.
 abstract final class DiscoverSettingsDefaults {
   static const Map<String, dynamic> value = {
-    'weights': {
-      'personal': 50,
-      'trending': 25,
-      'fresh': 15,
-      'exploration': 10,
-    },
+    'weights': {'personal': 50, 'trending': 25, 'fresh': 15, 'exploration': 10},
     'enabled': {
       'personalization': true,
       'trending': true,

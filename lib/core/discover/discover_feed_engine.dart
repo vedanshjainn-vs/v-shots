@@ -43,6 +43,7 @@ import '../recommendation/music_recommendation_engine.dart';
 import '../recommendation/recommendation_engine.dart';
 import '../recommendation/recommendation_service.dart';
 import '../remote_config/remote_config_service.dart';
+import '../storage/local_library.dart';
 
 /// Adaptive bucket weights. All values 0..1, sum == 1.
 @immutable
@@ -144,10 +145,7 @@ class DiscoverFeedEngine {
   }
 
   /// Long-term + current session artist sets (for recent-behaviour score).
-  Set<String> get _activeArtists => {
-        ..._recentArtists,
-        ..._artistScores.keys,
-      };
+  Set<String> get _activeArtists => {..._recentArtists, ..._artistScores.keys};
 
   Set<String> _activeGenres() {
     final out = <String>{..._recentGenres};
@@ -195,13 +193,22 @@ class DiscoverFeedEngine {
       return q;
     }
 
-    allocate(DiscoverBucket.personal, weights.personal,
-        enabled['personalization'] != false);
-    allocate(DiscoverBucket.trending, weights.trending,
-        enabled['trending'] != false);
+    allocate(
+      DiscoverBucket.personal,
+      weights.personal,
+      enabled['personalization'] != false,
+    );
+    allocate(
+      DiscoverBucket.trending,
+      weights.trending,
+      enabled['trending'] != false,
+    );
     allocate(DiscoverBucket.fresh, weights.fresh, enabled['fresh'] != false);
-    allocate(DiscoverBucket.exploration, weights.exploration,
-        enabled['exploration'] != false);
+    allocate(
+      DiscoverBucket.exploration,
+      weights.exploration,
+      enabled['exploration'] != false,
+    );
     // Rounding drift: give the remainder to personal (or trending).
     var total = quotas.values.fold(0, (a, b) => a + b);
     if (total < count) {
@@ -220,15 +227,19 @@ class DiscoverFeedEngine {
           regions,
         ).then(candidates.addAll),
       if ((quotas[DiscoverBucket.trending] ?? 0) > 0)
-        _trendingPool(excludeIds, region,
-                filters: _filterTokens(languages, moods, regions))
-            .then(candidates.addAll),
+        _trendingPool(
+          excludeIds,
+          region,
+          filters: _filterTokens(languages, moods, regions),
+        ).then(candidates.addAll),
       if ((quotas[DiscoverBucket.fresh] ?? 0) > 0)
         _freshPool(excludeIds, languages, moods).then(candidates.addAll),
       if ((quotas[DiscoverBucket.exploration] ?? 0) > 0)
-        _explorationPool(excludeIds, cfg,
-                filters: _filterTokens(languages, moods, regions))
-            .then(candidates.addAll),
+        _explorationPool(
+          excludeIds,
+          cfg,
+          filters: _filterTokens(languages, moods, regions),
+        ).then(candidates.addAll),
     ]);
 
     // Fallback: pools empty (network hiccup) → one safe popular query so
@@ -299,7 +310,10 @@ class DiscoverFeedEngine {
               (tracks) => tracks
                   .map(
                     (t) => _ScoredCandidate(
-                        t, DiscoverBucket.personal, 'music-engine'),
+                      t,
+                      DiscoverBucket.personal,
+                      'music-engine',
+                    ),
                   )
                   .toList(),
             )
@@ -321,7 +335,11 @@ class DiscoverFeedEngine {
             final map = s.track.toTrackMap();
             map['discoverSourceQuery'] = 'personal';
             list.add(
-              _ScoredCandidate(map, DiscoverBucket.personal, 'taste-engine'),
+              _ScoredCandidate(
+                map,
+                DiscoverBucket.personal,
+                'taste-engine',
+              ),
             );
           }
           return list;
@@ -387,7 +405,10 @@ class DiscoverFeedEngine {
               (trending) => trending
                   .map(
                     (t) => _ScoredCandidate(
-                        t, DiscoverBucket.trending, 'trending-$region'),
+                      t,
+                      DiscoverBucket.trending,
+                      'trending-$region',
+                    ),
                   )
                   .toList(),
             )
@@ -395,8 +416,12 @@ class DiscoverFeedEngine {
           debugPrint('[DiscoverEngine] trending pool failed: $e');
           return <_ScoredCandidate>[];
         }),
-      _queryPool('trending songs official music video', excludeIds,
-          bucket: DiscoverBucket.trending, count: 8),
+      _queryPool(
+        'trending songs official music video',
+        excludeIds,
+        bucket: DiscoverBucket.trending,
+        count: 8,
+      ),
     ]);
     for (final list in both) {
       out.addAll(list);
@@ -413,8 +438,13 @@ class DiscoverFeedEngine {
     final q = tokens.isEmpty
         ? 'new music releases official audio'
         : 'new ${tokens.join(' ')} songs official audio';
-    return _queryPool(q, excludeIds,
-        bucket: DiscoverBucket.fresh, count: 12, sourceQuery: q);
+    return _queryPool(
+      q,
+      excludeIds,
+      bucket: DiscoverBucket.fresh,
+      count: 12,
+      sourceQuery: q,
+    );
   }
 
   Future<List<_ScoredCandidate>> _explorationPool(
@@ -433,8 +463,13 @@ class DiscoverFeedEngine {
       ];
       final lists = await Future.wait(
         queries.map(
-          (q) => _queryPool(q, excludeIds,
-              bucket: DiscoverBucket.exploration, count: 5, sourceQuery: q),
+          (q) => _queryPool(
+            q,
+            excludeIds,
+            bucket: DiscoverBucket.exploration,
+            count: 5,
+            sourceQuery: q,
+          ),
         ),
       );
       return lists.expand((l) => l).toList();
@@ -456,8 +491,11 @@ class DiscoverFeedEngine {
     final dominant = _activeGenres().map((g) => g.toLowerCase()).toSet();
     final adjacent = queries
         .where((q) {
-          final tags = GenreClassifier.instance
-              .classify(title: '', artist: '', sourceQuery: q);
+          final tags = GenreClassifier.instance.classify(
+            title: '',
+            artist: '',
+            sourceQuery: q,
+          );
           return tags.isEmpty ||
               tags.any((t) => !dominant.contains(t.toLowerCase()));
         })
@@ -466,8 +504,13 @@ class DiscoverFeedEngine {
 
     final lists = await Future.wait(
       adjacent.map(
-        (q) => _queryPool(q, excludeIds,
-            bucket: DiscoverBucket.exploration, count: 5, sourceQuery: q),
+        (q) => _queryPool(
+          q,
+          excludeIds,
+          bucket: DiscoverBucket.exploration,
+          count: 5,
+          sourceQuery: q,
+        ),
       ),
     );
     return lists.expand((l) => l).toList();
@@ -543,8 +586,11 @@ class DiscoverFeedEngine {
     final artistKey = artist.trim().toLowerCase();
     final title = (track['title'] as String?) ?? '';
     final query = (track['discoverSourceQuery'] as String?) ?? '';
-    final genres = GenreClassifier.instance
-        .classify(title: title, artist: artist, sourceQuery: query);
+    final genres = GenreClassifier.instance.classify(
+      title: title,
+      artist: artist,
+      sourceQuery: query,
+    );
 
     // 1. Taste match (30%) — long-term artist/genre affinity.
     final maxArtistScore =
@@ -558,8 +604,9 @@ class DiscoverFeedEngine {
     final taste = 0.7 * artistMatch + 0.3 * genreMatch;
 
     // 2. Recent behaviour (15%) — current-session artist/genre overlap.
-    final recentArtistHit =
-        recentArtists.any((a) => a.trim().toLowerCase() == artistKey);
+    final recentArtistHit = recentArtists.any(
+      (a) => a.trim().toLowerCase() == artistKey,
+    );
     final recentGenreHit =
         genres.any(activeGenres.contains) && recentArtists.isNotEmpty;
     final recent = (recentArtistHit ? 0.8 : 0.0) + (recentGenreHit ? 0.2 : 0.0);
@@ -663,6 +710,12 @@ class DiscoverFeedEngine {
         activeGenres: activeGenres,
         recentArtists: recent,
       );
+      // Recently surfaced cards are a soft negative, not a hard exclusion:
+      // fresh candidates win whenever the provider can supply them, while a
+      // thin result set can still fall back instead of going blank.
+      if (LocalLibrary.instance.recentlyShownIds.contains(id)) {
+        c.score *= 0.42;
+      }
       c.reason = _reasonFor(c.track, c.bucket, artistScores);
       scored.add(c);
     }

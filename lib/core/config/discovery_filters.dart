@@ -81,15 +81,27 @@ const List<DiscoveryMood> kDiscoveryMoods = [
   DiscoveryMood(id: 'happy', label: 'Happy', icon: '😄', query: 'happy'),
   DiscoveryMood(id: 'sad', label: 'Sad', icon: '😢', query: 'sad'),
   DiscoveryMood(
-      id: 'romantic', label: 'Romantic', icon: '❤️', query: 'romantic'),
+    id: 'romantic',
+    label: 'Romantic',
+    icon: '❤️',
+    query: 'romantic',
+  ),
   DiscoveryMood(
-      id: 'energetic', label: 'Energetic', icon: '⚡', query: 'energetic'),
+    id: 'energetic',
+    label: 'Energetic',
+    icon: '⚡',
+    query: 'energetic',
+  ),
   DiscoveryMood(id: 'party', label: 'Party', icon: '💃', query: 'party'),
   DiscoveryMood(id: 'focus', label: 'Focus', icon: '🎧', query: 'focus'),
   DiscoveryMood(id: 'sleep', label: 'Sleep', icon: '😴', query: 'sleep'),
   DiscoveryMood(id: 'workout', label: 'Workout', icon: '🏋️', query: 'workout'),
   DiscoveryMood(
-      id: 'devotional', label: 'Devotional', icon: '🛕', query: 'devotional'),
+    id: 'devotional',
+    label: 'Devotional',
+    icon: '🛕',
+    query: 'devotional',
+  ),
 ];
 
 const List<DiscoveryFilterOption> kDiscoveryLanguages = [
@@ -104,13 +116,19 @@ const List<DiscoveryFilterOption> kDiscoveryLanguages = [
   DiscoveryFilterOption(id: 'bengali', label: 'Bengali', token: 'bengali'),
   DiscoveryFilterOption(id: 'gujarati', label: 'Gujarati', token: 'gujarati'),
   DiscoveryFilterOption(
-      id: 'malayalam', label: 'Malayalam', token: 'malayalam'),
+    id: 'malayalam',
+    label: 'Malayalam',
+    token: 'malayalam',
+  ),
   DiscoveryFilterOption(id: 'kannada', label: 'Kannada', token: 'kannada'),
 ];
 
 const List<DiscoveryFilterOption> kDiscoveryGenres = [
   DiscoveryFilterOption(
-      id: 'bollywood', label: 'Bollywood', token: 'bollywood'),
+    id: 'bollywood',
+    label: 'Bollywood',
+    token: 'bollywood',
+  ),
   DiscoveryFilterOption(id: 'indie', label: 'Indie', token: 'indie'),
   DiscoveryFilterOption(id: 'pop', label: 'Pop', token: 'pop'),
   DiscoveryFilterOption(id: 'hiphop', label: 'Hip-Hop', token: 'hip hop'),
@@ -118,7 +136,10 @@ const List<DiscoveryFilterOption> kDiscoveryGenres = [
   DiscoveryFilterOption(id: 'rock', label: 'Rock', token: 'rock'),
   DiscoveryFilterOption(id: 'lofi', label: 'Lo-Fi', token: 'lofi'),
   DiscoveryFilterOption(
-      id: 'classical', label: 'Classical', token: 'classical'),
+    id: 'classical',
+    label: 'Classical',
+    token: 'classical',
+  ),
   DiscoveryFilterOption(id: 'ghazal', label: 'Ghazal', token: 'ghazal'),
   DiscoveryFilterOption(id: 'sufi', label: 'Sufi', token: 'sufi'),
   DiscoveryFilterOption(id: 'regional', label: 'Regional', token: 'regional'),
@@ -134,15 +155,24 @@ const List<DiscoveryFilterOption> kDiscoveryDecades = [
 const List<DiscoveryFilterOption> kDiscoveryActivities = [
   DiscoveryFilterOption(id: 'workout', label: 'Workout', token: 'workout'),
   DiscoveryFilterOption(
-      id: 'road_trip', label: 'Road Trip', token: 'road trip'),
+    id: 'road_trip',
+    label: 'Road Trip',
+    token: 'road trip',
+  ),
   DiscoveryFilterOption(
-      id: 'late_night', label: 'Late Night', token: 'late night'),
+    id: 'late_night',
+    label: 'Late Night',
+    token: 'late night',
+  ),
   DiscoveryFilterOption(id: 'morning', label: 'Morning', token: 'morning'),
   DiscoveryFilterOption(id: 'party', label: 'Party', token: 'party'),
   DiscoveryFilterOption(id: 'study', label: 'Study', token: 'study'),
   DiscoveryFilterOption(id: 'travel', label: 'Travel', token: 'travel'),
   DiscoveryFilterOption(
-      id: 'rainy_day', label: 'Rainy Day', token: 'rainy day'),
+    id: 'rainy_day',
+    label: 'Rainy Day',
+    token: 'rainy day',
+  ),
 ];
 
 class DiscoveryFilterConfig {

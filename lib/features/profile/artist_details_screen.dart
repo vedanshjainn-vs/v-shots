@@ -3,6 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
+
 import '../../core/motion/motion.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/animated_equalizer.dart';

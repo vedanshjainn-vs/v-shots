@@ -223,10 +223,7 @@ class InnerTubeClient {
   }) async {
     final id = channelId.trim();
     if (id.isEmpty) return const [];
-    final json = await _post('browse', {
-      'context': _context(),
-      'browseId': id,
-    });
+    final json = await _post('browse', {'context': _context(), 'browseId': id});
     if (json == null) return const [];
     return _collectBrowseVideos(json).take(limit).toList();
   }

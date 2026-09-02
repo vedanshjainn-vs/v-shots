@@ -4,6 +4,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
@@ -425,13 +426,9 @@ class YouTubeDataApiClient {
     final h =
         handle.trim().startsWith('@') ? handle.trim() : '@${handle.trim()}';
     try {
-      final uri = Uri.parse('$_baseUrl/channels').replace(
-        queryParameters: {
-          'part': 'id',
-          'forHandle': h,
-          'key': key,
-        },
-      );
+      final uri = Uri.parse(
+        '$_baseUrl/channels',
+      ).replace(queryParameters: {'part': 'id', 'forHandle': h, 'key': key});
       final response = await _http
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));

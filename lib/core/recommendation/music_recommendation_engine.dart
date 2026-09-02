@@ -20,6 +20,7 @@ import '../music/music_validator.dart';
 import '../providers/music_repository.dart';
 import 'music_recommendation_config.dart';
 import 'music_recommendation_context.dart';
+import 'music_region_profile.dart';
 import 'music_seen_store.dart';
 import 'music_session_state.dart';
 import 'music_user_profile.dart';
@@ -56,8 +57,14 @@ class MusicRecommendationEngine {
 
   static const MusicContentValidator _validator = MusicContentValidator();
 
-  /// Generates a personalized "For You" list (user taste → candidate pools →
-  /// scoring → diversity → exploration → dedupe → seen penalty).
+  /// Generates a personalized "For You" list (user taste → regional context
+  /// → candidate pools → scoring → diversity → exploration → dedupe).
+  ///
+  /// Regional context is derived from the device locale only when the caller
+  /// has not supplied an explicit Explore region. It is a ranking/candidate
+  /// boost, never a hard country filter, so a US user who loves Hindi music
+  /// can still receive Hindi songs and an Indian user can still discover
+  /// English/K-pop/etc. from their actual taste signals.
   Future<List<Map<String, dynamic>>> generateForYou({
     required Set<String> excludeIds,
     int count = 12,
@@ -70,11 +77,20 @@ class MusicRecommendationEngine {
       _seenReady = true;
     }
     _session.requestToken++;
+
+    final deviceRegion = MusicRegionProfile.current();
+    final effectiveRegions = regions.isNotEmpty
+        ? regions
+        : <String>[deviceRegion.countryName];
+    final effectiveLanguages = languages.isNotEmpty
+        ? languages
+        : (deviceRegion.countryCode == 'IN' ? <String>['Hindi'] : const <String>[]);
+
     final context = MusicRecommendationContext(
       mode: 'for_you',
-      languages: languages,
+      languages: effectiveLanguages,
       moods: moods,
-      regions: regions,
+      regions: effectiveRegions,
       count: count,
       excludeIds: excludeIds,
       seenStore: _seenStore,

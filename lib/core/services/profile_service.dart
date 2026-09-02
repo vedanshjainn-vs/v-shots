@@ -3,6 +3,7 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/foundation.dart';
+
 import '../backend/supabase_service.dart';
 import '../models/profile_model.dart';
 

@@ -13,7 +13,8 @@ import 'package:flutter/material.dart';
 import '../../core/ads/ad_banner_widget.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
+import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart' show currentTrackNotifier, musicRepository, playTrack;
@@ -119,8 +120,10 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
         children: [
           IconButton(
             onPressed: () => Navigator.maybePop(context),
-            icon:
-                const Icon(Icons.arrow_back_rounded, color: AppColors.textMain),
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              color: AppColors.textMain,
+            ),
           ),
           const SizedBox(width: 4),
           Expanded(
@@ -179,14 +182,19 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.playlist_remove_rounded,
-                  size: 44, color: AppColors.textMuted),
+              const Icon(
+                Icons.playlist_remove_rounded,
+                size: 44,
+                color: AppColors.textMuted,
+              ),
               const SizedBox(height: 10),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style:
-                    const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textMuted,
+                ),
               ),
               const SizedBox(height: 14),
               FilledButton(
@@ -215,15 +223,16 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
     // the plain track list (no layout change).
     final bool showNative = _tracks.length >= AdConfig.playlistAdAfter &&
         AdPolicy.instance.canShowNative(AdPlacement.playlist);
-    final bool showBanner =
-        AdPolicy.instance.canShowBanner(AdPlacement.playlist);
+    final bool showBanner = AdPolicy.instance.canShowBanner(
+      AdPlacement.playlist,
+    );
     final int adCount = (showNative ? 1 : 0) + (showBanner ? 1 : 0);
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: _tracks.length + adCount,
       itemBuilder: (context, i) {
         if (showNative && i == AdConfig.playlistAdAfter) {
-          return const NativeAdWidget(placement: AdPlacement.playlist);
+          return PremiumMRECAdCard(placement: MRECPlacement.home);
         }
         final int trackIndex =
             showNative && i > AdConfig.playlistAdAfter ? i - 1 : i;
@@ -289,9 +298,14 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
                 final playing = current?['id'] == track['id'];
                 return playing
                     ? const AnimatedEqualizer(
-                        isPlaying: true, size: 16, color: AppColors.primary)
-                    : const Icon(Icons.play_circle_outline_rounded,
-                        color: AppColors.textMuted);
+                        isPlaying: true,
+                        size: 16,
+                        color: AppColors.primary,
+                      )
+                    : const Icon(
+                        Icons.play_circle_outline_rounded,
+                        color: AppColors.textMuted,
+                      );
               },
             ),
           ],

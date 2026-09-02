@@ -1,15 +1,6 @@
 // ════════════════════════════════════════════════
 // V Shots — Recommendation Engine: Signal persistence (Phase 7, Part I)
 // ════════════════════════════════════════════════
-//
-// Persists a rolling window of `SignalEvent`s via shared_preferences —
-// same storage technology `LocalLibrary` already uses (no new
-// dependency, matches this app's established "no server required"
-// local-persistence pattern). Deliberately capped ([_maxEvents]) so
-// this doesn't grow unbounded over a long-running install — old
-// events age out in favor of new ones, since recency dominates the
-// scoring model anyway (see taste_profile.dart's recency weighting).
-// ════════════════════════════════════════════════
 
 import 'dart:convert';
 
@@ -29,6 +20,11 @@ class SignalStore {
   final List<SignalEvent> _events = [];
   bool _ready = false;
 
+  /// Bumped after every persisted signal so only recommendation surfaces
+  /// that depend on taste can refresh. Home/Discover no longer need a global
+  /// screen rebuild just because one signal changed.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
   List<SignalEvent> get events => List.unmodifiable(_events);
 
   Future<void> initialize() async {
@@ -45,10 +41,6 @@ class SignalStore {
       _ready = true;
       debugPrint('[SignalStore] Loaded ${_events.length} signal events.');
     } catch (e) {
-      // Same "never block app startup" contract as LocalLibrary's own
-      // initialize() — a corrupt/missing signal history must not
-      // prevent playback; recommendations just fall back to cold-start
-      // behavior (see candidate_generator.dart's cold-start path).
       debugPrint('[SignalStore] Failed to initialize: $e');
     }
   }
@@ -59,6 +51,7 @@ class SignalStore {
       _events.removeRange(0, _events.length - _maxEvents);
     }
     await _persist();
+    revision.value++;
   }
 
   Future<void> _persist() async {
@@ -66,9 +59,9 @@ class SignalStore {
     await _prefs?.setString(_kEvents, encoded);
   }
 
-  /// Test/debug helper — clears all recorded signals.
   Future<void> clear() async {
     _events.clear();
     await _prefs?.remove(_kEvents);
+    revision.value++;
   }
 }

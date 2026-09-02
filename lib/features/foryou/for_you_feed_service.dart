@@ -3,7 +3,9 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
+
 import 'package:flutter/foundation.dart';
+
 import '../../core/config/discovery_categories.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/providers/provider_bootstrap.dart';

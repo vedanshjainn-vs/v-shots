@@ -79,7 +79,8 @@ class ConsentManager {
                 // status != obtained).
                 _set(ConsentStatus.notRequired);
                 debugPrint(
-                    '[AdConsent] Form error: ${error.message} → non-personalized mode');
+                  '[AdConsent] Form error: ${error.message} → non-personalized mode',
+                );
                 return;
               }
               _set(await ConsentInformation.instance.getConsentStatus());

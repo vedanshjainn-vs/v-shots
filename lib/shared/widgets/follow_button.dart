@@ -2,7 +2,11 @@
 // V Shots — FollowButton (Nova Design System)
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class FollowButton extends StatefulWidget {
@@ -39,6 +43,7 @@ class _FollowButtonState extends State<FollowButton> {
   }
 
   void _handleTap() {
+    unawaited(HapticFeedback.lightImpact());
     setState(() {
       _isFollowing = !_isFollowing;
     });

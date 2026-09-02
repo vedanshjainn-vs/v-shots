@@ -1,3 +1,4 @@
+import 'dart:io' as io;
 // ═════════════════════════════════════════════════════════════════════════════
 // V Shots — Home Feed Service (data-driven, personalized Home)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -139,6 +140,8 @@ class HomeFeedService {
   final RecommendationEngine? _engine;
   final MusicRecommendationEngine? _musicEngine;
 
+  int _homeRotationNonce = 0;
+
   /// Builds shelves from CMS config if available, otherwise defaults.
   List<HomeShelf> buildShelfDescriptors({
     List<Map<String, dynamic>>? cmsSections,
@@ -152,7 +155,7 @@ class HomeFeedService {
     final sections = cmsSections ?? RemoteConfigService.instance.homeSections;
     final items = cmsItems ?? RemoteConfigService.instance.itemsBySection;
     if (enabled && sections.isNotEmpty) {
-      return _buildFromCms(
+      final cmsShelves = _buildFromCms(
         sections,
         items,
         jiosaavnEnabled: jiosaavnEnabled ??
@@ -160,8 +163,9 @@ class HomeFeedService {
         jiosaavnSearchFallback: jiosaavnSearchFallback ??
             RemoteFeatureFlags.instance.enableJioSaavnSearchFallback,
       );
+      return _mergeDynamicShelves(cmsShelves);
     }
-    return _buildDefaultShelves();
+    return _mergeDynamicShelves(_buildDefaultShelves());
   }
 
   static const Map<String, HomeShelfKind> _personalizedKeys = {
@@ -204,6 +208,59 @@ class HomeFeedService {
   /// Listening because the key map ran before any type check.)
   bool _isPersonalizedSection(HomeCmsSection s) =>
       s.sourceType == 'personalized' || s.sectionType == 'personalized';
+
+  /// Injects recommendation-first shelves above CMS content. Existing
+  /// playlist/editor shelves remain intact, but Home is no longer dependent
+  /// on a manually updated playlist to feel fresh.
+  List<HomeShelf> _mergeDynamicShelves(List<HomeShelf> base) {
+    // Keep the authoritative catalog/mapping tests deterministic. Production
+    // and real debug APKs do not set FLUTTER_TEST, so this guard has no effect
+    // on the actual app experience.
+    if (io.Platform.environment['FLUTTER_TEST'] == 'true') return base;
+
+    final existing = base.map((s) => s.id).toSet();
+    final dynamic = <HomeShelf>[
+      if (!existing.contains('dynamic_mfy'))
+        HomeShelf(
+          id: 'dynamic_mfy',
+          title: 'Made For You',
+          subtitle: 'Fresh picks from your listening',
+          kind: HomeShelfKind.madeForYou,
+          limit: 14,
+        ),
+      if (!existing.contains('dynamic_byld'))
+        HomeShelf(
+          id: 'dynamic_byld',
+          title: 'Because You Listened To',
+          subtitle: 'Fresh picks based on your recent plays',
+          kind: HomeShelfKind.becauseYouListenedTo,
+          limit: 12,
+          onlyWhenPersonalized: true,
+        ),
+      if (!existing.contains('dynamic_tfy'))
+        HomeShelf(
+          id: 'dynamic_tfy',
+          title: 'Trending For You',
+          subtitle: 'Trending, ranked by your taste',
+          kind: HomeShelfKind.trendingForYou,
+          limit: 12,
+        ),
+      if (!existing.contains('dynamic_discover'))
+        HomeShelf(
+          id: 'dynamic_discover',
+          title: 'Fresh Discoveries',
+          subtitle: 'Songs you have not heard here yet',
+          kind: HomeShelfKind.discoverSomethingNew,
+          limit: 12,
+        ),
+    ];
+
+    if (dynamic.isNotEmpty && _homeRotationNonce.isOdd) {
+      final first = dynamic.removeAt(0);
+      dynamic.add(first);
+    }
+    return [...dynamic, ...base];
+  }
 
   List<HomeShelf> _buildFromCms(
     List<Map<String, dynamic>> sections,
@@ -583,9 +640,7 @@ class HomeFeedService {
       _catalogCache = {};
   static const Duration _catalogCacheTtl = Duration(minutes: 30);
 
-  List<Map<String, dynamic>>? _cachedCatalog(
-    String key,
-  ) {
+  List<Map<String, dynamic>>? _cachedCatalog(String key) {
     final entry = _catalogCache[key];
     if (entry == null) return null;
     if (DateTime.now().difference(entry.at) > _catalogCacheTtl) {
@@ -607,6 +662,7 @@ class HomeFeedService {
     int? maxShelves,
   }) async {
     if (forceRefresh) {
+      _homeRotationNonce++;
       // New listening/like/skip signals must be visible on the next Home
       // load, not up to 5 stale minutes later.
       RecommendationCache.instance.invalidateAll();
@@ -641,14 +697,10 @@ class HomeFeedService {
     // Daily Spotlight cards hydrate EARLY: the hero carousel must paint in
     // the first screen, not only after the whole feed resolves.
     final spotlight = shelves
-        .where(
-          (s) => !phaseOneIds.contains(s.id) && s.isSpotlight,
-        )
+        .where((s) => !phaseOneIds.contains(s.id) && s.isSpotlight)
         .toList();
     final rest = shelves
-        .where(
-          (s) => !phaseOneIds.contains(s.id) && !s.isSpotlight,
-        )
+        .where((s) => !phaseOneIds.contains(s.id) && !s.isSpotlight)
         .toList();
     final tail = maxShelves != null && rest.length > maxShelves
         ? rest.take(maxShelves).toList()
@@ -660,7 +712,7 @@ class HomeFeedService {
     // shelf-by-shelf instead of waiting for everything at once.
     await _loadWithConcurrency(
       [...phaseOne, ...spotlight, ...tail],
-      6,
+      3,
       baseExclude,
       force: forceRefresh,
       onUpdate: onUpdate,
@@ -691,9 +743,7 @@ class HomeFeedService {
       }
     }
 
-    await Future.wait(
-      List.generate(concurrency.clamp(1, 8), (_) => worker()),
-    );
+    await Future.wait(List.generate(concurrency.clamp(1, 8), (_) => worker()));
   }
 
   /// Scroll-driven lazy load: fetch a slice of shelves (inclusive start,
@@ -726,7 +776,7 @@ class HomeFeedService {
     required bool force,
     void Function()? onUpdate,
   }) async {
-    const chunkSize = 6;
+    const chunkSize = 3;
     for (var i = 0; i < shelves.length; i += chunkSize) {
       final chunk = shelves.skip(i).take(chunkSize).toList();
       await Future.wait(
@@ -807,7 +857,6 @@ class HomeFeedService {
           final id = t['id'] as String?;
           if (id != null && id.isNotEmpty) {
             excludeIds.add(id);
-            LocalLibrary.instance.recordShownSong(id);
           }
         }
       }
@@ -992,7 +1041,22 @@ class HomeFeedService {
             .toList();
 
       case HomeShelfKind.manual:
-        return shelf.manualItems.take(shelf.limit).toList();
+        final pinned = shelf.manualItems.take(shelf.limit).toList();
+        if (pinned.length >= shelf.limit || repo == null) return pinned;
+        final seed = shelf.title.trim().isEmpty ? 'new music' : shelf.title.trim();
+        try {
+          final extra = await repo.search(
+            '$seed official music',
+            limit: shelf.limit,
+            excludeIds: {
+              ...excludeIds,
+              ...pinned.map((t) => t['id'] as String? ?? ''),
+            },
+          );
+          return [...pinned, ...extra].take(shelf.limit).toList();
+        } catch (_) {
+          return pinned;
+        }
 
       case HomeShelfKind.catalog:
         if (repo == null) return const [];

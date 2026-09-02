@@ -4,6 +4,7 @@
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class VideoPlayerCard extends StatefulWidget {
@@ -32,19 +33,13 @@ class VideoPlayerCard extends StatefulWidget {
   State<VideoPlayerCard> createState() => _VideoPlayerCardState();
 }
 
-class _VideoPlayerCardState extends State<VideoPlayerCard>
-    with SingleTickerProviderStateMixin {
+class _VideoPlayerCardState extends State<VideoPlayerCard> {
   late bool _isPlaying;
-  late AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
     _isPlaying = widget.isPlaying;
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
   }
 
   @override
@@ -53,12 +48,6 @@ class _VideoPlayerCardState extends State<VideoPlayerCard>
     if (oldWidget.isPlaying != widget.isPlaying) {
       _isPlaying = widget.isPlaying;
     }
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
   }
 
   String _formatDuration(int seconds) {

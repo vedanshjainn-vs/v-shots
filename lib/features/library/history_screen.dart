@@ -13,7 +13,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/ads/ad_banner_widget.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
+import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart' show playTrack;
@@ -146,7 +147,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 // banner at the BOTTOM of the list — never between history
                 // entries, never interfering with selecting/playing songs.
                 if (AdPolicy.instance.canShowNative(AdPlacement.library))
-                  const NativeAdWidget(placement: AdPlacement.library),
+                  PremiumMRECAdCard(placement: MRECPlacement.home),
                 if (AdPolicy.instance.canShowBanner(AdPlacement.library))
                   const AdBannerWidget(placement: AdPlacement.library),
               ],

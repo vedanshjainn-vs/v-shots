@@ -79,8 +79,10 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
     final lp = VShotsLevelPlay.instance;
     final state = lp.systemState();
     final consent = ConsentManager.instance.status.name;
-    final flag =
-        RemoteFeatureFlags.instance.value('enable_ads', defaultValue: true);
+    final flag = RemoteFeatureFlags.instance.value(
+      'enable_ads',
+      defaultValue: true,
+    );
 
     final appKeyState = !LevelPlayConfig.isConfigured
         ? 'MISSING'
@@ -169,78 +171,114 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
           ),
           const SizedBox(height: 6),
           kv(
-              'System state',
-              '${state.label}'
-                  '${state == AdSystemState.ready ? ' — ads can be requested' : ''}',
-              alert: state != AdSystemState.ready &&
-                  state != AdSystemState.adFree),
+            'System state',
+            '${state.label}'
+                '${state == AdSystemState.ready ? ' — ads can be requested' : ''}',
+            alert:
+                state != AdSystemState.ready && state != AdSystemState.adFree,
+          ),
           kv(
-              'LevelPlay SDK',
-              lp.initSucceeded
-                  ? 'INITIALIZED'
-                  : (lp.initStarted ? 'INITIALIZING' : 'NOT STARTED'),
-              alert: !lp.initSucceeded),
+            'LevelPlay SDK',
+            lp.initSucceeded
+                ? 'INITIALIZED'
+                : (lp.initStarted ? 'INITIALIZING' : 'NOT STARTED'),
+            alert: !lp.initSucceeded,
+          ),
           if (lp.initError != null)
             kv('Init error', lp.initError!, alert: true),
-          kv('LevelPlay App Key', appKeyState,
-              alert: !LevelPlayConfig.isConfigured),
-          kv('Units configured',
-              '${LevelPlayConfig.configuredUnitCount()} / ${LevelPlayConfig.unitEnvKeys.length}'),
+          kv(
+            'LevelPlay App Key',
+            appKeyState,
+            alert: !LevelPlayConfig.isConfigured,
+          ),
+          kv(
+            'Units configured',
+            '${LevelPlayConfig.configuredUnitCount()} / ${LevelPlayConfig.unitEnvKeys.length}',
+          ),
           kv('Consent (UMP)', consent),
           kv(
-              'Personalized ads',
-              ConsentManager.instance.canRequestPersonalizedAds
-                  ? 'yes'
-                  : 'no (non-personalized requests)'),
-          kv('Remote flag enable_ads',
-              flag ? 'true' : 'FALSE (emergency kill active)'),
+            'Personalized ads',
+            ConsentManager.instance.canRequestPersonalizedAds
+                ? 'yes'
+                : 'no (non-personalized requests)',
+          ),
           kv(
-              'Ad-free user',
-              AdFreeManager.instance.isAdFree
-                  ? 'YES — all ads suppressed'
-                  : 'no'),
-          kv('Policy gate (adsAvailable)',
-              AdPolicy.instance.adsAvailable ? 'OPEN' : 'BLOCKED'),
+            'Remote flag enable_ads',
+            flag ? 'true' : 'FALSE (emergency kill active)',
+          ),
+          kv(
+            'Ad-free user',
+            AdFreeManager.instance.isAdFree ? 'YES — all ads suppressed' : 'no',
+          ),
+          kv(
+            'Policy gate (adsAvailable)',
+            AdPolicy.instance.adsAvailable ? 'OPEN' : 'BLOCKED',
+          ),
           const SizedBox(height: 4),
-          const Text('UNITS (V Shots stable placement → LevelPlay unit)',
-              style: TextStyle(
-                  color: Color(0xFF4DD0E1),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5)),
-          nativeUnitRow(LevelPlayPlacement.homeNative,
-              label: 'HOME_NATIVE_01 (native, app-level unit)'),
-          nativeUnitRow(LevelPlayPlacement.discoveryNative,
-              label: 'DISCOVERY_NATIVE_01 (native, app-level unit)'),
-          nativeUnitRow(LevelPlayPlacement.libraryNative,
-              label: 'LIBRARY_NATIVE_01 (native, app-level unit)'),
-          nativeUnitRow(LevelPlayPlacement.searchNative,
-              label: 'SEARCH_NATIVE_01 (native, app-level unit)'),
-          unitRow(LevelPlayPlacement.interstitialSessionBreak,
-              label: 'INTERSTITIAL_SESSION_BREAK_01'),
-          unitRow(LevelPlayPlacement.rewardedFeature,
-              label: 'REWARDED_FEATURE_01'),
+          const Text(
+            'UNITS (V Shots stable placement → LevelPlay unit)',
+            style: TextStyle(
+              color: Color(0xFF4DD0E1),
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
+          nativeUnitRow(
+            LevelPlayPlacement.homeNative,
+            label: 'HOME_NATIVE_01 (native, app-level unit)',
+          ),
+          nativeUnitRow(
+            LevelPlayPlacement.discoveryNative,
+            label: 'DISCOVERY_NATIVE_01 (native, app-level unit)',
+          ),
+          nativeUnitRow(
+            LevelPlayPlacement.libraryNative,
+            label: 'LIBRARY_NATIVE_01 (native, app-level unit)',
+          ),
+          nativeUnitRow(
+            LevelPlayPlacement.searchNative,
+            label: 'SEARCH_NATIVE_01 (native, app-level unit)',
+          ),
+          unitRow(
+            LevelPlayPlacement.interstitialSessionBreak,
+            label: 'INTERSTITIAL_SESSION_BREAK_01',
+          ),
+          unitRow(
+            LevelPlayPlacement.rewardedFeature,
+            label: 'REWARDED_FEATURE_01',
+          ),
           unitRow(LevelPlayPlacement.bannerHome, label: 'BANNER_HOME_01'),
           const SizedBox(height: 4),
-          const Text('FORMAT ACTIVITY (requested → loaded → shown)',
-              style: TextStyle(
-                  color: Color(0xFF4DD0E1),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5)),
+          const Text(
+            'FORMAT ACTIVITY (requested → loaded → shown)',
+            style: TextStyle(
+              color: Color(0xFF4DD0E1),
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
           kv('native', lp.activityLine('native')),
-          kv('interstitial',
-              '${lp.activityLine('interstitial')} · ready=${lp.interstitialReady}'),
-          kv('rewarded',
-              '${lp.activityLine('rewarded')} · ready=${lp.rewardedReady}'),
+          kv(
+            'interstitial',
+            '${lp.activityLine('interstitial')} · ready=${lp.interstitialReady}',
+          ),
+          kv(
+            'rewarded',
+            '${lp.activityLine('rewarded')} · ready=${lp.rewardedReady}',
+          ),
           kv('banner', lp.activityLine('widget_ad_view')),
           const SizedBox(height: 4),
-          const Text('NETWORK FILL (which network actually filled)',
-              style: TextStyle(
-                  color: Color(0xFF4DD0E1),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5)),
+          const Text(
+            'NETWORK FILL (which network actually filled)',
+            style: TextStyle(
+              color: Color(0xFF4DD0E1),
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
           for (final format in const [
             'native',
             'interstitial',
@@ -259,9 +297,11 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
               (e) => kv('last error: ${e.key}', e.value, alert: true),
             ),
           if (revenueEvent != null)
-            kv('last impression',
-                '${revenueEvent.kind} ${revenueEvent.detail ?? ''}',
-                alert: false),
+            kv(
+              'last impression',
+              '${revenueEvent.kind} ${revenueEvent.detail ?? ''}',
+              alert: false,
+            ),
           const SizedBox(height: 6),
           // ── Development-only test actions (never in release builds) ──
           Row(
@@ -274,7 +314,9 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                     side: const BorderSide(color: Color(0xFF4DD0E1)),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     textStyle: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w800),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   child: Text(_busyInter ? 'loading…' : 'TEST INTERSTITIAL'),
                 ),
@@ -288,7 +330,9 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                     side: const BorderSide(color: Color(0xFFFF7AC3)),
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     textStyle: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w800),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   child: Text(_busyRew ? 'playing…' : 'TEST REWARDED'),
                 ),
@@ -302,31 +346,47 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
               foregroundColor: const Color(0xFF9AA3B2),
               side: const BorderSide(color: Color(0xFF9AA3B2)),
               padding: const EdgeInsets.symmetric(vertical: 8),
-              textStyle:
-                  const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+              textStyle: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
             ),
             child: const Text(
-                'LAUNCH LEVELPLAY INTEGRATION TEST SUITE (networks/adapters check)'),
+              'LAUNCH LEVELPLAY INTEGRATION TEST SUITE (networks/adapters check)',
+            ),
           ),
           if (_interResult != null) ...[
             const SizedBox(height: 4),
-            Text('interstitial: $_interResult',
-                style: const TextStyle(
-                    color: Color(0xFFF2F4F8), fontSize: 10.5, height: 1.35)),
+            Text(
+              'interstitial: $_interResult',
+              style: const TextStyle(
+                color: Color(0xFFF2F4F8),
+                fontSize: 10.5,
+                height: 1.35,
+              ),
+            ),
           ],
           if (_rewResult != null) ...[
             const SizedBox(height: 4),
-            Text('rewarded: $_rewResult',
-                style: const TextStyle(
-                    color: Color(0xFFF2F4F8), fontSize: 10.5, height: 1.35)),
+            Text(
+              'rewarded: $_rewResult',
+              style: const TextStyle(
+                color: Color(0xFFF2F4F8),
+                fontSize: 10.5,
+                height: 1.35,
+              ),
+            ),
           ],
           const SizedBox(height: 4),
-          const Text('RECENT EVENTS',
-              style: TextStyle(
-                  color: Color(0xFF4DD0E1),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5)),
+          const Text(
+            'RECENT EVENTS',
+            style: TextStyle(
+              color: Color(0xFF4DD0E1),
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
           ...AdAnalytics.session.toList(growable: false).reversed.take(6).map(
                 (e) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 1),
@@ -335,7 +395,9 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
                     '${e.placement != null ? ' @ ${e.placement}' : ''}'
                     '${e.detail != null ? ' — ${e.detail}' : ''}',
                     style: const TextStyle(
-                        color: Color(0xFF9AA3B2), fontSize: 10.5),
+                      color: Color(0xFF9AA3B2),
+                      fontSize: 10.5,
+                    ),
                   ),
                 ),
               ),
@@ -346,8 +408,11 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
             'Advertising ID shown in the integration test suite). Debug '
             'builds have adapters-debug + integration test suite ON. '
             'Native/banner test ads appear in-feed on Home/Library/Playlist.',
-            style:
-                TextStyle(color: Color(0xFF9AA3B2), fontSize: 10, height: 1.35),
+            style: TextStyle(
+              color: Color(0xFF9AA3B2),
+              fontSize: 10,
+              height: 1.35,
+            ),
           ),
         ],
       ),
