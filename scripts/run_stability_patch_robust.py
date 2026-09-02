@@ -1,20 +1,20 @@
 from pathlib import Path
+import re
 import runpy
 
 path = Path('lib/core/notifications/notification_service.dart')
 text = path.read_text()
 
-# dart format wraps this expression before apply_stability_patch.py runs.
-# Normalize it to the historical anchor expected by that patch script, then
-# let the existing stability audit perform all of its normal work.
-wrapped = '''      final prefs = await SharedPreferences.getInstance();
-      final requested =
-          prefs.getBool(keyNotifPermissionRequested) ?? false;
-'''
-normalized = '''      final prefs = await SharedPreferences.getInstance();
-      final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;
-'''
-if wrapped in text and normalized not in text:
-    path.write_text(text.replace(wrapped, normalized, 1))
+# dart format may wrap this expression at different widths. Normalize any
+# wrapped form to the historical anchor expected by apply_stability_patch.py.
+pattern = re.compile(
+    r"final requested =\s*\n\s*prefs\.getBool\(keyNotifPermissionRequested\)\s*\?\?\s*false;"
+)
+text = pattern.sub(
+    'final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;',
+    text,
+    count=1,
+)
+path.write_text(text)
 
 runpy.run_path('scripts/apply_stability_patch.py', run_name='__main__')
