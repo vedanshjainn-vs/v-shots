@@ -13,6 +13,13 @@ def patch_if_needed(path: str, old: str, new: str) -> None:
     p.write_text(text.replace(old, new, 1))
 
 
+def ensure_text(path: str, required: str, label: str) -> None:
+    p = ROOT / path
+    text = p.read_text()
+    if required not in text:
+        raise SystemExit(f'ads/notification fix requirement missing: {label} ({path})')
+
+
 # LevelPlay banner/MREC views must be created only after the SDK's actual
 # onInitSuccess callback. The previous implementation completed readyNotifier
 # immediately after LevelPlay.init() returned, which could race the callback;
@@ -59,9 +66,9 @@ patch_if_needed(
 ''',
 )
 
-# Prefer the dedicated MREC unit name when supplied, while retaining the
-# already-working production banner-home secret as a backward-compatible
-# fallback. MREC size is selected by the actual LevelPlay view.
+# The branch already carries the desired MREC configuration. Keep this step
+# idempotent: older variants are upgraded, while the current configuration is
+# validated instead of failing because its legacy anchor is no longer present.
 patch_if_needed(
     'lib/core/ads/levelplay_config.dart',
     "    LevelPlayPlacement.bannerHome: 'LEVELPLAY_UNIT_BANNER_HOME_01',\n",
@@ -82,6 +89,16 @@ patch_if_needed(
     }
     return null;
 ''',
+)
+ensure_text(
+    'lib/core/ads/levelplay_config.dart',
+    "LevelPlayPlacement.bannerHome: 'LEVELPLAY_UNIT_MREC_300X250_01'",
+    'MREC placement environment key',
+)
+ensure_text(
+    'lib/core/ads/levelplay_config.dart',
+    "return _env('LEVELPLAY_UNIT_BANNER_HOME_01');",
+    'legacy MREC fallback environment key',
 )
 
 # Cadence is tuned in the source to 4 Home / 5 Discover / 3 Search with a
