@@ -15,18 +15,16 @@ class MRECConfig {
   MRECConfig._();
 
   static const bool enabled = true;
-  static const int homeInterval = 5;
+  static const int homeInterval = 4;
   static const int discoverInterval = 5;
   static const int searchAfterResults = 3;
-  static const int cooldownSeconds = 90;
+  static const int cooldownSeconds = 60;
   static const int maxVisible = 1;
   static const int discoverDwellSeconds = 15;
   static const double width = 300;
   static const double height = 250;
 }
 
-/// Single policy/state coordinator for all MREC views.
-/// The actual ad object remains owned by the LevelPlay platform view.
 class MRECAdManager extends ChangeNotifier {
   MRECAdManager._();
   static final MRECAdManager instance = MRECAdManager._();
@@ -57,7 +55,6 @@ class MRECAdManager extends ChangeNotifier {
         MRECConfig.cooldownSeconds;
   }
 
-  /// Claims the one available MREC slot and starts the platform-view load.
   String? acquire(MRECPlacement placement) {
     if (!MRECConfig.enabled || !cooldownOpen()) return null;
     if (_activeViewId != null || _inFlight) return null;
@@ -70,10 +67,8 @@ class MRECAdManager extends ChangeNotifier {
     return id;
   }
 
-  /// Explicit public load API for screens that want to warm an MREC slot.
   String? loadMREC(MRECPlacement placement) => acquire(placement);
 
-  /// Display is emitted by the real LevelPlay platform view callback.
   void showMREC({
     required String viewId,
     required MRECPlacement placement,
