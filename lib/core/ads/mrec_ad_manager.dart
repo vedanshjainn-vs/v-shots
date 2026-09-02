@@ -1,172 +1,137 @@
+// ═════════════════════════════════════════════════════════════════════════════
+// V Shots — LevelPlay MREC Ad Manager
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// Centralized manager for Unity LevelPlay MREC 300×250 ads.
+// Handles loading, display, lifecycle, frequency capping, and analytics.
+// ════════════════════════════════════════════════════════════════════════════
+
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../ads/ad_analytics.dart';
 
-import 'ad_analytics.dart';
-
+/// MREC placement locations
 enum MRECPlacement {
   home,
   discoverFeed,
-  discoverDwell,
   search,
   playlist,
   library,
 }
 
+/// Centralized MREC configuration
 class MRECConfig {
   MRECConfig._();
 
-  static const bool enabled = true;
-  static const int homeInterval = 4;
-  static const int discoverInterval = 5;
-  static const int searchAfterResults = 3;
-  static const int cooldownSeconds = 60;
-  static const int maxVisible = 1;
-  static const int discoverDwellSeconds = 15;
-  static const double width = 300;
-  static const double height = 250;
+  static const int mrecWidth = 300;
+  static const int mrecHeight = 250;
+
+  /// Minimum content items before first MREC
+  static const int homeFirstMRECAfter = 6;
+  static const int discoverFirstMRECAfter = 4;
+  static const int searchFirstMRECAfter = 4;
+
+  /// Minimum content items between MRECs
+  static const int homeMRECInterval = 8;
+  static const int discoverMRECInterval = 6;
+  static const int searchMRECInterval = 6;
+
+  /// Cooldown between MREC displays (seconds)
+  static const int mrecCooldownSeconds = 120;
+
+  /// Maximum MRECs visible at once
+  static const int maxVisibleMRECs = 1;
 }
 
+/// MREC Ad Manager - handles loading, lifecycle, and frequency capping
 class MRECAdManager extends ChangeNotifier {
   MRECAdManager._();
   static final MRECAdManager instance = MRECAdManager._();
 
+  bool _isLoaded = false;
+  bool _isLoading = false;
   DateTime? _lastShownAt;
-  MRECPlacement? _placement;
-  String? _activeViewId;
-  int _nextViewId = 0;
-  bool _loaded = false;
-  bool _inFlight = false;
+  MRECPlacement? _currentPlacement;
+  String? _error;
 
-  bool get isLoaded => _loaded;
-  bool get isMRECReady => _loaded;
+  bool get isLoaded => _isLoaded;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  MRECPlacement? get currentPlacement => _currentPlacement;
 
-  String _placementName(MRECPlacement placement) => switch (placement) {
-        MRECPlacement.home => 'HOME',
-        MRECPlacement.discoverFeed => 'DISCOVER_FEED',
-        MRECPlacement.discoverDwell => 'DISCOVER_DWELL',
-        MRECPlacement.search => 'SEARCH',
-        MRECPlacement.playlist => 'PLAYLIST',
-        MRECPlacement.library => 'LIBRARY',
-      };
+  /// Load MREC ad for a specific placement
+  Future<void> loadMREC(MRECPlacement placement) async {
+    if (_isLoading || _isLoaded) return;
 
-  bool cooldownOpen() {
-    final last = _lastShownAt;
-    if (last == null) return true;
-    return DateTime.now().difference(last).inSeconds >=
-        MRECConfig.cooldownSeconds;
-  }
-
-  String? acquire(MRECPlacement placement) {
-    if (!MRECConfig.enabled || !cooldownOpen()) return null;
-    if (_activeViewId != null || _inFlight) return null;
-    _inFlight = true;
-    _placement = placement;
-    final id = '${placement.name}-${_nextViewId++}';
-    _activeViewId = id;
-    AdAnalytics.log('mrec_screen', placement: _placementName(placement));
-    AdAnalytics.log('mrec_load_attempt', placement: _placementName(placement));
-    return id;
-  }
-
-  String? loadMREC(MRECPlacement placement) => acquire(placement);
-
-  void showMREC({
-    required String viewId,
-    required MRECPlacement placement,
-    String? network,
-    double? revenue,
-  }) {
-    markDisplayed(
-      viewId: viewId,
-      placement: placement,
-      network: network,
-      revenue: revenue,
-    );
-  }
-
-  void onAdLoaded({required String viewId, required MRECPlacement placement}) {
-    if (_activeViewId != viewId) return;
-    _inFlight = false;
-    _loaded = true;
-    _placement = placement;
-    AdAnalytics.log('mrec_loaded', placement: _placementName(placement));
-    notifyListeners();
-  }
-
-  void onAdLoadFailed({
-    required String viewId,
-    required MRECPlacement placement,
-    required String error,
-  }) {
-    if (_activeViewId != viewId) return;
-    _inFlight = false;
-    _loaded = false;
-    AdAnalytics.log(
-      'mrec_load_failed',
-      placement: _placementName(placement),
-      detail: error,
-    );
-    _release(viewId);
-  }
-
-  void markDisplayed({
-    required String viewId,
-    required MRECPlacement placement,
-    String? network,
-    double? revenue,
-  }) {
-    if (_activeViewId != viewId) return;
-    _lastShownAt = DateTime.now();
-    _loaded = true;
-    _inFlight = false;
-    _placement = placement;
-    AdAnalytics.log(
-      'mrec_impression',
-      placement: _placementName(placement),
-      detail: 'network=${network ?? '-'} revenue=${revenue ?? 0}',
-    );
-    notifyListeners();
-  }
-
-  void markClicked({required MRECPlacement placement}) {
-    AdAnalytics.log('mrec_click', placement: _placementName(placement));
-  }
-
-  void hideMREC({String? viewId, MRECPlacement? placement}) {
-    if (viewId != null && _activeViewId != viewId) return;
-    final p = placement ?? _placement;
-    if (p != null) {
-      AdAnalytics.log('mrec_hidden', placement: _placementName(p));
+    // Check cooldown
+    if (_lastShownAt != null) {
+      final cooldown = DateTime.now().difference(_lastShownAt!);
+      if (cooldown.inSeconds < MRECConfig.mrecCooldownSeconds) {
+        debugPrint('[MREC] Cooldown active: ${cooldown.inSeconds}s remaining');
+        return;
+      }
     }
-    if (viewId != null) {
-      _release(viewId);
-    } else {
-      _activeViewId = null;
-      _loaded = false;
-      _inFlight = false;
+
+    _isLoading = true;
+    _currentPlacement = placement;
+    _error = null;
+
+    try {
+      AdAnalytics.log('mrec_load_attempt', placement: placement.name);
+      // MREC loading is handled by the widget via LevelPlay SDK
+      // This method manages state and cooldown
+    } catch (e) {
+      debugPrint('[MREC] Load failed: $e');
+      _error = e.toString();
+      AdAnalytics.log('mrec_load_failed', placement: placement.name);
+      _isLoading = false;
       notifyListeners();
     }
   }
 
-  void destroyMREC({String? viewId, MRECPlacement? placement}) {
-    hideMREC(viewId: viewId, placement: placement);
-  }
-
-  void _release(String viewId) {
-    if (_activeViewId != viewId) return;
-    _activeViewId = null;
-    _loaded = false;
-    _inFlight = false;
+  /// Mark MREC as loaded successfully
+  void markLoaded() {
+    _isLoaded = true;
+    _isLoading = false;
+    _error = null;
+    AdAnalytics.log('mrec_loaded', placement: _currentPlacement?.name ?? '');
     notifyListeners();
   }
 
-  bool owns(String viewId) => _activeViewId == viewId;
+  /// Mark MREC as displayed/impression
+  void markDisplayed() {
+    _lastShownAt = DateTime.now();
+    _isLoaded = false;
+    AdAnalytics.log('mrec_impression', placement: _currentPlacement?.name ?? '');
+    notifyListeners();
+  }
 
-  @visibleForTesting
-  void resetForTesting() {
-    _lastShownAt = null;
-    _placement = null;
-    _activeViewId = null;
-    _loaded = false;
-    _inFlight = false;
+  /// Mark MREC as clicked
+  void markClicked() {
+    AdAnalytics.log('mrec_click', placement: _currentPlacement?.name ?? '');
+  }
+
+  /// Mark MREC as failed to load
+  void markFailed(String error) {
+    _isLoaded = false;
+    _isLoading = false;
+    _error = error;
+    AdAnalytics.log('mrec_load_failed', placement: _currentPlacement?.name ?? '');
+    notifyListeners();
+  }
+
+  /// Reset state for cleanup
+  void reset() {
+    _isLoaded = false;
+    _isLoading = false;
+    _error = null;
+    _currentPlacement = null;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    reset();
+    super.dispose();
   }
 }

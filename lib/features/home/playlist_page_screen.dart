@@ -13,7 +13,8 @@ import 'package:flutter/material.dart';
 import '../../core/ads/ad_banner_widget.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
+import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart' show currentTrackNotifier, musicRepository, playTrack;
@@ -231,7 +232,7 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
       itemCount: _tracks.length + adCount,
       itemBuilder: (context, i) {
         if (showNative && i == AdConfig.playlistAdAfter) {
-          return const NativeAdWidget(placement: AdPlacement.playlist);
+          return PremiumMRECAdCard(placement: MRECPlacement.home);
         }
         final int trackIndex =
             showNative && i > AdConfig.playlistAdAfter ? i - 1 : i;
