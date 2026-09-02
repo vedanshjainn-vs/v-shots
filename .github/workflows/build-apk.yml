@@ -141,6 +141,9 @@ jobs:
             export ANDROID_KEY_ALIAS="ci-build"
             export ANDROID_KEY_PASSWORD="$CI_PASS"
           fi
+          # Clean any cached build artifacts that might contain v1 embedding
+          flutter clean
+          flutter pub get
           # Delete v1 embedding file that Flutter regenerates during pub get
           rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
           flutter build apk --release
