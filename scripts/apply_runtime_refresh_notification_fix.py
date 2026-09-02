@@ -13,28 +13,22 @@ def patch_main() -> None:
             1,
         )
 
-    # Critical startup rule: paint Flutter immediately. A native/plugin/service
-    # failure must never prevent the first Flutter frame from appearing.
-    main_anchor = '''void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final bootTimer = Stopwatch()..start();
-'''
-    main_replacement = '''void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final bootTimer = Stopwatch()..start();
+    # IMPORTANT: runApp must happen before any service/plugin initialization.
+    # The existing source has historically contained several blocking awaits;
+    # those are patched below, but first paint must be unconditional.
+    if 'runApp(const VShotsApp());' not in text.split('void main()', 1)[1].split('// APP ROOT', 1)[0].split('class VShotsApp', 1)[0]:
+        anchor = "  final bootTimer = Stopwatch()..start();\n"
+        if anchor not in text:
+            raise SystemExit('main stopwatch anchor not found')
+        text = text.replace(
+            anchor,
+            anchor + "\n  // First paint before all network/plugin/service bootstrap.\n"
+            "  runApp(const VShotsApp());\n",
+            1,
+        )
 
-  // Paint the Flutter shell before any network, storage, notification, auth,
-  // ads, or audio-service initialization. This eliminates black-screen hangs
-  // caused by a plugin initialization failure before runApp(). The later
-  // runApp() remains as a harmless final rebuild after bootstrap completes.
-  runApp(const VShotsApp());
-'''
-    if 'runApp(const VShotsApp());\n\n  // Initialize Firebase first' not in text:
-        if main_anchor not in text:
-            raise SystemExit('main startup anchor not found')
-        text = text.replace(main_anchor, main_replacement, 1)
-
-    # Existing bootstrap is retained but all blocking stages are bounded.
+    # Patch the actual current bootstrap block, including the notification
+    # initializer that is still present in the repository source.
     old_wait = '''  await Future.wait([
     SupabaseService.initialize(),
     LocalLibrary.instance.initialize(),
@@ -43,8 +37,8 @@ def patch_main() -> None:
     RemoteConfigService.instance.init(),
     AdFreeManager.instance.init(),
     AppVersion.load(),
+    NotificationService.instance.initialize(),
   ]);
-
   // NotificationService MUST be ready before SmartNotificationService: the
   // scheduler calls into it during initialization. Running both in the same
   // Future.wait caused the first schedule build to race the plugin init and
@@ -64,14 +58,13 @@ def patch_main() -> None:
   } catch (e, st) {
     debugPrint('[Boot] non-fatal core init failure: $e\\n$st');
   }
-
   try {
-    await NotificationService.instance
-        .initialize()
-        .timeout(const Duration(seconds: 8));
-    await SmartNotificationService.instance
-        .initialize()
-        .timeout(const Duration(seconds: 8));
+    await NotificationService.instance.initialize().timeout(
+      const Duration(seconds: 8),
+    );
+    await SmartNotificationService.instance.initialize().timeout(
+      const Duration(seconds: 8),
+    );
   } catch (e, st) {
     debugPrint('[Boot] non-fatal notification init failure: $e\\n$st');
   }
@@ -82,9 +75,9 @@ def patch_main() -> None:
     old_auth = '''  await AuthService.instance.initializeGoogleSignIn();
 '''
     new_auth = '''  try {
-    await AuthService.instance
-        .initializeGoogleSignIn()
-        .timeout(const Duration(seconds: 8));
+    await AuthService.instance.initializeGoogleSignIn().timeout(
+      const Duration(seconds: 8),
+    );
   } catch (e, st) {
     debugPrint('[Boot] non-fatal Google Sign-In init failure: $e\\n$st');
   }
@@ -129,13 +122,20 @@ def patch_main() -> None:
     if old_audio in text:
         text = text.replace(old_audio, new_audio, 1)
 
-    marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
+    # Remove the late duplicate runApp. The early call is now the only app root.
+    text = text.replace(
+        "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n  runApp(const VShotsApp());\n",
+        "  debugPrint('[Boot] bootstrap complete at ${bootTimer.elapsedMilliseconds}ms');\n",
+        1,
+    )
+
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
+        marker = "  debugPrint('[Boot] bootstrap complete at ${bootTimer.elapsedMilliseconds}ms');\n"
         if marker not in text:
-            raise SystemExit('main runApp anchor not found')
+            marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
         text = text.replace(
             marker,
-            "  unawaited(MusicRegionProfile.initialize());\n" + marker,
+            marker + "  unawaited(MusicRegionProfile.initialize());\n",
             1,
         )
     p.write_text(text)
@@ -159,7 +159,7 @@ def patch_home() -> None:
 '''
     new = '''  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Explicit pull-to-refresh is the full Home refresh action.
+    // Explicit pull-to-refresh remains the full Home refresh action.
   }
 '''
     if old in text:
