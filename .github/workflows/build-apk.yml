@@ -2,7 +2,7 @@ name: V Shots APK Build & Test
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feat/dynamic-home-recommendations ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
