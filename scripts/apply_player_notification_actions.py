@@ -47,10 +47,7 @@ if '_session.updateNotification(' not in text:
     text = text.replace(load_anchor, load_insert, 1)
 
 # Android/Kotlin compatibility fixes for the native browser platform view.
-# Keep these idempotent because this script runs on every CI build before the
-# release compiler. Kotlin file-private factory declarations are not visible
-# from MainActivity, and WebView's current Android API expects a non-null View
-# for onVisibilityChanged.
+# This script is intentionally idempotent and runs before analyzer/build.
 kotlin_path = Path('android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt')
 kotlin_text = kotlin_path.read_text()
 kotlin_text = kotlin_text.replace(
