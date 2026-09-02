@@ -296,6 +296,20 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _cardShownAt = DateTime.now();
       _prevCard = first;
     }
+    if (batch.isNotEmpty) {
+      final first = batch.first;
+      final id = first['id'] as String? ?? '';
+      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
+      _cardShownAt = DateTime.now();
+      _prevCard = first;
+    }
+    if (batch.isNotEmpty) {
+      final first = batch.first;
+      final id = first['id'] as String? ?? '';
+      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
+      _cardShownAt = DateTime.now();
+      _prevCard = first;
+    }
   }
 
   /// Play tap on a Discovery card → open the selected video in the in-app

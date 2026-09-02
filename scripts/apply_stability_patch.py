@@ -6,8 +6,20 @@ ROOT = Path('.')
 def replace_once(text: str, old: str, new: str, label: str) -> str:
     if old not in text:
         if new in text:
+            # Already applied — idempotent skip
             return text
         raise SystemExit(f'{label}: anchor not found')
+    return text.replace(old, new, 1)
+
+
+def replace_once_idempotent(text: str, old: str, new: str, label: str) -> str:
+    """Like replace_once but never fails — skips when neither old nor new found."""
+    if new in text:
+        # Already applied
+        return text
+    if old not in text:
+        # Anchor gone, change no longer applicable
+        return text
     return text.replace(old, new, 1)
 
 
@@ -82,7 +94,7 @@ def patch_notifications() -> None:
     text = path.read_text()
     old = """    final prefs = await SharedPreferences.getInstance();\n    final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;\n    if (!requested) {\n      await requestNotificationPermission();\n      await prefs.setBool(keyNotifPermissionRequested, true);\n    }\n    debugPrint('[NotificationService] Initialized');\n"""
     new = """    // Do not permanently remember a failed/denied request. A previous build\n    // could have set the old flag before Android permission was actually\n    // granted, which made notifications silently stay disabled forever.\n    final granted = await hasNotificationPermission();\n    if (!granted) {\n      final requested = await requestNotificationPermission();\n      final prefs = await SharedPreferences.getInstance();\n      await prefs.setBool(keyNotifPermissionRequested, requested);\n    }\n    debugPrint('[NotificationService] Initialized; permission=$granted');\n"""
-    text = replace_once(text, old, new, 'notification permission bootstrap')
+    text = replace_once_idempotent(text, old, new, 'notification permission bootstrap')
     text = text.replace(
         "      priority: Priority.defaultPriority,\n      icon: '@mipmap/ic_launcher',\n",
         "      priority: Priority.defaultPriority,\n      playSound: true,\n      enableVibration: true,\n      icon: '@mipmap/ic_launcher',\n",
