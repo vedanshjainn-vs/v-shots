@@ -57,6 +57,7 @@ class MRECAdManager extends ChangeNotifier {
         MRECConfig.cooldownSeconds;
   }
 
+  /// Claims the one available MREC slot and starts the platform-view load.
   String? acquire(MRECPlacement placement) {
     if (!MRECConfig.enabled || !cooldownOpen()) return null;
     if (_activeViewId != null || _inFlight) return null;
@@ -67,6 +68,24 @@ class MRECAdManager extends ChangeNotifier {
     AdAnalytics.log('mrec_screen', placement: _placementName(placement));
     AdAnalytics.log('mrec_load_attempt', placement: _placementName(placement));
     return id;
+  }
+
+  /// Explicit public load API for screens that want to warm an MREC slot.
+  String? loadMREC(MRECPlacement placement) => acquire(placement);
+
+  /// Display is emitted by the real LevelPlay platform view callback.
+  void showMREC({
+    required String viewId,
+    required MRECPlacement placement,
+    String? network,
+    double? revenue,
+  }) {
+    markDisplayed(
+      viewId: viewId,
+      placement: placement,
+      network: network,
+      revenue: revenue,
+    );
   }
 
   void onAdLoaded({required String viewId, required MRECPlacement placement}) {
@@ -108,8 +127,7 @@ class MRECAdManager extends ChangeNotifier {
     AdAnalytics.log(
       'mrec_impression',
       placement: _placementName(placement),
-      detail:
-          'network=${network ?? '-'} revenue=${revenue ?? 0}',
+      detail: 'network=${network ?? '-'} revenue=${revenue ?? 0}',
     );
     notifyListeners();
   }
@@ -132,6 +150,10 @@ class MRECAdManager extends ChangeNotifier {
       _inFlight = false;
       notifyListeners();
     }
+  }
+
+  void destroyMREC({String? viewId, MRECPlacement? placement}) {
+    hideMREC(viewId: viewId, placement: placement);
   }
 
   void _release(String viewId) {
