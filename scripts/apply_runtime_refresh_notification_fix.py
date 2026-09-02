@@ -12,22 +12,29 @@ def patch_main() -> None:
             "import 'core/recommendation/music_recommendation_engine.dart';\nimport 'core/recommendation/music_region_profile.dart';\n",
             1,
         )
-    old_boot = '''    AdFreeManager.instance.init(),
-    AppVersion.load(),
-    NotificationService.instance.initialize(),
-  ]);
-'''
-    new_boot = '''    AdFreeManager.instance.init(),
-    AppVersion.load(),
-  ]);
-'''
-    if old_boot in text:
-        text = text.replace(old_boot, new_boot, 1)
 
-    # The app must always reach Flutter first paint even if a network/plugin
-    # initializer fails or hangs. Individual services remain best-effort and
-    # can recover later; a startup exception must never leave the native launch
-    # window stuck on a black screen.
+    # Critical startup rule: paint Flutter immediately. A native/plugin/service
+    # failure must never prevent the first Flutter frame from appearing.
+    main_anchor = '''void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final bootTimer = Stopwatch()..start();
+'''
+    main_replacement = '''void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final bootTimer = Stopwatch()..start();
+
+  // Paint the Flutter shell before any network, storage, notification, auth,
+  // ads, or audio-service initialization. This eliminates black-screen hangs
+  // caused by a plugin initialization failure before runApp(). The later
+  // runApp() remains as a harmless final rebuild after bootstrap completes.
+  runApp(const VShotsApp());
+'''
+    if 'runApp(const VShotsApp());\n\n  // Initialize Firebase first' not in text:
+        if main_anchor not in text:
+            raise SystemExit('main startup anchor not found')
+        text = text.replace(main_anchor, main_replacement, 1)
+
+    # Existing bootstrap is retained but all blocking stages are bounded.
     old_wait = '''  await Future.wait([
     SupabaseService.initialize(),
     LocalLibrary.instance.initialize(),
@@ -58,8 +65,6 @@ def patch_main() -> None:
     debugPrint('[Boot] non-fatal core init failure: $e\\n$st');
   }
 
-  // NotificationService MUST be ready before SmartNotificationService, but
-  // neither service is allowed to block the first Flutter frame indefinitely.
   try {
     await NotificationService.instance
         .initialize()
@@ -118,8 +123,6 @@ def patch_main() -> None:
       ),
     ).timeout(const Duration(seconds: 10));
   } catch (e, st) {
-    // Background playback is optional at first paint. Keep the UI usable even
-    // when the audio-service Android binding is unavailable on a device.
     debugPrint('[Boot] non-fatal AudioService init failure: $e\\n$st');
   }
 '''
@@ -132,7 +135,6 @@ def patch_main() -> None:
             raise SystemExit('main runApp anchor not found')
         text = text.replace(
             marker,
-            "  // Resolve network country after core boot without delaying first paint.\n"
             "  unawaited(MusicRegionProfile.initialize());\n" + marker,
             1,
         )
@@ -157,8 +159,7 @@ def patch_home() -> None:
 '''
     new = '''  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Returning from another screen must not re-fetch/rebuild the whole Home.
-    // Pull-to-refresh remains the explicit full refresh action.
+    // Explicit pull-to-refresh is the full Home refresh action.
   }
 '''
     if old in text:
