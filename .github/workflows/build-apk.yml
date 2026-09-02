@@ -41,6 +41,7 @@ jobs:
           LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
           LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
           LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          LEVELPLAY_UNIT_MREC_300X250_01=${{ secrets.LEVELPLAY_UNIT_MREC_300X250_01 }}
           LEVELPLAY_DEBUG_USE_PRODUCTION=true
           EOF
       - name: 4b. Inject Production AdMob App ID (when configured)
@@ -77,15 +78,22 @@ jobs:
           dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
           dart fix --apply
           dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
-      - name: 5g. Apply Interactive Player Notification Patch
+      - name: 5g. Validate Browser Player Notification Bridge
         run: |
-          python3 scripts/apply_player_notification_patch.py
+          set -e
+          grep -q 'VShotsBrowserPlaybackService.eventChannel = events' android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt
+          grep -q 'ACTION_UPDATE' android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt
+          grep -q 'notificationAction' lib/features/foryou/vshots_browser_session.dart
+          grep -q 'updateNotification' lib/features/foryou/vshots_browser_session.dart
           dart format lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart
       - name: 5h. Validate MREC + Notification Sources
         run: |
+          set -e
           dart format lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/ads/native_ad_widget.dart lib/core/notifications/notification_service.dart
           test -f lib/core/ads/mrec_ad_manager.dart
           test -f lib/core/ads/premium_mrec_ad_card.dart
+          grep -q 'MEDIUM_RECTANGLE' lib/core/ads/premium_mrec_ad_card.dart
+          grep -q 'POST_NOTIFICATIONS' android/app/src/main/AndroidManifest.xml
       - name: 5i. Apply Ads + Notification Reliability Fix
         run: |
           python3 scripts/apply_ads_notification_reliability_fix.py
@@ -141,10 +149,8 @@ jobs:
             export ANDROID_KEY_ALIAS="ci-build"
             export ANDROID_KEY_PASSWORD="$CI_PASS"
           fi
-          # Clean any cached build artifacts that might contain v1 embedding
           flutter clean
           flutter pub get
-          # Delete v1 embedding file that Flutter regenerates during pub get
           rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
           flutter build apk --release
           flutter build appbundle --release
