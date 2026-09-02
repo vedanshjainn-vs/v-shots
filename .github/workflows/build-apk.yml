@@ -87,6 +87,25 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: 8. Run Unit & Widget Tests
         run: flutter test
+      - name: 8b. Diagnose Android v1 embedding before release build
+        run: |
+          set +e
+          echo '--- App Android embedding markers ---'
+          grep -RInE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' android --include='*.kt' --include='*.java' || true
+          echo '--- Flutter plugin dependency Android packages ---'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('.flutter-plugins-dependencies')
+          if p.exists():
+              data = json.loads(p.read_text())
+              for plugin in data.get('plugins', {}).get('android', []):
+                  print(plugin.get('name'), plugin.get('path'))
+          else:
+              print('No .flutter-plugins-dependencies file found')
+          PY
+          echo '--- Pub cache v1 embedding references ---'
+          grep -RIlE 'io\.flutter\.app\.|PluginRegistry\.Registrar' "$PUB_CACHE/hosted/pub.dev" --include='*.kt' --include='*.java' 2>/dev/null | head -100 || true
       - name: 9. Setup Keystore & Build Release APK/AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
