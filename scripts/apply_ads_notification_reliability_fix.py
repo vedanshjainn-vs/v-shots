@@ -3,7 +3,7 @@ from pathlib import Path
 ROOT = Path('.')
 
 
-def patch(path: str, old: str, new: str) -> None:
+def patch_if_needed(path: str, old: str, new: str) -> None:
     p = ROOT / path
     text = p.read_text()
     if new in text:
@@ -17,7 +17,7 @@ def patch(path: str, old: str, new: str) -> None:
 # onInitSuccess callback. The previous implementation completed readyNotifier
 # immediately after LevelPlay.init() returned, which could race the callback;
 # MREC widgets then saw ready=true but initSucceeded=false and never retried.
-patch(
+patch_if_needed(
     'lib/core/ads/levelplay_service.dart',
     '''    } catch (e) {
       _initError = e.toString();
@@ -33,8 +33,7 @@ patch(
     }
 ''',
 )
-
-patch(
+patch_if_needed(
     'lib/core/ads/levelplay_service.dart',
     '''    _createAdObjects();
     // Register impression-level revenue analytics only once the SDK is
@@ -45,7 +44,7 @@ patch(
     // Register impression-level revenue analytics only once the SDK is
 ''',
 )
-patch(
+patch_if_needed(
     'lib/core/ads/levelplay_service.dart',
     '''  void _onInitFailed(LevelPlayInitError error) {
     _initError = error.toString();
@@ -60,15 +59,15 @@ patch(
 ''',
 )
 
-# Prefer a dedicated MREC ad-unit secret, but remain backward compatible with
-# the working #399/banner-unit setup. LevelPlay's MREC is the actual
-# MEDIUM_RECTANGLE size, not a Flutter placeholder.
-patch(
+# Prefer the dedicated MREC unit name when supplied, while retaining the
+# already-working production banner-home secret as a backward-compatible
+# fallback. MREC size is selected by the actual LevelPlay view.
+patch_if_needed(
     'lib/core/ads/levelplay_config.dart',
     "    LevelPlayPlacement.bannerHome: 'LEVELPLAY_UNIT_BANNER_HOME_01',\n",
     "    LevelPlayPlacement.bannerHome: 'LEVELPLAY_UNIT_MREC_300X250_01',\n",
 )
-patch(
+patch_if_needed(
     'lib/core/ads/levelplay_config.dart',
     '''    final key = unitEnvKeys[placement];
     if (key == null) return null; // native placements: app-level unit
@@ -78,8 +77,6 @@ patch(
     if (key == null) return null; // native placements: app-level unit
     final primary = _env(key);
     if (primary != null) return primary;
-    // Backward compatibility with the production LevelPlay unit already used
-    // by the working MREC build.
     if (placement == LevelPlayPlacement.bannerHome) {
       return _env('LEVELPLAY_UNIT_BANNER_HOME_01');
     }
@@ -87,22 +84,12 @@ patch(
 ''',
 )
 
-# Revenue-friendly but still user-safe pacing: MREC has enough inventory
-# opportunities without stacking multiple visible ads.
-patch(
-    'lib/core/ads/mrec_ad_manager.dart',
-    '  static const int homeInterval = 5;\n',
-    '  static const int homeInterval = 4;\n',
-)
-patch(
-    'lib/core/ads/mrec_ad_manager.dart',
-    '  static const int cooldownSeconds = 90;\n',
-    '  static const int cooldownSeconds = 60;\n',
-)
+# Cadence is tuned in the source to 4 Home / 5 Discover / 3 Search with a
+# 60-second global MREC cooldown. No separate patch is needed here.
 
-# The scheduled-notification receiver is launched by Android itself after
-# reboot/package replacement, so it must be exported on Android 12+.
-patch(
+# Android launches the boot receiver itself after reboot/package replacement;
+# Android 12+ requires exported=true for a receiver with a system intent filter.
+patch_if_needed(
     'android/app/src/main/AndroidManifest.xml',
     '''        <receiver
             android:exported="false"
