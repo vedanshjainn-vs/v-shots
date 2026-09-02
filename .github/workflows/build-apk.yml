@@ -98,6 +98,9 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: 8. Run Unit & Widget Tests
         run: flutter test
+      - name: 8b1. Remove deprecated v1 embedding GeneratedPluginRegistrant
+        run: |
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
       - name: 8b. Diagnose Android v1 embedding before release build
         run: |
           set +e
