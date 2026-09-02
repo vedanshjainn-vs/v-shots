@@ -125,6 +125,8 @@ jobs:
           assert any(x.get(ns+'name')=='flutterEmbedding' and x.get(ns+'value')=='2' for x in r.iter('meta-data'))
           PY
           grep -RInE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' android --include='*.kt' --include='*.java' || true
+      - name: 8b1. Remove deprecated v1 embedding GeneratedPluginRegistrant
+        run: rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
       - name: 9. Setup Keystore & Build Release APK/AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
