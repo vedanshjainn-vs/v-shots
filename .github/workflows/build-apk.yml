@@ -48,8 +48,6 @@ jobs:
           if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
             sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" android/app/src/main/AndroidManifest.xml
           fi
-          # PR merge refs can inherit a conflicting manifest line from main.
-          # Normalize the Flutter v2 embedding before any Android build.
           sed -i 's/name="flutterEmbedding"/android:name="flutterEmbedding"/g' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/g' android/app/src/main/AndroidManifest.xml
       - name: 5. Install Dependencies
@@ -88,6 +86,10 @@ jobs:
           dart format lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/ads/native_ad_widget.dart lib/core/notifications/notification_service.dart
           test -f lib/core/ads/mrec_ad_manager.dart
           test -f lib/core/ads/premium_mrec_ad_card.dart
+      - name: 5i. Apply Ads + Notification Reliability Fix
+        run: |
+          python3 scripts/apply_ads_notification_reliability_fix.py
+          dart format lib/core/ads/levelplay_service.dart lib/core/ads/levelplay_config.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/notifications/notification_service.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
