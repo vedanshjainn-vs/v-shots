@@ -110,10 +110,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
                       child: LevelPlayBannerAdView(
                         key: _bannerKey,
                         adUnitId: unitId,
-                        adSize: LevelPlayAdSize.createCustomSize(
-                          width: MRECConfig.mrecWidth,
-                          height: MRECConfig.mrecHeight,
-                        ),
+                        adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
                         listener: this,
                         placementName: widget.placement.name,
                         onPlatformViewCreated: () {
