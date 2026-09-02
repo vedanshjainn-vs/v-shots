@@ -37,7 +37,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       GlobalKey<LevelPlayBannerAdViewState>();
   bool _isVisible = false;
   bool _hasFailed = false;
-  bool _isTimedOut = false;
   Timer? _loadTimer;
 
   String? get _unitId {
