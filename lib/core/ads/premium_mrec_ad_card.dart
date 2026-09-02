@@ -54,7 +54,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     _loadTimer = Timer(const Duration(seconds: 10), () {
       if (mounted && !_isVisible && !_hasFailed) {
         setState(() {
-          _isTimedOut = true;
           _hasFailed = true;
         });
         MRECAdManager.instance.markFailed('timeout');
@@ -168,7 +167,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       setState(() {
         _isVisible = true;
         _hasFailed = false;
-        _isTimedOut = false;
       });
       MRECAdManager.instance.markLoaded();
       widget.onLoad?.call();

@@ -11,7 +11,7 @@ import 'premium_mrec_ad_card.dart';
 class NativeAdWidget extends StatelessWidget {
   const NativeAdWidget({
     super.key,
-    this.height = MRECConfig.mrecHeight.toDouble(),
+    this.height = 250.0,
     this.placement = AdPlacement.home,
   });
 
