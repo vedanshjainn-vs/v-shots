@@ -47,16 +47,22 @@ class NotificationService {
         onDidReceiveNotificationResponse: _onNotificationTapped,
       );
       await _createNotificationChannels();
-      _initialized = true;    // Do not permanently remember a failed/denied request. A previous build
-    // could have set the old flag before Android permission was actually
-    // granted, which made notifications silently stay disabled forever.
-    final granted = await hasNotificationPermission();
-    if (!granted) {
-      final requested = await requestNotificationPermission();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(keyNotifPermissionRequested, requested);
-    }
-    debugPrint('[NotificationService] Initialized; permission=$granted');
+
+      // IMPORTANT: do not call public hasNotificationPermission() here.
+      // That method calls initialize(), which would await this very Future and
+      // deadlock the boot sequence. Permission checks during initialization
+      // must use the platform implementation directly.
+      final granted = await _readNotificationPermission();
+      if (!granted) {
+        final requested = await _requestNotificationPermissionInternal();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(keyNotifPermissionRequested, requested);
+      }
+
+      _initialized = true;
+      debugPrint(
+        '[NotificationService] Initialized; permissionInitially=$granted',
+      );
     } catch (e, stack) {
       debugPrint('[NotificationService] initialize failed: $e');
       debugPrint('$stack');
@@ -109,9 +115,10 @@ class NotificationService {
   }
 
   void _onNotificationTapped(NotificationResponse response) {
-    final payload = response.payload;
-    if (payload == null || payload.isEmpty) return;
-    debugPrint('[NotificationService] Tapped: $payload');
+    debugPrint('[NotificationService] Tapped: ${response.payload ?? ''}');
+    // Navigation/playback is intentionally handled by the app router when it
+    // is ready. The notification itself must never be discarded just because
+    // a payload is absent.
   }
 
   Future<void> scheduleSmartNotification({
@@ -186,7 +193,7 @@ class NotificationService {
     await _plugin.cancel(id);
   }
 
-  Future<bool> requestNotificationPermission() async {
+  Future<bool> _requestNotificationPermissionInternal() async {
     var granted = true;
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -205,8 +212,12 @@ class NotificationService {
     return granted;
   }
 
-  Future<bool> hasNotificationPermission() async {
+  Future<bool> requestNotificationPermission() async {
     await initialize();
+    return _requestNotificationPermissionInternal();
+  }
+
+  Future<bool> _readNotificationPermission() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
@@ -214,6 +225,11 @@ class NotificationService {
       return await android.areNotificationsEnabled() ?? false;
     }
     return true;
+  }
+
+  Future<bool> hasNotificationPermission() async {
+    await initialize();
+    return _readNotificationPermission();
   }
 
   Future<void> showUpdateNotification(String versionName) async {
