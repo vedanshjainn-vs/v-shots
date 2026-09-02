@@ -4,12 +4,10 @@ import 'ad_policy.dart';
 import 'mrec_ad_manager.dart';
 import 'premium_mrec_ad_card.dart';
 
-/// Backward-compatible wrapper for existing placements.
-///
-/// All legacy NativeAdWidget call sites now render the real Unity LevelPlay
-/// MEDIUM_RECTANGLE (300x250) MREC. Keeping this class avoids touching the
-/// surrounding Home/Search/Discover layout code and prevents unrelated UI
-/// regressions.
+/// Backward-compatible wrapper for existing ad call sites.
+/// All legacy native placements now use the real Unity LevelPlay MREC
+/// MEDIUM_RECTANGLE (300x250). The player placement is intentionally empty:
+/// MREC must never cover or interrupt playback controls.
 class NativeAdWidget extends StatelessWidget {
   const NativeAdWidget({
     super.key,
@@ -17,22 +15,22 @@ class NativeAdWidget extends StatelessWidget {
     this.placement = AdPlacement.home,
   });
 
-  // Kept for source compatibility with older callers. MREC has a fixed
-  // 300x250 LevelPlay size and therefore intentionally ignores this value.
   final double height;
   final AdPlacement placement;
 
-  MRECPlacement get _mrecPlacement => switch (placement) {
+  MRECPlacement? get _mrecPlacement => switch (placement) {
         AdPlacement.home => MRECPlacement.home,
         AdPlacement.forYouFeed => MRECPlacement.discoverFeed,
         AdPlacement.search => MRECPlacement.search,
         AdPlacement.playlist => MRECPlacement.playlist,
         AdPlacement.library => MRECPlacement.library,
-        AdPlacement.player => MRECPlacement.discoverDwell,
+        AdPlacement.player => null,
       };
 
   @override
   Widget build(BuildContext context) {
-    return PremiumMRECAdCard(placement: _mrecPlacement);
+    final mrecPlacement = _mrecPlacement;
+    if (mrecPlacement == null) return const SizedBox.shrink();
+    return PremiumMRECAdCard(placement: mrecPlacement);
   }
 }
