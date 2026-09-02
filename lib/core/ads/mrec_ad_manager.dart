@@ -23,6 +23,13 @@ class MRECConfig {
   static const int discoverDwellSeconds = 15;
   static const double width = 300;
   static const double height = 250;
+
+  /// Maximum time (seconds) a MREC place may spend in its loading state
+  /// before it is treated as a no-fill/timeout and the slot is collapsed.
+  /// This guarantees an ad can NEVER show an indefinite spinner or leave a
+  /// permanent 300x250 hole when LevelPlay returns no callback, is offline,
+  /// or has no inventory. Requirement #7 (no infinite loading / no blank box).
+  static const int loadTimeoutSeconds = 12;
 }
 
 class MRECAdManager extends ChangeNotifier {

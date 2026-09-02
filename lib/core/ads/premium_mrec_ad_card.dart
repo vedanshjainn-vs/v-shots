@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
@@ -34,6 +36,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   bool _loaded = false;
   bool _failed = false;
   bool _creating = false;
+  Timer? _loadTimer;
 
   String? get _unitId =>
       LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
@@ -61,10 +64,20 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       _viewId = id;
       _creating = false;
     });
+    // Bounded load guard: if LevelPlay never reports loaded/displayed (no
+    // fill, offline, no inventory) collapse the slot after the timeout so we
+    // never leave an infinite spinner or a permanent 300x250 hole.
+    _loadTimer?.cancel();
+    _loadTimer = Timer(
+      const Duration(seconds: MRECConfig.loadTimeoutSeconds),
+      () => _collapse(error: 'load timeout (no fill)'),
+    );
   }
 
   @override
   void dispose() {
+    _loadTimer?.cancel();
+    _loadTimer = null;
     VShotsLevelPlay.instance.readyNotifier.removeListener(_onLevelPlayReady);
     _key.currentState?.destroy();
     final id = _viewId;
@@ -78,6 +91,9 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   }
 
   void _collapse({String? error}) {
+    if (_failed) return;
+    _loadTimer?.cancel();
+    _loadTimer = null;
     if (!mounted) return;
     final id = _viewId;
     if (id != null) {
@@ -181,6 +197,8 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   void onAdLoaded(LevelPlayAdInfo adInfo) {
     final id = _viewId;
     if (id == null) return;
+    _loadTimer?.cancel();
+    _loadTimer = null;
     setState(() => _loaded = true);
     VShotsLevelPlay.instance.noteFill('mrec', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
@@ -204,6 +222,8 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   void onAdDisplayed(LevelPlayAdInfo adInfo) {
     final id = _viewId;
     if (id == null) return;
+    _loadTimer?.cancel();
+    _loadTimer = null;
     MRECAdManager.instance.markDisplayed(
       viewId: id,
       placement: widget.placement,
