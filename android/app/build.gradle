@@ -75,6 +75,17 @@ flutter {
     source '../..'
 }
 
+// Delete deprecated v1 embedding GeneratedPluginRegistrant before build.
+// Flutter 3.44.9 rejects builds with this file present, even if it contains
+// v2 embedding code. The file is regenerated during pub get but is not needed.
+tasks.whenTaskAdded { task ->
+    if (task.name == 'compileFlutterBuildRelease' || task.name == 'compileFlutterBuildDebug') {
+        task.doFirst {
+            delete "$projectDir/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
+        }
+    }
+}
+
 // Unity LevelPlay mediation — current Android network adapters.
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
