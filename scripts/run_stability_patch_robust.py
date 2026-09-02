@@ -9,7 +9,7 @@ text = path.read_text()
 # to builds where a previous CI attempt already partially applied it.
 old_block = re.compile(
     r"\s*final prefs = await SharedPreferences\.getInstance\(\);\s*"
-    r"final requested = prefs\.getBool\(keyNotifPermissionRequested\) \?\? false;\s*"
+    r"final requested =\s*\n?\s*prefs\.getBool\(keyNotifPermissionRequested\) \?\? false;\s*"
     r"if \(!requested\) \{\s*"
     r"await requestNotificationPermission\(\);\s*"
     r"await prefs\.setBool\(keyNotifPermissionRequested, true\);\s*"
@@ -17,20 +17,18 @@ old_block = re.compile(
     r"debugPrint\('\[NotificationService\] Initialized'\);",
     re.MULTILINE,
 )
-new_block = """
-      // Re-check the real platform permission on every initialization. Older
-      // builds could remember a failed request as successful and permanently
-      // suppress future permission prompts.
-      final granted = await hasNotificationPermission();
-      if (!granted) {
-        final requested = await requestNotificationPermission();
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool(keyNotifPermissionRequested, requested);
-      }
-      debugPrint('[NotificationService] Initialized; permission=$granted');"""
+new_block = """    // Do not permanently remember a failed/denied request. A previous build
+    // could have set the old flag before Android permission was actually
+    // granted, which made notifications silently stay disabled forever.
+    final granted = await hasNotificationPermission();
+    if (!granted) {
+      final requested = await requestNotificationPermission();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(keyNotifPermissionRequested, requested);
+    }
+    debugPrint('[NotificationService] Initialized; permission=$granted');"""
 text, count = old_block.subn(new_block, text, count=1)
 if count == 0 and "final granted = await hasNotificationPermission();" not in text:
-    # Handle dart-format variants without depending on an exact line break.
     fallback = re.compile(
         r"\s*final prefs = await SharedPreferences\.getInstance\(\);.*?"
         r"debugPrint\('\[NotificationService\] Initialized'\);",
@@ -40,6 +38,4 @@ if count == 0 and "final granted = await hasNotificationPermission();" not in te
 if count:
     path.write_text(text)
 
-# Apply the remaining stability fixes. The notification patch is now already
-# applied above, so the base patcher must treat it as an idempotent state.
 runpy.run_path('scripts/apply_stability_patch.py', run_name='__main__')
