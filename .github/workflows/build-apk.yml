@@ -78,13 +78,15 @@ jobs:
           dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
           dart fix --apply
           dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
-      - name: 5g. Validate Browser Player Notification Bridge
+      - name: 5g. Apply + Validate Browser Player Notification Bridge
         run: |
           set -e
+          python3 scripts/apply_player_notification_actions.py
           grep -q 'VShotsBrowserPlaybackService.eventChannel = events' android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt
           grep -q 'ACTION_UPDATE' android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt
           grep -q 'notificationAction' lib/features/foryou/vshots_browser_session.dart
           grep -q 'updateNotification' lib/features/foryou/vshots_browser_session.dart
+          grep -q 'onNotificationAction' lib/features/foryou/discovery_browser_sheet.dart
           dart format lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart
       - name: 5h. Validate MREC + Notification Sources
         run: |
