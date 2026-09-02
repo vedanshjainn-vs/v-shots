@@ -15,19 +15,117 @@ def patch_main() -> None:
     old_boot = '''    AdFreeManager.instance.init(),
     AppVersion.load(),
     NotificationService.instance.initialize(),
-    SmartNotificationService.instance.initialize(),
   ]);
 '''
     new_boot = '''    AdFreeManager.instance.init(),
     AppVersion.load(),
   ]);
-
-  // NotificationService must be ready before the smart scheduler starts.
-  await NotificationService.instance.initialize();
-  await SmartNotificationService.instance.initialize();
 '''
     if old_boot in text:
         text = text.replace(old_boot, new_boot, 1)
+
+    # The app must always reach Flutter first paint even if a network/plugin
+    # initializer fails or hangs. Individual services remain best-effort and
+    # can recover later; a startup exception must never leave the native launch
+    # window stuck on a black screen.
+    old_wait = '''  await Future.wait([
+    SupabaseService.initialize(),
+    LocalLibrary.instance.initialize(),
+    SignalStore.instance.initialize(),
+    PersonalizationStore.instance.initialize(),
+    RemoteConfigService.instance.init(),
+    AdFreeManager.instance.init(),
+    AppVersion.load(),
+  ]);
+
+  // NotificationService MUST be ready before SmartNotificationService: the
+  // scheduler calls into it during initialization. Running both in the same
+  // Future.wait caused the first schedule build to race the plugin init and
+  // silently schedule zero notifications.
+  await SmartNotificationService.instance.initialize();
+'''
+    new_wait = '''  try {
+    await Future.wait([
+      SupabaseService.initialize(),
+      LocalLibrary.instance.initialize(),
+      SignalStore.instance.initialize(),
+      PersonalizationStore.instance.initialize(),
+      RemoteConfigService.instance.init(),
+      AdFreeManager.instance.init(),
+      AppVersion.load(),
+    ]).timeout(const Duration(seconds: 12));
+  } catch (e, st) {
+    debugPrint('[Boot] non-fatal core init failure: $e\\n$st');
+  }
+
+  // NotificationService MUST be ready before SmartNotificationService, but
+  // neither service is allowed to block the first Flutter frame indefinitely.
+  try {
+    await NotificationService.instance
+        .initialize()
+        .timeout(const Duration(seconds: 8));
+    await SmartNotificationService.instance
+        .initialize()
+        .timeout(const Duration(seconds: 8));
+  } catch (e, st) {
+    debugPrint('[Boot] non-fatal notification init failure: $e\\n$st');
+  }
+'''
+    if old_wait in text:
+        text = text.replace(old_wait, new_wait, 1)
+
+    old_auth = '''  await AuthService.instance.initializeGoogleSignIn();
+'''
+    new_auth = '''  try {
+    await AuthService.instance
+        .initializeGoogleSignIn()
+        .timeout(const Duration(seconds: 8));
+  } catch (e, st) {
+    debugPrint('[Boot] non-fatal Google Sign-In init failure: $e\\n$st');
+  }
+'''
+    if old_auth in text:
+        text = text.replace(old_auth, new_auth, 1)
+
+    old_audio = '''  audioHandler = await AudioService.init(
+    builder: () => VShotsAudioHandler(audioPlayer),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.vshots.live.channel.audio',
+      androidNotificationChannelName: 'V Shots playback',
+      androidNotificationChannelDescription:
+          'Media playback controls for V Shots',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidShowNotificationBadge: true,
+      androidNotificationClickStartsActivity: true,
+    ),
+  );
+'''
+    new_audio = '''  try {
+    audioHandler = await AudioService.init(
+      builder: () => VShotsAudioHandler(audioPlayer),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.vshots.live.channel.audio',
+        androidNotificationChannelName: 'V Shots playback',
+        androidNotificationChannelDescription:
+            'Media playback controls for V Shots',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+        androidShowNotificationBadge: true,
+        androidNotificationClickStartsActivity: true,
+      ),
+    ).timeout(const Duration(seconds: 10));
+  } catch (e, st) {
+    // Background playback is optional at first paint. Keep the UI usable even
+    // when the audio-service Android binding is unavailable on a device.
+    debugPrint('[Boot] non-fatal AudioService init failure: $e\\n$st');
+  }
+'''
+    if old_audio in text:
+        text = text.replace(old_audio, new_audio, 1)
+
     marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
         if marker not in text:
