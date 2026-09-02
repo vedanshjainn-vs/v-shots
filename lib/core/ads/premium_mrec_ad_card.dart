@@ -185,7 +185,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     VShotsLevelPlay.instance.noteFill('mrec', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
       'mrec',
-      'LOADED (network: ${adInfo.adNetwork ?? '-'})',
+      'LOADED (network: ${adInfo.adNetwork})',
     );
     MRECAdManager.instance.onAdLoaded(
       viewId: id,
@@ -212,7 +212,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     );
     VShotsLevelPlay.instance.noteActivity(
       'mrec',
-      'DISPLAYED (network: ${adInfo.adNetwork ?? '-'})',
+      'DISPLAYED (network: ${adInfo.adNetwork})',
     );
   }
 
