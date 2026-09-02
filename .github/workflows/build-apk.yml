@@ -44,13 +44,12 @@ jobs:
           LEVELPLAY_UNIT_MREC_300X250_01=${{ secrets.LEVELPLAY_UNIT_MREC_300X250_01 }}
           LEVELPLAY_DEBUG_USE_PRODUCTION=true
           EOF
-      - name: 4b. Inject Production AdMob App ID (when configured)
+      - name: 4b. Inject Production AdMob App ID + enforce Flutter v2
         run: |
           if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
             sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" android/app/src/main/AndroidManifest.xml
           fi
-          sed -i 's/name="flutterEmbedding"/android:name="flutterEmbedding"/g' android/app/src/main/AndroidManifest.xml
-          sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/g' android/app/src/main/AndroidManifest.xml
+          python3 scripts/ensure_flutter_v2_android.py
       - name: 5. Install Dependencies
         run: flutter pub get
       - name: 5b. Apply Dynamic Home Recommendation Patch
@@ -100,6 +99,8 @@ jobs:
         run: |
           python3 scripts/apply_ads_notification_reliability_fix.py
           dart format lib/core/ads/levelplay_service.dart lib/core/ads/levelplay_config.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/notifications/notification_service.dart
+      - name: 5j. Final Flutter v2 manifest validation
+        run: python3 scripts/ensure_flutter_v2_android.py
       - name: 6. Run Formatting Check
         run: |
           set -e
@@ -108,28 +109,22 @@ jobs:
         run: flutter analyze --no-fatal-infos
       - name: 8. Run Unit & Widget Tests
         run: flutter test
-      - name: 8b1. Remove deprecated v1 embedding GeneratedPluginRegistrant
+      - name: 8b. Diagnose Android embedding before release build
         run: |
-          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
-      - name: 8b. Diagnose Android v1 embedding before release build
-        run: |
-          set +e
-          echo '--- App Android embedding markers ---'
-          grep -RInE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' android --include='*.kt' --include='*.java' || true
-          echo '--- Flutter plugin dependency Android packages ---'
+          set -e
+          python3 scripts/ensure_flutter_v2_android.py
           python3 - <<'PY'
-          import json
-          from pathlib import Path
-          p = Path('.flutter-plugins-dependencies')
-          if p.exists():
-              data = json.loads(p.read_text())
-              for plugin in data.get('plugins', {}).get('android', []):
-                  print(plugin.get('name'), plugin.get('path'))
-          else:
-              print('No .flutter-plugins-dependencies file found')
+          import xml.etree.ElementTree as ET
+          p='android/app/src/main/AndroidManifest.xml'
+          ns='{http://schemas.android.com/apk/res/android}'
+          r=ET.parse(p).getroot()
+          a=r.find('application')
+          print('application android:name =', a.get(ns+'name'))
+          print('flutterEmbedding markers =', [(x.get(ns+'name'), x.get(ns+'value')) for x in r.iter('meta-data') if x.get(ns+'name')=='flutterEmbedding'])
+          assert a.get(ns+'name') != 'io.flutter.app.FlutterApplication'
+          assert any(x.get(ns+'name')=='flutterEmbedding' and x.get(ns+'value')=='2' for x in r.iter('meta-data'))
           PY
-          echo '--- Pub cache v1 embedding references ---'
-          grep -RIlE 'io\.flutter\.app\.|PluginRegistry\.Registrar' "$PUB_CACHE/hosted/pub.dev" --include='*.kt' --include='*.java' 2>/dev/null | head -100 || true
+          grep -RInE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' android --include='*.kt' --include='*.java' || true
       - name: 9. Setup Keystore & Build Release APK/AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -153,7 +148,7 @@ jobs:
           fi
           flutter clean
           flutter pub get
-          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          python3 scripts/ensure_flutter_v2_android.py
           flutter build apk --release
           flutter build appbundle --release
       - name: 10. Build Debug APK
