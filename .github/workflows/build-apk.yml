@@ -65,7 +65,7 @@ jobs:
       - name: 5d. Apply Regional + Content Policy Patch
         run: |
           python3 scripts/apply_content_policy_patch.py
-          dart format lib/core/music/music_validator.dart lib/core/discover/discover_feed_engine.dart lib/core/recommendation/music_recommendation_engine.dart lib/core/recommendation/music_region_profile.dart
+          dart format lib/core/music/music_validator.dart lib/core/discover/discover_feed_engine.dart lib/core/recommendation/music_recommendation_engine.dart lib/core/recommendation/music_region_profile.dart lib/features/foryou/for_you_feed_service.dart
       - name: 5e. Apply Smart Listening V2 Patch
         run: |
           python3 scripts/apply_smart_listening_v2.py
@@ -83,6 +83,11 @@ jobs:
         run: |
           python3 scripts/apply_player_notification_patch.py
           dart format lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart
+      - name: 5h. Validate MREC + Notification Sources
+        run: |
+          dart format lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/ads/native_ad_widget.dart lib/core/notifications/notification_service.dart
+          test -f lib/core/ads/mrec_ad_manager.dart
+          test -f lib/core/ads/premium_mrec_ad_card.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
