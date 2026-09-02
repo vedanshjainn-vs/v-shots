@@ -149,10 +149,13 @@ jobs:
           flutter clean
           flutter pub get
           python3 scripts/ensure_flutter_v2_android.py
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
           flutter build apk --release
           flutter build appbundle --release
       - name: 10. Build Debug APK
-        run: flutter build apk --debug
+        run: |
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          flutter build apk --debug
       - name: 11. Validate Generated APKs & AAB
         run: |
           set -e
