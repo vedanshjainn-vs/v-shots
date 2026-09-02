@@ -147,9 +147,8 @@ class VShotsLevelPlay {
     } catch (e) {
       _initError = e.toString();
       AdAnalytics.log('ad_load_failed', detail: 'LevelPlay.init: $e');
+      _completeReady();
     }
-    _completeReady();
-    if (_initSucceeded) _preloadIfAllowed();
   }
 
   void _completeReady() {
@@ -168,6 +167,8 @@ class VShotsLevelPlay {
       unawaited(LevelPlay.launchTestSuite().catchError((_) {}));
     }
     _createAdObjects();
+    _completeReady();
+    if (_initSucceeded) _preloadIfAllowed();
     // Register impression-level revenue analytics only once the SDK is
     // actually up (the plugin's addImpressionDataListener fires an
     // unawaited platform channel call — must not run in test envs where
@@ -178,6 +179,7 @@ class VShotsLevelPlay {
   void _onInitFailed(LevelPlayInitError error) {
     _initError = error.toString();
     AdAnalytics.log('ad_load_failed', detail: 'LevelPlay init failed: $error');
+    _completeReady();
   }
 
   void _createAdObjects() {
