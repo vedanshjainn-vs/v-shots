@@ -1,11 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
-
-    <!-- Required by Unity LevelPlay for Android 12+ (advertising ID). -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
-
-    <!-- Required by audio_service and Discovery browser background media. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
@@ -35,7 +31,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Meta Audience Network activity required for mediated Meta creatives. -->
         <activity
             android:name="com.facebook.ads.AudienceNetworkActivity"
             android:hardwareAccelerated="true"
@@ -65,12 +60,11 @@
             </intent-filter>
         </receiver>
 
-        <!-- flutter_local_notifications scheduled-delivery receivers. -->
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver
-            android:exported="false"
+            android:exported="true"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
@@ -81,10 +75,9 @@
         </receiver>
 
         <meta-data
-            name="flutterEmbedding"
+            android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Google AdMob App ID. The real production App ID is injected by CI. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~3347511713" />
