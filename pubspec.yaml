@@ -42,6 +42,18 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+dependency_overrides:
+  # path_provider_android 2.3.0+ migrated from a plain MethodChannel plugin to a
+  # jni/jnigen FFI bridge (depends on the `jni` + `jni_flutter` packages). The
+  # generated bindings call into `libdartjni.so` (JClass.forName / FindClass)
+  # during Dart plugin class registration, BEFORE the Flutter engine has set up
+  # the native JNI context, aborting the process on device with
+  #   "JNI is not initialized ... before 'main()' ..."  (SIGSEGV, fault addr 0x0).
+  # That is the cold-launch death on the Redmi/MIUI handset. Pin the last
+  # pre-jni release (2.2.23) so path_provider uses the classic platform channel
+  # again. It fully satisfies path_provider 2.1.6 (`^2.2.5`).
+  path_provider_android: 2.2.23
+
 flutter:
   uses-material-design: true
   assets:
