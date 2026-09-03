@@ -1,26 +1,19 @@
-// -------------------------------------------------------------------------
-// V Shots - Premium MREC Ad Card (Unity LevelPlay 300x250)
+// ═════════════════════════════════════════════════════════════════════════
+// V Shots — Premium MREC Ad Card (Unity LevelPlay 300×250)
 //
-// Premium ad container for MREC 300x250 ads.
-//
-// Lifecycle:
-//   - LevelPlayBannerAdView stays mounted while loading - unmounting kills
-//     the in-flight request and creates a circular dependency.
-//   - On failure the card collapses (zero height) without a rebuild loop.
-//   - View rendered at full size behind a loading overlay until onAdLoaded.
-// -------------------------------------------------------------------------
+// Premium ad container for MREC 300×250 ads.
+// Designed to integrate naturally with V Shots' premium music/video experience.
+// ═════════════════════════════════════════════════════════════════════════
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
-
 import '../theme/app_colors.dart';
 import 'ad_policy.dart';
-import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 import 'mrec_ad_manager.dart';
+import 'levelplay_config.dart';
 
-/// Premium MREC Ad Card - Unity LevelPlay 300x250.
+/// Premium MREC Ad Card widget
 class PremiumMRECAdCard extends StatefulWidget {
   const PremiumMRECAdCard({
     super.key,
@@ -43,7 +36,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       GlobalKey<LevelPlayBannerAdViewState>();
   bool _isVisible = false;
   bool _hasFailed = false;
-  bool _loadAttempted = false;
 
   String? get _unitId =>
       LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
@@ -62,30 +54,13 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     super.dispose();
   }
 
-  void _requestLoad() {
-    if (_loadAttempted) return;
-    _loadAttempted = true;
-    final state = _bannerKey.currentState;
-    if (state != null) {
-      try {
-        state.loadAd();
-        if (kDebugMode) {
-          debugPrint('[MREC] loadAd() for ${widget.placement.name}');
-        }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[MREC] loadAd error: $e');
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final unitId = _unitId;
-    if (unitId == null ||
-        !AdPolicy.instance.adsAvailable ||
-        !VShotsLevelPlay.instance.initSucceeded) {
+    if (unitId == null) {
       return const SizedBox.shrink();
     }
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
@@ -95,15 +70,15 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
           : Container(
               width: 300,
               height: 250,
-              margin: const EdgeInsets.symmetric(vertical: 12),
+              margin: const EdgeInsets.symmetric(vertical: 16),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppColors.border, width: 1),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 12,
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
                 ],
@@ -112,72 +87,66 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
                 borderRadius: BorderRadius.circular(16),
                 child: Stack(
                   children: [
+                    // Ad content
                     Positioned.fill(
-                      child: IgnorePointer(
-                        ignoring: !_isVisible,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 350),
-                          curve: Curves.easeOut,
-                          opacity: _isVisible ? 1 : 0,
-                          child: LevelPlayBannerAdView(
-                            key: _bannerKey,
-                            adUnitId: unitId,
-                            adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
-                            listener: this,
-                            placementName:
-                                'MREC_${widget.placement.name.toUpperCase()}',
-                            onPlatformViewCreated: (_) => _requestLoad(),
-                          ),
-                        ),
+                      child: LevelPlayBannerAdView(
+                        key: _bannerKey,
+                        adUnitId: unitId,
+                        adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
+                        listener: this,
+                        placementName: widget.placement.name,
+                        onPlatformViewCreated: () {
+                          _bannerKey.currentState?.loadAd();
+                        },
                       ),
                     ),
+
+                    // Loading indicator
                     if (!_isVisible && !_hasFailed)
-                      Center(
+                      const Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             SizedBox(
-                              width: 28,
-                              height: 28,
+                              width: 24,
+                              height: 24,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
+                                strokeWidth: 2,
                                 color: AppColors.accent,
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Sponsored',
+                            SizedBox(height: 8),
+                            Text(
+                              'Loading...',
                               style: TextStyle(
                                 color: AppColors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.5,
+                                fontSize: 12,
                               ),
                             ),
                           ],
                         ),
                       ),
+
+                    // Ad label
                     if (_isVisible)
                       Positioned(
                         top: 8,
                         right: 8,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 3,
+                            horizontal: 6,
+                            vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color:
-                                AppColors.hotPink.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
-                            'Ad . Sponsored',
+                            'Ad',
                             style: TextStyle(
-                              color: AppColors.hotPink,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -191,32 +160,20 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   void onAdLoaded(LevelPlayAdInfo adInfo) {
-    if (kDebugMode) {
-      debugPrint(
-        '[MREC] Loaded: network=${adInfo.adNetwork} '
-        'placement=${widget.placement.name}',
-      );
-    }
-    if (mounted) {
-      setState(() {
-        _isVisible = true;
-        _hasFailed = false;
-      });
-    }
+    setState(() {
+      _isVisible = true;
+      _hasFailed = false;
+    });
     MRECAdManager.instance.onAdLoaded();
     widget.onLoad?.call();
   }
 
   @override
   void onAdLoadFailed(LevelPlayAdError error) {
-    if (kDebugMode) {
-      debugPrint(
-        '[MREC] Load failed: $error placement=${widget.placement.name}',
-      );
-    }
-    if (mounted) {
-      setState(() => _hasFailed = true);
-    }
+    debugPrint('[MREC Card] Load failed: $error');
+    setState(() {
+      _hasFailed = true;
+    });
     MRECAdManager.instance.onAdLoadFailed(error.toString());
     widget.onFailure?.call();
   }
@@ -228,8 +185,10 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {
-    if (kDebugMode) debugPrint('[MREC] Display failed: $error');
-    if (mounted) setState(() => _hasFailed = true);
+    debugPrint('[MREC Card] Display failed: $error');
+    setState(() {
+      _hasFailed = true;
+    });
   }
 
   @override
