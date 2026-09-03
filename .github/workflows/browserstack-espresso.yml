@@ -1,0 +1,179 @@
+# V Shots — BrowserStack App Automate Espresso cold-launch smoke test.
+#
+# Runs the RELEASE app on a real device and asserts it survives cold launch.
+# A startup crash (native or fatal Dart) fails the Espresso build and surfaces
+# the crash stack trace. This is the automated on-device gate that `flutter
+# test` / `flutter analyze` and the plain APK build cannot provide.
+#
+# Requires GitHub secrets: BROWSERSTACK_USERNAME, BROWSERSTACK_ACCESS_KEY.
+
+name: V Shots BrowserStack Espresso Startup Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/startup-first-frame, main, vshots-stable-baseline-401, feature/mrec-ads-phase2 ]
+
+jobs:
+  espresso-smoke:
+    name: BrowserStack Espresso cold-launch smoke (release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: 1. Checkout
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 3. Setup Flutter (Stable 3.44.9)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: 'stable'
+          cache: true
+
+      - name: 4. Configure Environment (.env)
+        run: |
+          cat <<EOF > .env
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
+          LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
+          LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
+          LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          LEVELPLAY_DEBUG_USE_PRODUCTION=true
+          EOF
+
+      - name: 5. Install Dependencies
+        run: flutter pub get
+
+      # Keep the build deterministic and identical to build-apk.yml.
+      - name: 6. Apply Feature Patches (5b-5j)
+        run: |
+          python3 scripts/apply_dynamic_home_patch.py
+          python3 scripts/run_stability_patch_robust.py
+          python3 scripts/apply_content_policy_patch.py
+          python3 scripts/apply_smart_listening_v2.py
+          python3 scripts/apply_smart_queue_autoadvance.py
+          python3 scripts/apply_runtime_refresh_notification_fix.py
+          python3 scripts/apply_player_notification_actions.py
+          python3 scripts/apply_ads_notification_reliability_fix.py
+          python3 scripts/ensure_flutter_v2_android.py
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+      - name: 7. Build Release APK + androidTest APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
+            export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
+            export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
+            export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
+          fi
+          flutter build apk --release
+          cd android
+          ./gradlew assembleReleaseAndroidTest
+
+      - name: 8. Upload app + test suite to BrowserStack
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: |
+          set -e
+          BASE="https://api-cloud.browserstack.com"
+          ls -la build/app/outputs/flutter-apk/app-release.apk
+          ls -la app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+          APP_RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST \
+            "$BASE/app-automate/upload" \
+            -F "file=@build/app/outputs/flutter-apk/app-release.apk" \
+            -F "custom_id=v-shots-coldlaunch-${{ github.run_number }}-app")
+          APP_URL=$(echo "$APP_RES" | grep -o '"app_url":"[^"]*"' | cut -d'"' -f4)
+          echo "APP_URL=$APP_URL"
+          TEST_RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST \
+            "$BASE/app-automate/espresso/v2/test-suite" \
+            -F "file=@app/build/outputs/apk/androidTest/release/app-release-androidTest.apk")
+          TEST_URL=$(echo "$TEST_RES" | grep -o '"test_suite_url":"[^"]*"' | cut -d'"' -f4)
+          if [ -z "$TEST_URL" ]; then echo "TEST_URL empty. Test-suite response: $TEST_RES"; TEST_URL=$(echo "$TEST_RES" | grep -o '"test_suite_id":"[^"]*"' | cut -d'"' -f4); fi
+          echo "TEST_URL=$TEST_URL"
+          echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
+
+      - name: 9. Run BrowserStack Espresso Build
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: |
+          set -e
+          BASE="https://api-cloud.browserstack.com"
+          PAYLOAD=$(cat <<EOP
+          {
+            "devices": ["Google Pixel 8-13"],
+            "app": "$APP_URL",
+            "testSuite": "$TEST_URL",
+            "name": "V Shots cold launch smoke #${{ github.run_number }}"
+          }
+          EOP
+          )
+          BUILD_RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST \
+            "$BASE/app-automate/espresso/v2/build" -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+          echo "$BUILD_RES"
+          BUILD_ID=$(echo "$BUILD_RES" | python3 -c "import sys,json; print(json.load(sys.stdin).get('build_id',''))" 2>/dev/null || echo "$BUILD_RES" | grep -o '"build_id":"[^"]*"' | cut -d'"' -f4)
+          echo "BUILD_ID=$BUILD_ID"
+          echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
+
+      - name: 10. Poll Espresso Build & Report Result
+        env:
+          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
+          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+        run: |
+          set -e
+          BASE="https://api-cloud.browserstack.com"
+          if [ -z "${BUILD_ID:-}" ] || [ "$BUILD_ID" = "None" ]; then
+            echo "::error::No BUILD_ID returned — Espresso build may have failed to start."
+            echo "Recent builds:"
+            curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" "$BASE/app-automate/espresso/v2/builds" | head -c 2000
+            exit 1
+          fi
+          for i in $(seq 1 40); do
+            RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" \
+              "$BASE/app-automate/espresso/v2/builds/$BUILD_ID")
+            STATUS=$(echo "$RES" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+            echo "[$i] status=$STATUS"
+            if [ "$STATUS" = "done" ]; then
+              echo "$RES" > espresso_result.json
+              echo "=== RESULT ==="
+              python3 -c "
+import json
+d=json.load(open('espresso_result.json'))
+print('status:', d.get('status'))
+print('device tests:', json.dumps(d.get('device_tests', []), indent=2)[:4000])
+"
+              # Determine pass/fail
+              python3 -c "
+import json,sys
+d=json.load(open('espresso_result.json'))
+tests=[t for dt in d.get('device_tests',[]) for t in dt.get('tests',[])]
+fails=[t for t in tests if t.get('status')!='passed']
+print('PASSED tests:', sum(1 for t in tests if t.get('status')=='passed'))
+print('FAILED tests:', len(fails))
+for f in fails:
+    print('  FAILED:', f.get('name'), '|', f.get('status'), '|', (f.get('error','') or '')[:1500])
+sys.exit(1 if fails else 0)
+"
+              break
+            fi
+            sleep 30
+          done
