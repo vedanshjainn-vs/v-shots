@@ -1,49 +1,51 @@
-// ═════════════════════════════════════════════════════════════════════════════
-// V Shots — LevelPlay MREC Ad Manager
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// Centralized manager for Unity LevelPlay MREC 300×250 ads.
-// Handles loading, display, lifecycle, frequency capping, and analytics.
-// ════════════════════════════════════════════════════════════════════════════
+// V Shots — Centralized Unity LevelPlay MREC 300×250 manager
 
-import 'dart:async';
 import 'package:flutter/foundation.dart';
+
 import '../ads/ad_analytics.dart';
 
-/// MREC placement locations
+/// MREC placement locations.
 enum MRECPlacement {
   home,
   discoverFeed,
+  discoverDwell,
   search,
   playlist,
   library,
 }
 
-/// Centralized MREC configuration
+/// All MREC UX/frequency values live here so monetization can be tuned later
+/// without scattering constants through individual screens.
 class MRECConfig {
   MRECConfig._();
 
+  static const bool enabled = true;
   static const int mrecWidth = 300;
   static const int mrecHeight = 250;
 
-  /// Minimum content items before first MREC
   static const int homeFirstMRECAfter = 6;
-  static const int discoverFirstMRECAfter = 4;
-  static const int searchFirstMRECAfter = 4;
-
-  /// Minimum content items between MRECs
   static const int homeMRECInterval = 8;
+  static const int discoverFirstMRECAfter = 4;
   static const int discoverMRECInterval = 6;
+  static const int searchFirstMRECAfter = 4;
   static const int searchMRECInterval = 6;
 
-  /// Cooldown between MREC displays (seconds)
+  /// Minimum time between impressions across the whole app.
   static const int mrecCooldownSeconds = 120;
 
-  /// Maximum MRECs visible at once
+  /// Maximum time to keep a visible loading slot before collapsing it.
+  static const Duration loadTimeout = Duration(seconds: 10);
+
+  /// Discover dwell opportunity. Playback is never paused by this timer.
+  static const Duration discoverDwellTime = Duration(seconds: 30);
+
   static const int maxVisibleMRECs = 1;
 }
 
-/// MREC Ad Manager - handles loading, lifecycle, and frequency capping
+/// One global policy/telemetry coordinator for all MREC cards.
+///
+/// The actual LevelPlay platform view belongs to the screen widget; this
+/// manager owns the cross-screen slot, cooldown and analytics state.
 class MRECAdManager extends ChangeNotifier {
   MRECAdManager._();
   static final MRECAdManager instance = MRECAdManager._();
@@ -52,79 +54,72 @@ class MRECAdManager extends ChangeNotifier {
   bool _isLoading = false;
   DateTime? _lastShownAt;
   MRECPlacement? _currentPlacement;
-  String? _error;
 
   bool get isLoaded => _isLoaded;
   bool get isLoading => _isLoading;
-  String? get error => _error;
   MRECPlacement? get currentPlacement => _currentPlacement;
 
-  /// Load MREC ad for a specific placement
-  Future<void> loadMREC(MRECPlacement placement) async {
-    if (_isLoading || _isLoaded) return;
+  bool get isCoolingDown {
+    final shown = _lastShownAt;
+    if (shown == null) return false;
+    return DateTime.now().difference(shown).inSeconds <
+        MRECConfig.mrecCooldownSeconds;
+  }
 
-    // Check cooldown
-    if (_lastShownAt != null) {
-      final cooldown = DateTime.now().difference(_lastShownAt!);
-      if (cooldown.inSeconds < MRECConfig.mrecCooldownSeconds) {
-        debugPrint('[MREC] Cooldown active: ${cooldown.inSeconds}s remaining');
-        return;
-      }
+  bool get canRequest => MRECConfig.enabled && !_isLoading && !_isLoaded && !isCoolingDown;
+
+  /// Claims the single MREC slot for a screen and records a load attempt.
+  Future<bool> loadMREC(MRECPlacement placement) async {
+    if (!canRequest) {
+      debugPrint('[MREC] request denied: enabled/cooldown/active policy');
+      return false;
     }
 
     _isLoading = true;
     _currentPlacement = placement;
-    _error = null;
-
-    try {
-      AdAnalytics.log('mrec_load_attempt', placement: placement.name);
-      // MREC loading is handled by the widget via LevelPlay SDK
-      // This method manages state and cooldown
-    } catch (e) {
-      debugPrint('[MREC] Load failed: $e');
-      _error = e.toString();
-      AdAnalytics.log('mrec_load_failed', placement: placement.name);
-      _isLoading = false;
-      notifyListeners();
-    }
+    notifyListeners();
+    AdAnalytics.log('mrec_load_attempt', placement: placement.name);
+    return true;
   }
 
-  /// Mark MREC as loaded successfully
   void markLoaded() {
     _isLoaded = true;
     _isLoading = false;
-    _error = null;
-    AdAnalytics.log('mrec_loaded', placement: _currentPlacement?.name ?? '');
+    AdAnalytics.log('mrec_loaded', placement: _currentPlacement?.name);
     notifyListeners();
   }
 
-  /// Mark MREC as displayed/impression
   void markDisplayed() {
     _lastShownAt = DateTime.now();
     _isLoaded = false;
-    AdAnalytics.log('mrec_impression', placement: _currentPlacement?.name ?? '');
+    _isLoading = false;
+    AdAnalytics.log('mrec_impression', placement: _currentPlacement?.name);
     notifyListeners();
   }
 
-  /// Mark MREC as clicked
   void markClicked() {
-    AdAnalytics.log('mrec_click', placement: _currentPlacement?.name ?? '');
+    AdAnalytics.log('mrec_click', placement: _currentPlacement?.name);
   }
 
-  /// Mark MREC as failed to load
   void markFailed(String error) {
+    final placement = _currentPlacement?.name;
     _isLoaded = false;
     _isLoading = false;
-    _error = error;
-    AdAnalytics.log('mrec_load_failed', placement: _currentPlacement?.name ?? '');
+    AdAnalytics.log('mrec_load_failed', placement: placement, detail: error);
     notifyListeners();
   }
 
-  /// Reset state for cleanup
+  void release(MRECPlacement placement) {
+    if (_currentPlacement != placement) return;
+    _isLoaded = false;
+    _isLoading = false;
+    _currentPlacement = null;
+    notifyListeners();
+  }
+
   void reset() {
     _isLoaded = false;
     _isLoading = false;
-    _error = null;
     _currentPlacement = null;
     notifyListeners();
   }
