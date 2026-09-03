@@ -142,9 +142,9 @@ class MusicCatalogService {
 
 String musicCatalogCacheKey({
   required String mode,
-  List<String> languages = const [],
-  List<String> moods = const [],
-  List<String> regions = const [],
+  List<String> languages = const <String>[],
+  List<String> moods = const <String>[],
+  List<String> regions = const <String>[],
   int signalVersion = 1,
 }) {
   final parts = <String>[
