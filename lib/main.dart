@@ -1608,7 +1608,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
               return InkWell(
                 borderRadius: BorderRadius.circular(14),
-                onTap: () => playTrack(context, track, _results, resultIndex),
+                onTap: () => playTrack(context, track, [track], 0),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     vertical: 7,
