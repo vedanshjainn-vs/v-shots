@@ -121,8 +121,6 @@ void main() async {
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
       androidNotificationClickStartsActivity: true,
-      preloadArtwork: true,
-      androidNotificationColor: 0xFF0E1420,
     ),
   );
 
