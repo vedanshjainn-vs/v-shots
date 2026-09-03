@@ -99,7 +99,15 @@ jobs:
         run: |
           python3 scripts/apply_ads_notification_reliability_fix.py
           dart format lib/core/ads/levelplay_service.dart lib/core/ads/levelplay_config.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/notifications/notification_service.dart
-      - name: 5j. Final Flutter v2 manifest validation
+      - name: 5j. Apply Startup Recovery Patch LAST
+        run: |
+          python3 scripts/apply_startup_recovery_patch.py
+          dart format lib/main.dart
+          grep -q 'runApp(const VShotsApp());' lib/main.dart
+          grep -q 'Future<void> _bootstrapAfterFirstFrame' lib/main.dart
+          grep -q 'Future<void> _bootstrapAudio' lib/main.dart
+          grep -q 'late-audio-bind' lib/main.dart
+      - name: 5k. Final Flutter v2 manifest validation
         run: python3 scripts/ensure_flutter_v2_android.py
       - name: 6. Run Formatting Check
         run: |
@@ -183,12 +191,15 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 90
       - name: 15. Upload APK to BrowserStack App Automate
-        if: ${{ env.BROWSERSTACK_USERNAME != '' && env.BROWSERSTACK_ACCESS_KEY != '' }}
         continue-on-error: true
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
         run: |
+          if [ -z "$BROWSERSTACK_USERNAME" ] || [ -z "$BROWSERSTACK_ACCESS_KEY" ]; then
+            echo "BrowserStack credentials not configured; skipping upload."
+            exit 0
+          fi
           RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@build/app/outputs/flutter-apk/app-release.apk" -F "custom_id=v-shots-ci-${{ github.run_number }}")
           echo "$RESPONSE"
           APP_URL=$(echo "$RESPONSE" | grep -o '\"app_url\":\"[^\"]*\"' | cut -d'\"' -f4)
