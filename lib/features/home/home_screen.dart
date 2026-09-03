@@ -82,9 +82,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
 
   void _onScrollForLazyLoad() {
-    if (!_scrollController.hasClients) return;
-    if (_loadingMoreShelves) return;
-    if (_maxLoadedShelves >= _shelves.length) return;
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    if (_loadingMoreShelves) {
+      return;
+    }
+    if (_maxLoadedShelves >= _shelves.length) {
+      return;
+    }
     // Smart trigger: fire when the user has scrolled past
     // (_maxLoadedShelves - _lazyLoadAheadShelves) shelves — i.e. start
     // loading the next batch 4 shelves BEFORE the user reaches the end

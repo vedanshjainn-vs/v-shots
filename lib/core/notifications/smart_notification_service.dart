@@ -1,206 +1,173 @@
 // ════════════════════════════════════════════════════════════════════════════
 // V Shots — Smart Notification Service
 // ════════════════════════════════════════════════════════════════════════════
-//
-// Schedules local notifications based on user activity patterns.
-// Sends personalized notifications at optimal times.
-//
-// Notification types:
-// - New music releases
-// - Trending songs
-// - Personalized recommendations
-// - Continue listening reminders
-// - Win-back notifications (inactive users)
+// Android system scheduling — no in-process Timer, so schedules survive app
+// process death. Rules: 4–8h gap, max 3/day, no spam, smart content.
 
-import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
+import 'package:timezone/timezone.dart' as tz;
 
 import '../storage/local_library.dart';
 import 'notification_service.dart';
 
-class SmartNotificationService {
+class SmartNotificationService with WidgetsBindingObserver {
   SmartNotificationService._();
   static final SmartNotificationService instance = SmartNotificationService._();
 
-  bool _initialized = false;
-  Timer? _scheduledTimer;
-
-  // SharedPreferences keys
-  static const String keyLastNotificationTime = 'last_smart_notification_time';
-  static const String keyNotificationCount = 'smart_notification_count';
-  static const String keyUserActiveHours = 'user_active_hours';
-
-  // Notification frequency limits
   static const int maxNotificationsPerDay = 3;
   static const int minHoursBetweenNotifications = 4;
+  static const int maxHoursBetweenNotifications = 8;
+  static const int daysToScheduleAhead = 7;
+  static const int _scheduleIdBase = 20000;
+  static const String keyLastNotificationTime = 'last_smart_notification_time';
+  static const String keyScheduleVersion = 'smart_notification_schedule_v3';
+
+  bool _initialized = false;
+  bool _rebuilding = false;
 
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    debugPrint('[SmartNotif] Initialized');
-
-    // Schedule first notification after a delay
-    _scheduleNextNotification();
-  }
-
-  void _scheduleNextNotification() {
-    // Cancel any existing timer
-    _scheduledTimer?.cancel();
-
-    // Schedule next notification in 4-8 hours
-    final hours = 4 + Random().nextInt(5); // 4-8 hours
-    _scheduledTimer = Timer(Duration(hours: hours), () async {
-      await _sendSmartNotification();
-      _scheduleNextNotification(); // Schedule next one
-    });
-
-    debugPrint('[SmartNotif] Next notification in $hours hours');
-  }
-
-  Future<void> _sendSmartNotification() async {
-    // Check frequency limits
-    if (!await _canSendNotification()) {
-      debugPrint('[SmartNotif] Cannot send: frequency limit reached');
-      return;
+    WidgetsBinding.instance.addObserver(this);
+    try {
+      tz_data.initializeTimeZones();
+      final info = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(info.identifier));
+    } catch (e) {
+      debugPrint('[SmartNotif] Timezone setup failed: $e');
     }
+    await _rebuildSchedule();
+    debugPrint('[SmartNotif] Initialized — system scheduling active');
+  }
 
-    // Get notification type based on user activity
-    final notification = await _generateSmartNotification();
-    if (notification == null) return;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) markAppActive();
+  }
 
-    // Send notification
+  Future<void> markAppActive() async {
+    if (!_initialized) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_active_at', DateTime.now().toIso8601String());
+    await _rebuildSchedule();
+  }
+
+  Future<void> _rebuildSchedule() async {
+    if (!_initialized || _rebuilding) return;
+    _rebuilding = true;
+    try {
+      await NotificationService.instance.cancelSmartNotifications();
+      final prefs = await SharedPreferences.getInstance();
+      final lastSentRaw = prefs.getString(keyLastNotificationTime);
+      final lastSent = lastSentRaw == null ? null : DateTime.tryParse(lastSentRaw);
+      var cursor = tz.TZDateTime.now(tz.local).add(const Duration(hours: 4));
+      if (lastSent != null) {
+        final nextAllowed = lastSent.add(const Duration(hours: minHoursBetweenNotifications));
+        final nextAllowedTz = tz.TZDateTime.from(nextAllowed, tz.local);
+        if (nextAllowedTz.isAfter(cursor)) cursor = nextAllowedTz;
+      }
+
+      final random = Random();
+      var notificationId = _scheduleIdBase;
+      var dayKey = _calendarKey(cursor);
+      var dayCount = 0;
+      var scheduled = 0;
+      // ignore: prefer_const_declarations
+      final maxToSchedule = daysToScheduleAhead * maxNotificationsPerDay;
+
+      while (scheduled < maxToSchedule) {
+        final currentDay = _calendarKey(cursor);
+        if (currentDay != dayKey) {
+          dayKey = currentDay;
+          dayCount = 0;
+        }
+        if (dayCount >= maxNotificationsPerDay) {
+          cursor = _startOfNextDay(cursor).add(const Duration(hours: 8));
+          continue;
+        }
+        final item = _generateSmartNotification(random, prefs);
+        if (!cursor.isAfter(tz.TZDateTime.now(tz.local))) {
+          cursor = cursor.add(const Duration(minutes: 1));
+          continue;
+        }
+        await NotificationService.instance.scheduleSmartNotification(
+          id: notificationId++,
+          title: item.title,
+          body: item.body,
+          payload: item.payload,
+          scheduledDate: cursor,
+        );
+        dayCount++;
+        scheduled++;
+        final gap = minHoursBetweenNotifications + random.nextInt(
+          maxHoursBetweenNotifications - minHoursBetweenNotifications + 1,
+        );
+        cursor = cursor.add(Duration(hours: gap));
+      }
+      await prefs.setString(keyScheduleVersion, DateTime.now().toIso8601String());
+      debugPrint('[SmartNotif] Scheduled $scheduled notifications');
+    } finally {
+      _rebuilding = false;
+    }
+  }
+
+  _SmartNotification _generateSmartNotification(Random random, SharedPreferences prefs) {
+    final recent = LocalLibrary.instance.recentlyPlayed.value;
+    final lastActiveRaw = prefs.getString('last_active_at');
+    final lastActive = lastActiveRaw == null ? null : DateTime.tryParse(lastActiveRaw);
+    if (lastActive != null && DateTime.now().difference(lastActive).inDays >= 2) {
+      return const _SmartNotification(
+        title: 'Your music is waiting 🎧',
+        body: 'Come back and discover something new on V Shots.',
+        payload: 'recommendation:',
+      );
+    }
+    if (recent.isNotEmpty && random.nextBool()) {
+      final track = recent[random.nextInt(recent.length)];
+      return _SmartNotification(
+        title: 'Continue listening 🎵',
+        body: 'Pick up where you left off with ${(track['title'] ?? 'your music').toString()}.',
+        payload: 'song:${(track['id'] ?? '').toString()}',
+      );
+    }
+    if (random.nextBool()) {
+      return const _SmartNotification(
+        title: 'Trending right now 🔥',
+        body: 'See what everyone is listening to on V Shots.',
+        payload: 'trending:',
+      );
+    }
+    return const _SmartNotification(
+      title: 'New music just dropped 🎶',
+      body: 'Fresh tracks are waiting for you on V Shots.',
+      payload: 'new_music:',
+    );
+  }
+
+  String _calendarKey(tz.TZDateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  tz.TZDateTime _startOfNextDay(tz.TZDateTime d) => tz.TZDateTime(tz.local, d.year, d.month, d.day + 1);
+
+  Future<void> showTestNotification() async {
     await NotificationService.instance.showSmartNotification(
-      id: notification.id,
-      title: notification.title,
-      body: notification.body,
-      payload: notification.payload,
-      channelId: NotificationService.channelRecommendations,
-    );
-
-    // Update tracking
-    await _updateNotificationTracking();
-
-    debugPrint('[SmartNotif] Sent: ${notification.title}');
-  }
-
-  Future<bool> _canSendNotification() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // Check daily count
-    final count = prefs.getInt(keyNotificationCount) ?? 0;
-    final lastTime = prefs.getString(keyLastNotificationTime);
-
-    if (count >= maxNotificationsPerDay) {
-      // Reset count if it's a new day
-      if (lastTime != null) {
-        final last = DateTime.parse(lastTime);
-        final now = DateTime.now();
-        if (now.day != last.day) {
-          await prefs.setInt(keyNotificationCount, 0);
-        } else {
-          return false; // Daily limit reached
-        }
-      }
-    }
-
-    // Check minimum hours between notifications
-    if (lastTime != null) {
-      final last = DateTime.parse(lastTime);
-      final hoursSince = DateTime.now().difference(last).inHours;
-      if (hoursSince < minHoursBetweenNotifications) {
-        return false; // Too soon
-      }
-    }
-
-    return true;
-  }
-
-  Future<_SmartNotification?> _generateSmartNotification() async {
-    final prefs = await SharedPreferences.getInstance();
-    final recentlyPlayed = LocalLibrary.instance.recentlyPlayed.value;
-
-    // Different notification types based on user activity
-    final rand = Random();
-    final type = rand.nextInt(4);
-
-    switch (type) {
-      case 0: // Continue listening
-        if (recentlyPlayed.isEmpty) return null;
-        final track = recentlyPlayed[rand.nextInt(recentlyPlayed.length)];
-        return _SmartNotification(
-          id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          title: 'Continue listening 🎵',
-          body:
-              'Pick up where you left off with ${track['title'] ?? 'your music'}',
-          payload: 'song:${track['id'] ?? ''}',
-        );
-
-      case 1: // New music
-        return _SmartNotification(
-          id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          title: 'New music just dropped 🎶',
-          body: 'Discover fresh tracks waiting for you on V Shots',
-          payload: 'trending:',
-        );
-
-      case 2: // Trending
-        return _SmartNotification(
-          id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          title: 'Trending right now 🔥',
-          body: 'These songs are getting everyone hooked',
-          payload: 'trending:',
-        );
-
-      case 3: // Win-back (if inactive)
-        final lastActive = prefs.getString('last_active_at');
-        if (lastActive != null) {
-          final last = DateTime.parse(lastActive);
-          final daysInactive = DateTime.now().difference(last).inDays;
-          if (daysInactive >= 2) {
-            return _SmartNotification(
-              id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-              title: 'Your music is waiting ',
-              body: 'Come back and discover something new',
-              payload: 'recommendation:',
-            );
-          }
-        }
-        return null;
-
-      default:
-        return null;
-    }
-  }
-
-  Future<void> _updateNotificationTracking() async {
-    final prefs = await SharedPreferences.getInstance();
-    final count = prefs.getInt(keyNotificationCount) ?? 0;
-
-    await prefs.setInt(keyNotificationCount, count + 1);
-    await prefs.setString(
-      keyLastNotificationTime,
-      DateTime.now().toIso8601String(),
+      id: 29999,
+      title: 'V Shots notifications are working ✅',
+      body: 'Background notification scheduling is active.',
+      payload: 'recommendation:',
     );
   }
 
-  void dispose() {
-    _scheduledTimer?.cancel();
-  }
+  void dispose() => WidgetsBinding.instance.removeObserver(this);
 }
 
 class _SmartNotification {
-  final int id;
+  const _SmartNotification({required this.title, required this.body, required this.payload});
   final String title;
   final String body;
   final String payload;
-
-  _SmartNotification({
-    required this.id,
-    required this.title,
-    required this.body,
-    required this.payload,
-  });
 }

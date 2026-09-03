@@ -1,0 +1,177 @@
+import 'dart:ui' show PlatformDispatcher;
+
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Lightweight regional context for music discovery.
+///
+/// Country resolution is permission-free. A network country is used when it
+/// is reliable, while India Standard Time is treated as a deterministic local
+/// fallback so a stale `US` cache or `en-US` UI locale cannot label an Indian
+/// device as United States.
+class MusicRegionProfile {
+  const MusicRegionProfile({
+    required this.countryCode,
+    required this.countryName,
+    required this.primaryQueries,
+  });
+
+  final String countryCode;
+  final String countryName;
+  final List<String> primaryQueries;
+
+  static const String _storedCountryKey = 'vshots.music_region.country.v2';
+  static String? _resolvedCountryCode;
+  static bool _initializing = false;
+  static bool _initialized = false;
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  static bool get _isIndiaTimeZone =>
+      DateTime.now().timeZoneOffset == const Duration(hours: 5, minutes: 30);
+
+  static Future<void> initialize() async {
+    if (_initialized || _initializing) return;
+    _initializing = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cached = _normalizeCountry(prefs.getString(_storedCountryKey));
+      if (cached != null && !_isIndiaTimeZone) {
+        _resolvedCountryCode = cached;
+        revision.value++;
+      } else if (_isIndiaTimeZone && cached != 'IN') {
+        _resolvedCountryCode = 'IN';
+        await prefs.setString(_storedCountryKey, 'IN');
+        revision.value++;
+      }
+
+      try {
+        final response = await http
+            .get(
+              Uri.parse('https://ipapi.co/country/'),
+              headers: const {'Accept': 'text/plain'},
+            )
+            .timeout(const Duration(seconds: 3));
+        final networkCode = _normalizeCountry(response.body);
+        // For Indian Standard Time, do not let a stale/proxy network result
+        // immediately flip the device back to US/another country.
+        final acceptedCode = _isIndiaTimeZone ? 'IN' : networkCode;
+        if (response.statusCode >= 200 &&
+            response.statusCode < 300 &&
+            acceptedCode != null &&
+            acceptedCode != _resolvedCountryCode) {
+          _resolvedCountryCode = acceptedCode;
+          await prefs.setString(_storedCountryKey, acceptedCode);
+          revision.value++;
+        }
+      } catch (_) {
+        // Cached/locale/timezone region remains the safe fallback.
+      }
+    } catch (_) {
+      // Region is enrichment only; recommendations must never fail because of it.
+    } finally {
+      _initialized = true;
+      _initializing = false;
+    }
+  }
+
+  static MusicRegionProfile current() {
+    // Immediate and deterministic India fix before async IP resolution.
+    final code = _isIndiaTimeZone
+        ? 'IN'
+        : (_resolvedCountryCode ?? _localeCountryCode());
+    return _forCountry(code);
+  }
+
+  static String _localeCountryCode() {
+    final locale = PlatformDispatcher.instance.locale;
+    return _normalizeCountry(locale.countryCode) ?? 'IN';
+  }
+
+  static String? _normalizeCountry(String? value) {
+    final code = value?.trim().toUpperCase();
+    if (code == null || !RegExp(r'^[A-Z]{2}$').hasMatch(code)) return null;
+    return code;
+  }
+
+  static MusicRegionProfile _forCountry(String code) {
+    switch (code) {
+      case 'IN':
+        return const MusicRegionProfile(
+          countryCode: 'IN',
+          countryName: 'India',
+          primaryQueries: <String>[
+            'Hindi Bollywood songs official audio',
+            'Hindi songs official music video',
+            'Indian trending songs official',
+          ],
+        );
+      case 'US':
+        return const MusicRegionProfile(
+          countryCode: 'US',
+          countryName: 'United States',
+          primaryQueries: <String>[
+            'US trending songs official',
+            'English pop songs official audio',
+            'American music hits official',
+          ],
+        );
+      case 'GB':
+        return const MusicRegionProfile(
+          countryCode: 'GB',
+          countryName: 'United Kingdom',
+          primaryQueries: <String>[
+            'UK trending songs official',
+            'British pop songs official audio',
+            'UK music hits official',
+          ],
+        );
+      case 'CA':
+        return const MusicRegionProfile(
+          countryCode: 'CA',
+          countryName: 'Canada',
+          primaryQueries: <String>[
+            'Canada trending songs official',
+            'Canadian pop songs official audio',
+          ],
+        );
+      case 'AU':
+        return const MusicRegionProfile(
+          countryCode: 'AU',
+          countryName: 'Australia',
+          primaryQueries: <String>[
+            'Australia trending songs official',
+            'Australian pop songs official audio',
+          ],
+        );
+      case 'AE':
+        return const MusicRegionProfile(
+          countryCode: 'AE',
+          countryName: 'United Arab Emirates',
+          primaryQueries: <String>[
+            'UAE trending songs official',
+            'Arabic English hits official audio',
+            'South Asian songs UAE official',
+          ],
+        );
+      case 'SA':
+        return const MusicRegionProfile(
+          countryCode: 'SA',
+          countryName: 'Saudi Arabia',
+          primaryQueries: <String>[
+            'Saudi Arabia trending songs official',
+            'Arabic hits official audio',
+          ],
+        );
+      default:
+        return MusicRegionProfile(
+          countryCode: code,
+          countryName: code,
+          primaryQueries: <String>[
+            '$code trending songs official',
+            'popular songs official audio',
+          ],
+        );
+    }
+  }
+}
