@@ -13,8 +13,8 @@ import 'package:flutter/material.dart';
 import '../../core/ads/ad_banner_widget.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
-import '../core/ads/mrec_ad_manager.dart'
-import '../core/ads/premium_mrec_ad_card.dart'
+import '../core/ads/mrec_ad_manager.dart';
+import '../core/ads/premium_mrec_ad_card.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/theme/app_colors.dart';
