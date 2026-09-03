@@ -38,6 +38,7 @@ class SmartListeningService {
   Future<List<Map<String, dynamic>>> nextSongQueue({
     Map<String, dynamic>? seed,
     int count = 10,
+    Set<String> excludeIds = const <String>{},
   }) async {
     final engine = _engine;
     final repo = _repository;
@@ -45,7 +46,11 @@ class SmartListeningService {
 
     final currentId = seed?['id'] as String? ?? '';
     final cooldown = _cooldownIds(seedId: currentId);
-    final exclude = <String>{...cooldown, if (currentId.isNotEmpty) currentId};
+    final exclude = <String>{
+      ...excludeIds,
+      ...cooldown,
+      if (currentId.isNotEmpty) currentId,
+    };
     final primaryCount = (count * .70).floor();
     final similarCount = (count * .20).floor();
     final exploreCount = count - primaryCount - similarCount;
@@ -76,12 +81,12 @@ class SmartListeningService {
         Future.value(const <Map<String, dynamic>>[]),
     ]);
 
-    final primary = _clean(results[0]);
-    final similar = _clean(results[1]);
-    final exploration = _clean(results[2]);
+    final primary = _clean(results[0], exclude);
+    final similar = _clean(results[1], exclude);
+    final exploration = _clean(results[2], exclude);
 
     final queue = <Map<String, dynamic>>[];
-    final used = <String>{currentId};
+    final used = <String>{...exclude, currentId};
 
     void takeFrom(List<Map<String, dynamic>> source, int amount) {
       if (amount <= 0) return;
@@ -100,11 +105,8 @@ class SmartListeningService {
 
     // Backfill only after the contractual buckets have had their turn.
     for (final pool in [primary, similar, exploration]) {
-      for (final track in pool) {
-        if (queue.length >= count) break;
-        final id = track['id'] as String? ?? '';
-        if (id.isNotEmpty && used.add(id)) queue.add(track);
-      }
+      takeFrom(pool, count - queue.length);
+      if (queue.length >= count) break;
     }
     return _diversify(queue.take(count).toList());
   }
@@ -112,16 +114,21 @@ class SmartListeningService {
   Future<void> startSongRadio(Map<String, dynamic> seed) async {
     final repo = _repository;
     if (repo == null) return;
-    final exclude = _cooldownIds(seedId: seed['id'] as String? ?? '');
-    final related = await repo.getRelated(seed['id'] as String? ?? '', limit: 18);
+    final seedId = seed['id'] as String? ?? '';
+    final exclude = _cooldownIds(seedId: seedId);
+    final related = await repo.getRelated(seedId, limit: 18);
     final searched = await repo.search(
       '${seed['artist'] ?? ''} similar songs official audio',
       limit: 18,
-      excludeIds: {...exclude, seed['id'] as String? ?? ''},
+      excludeIds: {...exclude, seedId},
     );
-    final personalized = await nextSongQueue(seed: seed, count: 12);
+    final personalized = await nextSongQueue(
+      seed: seed,
+      count: 12,
+      excludeIds: {...exclude, seedId},
+    );
     final combined = _diversify(
-      _clean([...related, ...searched, ...personalized]),
+      _clean([...related, ...searched, ...personalized], {...exclude, seedId}),
     );
     if (combined.isNotEmpty) _playQueue?.call(combined, 0);
   }
@@ -174,8 +181,17 @@ class SmartListeningService {
     return result;
   }
 
-  List<Map<String, dynamic>> _clean(List<Map<String, dynamic>> tracks) {
-    return validateAndFilterMusic(tracks, label: 'smart-listening');
+  List<Map<String, dynamic>> _clean(
+    List<Map<String, dynamic>> tracks,
+    Set<String> excludeIds,
+  ) {
+    final validated = validateAndFilterMusic(tracks, label: 'smart-listening');
+    return validated
+        .where((track) {
+          final id = track['id'] as String? ?? '';
+          return id.isNotEmpty && !excludeIds.contains(id);
+        })
+        .toList();
   }
 
   List<Map<String, dynamic>> _diversify(List<Map<String, dynamic>> tracks) {
