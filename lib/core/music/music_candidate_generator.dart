@@ -74,10 +74,6 @@ class MusicCandidateGenerator {
     final seenVideo = <String>{...context.excludeIds};
     final seenSong = <String>{};
 
-    // Bounded-parallel pool fetching (4-at-a-time waves): the old fully
-    // sequential loop meant every generateForYou() paid for ~10+ round
-    // trips one after another — the biggest Discover cold-start cost.
-    // Results are merged in QUERY ORDER so ranking stays deterministic.
     const waveSize = 4;
     final perQuery = List<List<Map<String, dynamic>>?>.filled(
       queries.length,
@@ -107,6 +103,10 @@ class MusicCandidateGenerator {
         final track = ProviderTrack.fromTrackMap(map);
         final videoId = track.id;
         if (videoId.isEmpty || !seenVideo.add(videoId)) continue;
+        // Recommendations are an official-music-only surface. The InnerTube
+        // normalizer supplies the real isOfficial signal; never infer it from
+        // a title containing the word "official".
+        if (map['isOfficial'] != true) continue;
         if (!_validator.validate(map).isMusic) continue;
         final resolution = _resolver.resolveTrack(track);
         if (!seenSong.add(resolution.canonicalId)) continue;
@@ -129,10 +129,6 @@ class MusicCandidateGenerator {
     return candidates;
   }
 
-  /// Explore filters (Language / Mood / Genre picks) become real quotas:
-  /// when the user selected filters, filtered pools must dominate the
-  /// candidate mix — the previous build only gave moods a quota of 2 and
-  /// IGNORED languages entirely, so filtered feeds looked random.
   void _applyFilterQuotas(
     Map<String, int> quotas,
     MusicRecommendationContext context,
@@ -211,7 +207,7 @@ class MusicCandidateGenerator {
     for (final artist in topArtists.take(2)) {
       add(
         'similar_artist',
-        'artists similar to $artist',
+        'artists similar to $artist official songs',
         (quotas['similar_artist']! / 2).ceil(),
         seedArtist: artist,
       );
@@ -245,8 +241,6 @@ class MusicCandidateGenerator {
     for (final mood in context.moods.take(2)) {
       add('mood', '$mood songs official audio', quotas['mood'] ?? 2);
     }
-    // Explore Language picks → dedicated language pool (previously the
-    // context.languages list was silently dropped).
     for (final lang in context.languages.take(2)) {
       add(
         'language',
@@ -255,8 +249,6 @@ class MusicCandidateGenerator {
       );
     }
 
-    // Filter tokens (mood + language + genre picks) are appended to the
-    // trending / new pools too, so every pool respects an active filter.
     final filterTokens = <String>[
       ...context.moods.take(1),
       ...context.languages.take(1),
@@ -284,9 +276,6 @@ class MusicCandidateGenerator {
         (quotas['regional']! / 2).ceil(),
       );
     }
-    // Exploration: a genre OUTSIDE the user's established taste — but when
-    // filters are active it stays INSIDE the picked theme (chill + Hindi
-    // stays chill-Hindi adjacent, never random filler).
     if (filterTokens.isNotEmpty && (quotas['exploration'] ?? 0) > 0) {
       add('exploration', '$filterTokens playlist official audio', 1);
     } else {
