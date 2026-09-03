@@ -25,7 +25,7 @@ class MusicCatalogResult {
     this.accepted = 0,
     this.rejected = 0,
     this.duplicates = 0,
-    this.variants = const {},
+    this.variants = const <MusicVariantType, int>{},
   });
 
   final List<Map<String, dynamic>> items;
