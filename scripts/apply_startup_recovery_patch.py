@@ -31,6 +31,9 @@ Future<void> _bootstrapAfterFirstFrame(Stopwatch bootTimer) async {
     debugPrint('[Boot] local bootstrap degraded: $e');
   }
 
+  // Preserve the existing Smart Listening configuration hook, but never let
+  // it delay first paint or make startup fail.
+  unawaited(_configureSmartListening());
   unawaited(_bootstrapCloudServices());
   unawaited(_bootstrapAudio());
   SystemChrome.setSystemUIOverlayStyle(
@@ -111,7 +114,6 @@ Future<void> _bootstrapAudio() async {
     if count == 0:
         raise SystemExit('main() anchor not found')
 
-    # Splash must not race the local preference stores used for onboarding.
     old_delay = "    Future.delayed(const Duration(seconds: 2), () {\n      if (!mounted) return;"
     new_delay = "    Future.delayed(const Duration(seconds: 2), () async {\n      if (!mounted) return;\n      try {\n        await Future.wait([\n          LocalLibrary.instance.initialize(),\n          SignalStore.instance.initialize(),\n          PersonalizationStore.instance.initialize(),\n        ]).timeout(const Duration(seconds: 2));\n      } catch (e) {\n        debugPrint('[Splash] local state wait degraded: $e');\n      }\n      if (!mounted) return;"
     if old_delay in text:
