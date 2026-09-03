@@ -32,6 +32,10 @@ MusicSearch _fakeSearch() {
         'artist': artist,
         'artwork': '',
         'duration': 200,
+        // CandidateGenerator now intentionally accepts only official music
+        // for recommendation surfaces, so the fixture must model an official
+        // normalized result.
+        'isOfficial': true,
       };
     }).where((m) => !excludeIds.contains(m['id'])).toList();
   };
