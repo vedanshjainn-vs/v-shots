@@ -28,20 +28,24 @@ subprojects {
 // variants (e.g. audio_service) declare minSdk 19, which conflicts with
 // androidx.exifinterface:exifinterface:1.4.1 (minSdk 21) during androidTest
 // APK build. Raise a floor of 21 only for modules below it; the app's minSdk
-// 24 is left untouched.
-subprojects {
-    afterEvaluate { project ->
-        if (project.plugins.hasPlugin("com.android.library") || project.plugins.hasPlugin("com.android.application")) {
-            project.android {
-                defaultConfig {
-                    def m = minSdkVersion
-                    int cur = (m instanceof Integer) ? ((Integer) m).intValue() : (m != null ? m.getApiLevel() : 0)
-                    if (cur < 21) {
-                        minSdkVersion 21
-                    }
-                }
+// 24 is left untouched. Since :app is force-evaluated by evaluationDependsOn
+// above, guard against already-evaluated projects (afterEvaluate would throw).
+def _vshotsConfigureMinSdk = { p ->
+    if (p.plugins.hasPlugin("com.android.library") || p.plugins.hasPlugin("com.android.application")) {
+        p.android.defaultConfig {
+            def m = minSdkVersion
+            int cur = (m instanceof Integer) ? ((Integer) m).intValue() : (m != null ? m.getApiLevel() : 0)
+            if (cur < 21) {
+                minSdkVersion 21
             }
         }
+    }
+}
+subprojects {
+    if (project.state.executed) {
+        _vshotsConfigureMinSdk(project)
+    } else {
+        project.afterEvaluate { p -> _vshotsConfigureMinSdk(p) }
     }
 }
 
