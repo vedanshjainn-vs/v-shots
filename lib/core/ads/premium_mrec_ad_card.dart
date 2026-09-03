@@ -1,13 +1,13 @@
 // -------------------------------------------------------------------------
-// V Shots — Premium MREC Ad Card (Unity LevelPlay 300x250)
+// V Shots - Premium MREC Ad Card (Unity LevelPlay 300x250)
 //
 // Premium ad container for MREC 300x250 ads.
 //
 // Lifecycle:
-//   • LevelPlayBannerAdView stays mounted while loading — unmounting kills
+//   - LevelPlayBannerAdView stays mounted while loading - unmounting kills
 //     the in-flight request and creates a circular dependency.
-//   • On failure the card collapses (zero height) without a rebuild loop.
-//   • View rendered at full size behind a loading overlay until onAdLoaded.
+//   - On failure the card collapses (zero height) without a rebuild loop.
+//   - View rendered at full size behind a loading overlay until onAdLoaded.
 // -------------------------------------------------------------------------
 
 import 'package:flutter/foundation.dart';
@@ -20,7 +20,7 @@ import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 import 'mrec_ad_manager.dart';
 
-/// Premium MREC Ad Card — Unity LevelPlay 300x250.
+/// Premium MREC Ad Card - Unity LevelPlay 300x250.
 class PremiumMRECAdCard extends StatefulWidget {
   const PremiumMRECAdCard({
     super.key,
@@ -172,7 +172,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: const Text(
-                            'Ad · Sponsored',
+                            'Ad . Sponsored',
                             style: TextStyle(
                               color: AppColors.hotPink,
                               fontSize: 9.5,
