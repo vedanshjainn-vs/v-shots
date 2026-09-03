@@ -38,8 +38,8 @@ def patch_native_browser() -> None:
         events.invokeMethod("playbackState", value)
     }
 
-    fun updateNotification(title: String, artist: String, playing: Boolean) {
-        startPlaybackForegroundService(title = title, artist = artist, playing = playing)
+    fun updateNotification(title: String, artist: String, artwork: String, playing: Boolean) {
+        startPlaybackForegroundService(title = title, artist = artist, artwork = artwork, playing = playing)
     }
 ''')
     patch(path, '''    private fun startPlaybackForegroundService() {
@@ -57,12 +57,14 @@ def patch_native_browser() -> None:
 ''', '''    private fun startPlaybackForegroundService(
         title: String? = null,
         artist: String? = null,
+        artwork: String? = null,
         playing: Boolean = mediaPlaying,
     ) {
         val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java).apply {
             action = VShotsBrowserPlaybackService.ACTION_UPDATE
             putExtra("title", title ?: "V Shots")
             putExtra("artist", artist ?: "Music playback")
+            putExtra("artwork", artwork ?: "")
             putExtra("playing", playing)
         }
         try {
@@ -109,8 +111,9 @@ def patch_native_browser() -> None:
                     val args = call.arguments as? Map<*, *>
                     val title = args?.get("title")?.toString() ?: "V Shots"
                     val artist = args?.get("artist")?.toString() ?: "Music playback"
+                    val artwork = args?.get("artwork")?.toString() ?: ""
                     val playing = args?.get("playing") as? Boolean ?: true
-                    webView.updateNotification(title, artist, playing)
+                    webView.updateNotification(title, artist, artwork, playing)
                     result.success(null)
                 }
 ''')
@@ -143,6 +146,7 @@ def patch_session() -> None:
         text = text.replace('  Future<void> _autoplayPass() async {\n', '''  Future<void> updateNotification({
     required String title,
     required String artist,
+    required String artwork,
     required bool playing,
   }) async {
     final channel = _channel;
@@ -151,6 +155,7 @@ def patch_session() -> None:
       await channel.invokeMethod<void>('updateNotification', {
         'title': title,
         'artist': artist,
+        'artwork': artwork,
         'playing': playing,
       });
     } catch (_) {}
@@ -192,6 +197,7 @@ def patch_sheet() -> None:
       _session.updateNotification(
         title: widget.controller.title ?? 'V Shots',
         artist: widget.controller.artist ?? 'Music playback',
+        artwork: widget.controller.artwork ?? '',
         playing: true,
       ),
     );
