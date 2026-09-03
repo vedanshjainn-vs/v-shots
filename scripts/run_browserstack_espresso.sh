@@ -49,12 +49,19 @@ if [ -z "$TEST_URL" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Start the Espresso build
+# 3+4. Start the Espresso build and poll it, retrying on infra session errors.
 # ---------------------------------------------------------------------------
-echo "==> Starting Espresso build"
-# devices value is <devicename>-<osversion>, e.g. 'Xiaomi Redmi Note 11-11.0'.
 DEVICE="${BROWSERSTACK_DEVICE:-Xiaomi Redmi Note 11-11.0}"
-PAYLOAD=$(python3 -c "
+# Retry up to 3 attempts: BrowserStack sometimes errors the session before any
+# test runs ("Could not start a session : Something went wrong during test
+# execution"), which is infra, not an app crash. We reuse the already-uploaded
+# app/test-suite so retries are cheap. We only ever exit 0 on a real pass.
+max_attempts=3
+attempt=1
+final_status_code=1
+while [ "$attempt" -le "$max_attempts" ]; do
+  echo "=== Attempt $attempt/$max_attempts ==="
+  PAYLOAD=$(python3 -c "
 import json,sys
 print(json.dumps({
   'devices': [sys.argv[1]],
@@ -64,10 +71,10 @@ print(json.dumps({
 }))
 " "$DEVICE" "$APP_URL" "$TEST_URL")
 
-BUILD_RES=$(curl -sS -u "$AUTH" -X POST "$BASE/app-automate/espresso/v2/build" \
-  -H "Content-Type: application/json" -d "$PAYLOAD")
-echo "build start: $BUILD_RES"
-BUILD_ID=$(echo "$BUILD_RES" | python3 -c "
+  BUILD_RES=$(curl -sS -u "$AUTH" -X POST "$BASE/app-automate/espresso/v2/build" \
+    -H "Content-Type: application/json" -d "$PAYLOAD")
+  echo "build start: $BUILD_RES"
+  BUILD_ID=$(echo "$BUILD_RES" | python3 -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
@@ -75,59 +82,78 @@ try:
 except Exception as e:
     print('')
 ")
-if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "None" ]; then
-  echo "::error::No build_id returned. Build may not have started."
-  curl -sS -u "$AUTH" "$BASE/app-automate/espresso/v2/builds" | head -c 2000
-  exit 1
-fi
+  if [ -z "$BUILD_ID" ] || [ "$BUILD_ID" = "None" ]; then
+    echo "  ::warning::No build_id returned; retrying."
+    attempt=$((attempt+1)); sleep 15; continue
+  fi
 
-# ---------------------------------------------------------------------------
-# 4. Poll the build until it reaches a terminal state
-# ---------------------------------------------------------------------------
-echo "==> Polling build $BUILD_ID"
-for i in $(seq 1 60); do
-  RES=$(curl -sS -u "$AUTH" "$BASE/app-automate/espresso/v2/builds/$BUILD_ID")
-  STATUS=$(echo "$RES" | python3 -c "
+  # Poll the build until it reaches a terminal state.
+  echo "  ==> Polling build $BUILD_ID"
+  sess_error=0
+  for i in $(seq 1 60); do
+    RES=$(curl -sS -u "$AUTH" "$BASE/app-automate/espresso/v2/builds/$BUILD_ID")
+    STATUS=$(echo "$RES" | python3 -c "
 import sys,json
 try: print(json.load(sys.stdin).get('status',''))
 except Exception: print('')
 ")
-  echo "[$i] status=$STATUS"
-  case "$STATUS" in
-    passed|failed)
-      echo "$RES" > espresso_result.json
-      echo "=== ESPRESSO RESULT ==="
-      # The v2 build response exposes per-session testcase counts (count +
-      # passed/failed) but NOT the individual testcase data — that lives on the
-      # per-session detail endpoint. Judge pass/fail from session statuses here,
-      # then fetch the failing session's testcase detail for the error trace.
-      python3 -c "
+    echo "  [$i] status=$STATUS"
+    case "$STATUS" in
+      passed|failed|error|done)
+        echo "$RES" > espresso_result.json
+        echo "  === ESPRESSO RESULT ==="
+        # The v2 build response exposes per-session testcase counts but NOT the
+        # individual testcase data — that lives on the per-session detail
+        # endpoint. Judge pass/fail from session statuses here, then fetch the
+        # failing session's testcase detail for the crash trace.
+        python3 -c "
 import json
 d=json.load(open('espresso_result.json'))
-print('build status:', d.get('status'))
-print('duration:', d.get('duration'), 's')
+print('  build status:', d.get('status'))
+print('  duration:', d.get('duration'), 's')
 sessed=0; failed_sessions=[]
 for dev in d.get('devices',[]):
     for s in dev.get('sessions',[]):
         sessed+=1
         tc=s.get('testcases',{})
-        print(('  DEVICE %s | session %s | testcases %s' % (
+        print(('    DEVICE %s | session %s | testcases %s' % (
             dev.get('device',''), s.get('status',''),
             json.dumps(tc.get('status', tc)))))
         if s.get('status') != 'passed':
             failed_sessions.append((dev.get('device',''), s.get('id',''), s.get('status','')))
-print('sessions:', sessed)
+print('  sessions:', sessed)
 if d.get('status') != 'passed' or failed_sessions:
-    print('FAILED_SESSIONS:', failed_sessions)
+    print('  FAILED_SESSIONS:', failed_sessions)
     raise SystemExit(1)
 raise SystemExit(0)
 "
-      status_code=$?
-      # On failure, pull the per-session testcase detail to surface the crash
-      # trace / instrumentation log in the workflow log.
-      if [ "$status_code" != "0" ]; then
-        echo "--- Fetching failing session testcase details ---"
-        python3 -c "
+        status_code=$?
+        # Distinguish a genuine crash/fail of the app (no retry) from an infra
+        # session error with zero testcases (retry).
+        if [ "$status_code" != "0" ]; then
+          run_tests=$(python3 -c "
+import json
+d=json.load(open('espresso_result.json'))
+n=0
+for dev in d.get('devices',[]):
+    for s in dev.get('sessions',[]):
+        n += (s.get('testcases',{}) or {}).get('count', 0) or 0
+print(n)
+")
+          sess_err=$(python3 -c "
+import json
+d=json.load(open('espresso_result.json'))
+print(d.get('status') == 'error')
+")
+          echo "    ran tests: $run_tests | build error: $sess_err"
+          if [ "$sess_err" = "True" ] && [ "$run_tests" -eq 0 ]; then
+            echo "    ::warning::Infra session error (no tests ran); will retry."
+            sess_error=1
+            break   # stop polling this errored build; retry with a new one
+          fi
+          if [ "$sess_error" != "1" ]; then
+            echo "    --- Fetching failing session testcase details ---"
+            python3 -c "
 import json
 d=json.load(open('espresso_result.json'))
 for dev in d.get('devices',[]):
@@ -135,26 +161,42 @@ for dev in d.get('devices',[]):
         if s.get('status') != 'passed':
             print(d.get('session_id','') or s.get('id',''))
 " | while read -r sid; do
-          [ -z "$sid" ] && continue
-          curl -sS -u "$AUTH" "$BASE/app-automate/espresso/v2/builds/$BUILD_ID/sessions/$sid" \
-            | python3 -c "
+              [ -z "$sid" ] && continue
+              curl -sS -u "$AUTH" "$BASE/app-automate/espresso/v2/builds/$BUILD_ID/sessions/$sid" \
+                | python3 -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
 except Exception as e:
     print('  (could not parse session detail)'); raise SystemExit(0)
+print('    session status:', d.get('status'))
+print('    session error:', json.dumps(d.get('error')))
 for cl in d.get('testcases',{}).get('data',[]):
     for t in cl.get('testcases',[]):
-        print('  TEST', t.get('name'), '|', t.get('status'))
-        print('    error:', (t.get('error') or '(none)')[:2500])
+        print('    TEST', t.get('name'), '|', t.get('status'))
+        print('      error:', (t.get('error') or '(none)')[:2500])
 "
-        done
-      fi
-      exit "$status_code"
-      ;;
-  esac
-  sleep 30
+            done
+            final_status_code=$status_code
+            exit "$status_code"
+          fi
+        else
+          final_status_code=0
+          echo "    PASSED on-device."
+          exit 0
+        fi
+        ;;
+    esac
+    sleep 30
+  done
+  if [ "$sess_error" = "1" ]; then
+    echo "  Retrying after infra session error."
+  else
+    echo "  ::warning::Timed out polling this attempt; retrying."
+  fi
+  attempt=$((attempt+1))
+  sleep 10
 done
 
-echo "::error::Timed out waiting for Espresso build to finish."
-exit 1
+echo "::error::Timed out waiting for Espresso build to finish (all attempts)."
+exit "$final_status_code"
