@@ -13,6 +13,22 @@ def patch(path: str, old: str, new: str) -> None:
     p.write_text(text.replace(old, new, 1))
 
 
+def patch_main_audio_service() -> None:
+    path = 'lib/main.dart'
+    patch(
+        path,
+        """      androidNotificationClickStartsActivity: true,
+    ),""",
+        """      androidNotificationClickStartsActivity: true,
+      preloadArtwork: true,
+      artDownscaleWidth: 512,
+      artDownscaleHeight: 512,
+      fastForwardInterval: Duration(seconds: 10),
+      rewindInterval: Duration(seconds: 10),
+    ),""",
+    )
+
+
 def patch_native_browser() -> None:
     path = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt'
     p = ROOT / path
@@ -207,6 +223,7 @@ def patch_sheet() -> None:
 
 
 if __name__ == '__main__':
+    patch_main_audio_service()
     patch_native_browser()
     patch_session()
     patch_sheet()
