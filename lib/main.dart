@@ -92,6 +92,8 @@ void main() async {
   // non-critical background bootstrap ONLY after the UI is on screen.
   WidgetsBinding.instance.addPostFrameCallback((_) {
     debugPrint('[Boot] FIRST FLUTTER FRAME RENDERED');
+    // _bootstrapServices guards its whole body, so no async error here can
+    // escape to the app zone and crash the process (crash protection).
     unawaited(_bootstrapServices(bootTimer));
   });
 }
@@ -157,49 +159,65 @@ Future<void> _initAudioService() async {
 /// SmartNotificationService) and isolates every service so one failure can
 /// never black-screen the app or prevent the UI from being usable.
 Future<void> _bootstrapServices(Stopwatch bootTimer) async {
-  debugPrint('[Boot] background bootstrap started');
+  // Crash protection: EVERYTHING below is non-critical and must never be able
+  // to take the whole app down. In release mode an uncaught async error in a
+  // Future fired via unawaited() surfaces to the app zone and kills the
+  // process (the OS shows the "app keeps stopping"/crash dialog). A single
+  // top-level guard guarantees nothing here can escape. Each service is ALSO
+  // isolated by _bootGuard so one failure doesn't block the rest.
+  try {
+    debugPrint('[Boot] background bootstrap started');
 
-  // Independent, non-UI-critical work may start immediately and concurrently:
-  // ads and the audio session. They must never block (or fail) the UI.
-  final ads = _initAds();
-  final audio = _initAudioService();
+    // Independent, non-UI-critical work may start immediately and
+    // concurrently: ads and the audio session. They must never block (or
+    // fail) the UI.
+    final ads = _initAds();
+    final audio = _initAudioService();
 
-  // Storage / config / auth group — independent of each other, so they run in
-  // parallel, but each is individually isolated.
-  await Future.wait([
-    _bootGuard('SupabaseService', () => SupabaseService.initialize()),
-    _bootGuard('LocalLibrary', () => LocalLibrary.instance.initialize()),
-    _bootGuard('SignalStore', () => SignalStore.instance.initialize()),
-    _bootGuard('PersonalizationStore',
-        () => PersonalizationStore.instance.initialize()),
-    _bootGuard(
-        'RemoteConfigService', () => RemoteConfigService.instance.init()),
-    _bootGuard('AdFreeManager', () => AdFreeManager.instance.init()),
-    _bootGuard('AppVersion', () => AppVersion.load()),
-    // NotificationService MUST be ready before SmartNotificationService.
-    _bootGuard(
-        'NotificationService', () => NotificationService.instance.initialize()),
-  ]);
+    // Storage / config / auth group — independent of each other, so they run in
+    // parallel, but each is individually isolated.
+    await Future.wait([
+      _bootGuard('SupabaseService', () => SupabaseService.initialize()),
+      _bootGuard('LocalLibrary', () => LocalLibrary.instance.initialize()),
+      _bootGuard('SignalStore', () => SignalStore.instance.initialize()),
+      _bootGuard('PersonalizationStore',
+          () => PersonalizationStore.instance.initialize()),
+      _bootGuard(
+          'RemoteConfigService', () => RemoteConfigService.instance.init()),
+      _bootGuard('AdFreeManager', () => AdFreeManager.instance.init()),
+      _bootGuard('AppVersion', () => AppVersion.load()),
+      // NotificationService MUST be ready before SmartNotificationService.
+      _bootGuard('NotificationService',
+          () => NotificationService.instance.initialize()),
+    ]);
 
-  // Dependency: SmartNotificationService requires NotificationService.
-  await _bootGuard(
-    'SmartNotificationService',
-    () => SmartNotificationService.instance.initialize(),
-  );
-  await _bootGuard(
-    'GoogleSignIn',
-    () => AuthService.instance.initializeGoogleSignIn(),
-  );
+    // Dependency: SmartNotificationService requires NotificationService.
+    await _bootGuard(
+      'SmartNotificationService',
+      () => SmartNotificationService.instance.initialize(),
+    );
+    await _bootGuard(
+      'GoogleSignIn',
+      () => AuthService.instance.initializeGoogleSignIn(),
+    );
 
-  await ads;
-  await audio;
+    await ads;
+    await audio;
 
-  // Fire-and-forget app-update check.
-  unawaited(_bootGuard(
-      'AppUpdate', () => AppUpdateService.instance.checkForUpdate()));
+    // Fire-and-forget app-update check.
+    unawaited(_bootGuard(
+        'AppUpdate', () => AppUpdateService.instance.checkForUpdate()));
 
-  debugPrint(
-      '[Boot] background bootstrap done in ${bootTimer.elapsedMilliseconds}ms');
+    debugPrint(
+        '[Boot] background bootstrap done in ${bootTimer.elapsedMilliseconds}ms');
+  } catch (e, st) {
+    // Whole-bootstrap guard (crash protection): an uncaught error at this
+    // top level would otherwise surface to the app zone and kill the
+    // process. Log the failing service; the UI is already up and keeps
+    // working regardless.
+    debugPrint('[Boot] background bootstrap failure: $e');
+    debugPrintStack(stackTrace: st);
+  }
 }
 
 // ═══════════════════════════════════════════════
