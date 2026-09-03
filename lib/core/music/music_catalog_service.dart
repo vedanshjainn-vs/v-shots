@@ -110,7 +110,7 @@ class MusicCatalogService {
         rejected++;
         debugPrint(
           '[MusicCatalog$label] REJECTED "${track['title']}" '
-          'reason=${result.rejectionReason ?? "unknown"} '
+          'reason=${result.rejectionReason ?? 'unknown'} '
           'confidence=${result.confidence.toStringAsFixed(2)}',
         );
         continue;
