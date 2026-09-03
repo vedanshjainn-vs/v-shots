@@ -77,7 +77,7 @@ jobs:
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
-          BROWSERSTACK_DEVICE: Xiaomi Redmi Note 11
+          BROWSERSTACK_DEVICE: Xiaomi Redmi Note 11-11.0
           APP_APK: build/app/outputs/flutter-apk/app-debug.apk
         run: |
           # android/build.gradle redirects buildDir -> ../build, so the androidTest
