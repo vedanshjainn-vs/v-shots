@@ -111,6 +111,7 @@ Future<void> _bootstrapAudio() async {
     if count == 0:
         raise SystemExit('main() anchor not found')
 
+    # Splash must not race the local preference stores used for onboarding.
     old_delay = "    Future.delayed(const Duration(seconds: 2), () {\n      if (!mounted) return;"
     new_delay = "    Future.delayed(const Duration(seconds: 2), () async {\n      if (!mounted) return;\n      try {\n        await Future.wait([\n          LocalLibrary.instance.initialize(),\n          SignalStore.instance.initialize(),\n          PersonalizationStore.instance.initialize(),\n        ]).timeout(const Duration(seconds: 2));\n      } catch (e) {\n        debugPrint('[Splash] local state wait degraded: $e');\n      }\n      if (!mounted) return;"
     if old_delay in text:
@@ -121,8 +122,13 @@ Future<void> _bootstrapAudio() async {
 def patch_main_shell():
     p = ROOT / 'lib/main.dart'
     text = p.read_text()
+    shell_start = text.find('class _MainShellState extends State<MainShell>')
+    if shell_start < 0:
+        raise SystemExit('MainShellState anchor not found')
+    prefix = text[:shell_start]
+    shell = text[shell_start:]
     anchor = '    audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;\n'
-    if anchor not in text or 'late-audio-bind' in text:
+    if anchor not in shell or 'late-audio-bind' in shell:
         return
     insertion = anchor + '''    // AudioService is initialized after first paint. Bind callbacks when it
     // becomes ready so a fast navigation to MainShell does not lose controls.
@@ -136,8 +142,8 @@ def patch_main_shell():
       audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
     }());
 '''
-    text = text.replace(anchor, insertion, 1)
-    p.write_text(text)
+    shell = shell.replace(anchor, insertion, 1)
+    p.write_text(prefix + shell)
 
 
 if __name__ == '__main__':
