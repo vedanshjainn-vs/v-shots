@@ -112,14 +112,19 @@ void main() async {
     builder: () => VShotsAudioHandler(audioPlayer),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.vshots.live.channel.audio',
-      androidNotificationChannelName: 'V Shots playback',
+      androidNotificationChannelName: 'V Shots',
       androidNotificationChannelDescription:
-          'Media playback controls for V Shots',
+          'Premium music playback controls',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
       androidNotificationClickStartsActivity: true,
+      androidNotificationColor: 0xFF0E1420,
+      androidNotificationShowStopButton: false,
+      preloadArtwork: true,
+      rewindInterval: Duration(seconds: 10),
+      fastForwardInterval: Duration(seconds: 10),
     ),
   );
 

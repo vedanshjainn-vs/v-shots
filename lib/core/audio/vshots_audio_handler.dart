@@ -74,17 +74,38 @@ class VShotsAudioHandler extends BaseAudioHandler with SeekHandler {
   /// played previously.
   void updateNowPlaying(MediaItem item) {
     mediaItem.add(item);
-    // Also update playback state to trigger notification refresh
     playbackState.add(
       PlaybackState(
         controls: [
-          MediaControl.skipToPrevious,
-          if (_player.playing) MediaControl.pause else MediaControl.play,
-          MediaControl.stop,
-          MediaControl.skipToNext,
+          MediaControl(
+            id: 'vshots_prev',
+            label: 'Previous',
+            icon: 'drawable/ic_skip_previous',
+          ),
+          if (_player.playing)
+            MediaControl(
+              id: 'vshots_pause',
+              label: 'Pause',
+              icon: 'drawable/ic_pause',
+            )
+          else
+            MediaControl(
+              id: 'vshots_play',
+              label: 'Play',
+              icon: 'drawable/ic_play_arrow',
+            ),
+          MediaControl(
+            id: 'vshots_next',
+            label: 'Next',
+            icon: 'drawable/ic_skip_next',
+          ),
         ],
-        systemActions: const {MediaAction.seek},
-        androidCompactActionIndices: const [0, 1, 3],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+        },
+        androidCompactActionIndices: const [0, 1, 2],
         processingState: const {
           ProcessingState.idle: AudioProcessingState.idle,
           ProcessingState.loading: AudioProcessingState.loading,

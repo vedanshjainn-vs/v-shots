@@ -25,13 +25,14 @@ class MRECConfig {
 
   static bool get mrecEnabled => true;
 
-  // Frequency intervals (number of content items between ads)
-  static const int homeMRECInterval = 6;
-  static const int discoverMRECInterval = 4;
-  static const int searchMRECInterval = 4;
+  // Frequency intervals — tuned for premium feel: fewer ads, more
+  // listening time between each.
+  static const int homeMRECInterval = 8;
+  static const int discoverMRECInterval = 6;
+  static const int searchMRECInterval = 8;
 
-  // Cooldown between MREC displays (seconds)
-  static const int mrecCooldownSeconds = 120;
+  // Cooldown between MREC displays (seconds) — generous gap.
+  static const int mrecCooldownSeconds = 180;
 
   // Dwell time before showing MREC on Discover (seconds)
   static const int discoverDwellTime = 15;
