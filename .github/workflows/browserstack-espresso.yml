@@ -77,7 +77,17 @@ jobs:
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+          BROWSERSTACK_DEVICE: Xiaomi Redmi Note 11
           APP_APK: build/app/outputs/flutter-apk/app-debug.apk
-          TEST_APK: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
         run: |
+          # android/build.gradle redirects buildDir -> ../build, so the androidTest
+          # APK is under repo-root build/, not app/build/. Resolve it robustly.
+          TEST_APK=$(find build app/build -path '*androidTest*/debug/*-androidTest.apk' 2>/dev/null | head -1)
+          if [ -z "$TEST_APK" ]; then
+            echo "::error::androidTest APK not found"
+            find build app/build -name '*-androidTest.apk' 2>/dev/null
+            exit 1
+          fi
+          echo "Found test APK: $TEST_APK"
+          export TEST_APK
           bash scripts/run_browserstack_espresso.sh

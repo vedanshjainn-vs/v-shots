@@ -41,8 +41,9 @@ if [ -z "$TEST_URL" ]; then
 fi
 
 echo "==> Starting Espresso build"
-# Use a widely-available device. If invalid, fall back to a generic one.
-DEVICE="${BROWSERSTACK_DEVICE:-Google Pixel 8-13}"
+# Use a real Android device. The device string must exactly match one returned
+# by GET /app-automate/devices (e.g. 'Xiaomi Redmi Note 11').
+DEVICE="${BROWSERSTACK_DEVICE:-Xiaomi Redmi Note 11}"
 PAYLOAD=$(python3 -c "
 import json,sys
 print(json.dumps({
