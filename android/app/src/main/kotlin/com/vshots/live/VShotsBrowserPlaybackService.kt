@@ -34,8 +34,6 @@ class VShotsBrowserPlaybackService : Service() {
         const val ACTION_NEXT = "com.vshots.live.PLAYBACK_NEXT"
         const val ACTION_PREVIOUS = "com.vshots.live.PLAYBACK_PREVIOUS"
         const val ACTION_STOP = "com.vshots.live.PLAYBACK_STOP"
-        const val ACTION_REWIND = "com.vshots.live.PLAYBACK_REWIND"
-        const val ACTION_FORWARD = "com.vshots.live.PLAYBACK_FORWARD"
 
         @Volatile
         var eventChannel: MethodChannel? = null
@@ -68,8 +66,6 @@ class VShotsBrowserPlaybackService : Service() {
             ACTION_TOGGLE -> dispatch("toggle")
             ACTION_NEXT -> dispatch("next")
             ACTION_PREVIOUS -> dispatch("previous")
-            ACTION_REWIND -> dispatch("rewind")
-            ACTION_FORWARD -> dispatch("forward")
             ACTION_STOP -> {
                 dispatch("stop")
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -87,8 +83,6 @@ class VShotsBrowserPlaybackService : Service() {
                 override fun onPause() = dispatch("toggle")
                 override fun onSkipToNext() = dispatch("next")
                 override fun onSkipToPrevious() = dispatch("previous")
-                override fun onFastForward() = dispatch("forward")
-                override fun onRewind() = dispatch("rewind")
                 override fun onStop() = dispatch("stop")
             })
             isActive = true
@@ -103,8 +97,6 @@ class VShotsBrowserPlaybackService : Service() {
             PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SKIP_TO_NEXT or
             PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-            PlaybackState.ACTION_FAST_FORWARD or
-            PlaybackState.ACTION_REWIND or
             PlaybackState.ACTION_STOP
         val state = if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
         session.setPlaybackState(
@@ -151,9 +143,7 @@ class VShotsBrowserPlaybackService : Service() {
         )
 
         val previous = actionIntent(ACTION_PREVIOUS, 2403)
-        val rewind = actionIntent(ACTION_REWIND, 2407)
         val toggle = actionIntent(ACTION_TOGGLE, 2404)
-        val forward = actionIntent(ACTION_FORWARD, 2408)
         val next = actionIntent(ACTION_NEXT, 2405)
 
         val notificationBuilder = builder
@@ -177,22 +167,12 @@ class VShotsBrowserPlaybackService : Service() {
                 previous,
             ).build())
             .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_rew),
-                "Rewind 10 seconds",
-                rewind,
-            ).build())
-            .addAction(Notification.Action.Builder(
                 android.graphics.drawable.Icon.createWithResource(
                     this,
                     if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
                 ),
                 if (playing) "Pause" else "Play",
                 toggle,
-            ).build())
-            .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_ff),
-                "Forward 10 seconds",
-                forward,
             ).build())
             .addAction(Notification.Action.Builder(
                 android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_next),
@@ -204,7 +184,7 @@ class VShotsBrowserPlaybackService : Service() {
             notificationBuilder.setStyle(
                 Notification.MediaStyle()
                     .setMediaSession(mediaSession?.sessionToken)
-                    .setShowActionsInCompactView(0, 2, 4),
+                    .setShowActionsInCompactView(0, 1, 2),
             )
         }
 
