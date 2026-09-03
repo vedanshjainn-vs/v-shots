@@ -67,29 +67,17 @@ jobs:
           python3 scripts/ensure_flutter_v2_android.py
           rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 
-      - name: 7. Build Release APK + androidTest APK
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: 7. Build Debug APK + androidTest APK
         run: |
-          mkdir -p android/app/keystores
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
-            export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
-            export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
-            export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
-            export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
-          fi
-          flutter build apk --release
+          flutter build apk --debug
           cd android
-          ./gradlew assembleReleaseAndroidTest
+          ./gradlew assembleDebugAndroidTest
 
       - name: 8. Upload + Run BrowserStack Espresso Smoke
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
-          APP_APK: build/app/outputs/flutter-apk/app-release.apk
-          TEST_APK: app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
+          APP_APK: build/app/outputs/flutter-apk/app-debug.apk
+          TEST_APK: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
         run: |
           bash scripts/run_browserstack_espresso.sh
