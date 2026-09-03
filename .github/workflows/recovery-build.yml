@@ -1,0 +1,141 @@
+name: V Shots Recovery Build
+
+on:
+  push:
+    branches: [ feat/dynamic-home-recommendations ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery-build:
+    name: Recovery Build & Runtime Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter 3.44.9
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Configure Environment
+        run: |
+          cat <<EOF > .env
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
+          LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
+          LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
+          LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          LEVELPLAY_UNIT_MREC_300X250_01=${{ secrets.LEVELPLAY_UNIT_MREC_300X250_01 }}
+          LEVELPLAY_DEBUG_USE_PRODUCTION=true
+          EOF
+
+      - name: Normalize Android Embedding
+        run: python3 scripts/ensure_flutter_v2_android.py
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Apply Existing Product Patches
+        run: |
+          python3 scripts/apply_dynamic_home_patch.py
+          python3 scripts/run_stability_patch_robust.py
+          python3 scripts/apply_content_policy_patch.py
+          python3 scripts/apply_smart_listening_v2.py
+          python3 scripts/apply_smart_queue_autoadvance.py
+          python3 scripts/apply_runtime_refresh_notification_fix.py
+          python3 scripts/apply_player_notification_actions.py
+          python3 scripts/apply_ads_notification_reliability_fix.py
+
+      - name: Apply Startup Recovery Patch LAST
+        run: |
+          python3 scripts/apply_startup_recovery_patch.py
+          dart format lib/main.dart lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart lib/core/ads/levelplay_service.dart lib/core/ads/levelplay_config.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/notifications/notification_service.dart
+
+      - name: Validate Startup Patch
+        run: |
+          set -e
+          grep -q 'runApp(const VShotsApp());' lib/main.dart
+          grep -q 'Future<void> _bootstrapAfterFirstFrame' lib/main.dart
+          grep -q 'Future<void> _bootstrapAudio' lib/main.dart
+          grep -q 'late-audio-bind' lib/main.dart
+          python3 scripts/ensure_flutter_v2_android.py
+          grep -q 'android:name=".MainActivity"' android/app/src/main/AndroidManifest.xml
+
+      - name: Format Check
+        run: git ls-files -z -- '*.dart' | xargs -0 -r dart format --output=none --set-exit-if-changed
+
+      - name: Analyzer
+        run: flutter analyze --no-fatal-infos
+
+      - name: Tests
+        run: flutter test
+
+      - name: Build Recovery Release APK + AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
+            export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:?ANDROID_KEYSTORE_PASSWORD secret required}"
+            export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:?ANDROID_KEY_ALIAS secret required}"
+            export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:?ANDROID_KEY_PASSWORD secret required}"
+          else
+            CI_PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$CI_PASS" -alias ci-build -keypass "$CI_PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            export ANDROID_KEYSTORE_PATH="keystores/release.keystore"
+            export ANDROID_KEYSTORE_PASSWORD="$CI_PASS"
+            export ANDROID_KEY_ALIAS="ci-build"
+            export ANDROID_KEY_PASSWORD="$CI_PASS"
+          fi
+          flutter clean
+          flutter pub get
+          python3 scripts/ensure_flutter_v2_android.py
+          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          python3 scripts/apply_dynamic_home_patch.py
+          python3 scripts/run_stability_patch_robust.py
+          python3 scripts/apply_content_policy_patch.py
+          python3 scripts/apply_smart_listening_v2.py
+          python3 scripts/apply_smart_queue_autoadvance.py
+          python3 scripts/apply_runtime_refresh_notification_fix.py
+          python3 scripts/apply_player_notification_actions.py
+          python3 scripts/apply_ads_notification_reliability_fix.py
+          python3 scripts/apply_startup_recovery_patch.py
+          dart format lib/main.dart
+          flutter build apk --release
+          flutter build appbundle --release
+
+      - name: Upload Recovery Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-recovery-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90
+
+      - name: Upload Recovery AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-recovery-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 90
