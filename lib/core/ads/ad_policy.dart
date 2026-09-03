@@ -20,6 +20,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import 'mrec_ad_manager.dart';
 import 'ad_free_manager.dart';
 import 'ad_frequency_controller.dart';
 import 'consent_manager.dart';
@@ -138,3 +139,9 @@ class AdPolicy {
         'interstitialsShown=${frequency.shownThisSession}';
   }
 }
+
+  /// MREC (300x250): allowed in all major placements.
+  bool canShowMREC(MRECPlacement placement) {
+    if (!adsAvailable || !_bannersEnabled) return false;
+    return true;
+  }

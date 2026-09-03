@@ -19,6 +19,8 @@ import 'core/ads/ad_policy.dart';
 import 'core/ads/ad_service.dart';
 import 'core/ads/consent_manager.dart';
 import 'core/ads/levelplay_service.dart';
+import '../core/ads/mrec_ad_manager.dart'
+import '../core/ads/premium_mrec_ad_card.dart'
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
@@ -1588,7 +1590,7 @@ class _SearchScreenState extends State<SearchScreen> {
               }
               // Native ad slot after the 8th organic result.
               if (showAd && i == AdConfig.searchAdEvery) {
-                return const NativeAdWidget();
+                return const PremiumMRECAdCard(placement: MRECPlacement.search);
               }
               // Account for the ad slot offset when indexing results.
               final int resultIndex =

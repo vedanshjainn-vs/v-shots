@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
+import '../core/ads/mrec_ad_manager.dart'
+import '../core/ads/premium_mrec_ad_card.dart'
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/ads/player_sponsored_ad_policy.dart';
 import '../../core/ads/player_sponsored_card.dart';
