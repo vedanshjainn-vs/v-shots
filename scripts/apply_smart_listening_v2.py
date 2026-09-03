@@ -142,9 +142,12 @@ void _configureSmartListening() {
 '''
         text = text[:insert_at] + block + text[insert_at:]
     if '_configureSmartListening();' not in text:
-        marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
+        # main.dart now renders Flutter first and runs all non-critical
+        # initialization inside _bootstrapServices AFTER the first frame. Wire
+        # smart listening there so it never delays first paint.
+        marker = "  debugPrint('[Boot] background bootstrap started');\n"
         if marker not in text:
-            raise SystemExit('main runApp anchor not found')
+            raise SystemExit('main bootstrap anchor not found')
         text = text.replace(marker, '  _configureSmartListening();\n' + marker, 1)
     p.write_text(text)
 

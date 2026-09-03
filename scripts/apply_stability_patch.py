@@ -103,11 +103,18 @@ def patch_notifications() -> None:
 
 
 def patch_main_boot_order() -> None:
+    # main.dart is the source of truth for startup architecture. It now renders
+    # the Flutter UI FIRST and bootstraps services after the first frame (see
+    # lib/main.dart). The old "await Future.wait([...]) before runApp" ordering
+    # that this patcher used to repair no longer exists, so ONLY apply the
+    # notification-ordering fix when the legacy anchor is still present; never
+    # fail the build or rewrite a first-frame-first main.dart. This keeps CI
+    # deterministic and dependency-free of the full startup architecture.
     path = ROOT / 'lib/main.dart'
     text = path.read_text()
     old = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n    SmartNotificationService.instance.initialize(),\n  ]);\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
     new = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n  ]);\n  // NotificationService MUST be ready before SmartNotificationService: the\n  // scheduler calls into it during initialization. Running both in the same\n  // Future.wait caused the first schedule build to race the plugin init and\n  // silently schedule zero notifications.\n  await SmartNotificationService.instance.initialize();\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
-    text = replace_once(text, old, new, 'notification boot ordering')
+    text = replace_once_idempotent(text, old, new, 'notification boot ordering')
     path.write_text(text)
 
 

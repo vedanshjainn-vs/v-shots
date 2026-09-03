@@ -28,10 +28,12 @@ def patch_main() -> None:
 '''
     if old_boot in text:
         text = text.replace(old_boot, new_boot, 1)
-    marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
+    marker = "  debugPrint('[Boot] background bootstrap started');\n"
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
+        # main.dart now renders Flutter first; run region resolution inside
+        # _bootstrapServices AFTER the first frame so it can never delay paint.
         if marker not in text:
-            raise SystemExit('main runApp anchor not found')
+            raise SystemExit('main bootstrap anchor not found')
         text = text.replace(
             marker,
             "  // Resolve network country after core boot without delaying first paint.\n"

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  V Shots — app brand colors exposed to the native Android launch window so
+  the brief native handoff matches the Flutter Splash background (#070A12).
+  This is cosmetic only: Flutter takes over on the first frame via the
+  first-frame-first startup in lib/main.dart.
+-->
+<resources>
+    <color name="launch_background">#FF070A12</color>
+    <color name="brand_background">#FF070A12</color>
+</resources>

@@ -74,66 +74,132 @@ import 'shared/widgets/offline_banner.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
+  debugPrint('[Boot] main entered');
 
-  // Initialize Firebase first (required for FCM)
-  debugPrint('[Boot] Firebase initialized');
-
-  await Future.wait([
-    SupabaseService.initialize(),
-    LocalLibrary.instance.initialize(),
-    SignalStore.instance.initialize(),
-    PersonalizationStore.instance.initialize(),
-    RemoteConfigService.instance.init(),
-    AdFreeManager.instance.init(),
-    AppVersion.load(),
-    NotificationService.instance.initialize(),
-  ]);
-  // NotificationService MUST be ready before SmartNotificationService: the
-  // scheduler calls into it during initialization. Running both in the same
-  // Future.wait caused the first schedule build to race the plugin init and
-  // silently schedule zero notifications.
-  await SmartNotificationService.instance.initialize();
-  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
-
-  // Initialize FCM (non-blocking, fire-and-forget)
-
-  await AuthService.instance.initializeGoogleSignIn();
-
-  // Ads (AppLovin MAX mediation): one-time, NON-BLOCKING init (Phase 18).
-  // The existing UMP consent system is REUSED as the single consent source;
-  // its decision is pushed into MAX on every status change (Phase 9) and
-  // the Google network inside MAX reads GMA's UMP state directly.
-  // FIRE-AND-FORGET BY DESIGN: ads must never block first paint. When MAX
-  // is not configured in this build these are no-ops and diagnostics
-  // report CONFIG_NOT_SET (honest state, app fully functional).
-  unawaited(ConsentManager.instance.initialize());
-  ConsentManager.instance.onStatusChanged =
-      () => VShotsLevelPlay.instance.syncConsent();
-  unawaited(VShotsLevelPlay.instance.initialize());
-
-  audioHandler = await AudioService.init(
-    builder: () => VShotsAudioHandler(audioPlayer),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.vshots.live.channel.audio',
-      androidNotificationChannelName: 'V Shots playback',
-      androidNotificationChannelDescription:
-          'Media playback controls for V Shots',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
-      androidShowNotificationBadge: true,
-      androidNotificationClickStartsActivity: true,
-    ),
-  );
-
+  // Pure-visual, non-service setup that must precede the first frame.
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
-  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
+
+  // Render Flutter UI IMMEDIATELY. NOTHING below — no service, plugin, or
+  // network call — is awaited before runApp(), so the app can never sit on
+  // the native black launch screen waiting for a slow/unavailable/throwable
+  // service. The SplashScreen is fully local and needs no data.
+  debugPrint('[Boot] runApp');
   runApp(const VShotsApp());
 
-  // Check for app updates (non-blocking, fire-and-forget)
-  unawaited(AppUpdateService.instance.checkForUpdate());
+  // Prove Flutter actually reaches the first frame, then start the
+  // non-critical background bootstrap ONLY after the UI is on screen.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    debugPrint('[Boot] FIRST FLUTTER FRAME RENDERED');
+    unawaited(_bootstrapServices(bootTimer));
+  });
+}
+
+/// Runs a single service in isolation so one failure can never abort the rest
+/// of the boot. Logs with [Boot] and never throws.
+Future<void> _bootGuard(String name, Future<void> Function() run) async {
+  try {
+    await run();
+  } catch (e, st) {
+    debugPrint('[Boot] $name failed: $e');
+    debugPrintStack(stackTrace: st);
+  }
+}
+
+/// Ads (consent + Unity LevelPlay): fire-and-forget, non-blocking, failure
+/// tolerant, and NEVER before Flutter UI. Preserves the existing LevelPlay
+/// integration (including MREC hardening); this does not add a second SDK.
+Future<void> _initAds() async {
+  ConsentManager.instance.onStatusChanged =
+      () => VShotsLevelPlay.instance.syncConsent();
+  await Future.wait([
+    _bootGuard('ConsentManager', () => ConsentManager.instance.initialize()),
+    _bootGuard('VShotsLevelPlay', () => VShotsLevelPlay.instance.initialize()),
+  ]);
+}
+
+/// Starts the media/audio session layer. Runs AFTER the first frame; the app
+/// is fully usable without it (playback is driven by the global just_audio
+/// player). Preserves the exact AudioServiceConfig and handler. Lock-screen /
+/// headset controls attach once the handler is ready.
+Future<void> _initAudioService() async {
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => VShotsAudioHandler(audioPlayer),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.vshots.live.channel.audio',
+        androidNotificationChannelName: 'V Shots playback',
+        androidNotificationChannelDescription:
+            'Media playback controls for V Shots',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+        androidShowNotificationBadge: true,
+        androidNotificationClickStartsActivity: true,
+      ),
+    );
+    // Re-wire lock-screen/headset media controls in case the MainShell built
+    // before the handler was ready (idempotent — same values as MainShell).
+    audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
+    audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
+    audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
+    debugPrint('[Boot] AudioService ready');
+  } catch (e, st) {
+    debugPrint('[Boot] AudioService.init failed: $e');
+    debugPrintStack(stackTrace: st);
+  }
+}
+
+/// All non-critical application initialization, run only after the first
+/// Flutter frame. Preserves the original dependency order that the previous
+/// architecture established (e.g. NotificationService before
+/// SmartNotificationService) and isolates every service so one failure can
+/// never black-screen the app or prevent the UI from being usable.
+Future<void> _bootstrapServices(Stopwatch bootTimer) async {
+  debugPrint('[Boot] background bootstrap started');
+
+  // Independent, non-UI-critical work may start immediately and concurrently:
+  // ads and the audio session. They must never block (or fail) the UI.
+  final ads = _initAds();
+  final audio = _initAudioService();
+
+  // Storage / config / auth group — independent of each other, so they run in
+  // parallel, but each is individually isolated.
+  await Future.wait([
+    _bootGuard('SupabaseService', () => SupabaseService.initialize()),
+    _bootGuard('LocalLibrary', () => LocalLibrary.instance.initialize()),
+    _bootGuard('SignalStore', () => SignalStore.instance.initialize()),
+    _bootGuard('PersonalizationStore',
+        () => PersonalizationStore.instance.initialize()),
+    _bootGuard(
+        'RemoteConfigService', () => RemoteConfigService.instance.init()),
+    _bootGuard('AdFreeManager', () => AdFreeManager.instance.init()),
+    _bootGuard('AppVersion', () => AppVersion.load()),
+    // NotificationService MUST be ready before SmartNotificationService.
+    _bootGuard(
+        'NotificationService', () => NotificationService.instance.initialize()),
+  ]);
+
+  // Dependency: SmartNotificationService requires NotificationService.
+  await _bootGuard(
+    'SmartNotificationService',
+    () => SmartNotificationService.instance.initialize(),
+  );
+  await _bootGuard(
+    'GoogleSignIn',
+    () => AuthService.instance.initializeGoogleSignIn(),
+  );
+
+  await ads;
+  await audio;
+
+  // Fire-and-forget app-update check.
+  unawaited(_bootGuard(
+      'AppUpdate', () => AppUpdateService.instance.checkForUpdate()));
+
+  debugPrint(
+      '[Boot] background bootstrap done in ${bootTimer.elapsedMilliseconds}ms');
 }
 
 // ═══════════════════════════════════════════════
