@@ -31,9 +31,9 @@ Future<void> _bootstrapAfterFirstFrame(Stopwatch bootTimer) async {
     debugPrint('[Boot] local bootstrap degraded: $e');
   }
 
-  // Preserve the existing Smart Listening configuration hook, but never let
-  // it delay first paint or make startup fail.
-  unawaited(_configureSmartListening());
+  // Smart Listening is configured by its existing service lifecycle hooks.
+  // Do not call an optional helper here: the helper is not part of the stable
+  // startup API and must never become a startup dependency.
   unawaited(_bootstrapCloudServices());
   unawaited(_bootstrapAudio());
   SystemChrome.setSystemUIOverlayStyle(
@@ -55,7 +55,10 @@ Future<void> _bootstrapCloudServices() async {
   }
   try {
     await NotificationService.instance.initialize().timeout(const Duration(seconds: 6));
-    await SmartNotificationService.instance.initialize().timeout(const Duration(seconds: 6));
+    // SmartNotificationService.initialize() is synchronous in the current
+    // notification implementation; calling it directly avoids treating void
+    // as a Future while preserving the ordering after NotificationService.
+    SmartNotificationService.instance.initialize();
   } catch (e) {
     debugPrint('[Boot] Notifications unavailable: $e');
   }
