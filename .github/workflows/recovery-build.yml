@@ -67,7 +67,9 @@ jobs:
         run: python3 scripts/apply_startup_recovery_patch.py
 
       - name: Normalize Generated Source
-        run: dart format $(git ls-files -- '*.dart')
+        run: |
+          dart fix --apply
+          dart format $(git ls-files -- '*.dart')
 
       - name: Validate Startup Patch
         run: |
