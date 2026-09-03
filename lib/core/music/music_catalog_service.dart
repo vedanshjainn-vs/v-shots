@@ -5,7 +5,7 @@
 // The single funnel through which raw provider results become MUSIC for the
 // UI. Never lets raw API results reach the UI directly.
 //
-//   API → Normalizer → Validator → Canonicalizer → Catalog → Ranker → UI
+// API → Normalizer → Validator → Canonicalizer → Catalog → Ranker → UI
 //
 // Also produces per-ingest diagnostics (accepted/rejected/duplicates/variant
 // distribution) so the validator can be tuned against real data.
@@ -38,6 +38,40 @@ class MusicCatalogService {
 
   static const _validator = MusicContentValidator();
 
+  // Home/Discovery are recommendation surfaces. For these surfaces we only
+  // accept the real isOfficial signal produced by the provider normalizer.
+  // Search and unrelated catalog consumers remain unchanged.
+  static bool _officialOnlySurface(String label) {
+    final normalized = label.trim().toLowerCase();
+    if (normalized == '.discover' ||
+        normalized.startsWith('.discover.')) {
+      return true;
+    }
+    const homeIds = <String>{
+      '.mfy',
+      '.made_for_you',
+      '.byld',
+      '.because_listened',
+      '.because_you_listened',
+      '.tfy',
+      '.trending',
+      '.trending_now',
+      '.new',
+      '.new_releases',
+      '.official',
+      '.official_music',
+      '.discover_something_new',
+      '.bollywood',
+      '.punjabi',
+      '.global',
+      '.lofi',
+      '.hiphop',
+      '.romantic',
+      '.classics',
+    };
+    return homeIds.contains(normalized);
+  }
+
   /// Ingests raw provider results: validates, canonical-deduplicates, and
   /// returns the accepted music items + diagnostics. Never fabricates.
   MusicCatalogResult ingest(
@@ -48,6 +82,7 @@ class MusicCatalogService {
     var rejected = 0;
     var duplicates = 0;
     final variants = <MusicVariantType, int>{};
+    final officialOnly = _officialOnlySurface(label);
 
     final rawUnique = <String, Map<String, dynamic>>{};
     for (final track in tracks) {
@@ -60,6 +95,14 @@ class MusicCatalogService {
     }
 
     for (final track in rawUnique.values) {
+      if (officialOnly && track['isOfficial'] != true) {
+        rejected++;
+        debugPrint(
+          '[MusicCatalog$label] REJECTED "${track['title']}" '
+          'reason=NON_OFFICIAL_SOURCE',
+        );
+        continue;
+      }
       final result = _validator.validate(track);
       if (!result.isMusic) {
         rejected++;
@@ -95,8 +138,6 @@ class MusicCatalogService {
   }
 }
 
-/// Cache key that includes the full discovery configuration, so different
-/// modes/filters NEVER share cached data.
 String musicCatalogCacheKey({
   required String mode,
   List<String> languages = const [],
