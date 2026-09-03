@@ -8,21 +8,25 @@ def patch_main():
     p = ROOT / 'lib/main.dart'
     text = p.read_text()
 
-    # Ensure MusicRegionProfile import exists
+    # The current branch already uses the post-frame startup architecture.
+    # Never rewrite an already-normalized main.dart; recovery must be safe to
+    # run repeatedly after other runtime/notification patches.
+    if 'Future<void> _bootstrapAfterFirstFrame(' in text and 'void main() {' in text:
+        print('Startup recovery: post-frame bootstrap already present; skipping main rewrite.')
+        return
+
     if "import 'core/recommendation/music_region_profile.dart';" not in text:
-        text = text.replace(
-            "import 'core/recommendation/recommendation_engine.dart';",
-            "import 'core/recommendation/music_region_profile.dart';\nimport 'core/recommendation/recommendation_engine.dart';",
-            1
-        )
+        anchor_import = "import 'core/recommendation/recommendation_engine.dart';"
+        if anchor_import in text:
+            text = text.replace(
+                anchor_import,
+                "import 'core/recommendation/music_region_profile.dart';\n" + anchor_import,
+                1,
+            )
 
     replacement = '''void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
-
-  // Startup safety: render Flutter before any optional service/plugin work.
-  // A network, notification, ads, auth, or AudioService failure must never
-  // leave the Android launch surface black.
   runApp(const VShotsApp());
   unawaited(_bootstrapAfterFirstFrame(bootTimer));
 }
@@ -39,10 +43,6 @@ Future<void> _bootstrapAfterFirstFrame(Stopwatch bootTimer) async {
   } catch (e) {
     debugPrint('[Boot] local bootstrap degraded: $e');
   }
-
-  // Smart Listening is configured by its existing service lifecycle hooks.
-  // Do not call an optional helper here: the helper is not part of the stable
-  // startup API and must never become a startup dependency.
   unawaited(_bootstrapCloudServices());
   unawaited(_bootstrapAudio());
   SystemChrome.setSystemUIOverlayStyle(
@@ -52,43 +52,19 @@ Future<void> _bootstrapAfterFirstFrame(Stopwatch bootTimer) async {
 }
 
 Future<void> _bootstrapCloudServices() async {
-  try {
-    await SupabaseService.initialize().timeout(const Duration(seconds: 6));
-  } catch (e) {
-    debugPrint('[Boot] Supabase unavailable: $e');
-  }
-  try {
-    await RemoteConfigService.instance.init().timeout(const Duration(seconds: 4));
-  } catch (e) {
-    debugPrint('[Boot] Remote config unavailable: $e');
-  }
+  try { await SupabaseService.initialize().timeout(const Duration(seconds: 6)); } catch (e) { debugPrint('[Boot] Supabase unavailable: $e'); }
+  try { await RemoteConfigService.instance.init().timeout(const Duration(seconds: 4)); } catch (e) { debugPrint('[Boot] Remote config unavailable: $e'); }
   try {
     await NotificationService.instance.initialize().timeout(const Duration(seconds: 6));
-    // SmartNotificationService.initialize() is synchronous in the current
-    // notification implementation; calling it directly avoids treating void
-    // as a Future while preserving the ordering after NotificationService.
     SmartNotificationService.instance.initialize();
-  } catch (e) {
-    debugPrint('[Boot] Notifications unavailable: $e');
-  }
-  try {
-    await AuthService.instance.initializeGoogleSignIn().timeout(const Duration(seconds: 6));
-  } catch (e) {
-    debugPrint('[Boot] Google Sign-In unavailable: $e');
-  }
+  } catch (e) { debugPrint('[Boot] Notifications unavailable: $e'); }
+  try { await AuthService.instance.initializeGoogleSignIn().timeout(const Duration(seconds: 6)); } catch (e) { debugPrint('[Boot] Google Sign-In unavailable: $e'); }
   try {
     await ConsentManager.instance.initialize().timeout(const Duration(seconds: 6));
-    ConsentManager.instance.onStatusChanged =
-        () => VShotsLevelPlay.instance.syncConsent();
+    ConsentManager.instance.onStatusChanged = () => VShotsLevelPlay.instance.syncConsent();
     unawaited(VShotsLevelPlay.instance.initialize());
-  } catch (e) {
-    debugPrint('[Boot] Ads/consent unavailable: $e');
-  }
-  try {
-    await MusicRegionProfile.initialize().timeout(const Duration(seconds: 5));
-  } catch (e) {
-    debugPrint('[Boot] Region profile unavailable: $e');
-  }
+  } catch (e) { debugPrint('[Boot] Ads/consent unavailable: $e'); }
+  try { await MusicRegionProfile.initialize().timeout(const Duration(seconds: 5)); } catch (e) { debugPrint('[Boot] Region profile unavailable: $e'); }
 }
 
 Future<void> _bootstrapAudio() async {
@@ -98,8 +74,7 @@ Future<void> _bootstrapAudio() async {
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.vshots.live.channel.audio',
         androidNotificationChannelName: 'V Shots playback',
-        androidNotificationChannelDescription:
-            'Media playback controls for V Shots',
+        androidNotificationChannelDescription: 'Media playback controls for V Shots',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         androidNotificationIcon: 'mipmap/ic_launcher',
@@ -110,26 +85,14 @@ Future<void> _bootstrapAudio() async {
     audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
     audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
     audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
-    debugPrint('[Boot] AudioService ready');
-  } catch (e) {
-    debugPrint('[Boot] AudioService unavailable: $e');
-  }
-  try {
-    unawaited(AppUpdateService.instance.checkForUpdate());
-  } catch (e) {
-    debugPrint('[Boot] update check unavailable: $e');
-  }
+  } catch (e) { debugPrint('[Boot] AudioService unavailable: $e'); }
+  try { unawaited(AppUpdateService.instance.checkForUpdate()); } catch (e) { debugPrint('[Boot] update check unavailable: $e'); }
 }
 '''
     pattern = re.compile(r"void main\(\) async \{.*?\n\}\n\n(?=// ═+\n// APP ROOT)", re.DOTALL)
     text, count = pattern.subn(replacement + '\n', text, count=1)
     if count == 0:
-        raise SystemExit('main() anchor not found')
-
-    old_delay = "    Future.delayed(const Duration(seconds: 2), () {\n      if (!mounted) return;"
-    new_delay = "    Future.delayed(const Duration(seconds: 2), () async {\n      if (!mounted) return;\n      try {\n        await Future.wait([\n          LocalLibrary.instance.initialize(),\n          SignalStore.instance.initialize(),\n          PersonalizationStore.instance.initialize(),\n        ]).timeout(const Duration(seconds: 2));\n      } catch (e) {\n        debugPrint('[Splash] local state wait degraded: $e');\n      }\n      if (!mounted) return;"
-    if old_delay in text:
-        text = text.replace(old_delay, new_delay, 1)
+        raise SystemExit('main() anchor not found in legacy startup architecture')
     p.write_text(text)
 
 
@@ -144,8 +107,8 @@ def patch_main_shell():
     anchor = '    audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;\n'
     if anchor not in shell or 'late-audio-bind' in shell:
         return
-    insertion = anchor + '''    // AudioService is initialized after first paint. Bind callbacks when it
-    // becomes ready so a fast navigation to MainShell does not lose controls.
+    insertion = anchor + '''    // AudioService may initialize after MainShell paints. Rebind callbacks
+    // once the handler becomes available so notification controls are reliable.
     unawaited(() async {
       for (var i = 0; i < 50 && audioHandler == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -163,4 +126,4 @@ def patch_main_shell():
 if __name__ == '__main__':
     patch_main()
     patch_main_shell()
-    print('Startup recovery patch applied: first Flutter frame is independent of optional services.')
+    print('Startup recovery patch applied: idempotent post-frame startup.')
