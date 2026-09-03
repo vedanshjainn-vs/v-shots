@@ -86,6 +86,7 @@ class KeywordProvider implements MusicProvider {
           artist: artist,
           artworkUrl: '',
           durationSeconds: 180 + i,
+          isOfficial: true,
         ),
       );
     }
