@@ -45,8 +45,7 @@ class MusicCatalogService {
   // Search and unrelated catalog consumers remain unchanged.
   static bool _officialOnlySurface(String label) {
     final normalized = label.trim().toLowerCase();
-    if (normalized == '.discover' ||
-        normalized.startsWith('.discover.')) {
+    if (normalized == '.discover' || normalized.startsWith('.discover.')) {
       return true;
     }
     const homeIds = <String>{
