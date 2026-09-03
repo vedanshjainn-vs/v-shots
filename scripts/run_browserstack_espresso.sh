@@ -97,31 +97,60 @@ except Exception: print('')
     passed|failed)
       echo "$RES" > espresso_result.json
       echo "=== ESPRESSO RESULT ==="
+      # The v2 build response exposes per-session testcase counts (count +
+      # passed/failed) but NOT the individual testcase data — that lives on the
+      # per-session detail endpoint. Judge pass/fail from session statuses here,
+      # then fetch the failing session's testcase detail for the error trace.
       python3 -c "
 import json
 d=json.load(open('espresso_result.json'))
 print('build status:', d.get('status'))
 print('duration:', d.get('duration'), 's')
-tests=[]
+sessed=0; failed_sessions=[]
 for dev in d.get('devices',[]):
     for s in dev.get('sessions',[]):
-        for cl in s.get('testcases',{}).get('data',[]):
-            for t in cl.get('testcases',[]):
-                t = dict(t)
-                t['_device'] = dev.get('device', '')
-                t['_session'] = s.get('status', '')
-                tests.append(t)
-passed=[t for t in tests if t.get('status')=='passed']
-failed=[t for t in tests if t.get('status')!='passed']
-print('total tests:', len(tests))
-print('passed:', len(passed), 'failed:', len(failed))
-for f in failed:
-    print('  FAILED:', f.get('name'), '|', f.get('status'), '| dev', f.get('_device'))
-    print('   error:', (f.get('error') or '(none)')[:2500])
-# exit non-zero if any test failed, else success
-sys.exit(1 if failed else 0)
+        sessed+=1
+        tc=s.get('testcases',{})
+        print(('  DEVICE %s | session %s | testcases %s' % (
+            dev.get('device',''), s.get('status',''),
+            json.dumps(tc.get('status', tc)))))
+        if s.get('status') != 'passed':
+            failed_sessions.append((dev.get('device',''), s.get('id',''), s.get('status','')))
+print('sessions:', sessed)
+if d.get('status') != 'passed' or failed_sessions:
+    print('FAILED_SESSIONS:', failed_sessions)
+    raise SystemExit(1)
+raise SystemExit(0)
 "
-      exit $?
+      status_code=$?
+      # On failure, pull the per-session testcase detail to surface the crash
+      # trace / instrumentation log in the workflow log.
+      if [ "$status_code" != "0" ]; then
+        echo "--- Fetching failing session testcase details ---"
+        python3 -c "
+import json
+d=json.load(open('espresso_result.json'))
+for dev in d.get('devices',[]):
+    for s in dev.get('sessions',[]):
+        if s.get('status') != 'passed':
+            print(d.get('session_id','') or s.get('id',''))
+" | while read -r sid; do
+          [ -z "$sid" ] && continue
+          curl -sS -u "$AUTH" "$BASE/app-automate/espresso/v2/builds/$BUILD_ID/sessions/$sid" \
+            | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+except Exception as e:
+    print('  (could not parse session detail)'); raise SystemExit(0)
+for cl in d.get('testcases',{}).get('data',[]):
+    for t in cl.get('testcases',[]):
+        print('  TEST', t.get('name'), '|', t.get('status'))
+        print('    error:', (t.get('error') or '(none)')[:2500])
+"
+        done
+      fi
+      exit "$status_code"
       ;;
   esac
   sleep 30
