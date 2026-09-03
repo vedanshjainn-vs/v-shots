@@ -141,13 +141,20 @@ void _configureSmartListening() {
 }
 '''
         text = text[:insert_at] + block + text[insert_at:]
+
     if '_configureSmartListening();' not in text:
-        # Startup recovery may move the old boot debugPrint marker. Anchor to
-        # the stable runApp call instead; this remains valid across boot patches.
-        marker = '  runApp(const VShotsApp());\n'
-        if marker not in text:
-            raise SystemExit('main runApp anchor not found')
-        text = text.replace(marker, '  _configureSmartListening();\n' + marker, 1)
+        # The startup recovery patch may move runApp or change its formatting.
+        # Prefer the stable post-frame bootstrap hook and keep smart setup out
+        # of the synchronous app-launch path.
+        fallback = '  unawaited(_bootstrapCloudServices());\n'
+        if fallback in text:
+            text = text.replace(fallback, '  _configureSmartListening();\n' + fallback, 1)
+        else:
+            marker = '  runApp(const VShotsApp());\n'
+            if marker in text:
+                text = text.replace(marker, '  _configureSmartListening();\n' + marker, 1)
+            else:
+                raise SystemExit('main Smart Listening bootstrap anchor not found')
     p.write_text(text)
 
 
