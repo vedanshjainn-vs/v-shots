@@ -10,10 +10,10 @@
 
 import 'package:flutter/material.dart';
 
-import '../../core/ads/ad_banner_widget.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
-import '../../core/ads/native_ad_widget.dart';
+import '../../core/ads/mrec_ad_manager.dart';
+import '../../core/ads/premium_mrec_ad_card.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart' show currentTrackNotifier, musicRepository, playTrack;
@@ -216,27 +216,26 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
         ),
       );
     }
-    // Policy-gated ads (never between every song): ONE clearly-labeled
-    // native card after the 10th track (when the list is long enough) and an
-    // in-flow banner at the bottom. When policy denies, the list is exactly
-    // the plain track list (no layout change).
-    final bool showNative = _tracks.length >= AdConfig.playlistAdAfter &&
+    // Policy-gated MREC ads: ONE Unity MREC 300×250 card after the 10th
+    // track (when the list is long enough) and a second MREC at the bottom.
+    // When policy denies, the list is exactly the plain track list.
+    final bool showMREC = _tracks.length >= AdConfig.playlistAdAfter &&
         AdPolicy.instance.canShowNative(AdPlacement.playlist);
-    final bool showBanner = AdPolicy.instance.canShowBanner(
+    final bool showBottomMREC = AdPolicy.instance.canShowBanner(
       AdPlacement.playlist,
     );
-    final int adCount = (showNative ? 1 : 0) + (showBanner ? 1 : 0);
+    final int adCount = (showMREC ? 1 : 0) + (showBottomMREC ? 1 : 0);
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: _tracks.length + adCount,
       itemBuilder: (context, i) {
-        if (showNative && i == AdConfig.playlistAdAfter) {
-          return const NativeAdWidget(placement: AdPlacement.playlist);
+        if (showMREC && i == AdConfig.playlistAdAfter) {
+          return const PremiumMRECAdCard(placement: MRECPlacement.playlist);
         }
         final int trackIndex =
-            showNative && i > AdConfig.playlistAdAfter ? i - 1 : i;
-        if (i == _tracks.length + (showNative ? 1 : 0)) {
-          return const AdBannerWidget(placement: AdPlacement.playlist);
+            showMREC && i > AdConfig.playlistAdAfter ? i - 1 : i;
+        if (i == _tracks.length + (showMREC ? 1 : 0)) {
+          return const PremiumMRECAdCard(placement: MRECPlacement.playlist);
         }
         return _trackTile(_tracks[trackIndex], trackIndex);
       },

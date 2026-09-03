@@ -15,6 +15,8 @@ enum MRECPlacement {
   discoverFeed,
   discoverDwell,
   search,
+  playlist,
+  library,
 }
 
 /// Centralized MREC configuration
