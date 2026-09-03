@@ -1,10 +1,10 @@
-// ════════════════════════════════════════════════
+// ------------------------------------------------
 // V Shots — Background Playback (audio_service AudioHandler)
-// ════════════════════════════════════════════════
+// ------------------------------------------------
 //
 // Bridges the app's existing global just_audio player to the Android/iOS
 // media session without changing the app's playback ownership or queue.
-// ════════════════════════════════════════════════
+// ------------------------------------------------
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -82,7 +82,9 @@ class VShotsAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> fastForward() async {
     final target = _player.position + const Duration(seconds: 10);
     final duration = _player.duration;
-    await _player.seek(duration == null || target < duration ? target : duration);
+    await _player.seek(
+      duration == null || target < duration ? target : duration,
+    );
   }
 
   @override

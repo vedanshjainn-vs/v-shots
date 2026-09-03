@@ -1,15 +1,17 @@
-// ═════════════════════════════════════════════════════════════════════════════
-// V Shots — MusicCatalogService (ingest → validate → canonicalize → dedupe)
-// ═════════════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
+// V Shots - MusicCatalogService
+// (ingest -> validate -> canonicalize -> dedupe)
+// -----------------------------------------------------------------------------
 //
 // The single funnel through which raw provider results become MUSIC for the
 // UI. Never lets raw API results reach the UI directly.
 //
-// API → Normalizer → Validator → Canonicalizer → Catalog → Ranker → UI
+// API -> Normalizer -> Validator -> Canonicalizer
+// -> Catalog -> Ranker -> UI
 //
 // Also produces per-ingest diagnostics (accepted/rejected/duplicates/variant
 // distribution) so the validator can be tuned against real data.
-// ═════════════════════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 
 import 'package:flutter/foundation.dart';
 
