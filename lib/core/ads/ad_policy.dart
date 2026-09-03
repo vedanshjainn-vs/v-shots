@@ -140,8 +140,8 @@ class AdPolicy {
   }
 }
 
-  /// MREC (300x250): allowed in all major placements.
-  bool canShowMREC(MRECPlacement placement) {
-    if (!adsAvailable || !_bannersEnabled) return false;
-    return true;
-  }
+/// MREC (300x250): allowed in all major placements.
+bool canShowMREC(MRECPlacement placement) {
+  if (!adsAvailable || !_bannersEnabled) return false;
+  return true;
+}

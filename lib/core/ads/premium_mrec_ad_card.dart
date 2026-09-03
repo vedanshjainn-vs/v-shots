@@ -56,7 +56,9 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   @override
   Widget build(BuildContext context) {
     final unitId = _unitId;
-    if (unitId == null || !AdPolicy.instance.adsAvailable || !VShotsLevelPlay.instance.initSucceeded) {
+    if (unitId == null ||
+        !AdPolicy.instance.adsAvailable ||
+        !VShotsLevelPlay.instance.initSucceeded) {
       return const SizedBox.shrink();
     }
 
