@@ -1,20 +1,22 @@
-// ═════════════════════════════════════════════════════════════════════════════
-// V Shots — Premium MREC Ad Card (Unity LevelPlay 300×250)
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// Premium ad container for MREC 300×250 ads.
-// Graceful failure handling - collapses if ad fails to load.
-// Never blocks UI or leaves blank spaces.
-// ════════════════════════════════════════════════════════════════════════════
+// V Shots — Premium Unity LevelPlay MREC 300×250
+// Reusable, non-interruptive ad card for feed surfaces.
 
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
-import '../theme/app_colors.dart';
-import 'mrec_ad_manager.dart';
-import 'levelplay_config.dart';
 
-/// Premium MREC Ad Card widget with graceful failure handling
+import '../theme/app_colors.dart';
+import 'ad_analytics.dart';
+import 'levelplay_config.dart';
+import 'mrec_ad_manager.dart';
+
+/// Premium 300×250 MREC container.
+///
+/// The LevelPlay platform view is mounted during loading. This is important:
+/// waiting for onAdLoaded before mounting the platform view creates a deadlock
+/// where the SDK can never deliver the loaded callback. On a real failure or
+/// timeout the entire card collapses, so no permanent blank ad space remains.
 class PremiumMRECAdCard extends StatefulWidget {
   const PremiumMRECAdCard({
     super.key,
@@ -35,172 +37,184 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     with LevelPlayBannerAdViewListener {
   final GlobalKey<LevelPlayBannerAdViewState> _bannerKey =
       GlobalKey<LevelPlayBannerAdViewState>();
-  bool _isVisible = false;
-  bool _hasFailed = false;
-  Timer? _loadTimer;
 
-  String? get _unitId {
-    // Use banner home unit for all MREC placements
-    // LevelPlay resolves the correct format based on ad size
-    return LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
-  }
+  Timer? _loadTimer;
+  bool _isLoaded = false;
+  bool _hasFailed = false;
+  bool _loadStarted = false;
+  bool _impressionSent = false;
+
+  String? get _unitId =>
+      LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
 
   @override
   void initState() {
     super.initState();
-    MRECAdManager.instance.loadMREC(widget.placement);
+    _startLoad();
+  }
 
-    // Timeout after 10 seconds - collapse if ad doesn't load
-    _loadTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted && !_isVisible && !_hasFailed) {
-        setState(() {
-          _hasFailed = true;
-        });
-        MRECAdManager.instance.markFailed('timeout');
-        widget.onFailure?.call();
+  Future<void> _startLoad() async {
+    final unitId = _unitId;
+    if (unitId == null) {
+      _collapse('mrec unit not configured');
+      return;
+    }
+
+    final started = await MRECAdManager.instance.loadMREC(widget.placement);
+    if (!mounted) return;
+    if (!started) {
+      _collapse('mrec slot unavailable');
+      return;
+    }
+
+    setState(() => _loadStarted = true);
+    _loadTimer = Timer(MRECConfig.loadTimeout, () {
+      if (mounted && !_isLoaded && !_hasFailed) {
+        _collapse('timeout');
       }
     });
+  }
+
+  void _collapse(String reason) {
+    if (!mounted || _hasFailed) return;
+    _loadTimer?.cancel();
+    setState(() {
+      _hasFailed = true;
+      _isLoaded = false;
+    });
+    debugPrint('[MREC] collapsed: $reason');
+    MRECAdManager.instance.markFailed(reason);
+    widget.onFailure?.call();
   }
 
   @override
   void dispose() {
     _loadTimer?.cancel();
+    if (_isLoaded) {
+      AdAnalytics.log('mrec_hidden', placement: widget.placement.name);
+    }
     _bannerKey.currentState?.destroy();
-    MRECAdManager.instance.reset();
+    MRECAdManager.instance.release(widget.placement);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final unitId = _unitId;
-    if (unitId == null || _hasFailed) {
-      // Collapse completely - no blank space
-      return const SizedBox.shrink();
-    }
+    if (unitId == null || _hasFailed) return const SizedBox.shrink();
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      height: _isVisible ? MRECConfig.mrecHeight.toDouble() : 0,
-      child: _isVisible
-          ? Container(
+    return RepaintBoundary(
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Center(
+            child: Container(
               width: MRECConfig.mrecWidth.toDouble(),
               height: MRECConfig.mrecHeight.toDouble(),
-              margin: const EdgeInsets.symmetric(vertical: 16),
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border, width: 1),
+                border: Border.all(color: AppColors.border),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: Colors.black.withValues(alpha: 0.10),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
                   ),
                 ],
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Stack(
-                  children: [
-                    // Ad content
-                    Positioned.fill(
-                      child: LevelPlayBannerAdView(
-                        key: _bannerKey,
-                        adUnitId: unitId,
-                        adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
-                        listener: this,
-                        placementName: widget.placement.name,
-                        onPlatformViewCreated: () {
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Keep the platform view mounted from the start so
+                  // LevelPlay can create and load the MREC normally.
+                  Opacity(
+                    opacity: _isLoaded ? 1 : 0.01,
+                    child: LevelPlayBannerAdView(
+                      key: _bannerKey,
+                      adUnitId: unitId,
+                      adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
+                      listener: this,
+                      placementName: widget.placement.name,
+                      onPlatformViewCreated: () {
+                        if (_loadStarted) {
                           _bannerKey.currentState?.loadAd();
-                        },
+                        }
+                      },
+                    ),
+                  ),
+                  if (!_isLoaded)
+                    Container(
+                      color: AppColors.surface.withValues(alpha: 0.96),
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
-                    // Loading indicator
-                    if (!_isVisible && !_hasFailed)
-                      const Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.accent,
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          'Ad',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                    // Ad label
-                    if (_isVisible)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Ad',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ),
-            )
-          : null,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   @override
   void onAdLoaded(LevelPlayAdInfo adInfo) {
-    if (mounted) {
-      _loadTimer?.cancel();
-      setState(() {
-        _isVisible = true;
-        _hasFailed = false;
-      });
-      MRECAdManager.instance.markLoaded();
-      widget.onLoad?.call();
-    }
+    if (!mounted) return;
+    _loadTimer?.cancel();
+    setState(() => _isLoaded = true);
+    MRECAdManager.instance.markLoaded();
+    widget.onLoad?.call();
   }
 
   @override
   void onAdLoadFailed(LevelPlayAdError error) {
-    debugPrint('[MREC Card] Load failed: $error');
-    if (mounted) {
-      _loadTimer?.cancel();
-      setState(() {
-        _hasFailed = true;
-        _isVisible = false;
-      });
-      MRECAdManager.instance.markFailed(error.toString());
-      widget.onFailure?.call();
-    }
+    debugPrint('[MREC] load failed: $error');
+    _collapse(error.toString());
   }
 
   @override
   void onAdDisplayed(LevelPlayAdInfo adInfo) {
+    if (_impressionSent) return;
+    _impressionSent = true;
     MRECAdManager.instance.markDisplayed();
   }
 
   @override
   void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {
-    debugPrint('[MREC Card] Display failed: $error');
-    if (mounted) {
-      setState(() {
-        _hasFailed = true;
-        _isVisible = false;
-      });
-    }
+    debugPrint('[MREC] display failed: $error');
+    _collapse(error.toString());
   }
 
   @override
@@ -212,7 +226,9 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   void onAdExpanded(LevelPlayAdInfo adInfo) {}
 
   @override
-  void onAdCollapsed(LevelPlayAdInfo adInfo) {}
+  void onAdCollapsed(LevelPlayAdInfo adInfo) {
+    AdAnalytics.log('mrec_hidden', placement: widget.placement.name);
+  }
 
   @override
   void onAdLeftApplication(LevelPlayAdInfo adInfo) {}
