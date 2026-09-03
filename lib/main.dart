@@ -43,6 +43,7 @@ import 'core/playback/playback_router.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/music_recommendation_engine.dart';
+import 'core/recommendation/music_region_profile.dart';
 import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
@@ -72,69 +73,109 @@ import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
 import 'shared/widgets/offline_banner.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
 
-  // Initialize Firebase first (required for FCM)
-  debugPrint('[Boot] Firebase initialized');
+  // Startup safety: render Flutter before any optional service/plugin work.
+  // A network, notification, ads, auth, or AudioService failure must never
+  // leave the Android launch surface black.
+  runApp(const VShotsApp());
+  unawaited(_bootstrapAfterFirstFrame(bootTimer));
+}
 
-  await Future.wait([
-    SupabaseService.initialize(),
-    LocalLibrary.instance.initialize(),
-    SignalStore.instance.initialize(),
-    PersonalizationStore.instance.initialize(),
-    RemoteConfigService.instance.init(),
-    AdFreeManager.instance.init(),
-    AppVersion.load(),
-    NotificationService.instance.initialize(),
-  ]);
-  // NotificationService MUST be ready before SmartNotificationService: the
-  // scheduler calls into it during initialization. Running both in the same
-  // Future.wait caused the first schedule build to race the plugin init and
-  // silently schedule zero notifications.
-  await SmartNotificationService.instance.initialize();
-  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
+Future<void> _bootstrapAfterFirstFrame(Stopwatch bootTimer) async {
+  try {
+    await Future.wait([
+      LocalLibrary.instance.initialize(),
+      SignalStore.instance.initialize(),
+      PersonalizationStore.instance.initialize(),
+      AdFreeManager.instance.init(),
+      AppVersion.load(),
+    ]).timeout(const Duration(seconds: 4));
+  } catch (e) {
+    debugPrint('[Boot] local bootstrap degraded: $e');
+  }
 
-  // Initialize FCM (non-blocking, fire-and-forget)
-
-  await AuthService.instance.initializeGoogleSignIn();
-
-  // Ads (AppLovin MAX mediation): one-time, NON-BLOCKING init (Phase 18).
-  // The existing UMP consent system is REUSED as the single consent source;
-  // its decision is pushed into MAX on every status change (Phase 9) and
-  // the Google network inside MAX reads GMA's UMP state directly.
-  // FIRE-AND-FORGET BY DESIGN: ads must never block first paint. When MAX
-  // is not configured in this build these are no-ops and diagnostics
-  // report CONFIG_NOT_SET (honest state, app fully functional).
-  unawaited(ConsentManager.instance.initialize());
-  ConsentManager.instance.onStatusChanged =
-      () => VShotsLevelPlay.instance.syncConsent();
-  unawaited(VShotsLevelPlay.instance.initialize());
-
-  audioHandler = await AudioService.init(
-    builder: () => VShotsAudioHandler(audioPlayer),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.vshots.live.channel.audio',
-      androidNotificationChannelName: 'V Shots playback',
-      androidNotificationChannelDescription:
-          'Media playback controls for V Shots',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
-      androidShowNotificationBadge: true,
-      androidNotificationClickStartsActivity: true,
-    ),
-  );
-
+  // Smart Listening is configured by its existing service lifecycle hooks.
+  // Do not call an optional helper here: the helper is not part of the stable
+  // startup API and must never become a startup dependency.
+  unawaited(_bootstrapCloudServices());
+  unawaited(_bootstrapAudio());
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
-  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
-  runApp(const VShotsApp());
+  debugPrint('[Boot] first Flutter frame rendered at ${bootTimer.elapsedMilliseconds}ms');
+}
 
-  // Check for app updates (non-blocking, fire-and-forget)
-  unawaited(AppUpdateService.instance.checkForUpdate());
+Future<void> _bootstrapCloudServices() async {
+  try {
+    await SupabaseService.initialize().timeout(const Duration(seconds: 6));
+  } catch (e) {
+    debugPrint('[Boot] Supabase unavailable: $e');
+  }
+  try {
+    await RemoteConfigService.instance.init().timeout(const Duration(seconds: 4));
+  } catch (e) {
+    debugPrint('[Boot] Remote config unavailable: $e');
+  }
+  try {
+    await NotificationService.instance.initialize().timeout(const Duration(seconds: 6));
+    // SmartNotificationService.initialize() is synchronous in the current
+    // notification implementation; calling it directly avoids treating void
+    // as a Future while preserving the ordering after NotificationService.
+    SmartNotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('[Boot] Notifications unavailable: $e');
+  }
+  try {
+    await AuthService.instance.initializeGoogleSignIn().timeout(const Duration(seconds: 6));
+  } catch (e) {
+    debugPrint('[Boot] Google Sign-In unavailable: $e');
+  }
+  try {
+    await ConsentManager.instance.initialize().timeout(const Duration(seconds: 6));
+    ConsentManager.instance.onStatusChanged =
+        () => VShotsLevelPlay.instance.syncConsent();
+    unawaited(VShotsLevelPlay.instance.initialize());
+  } catch (e) {
+    debugPrint('[Boot] Ads/consent unavailable: $e');
+  }
+  try {
+    await MusicRegionProfile.initialize().timeout(const Duration(seconds: 5));
+  } catch (e) {
+    debugPrint('[Boot] Region profile unavailable: $e');
+  }
+}
+
+Future<void> _bootstrapAudio() async {
+  try {
+    audioHandler = await AudioService.init(
+      builder: () => VShotsAudioHandler(audioPlayer),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.vshots.live.channel.audio',
+        androidNotificationChannelName: 'V Shots playback',
+        androidNotificationChannelDescription:
+            'Media playback controls for V Shots',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationIcon: 'mipmap/ic_launcher',
+        androidShowNotificationBadge: true,
+        androidNotificationClickStartsActivity: true,
+      ),
+    );
+    audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
+    audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
+    audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
+    debugPrint('[Boot] AudioService ready');
+  } catch (e) {
+    debugPrint('[Boot] AudioService unavailable: $e');
+  }
+  try {
+    unawaited(AppUpdateService.instance.checkForUpdate());
+  } catch (e) {
+    debugPrint('[Boot] update check unavailable: $e');
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -264,7 +305,17 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 1200),
     );
     _c.forward();
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(seconds: 2), () async {
+      if (!mounted) return;
+      try {
+        await Future.wait([
+          LocalLibrary.instance.initialize(),
+          SignalStore.instance.initialize(),
+          PersonalizationStore.instance.initialize(),
+        ]).timeout(const Duration(seconds: 2));
+      } catch (e) {
+        debugPrint('[Splash] local state wait degraded: $e');
+      }
       if (!mounted) return;
       // Capture the NavigatorState now — it outlives this Splash widget.
       // (The onComplete callback fires much later, after the user finishes
@@ -376,6 +427,17 @@ class _MainShellState extends State<MainShell> {
     audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
     audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
     audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
+    // AudioService is initialized after first paint. Bind callbacks when it
+    // becomes ready so a fast navigation to MainShell does not lose controls.
+    unawaited(() async {
+      for (var i = 0; i < 50 && audioHandler == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (!mounted || audioHandler == null) return; // late-audio-bind
+      audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
+      audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
+      audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
+    }());
     VShotsPlaybackManager.instance.browser.addListener(_syncPlayerExpanded);
     // Ads: no startup work at all. The interstitial preloads on-demand at
     // the first policy-eligible tab switch (see onTap below) — keeps first

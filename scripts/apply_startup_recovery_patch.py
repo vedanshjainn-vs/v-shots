@@ -7,6 +7,15 @@ ROOT = Path('.')
 def patch_main():
     p = ROOT / 'lib/main.dart'
     text = p.read_text()
+
+    # Ensure MusicRegionProfile import exists
+    if "import 'core/recommendation/music_region_profile.dart';" not in text:
+        text = text.replace(
+            "import 'core/recommendation/recommendation_engine.dart';",
+            "import 'core/recommendation/music_region_profile.dart';\nimport 'core/recommendation/recommendation_engine.dart';",
+            1
+        )
+
     replacement = '''void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
