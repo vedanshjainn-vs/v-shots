@@ -24,19 +24,21 @@ subprojects {
     project.evaluationDependsOn(':app')
 }
 
-// The release/debug app already uses minSdk 24, but some plugin androidTest
-// variants (e.g. audio_service) declare minSdk 19, which conflicts with
-// androidx.exifinterface:exifinterface:1.4.1 (minSdk 21) during androidTest
-// APK build. Raise a floor of 21 only for modules below it; the app's minSdk
-// 24 is left untouched. Since :app is force-evaluated by evaluationDependsOn
-// above, guard against already-evaluated projects (afterEvaluate would throw).
+// Unity all Android modules (app + plugins) on minSdk 24 — the app's own
+// value — so no plugin androidTest variant declares a lower minSdk than a
+// library it depends on (e.g. exifinterface needs 21, flutter_plugin_android_
+// lifecycle needs 24), which otherwise breaks the androidTest APK manifest
+// merge. Since :app is force-evaluated by evaluationDependsOn above, guard
+// against already-evaluated projects (afterEvaluate on them would throw).
 def _vshotsConfigureMinSdk = { p ->
     if (p.plugins.hasPlugin("com.android.library") || p.plugins.hasPlugin("com.android.application")) {
-        p.android.defaultConfig {
-            def m = minSdkVersion
-            int cur = (m instanceof Integer) ? ((Integer) m).intValue() : (m != null ? m.getApiLevel() : 0)
-            if (cur < 21) {
-                minSdkVersion 21
+        p.android {
+            defaultConfig {
+                def m = minSdkVersion
+                int cur = (m instanceof Integer) ? ((Integer) m).intValue() : (m != null ? m.getApiLevel() : 0)
+                if (cur < 24) {
+                    minSdkVersion 24
+                }
             }
         }
     }
