@@ -28,16 +28,30 @@ def patch_main() -> None:
 '''
     if old_boot in text:
         text = text.replace(old_boot, new_boot, 1)
-    marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
+
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
-        if marker not in text:
-            raise SystemExit('main runApp anchor not found')
-        text = text.replace(
-            marker,
-            "  // Resolve network country after core boot without delaying first paint.\n"
-            "  unawaited(MusicRegionProfile.initialize());\n" + marker,
-            1,
-        )
+        marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
+        if marker in text:
+            text = text.replace(
+                marker,
+                "  // Resolve network country after core boot without delaying first paint.\n"
+                "  unawaited(MusicRegionProfile.initialize());\n" + marker,
+                1,
+            )
+        else:
+            # Startup recovery intentionally renders the app first and performs
+            # optional services in _bootstrapAfterFirstFrame. Put region
+            # enrichment into that existing post-frame path instead of failing
+            # the build because an older boot anchor no longer exists.
+            marker = '  unawaited(_bootstrapCloudServices());\n'
+            if marker in text:
+                text = text.replace(
+                    marker,
+                    '  unawaited(MusicRegionProfile.initialize());\n' + marker,
+                    1,
+                )
+            else:
+                raise SystemExit('main region bootstrap anchor not found')
     p.write_text(text)
 
 
