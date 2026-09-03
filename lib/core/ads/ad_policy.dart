@@ -23,6 +23,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'ad_free_manager.dart';
 import 'ad_frequency_controller.dart';
 import 'consent_manager.dart';
+import 'mrec_ad_manager.dart';
 import 'levelplay_config.dart';
 import '../remote_config/remote_feature_flags.dart';
 
