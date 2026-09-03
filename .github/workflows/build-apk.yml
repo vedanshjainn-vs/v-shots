@@ -99,7 +99,15 @@ jobs:
         run: |
           python3 scripts/apply_ads_notification_reliability_fix.py
           dart format lib/core/ads/levelplay_service.dart lib/core/ads/levelplay_config.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/notifications/notification_service.dart
-      - name: 5j. Apply Startup Recovery Patch LAST
+      - name: 5j. Apply Premium Unity MREC Ads Patch
+        run: |
+          set -e
+          python3 scripts/apply_mrec_ads_patch.py
+          dart format lib/features/foryou/for_you_feed_screen.dart lib/main.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/ads/native_ad_widget.dart
+          grep -q 'MRECPlacement.discoverFeed' lib/features/foryou/for_you_feed_screen.dart
+          grep -q 'MRECPlacement.search' lib/main.dart
+          grep -q 'LevelPlayAdSize.MEDIUM_RECTANGLE' lib/core/ads/premium_mrec_ad_card.dart
+      - name: 5k. Apply Startup Recovery Patch LAST
         run: |
           python3 scripts/apply_startup_recovery_patch.py
           dart format lib/main.dart
@@ -107,7 +115,7 @@ jobs:
           grep -q 'Future<void> _bootstrapAfterFirstFrame' lib/main.dart
           grep -q 'Future<void> _bootstrapAudio' lib/main.dart
           grep -q 'late-audio-bind' lib/main.dart
-      - name: 5k. Final Flutter v2 manifest validation
+      - name: 5l. Final Flutter v2 manifest validation
         run: python3 scripts/ensure_flutter_v2_android.py
       - name: 6. Run Formatting Check
         run: |
@@ -132,9 +140,8 @@ jobs:
           assert a.get(ns+'name') != 'io.flutter.app.FlutterApplication'
           assert any(x.get(ns+'name')=='flutterEmbedding' and x.get(ns+'value')=='2' for x in r.iter('meta-data'))
           PY
-          grep -RInE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' android --include='*.kt' --include='*.java' || true
-      - name: 8b1. Remove deprecated v1 embedding GeneratedPluginRegistrant
-        run: rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          find android -type f \( -name '*.kt' -o -name '*.java' \) -print0 | xargs -0 -r grep -nE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' || true
+          find android -type f -name 'GeneratedPluginRegistrant.java' -delete
       - name: 9. Setup Keystore & Build Release APK/AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -159,12 +166,36 @@ jobs:
           flutter clean
           flutter pub get
           python3 scripts/ensure_flutter_v2_android.py
-          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          find android -type f -name 'GeneratedPluginRegistrant.java' -delete
           flutter build apk --release
           flutter build appbundle --release
+      - name: 9a. Capture Android Build Diagnostics
+        if: always()
+        run: |
+          set +e
+          {
+            echo '=== Flutter ==='
+            flutter --version
+            echo '=== Android legacy embedding markers in project ==='
+            find android -type f \( -name '*.kt' -o -name '*.java' \) -print0 | xargs -0 -r grep -nE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' || true
+            echo '=== GeneratedPluginRegistrant files ==='
+            find android -type f -name 'GeneratedPluginRegistrant.java' -print || true
+            echo '=== Pub cache legacy embedding markers ==='
+            find "$HOME/.pub-cache/hosted/pub.dev" -type f \( -name '*.kt' -o -name '*.java' \) -print0 2>/dev/null | xargs -0 -r grep -lE 'io\.flutter\.app\.|PluginRegistry\.Registrar|registerWith\(' 2>/dev/null | head -80 || true
+            echo '=== Pub dependencies ==='
+            flutter pub deps --style=compact | head -250
+          } > build-diagnostics.txt 2>&1
+          cat build-diagnostics.txt
+      - name: 9b. Upload Android Build Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v-shots-build-diagnostics-${{ github.run_number }}
+          path: build-diagnostics.txt
+          retention-days: 14
       - name: 10. Build Debug APK
         run: |
-          rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+          find android -type f -name 'GeneratedPluginRegistrant.java' -delete
           flutter build apk --debug
       - name: 11. Validate Generated APKs & AAB
         run: |
