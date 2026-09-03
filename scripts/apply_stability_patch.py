@@ -107,7 +107,8 @@ def patch_main_boot_order() -> None:
     text = path.read_text()
     old = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n    SmartNotificationService.instance.initialize(),\n  ]);\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
     new = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n  ]);\n  // NotificationService MUST be ready before SmartNotificationService: the\n  // scheduler calls into it during initialization. Running both in the same\n  // Future.wait caused the first schedule build to race the plugin init and\n  // silently schedule zero notifications.\n  await SmartNotificationService.instance.initialize();\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
-    text = replace_once(text, old, new, 'notification boot ordering')
+    # Use idempotent replace - if anchor not found, the code has already been restructured
+    text = replace_once_idempotent(text, old, new, 'notification boot ordering')
     path.write_text(text)
 
 
