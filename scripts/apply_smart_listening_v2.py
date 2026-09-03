@@ -68,8 +68,6 @@ def patch_manager() -> None:
         )
     text = p.read_text()
     if '_prefetchSmartQueue();' not in text:
-        # Add prefetch after a normal single-track open if that exact shape is
-        # present. If not, queue-start/end integration below still activates.
         text = text.replace(
             '    browser.open(track);\n    notifyListeners();\n  }\n',
             '    browser.open(track);\n    notifyListeners();\n    _prefetchSmartQueue();\n  }\n',
@@ -80,7 +78,6 @@ def patch_manager() -> None:
             '    browser.open(_queue[_index]);\n    notifyListeners();\n    _prefetchSmartQueue();\n  }\n\n  /// Jumps to a queue index',
             1,
         )
-    # Correct the terminal one-track behavior without touching normal queues.
     old = '''    if (_repeat == PlaybackRepeat.off &&
         !_shuffle &&
         _index >= _queue.length - 1) {
@@ -135,14 +132,19 @@ void _configureSmartListening() {
         VShotsPlaybackManager.instance.playQueue(tracks, index),
   );
   VShotsPlaybackManager.instance.configureSmartQueue(
-    (seed, excludeIds) =>
-        smartListeningService.nextSongQueue(seed: seed, count: 10),
+    (seed, excludeIds) => smartListeningService.nextSongQueue(
+      seed: seed,
+      count: 10,
+      excludeIds: excludeIds,
+    ),
   );
 }
 '''
         text = text[:insert_at] + block + text[insert_at:]
     if '_configureSmartListening();' not in text:
-        marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
+        # Startup recovery may move the old boot debugPrint marker. Anchor to
+        # the stable runApp call instead; this remains valid across boot patches.
+        marker = '  runApp(const VShotsApp());\n'
         if marker not in text:
             raise SystemExit('main runApp anchor not found')
         text = text.replace(marker, '  _configureSmartListening();\n' + marker, 1)
