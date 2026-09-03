@@ -64,10 +64,15 @@ class NotificationService {
         '[NotificationService] Initialized; permissionInitially=$granted',
       );
     } catch (e, stack) {
+      // Failure-tolerant init (Requirement #11 / #21): notification setup must
+      // NEVER be able to prevent the Flutter UI from starting. main() awaits
+      // this inside a Future.wait; rethrowing here would surface out of
+      // runApp()'s startup and cause a black screen. We log and mark
+      // uninitialized so the app still launches and only notifications are
+      // unavailable.
       debugPrint('[NotificationService] initialize failed: $e');
       debugPrint('$stack');
       _initialized = false;
-      rethrow;
     } finally {
       _initializing = null;
     }
