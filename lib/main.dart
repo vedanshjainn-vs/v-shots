@@ -121,6 +121,8 @@ void main() async {
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
       androidNotificationClickStartsActivity: true,
+      preloadArtwork: true,
+      androidNotificationColor: 0xFF0E1420,
     ),
   );
 
@@ -750,6 +752,7 @@ Future<void> playTrack(
       artist: trackArtist,
       artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,
       duration: trackDuration != null ? Duration(seconds: trackDuration) : null,
+      album: trackArtist,
     ),
   );
 
