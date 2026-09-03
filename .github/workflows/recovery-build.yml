@@ -36,7 +36,7 @@ jobs:
           SUPABASE_URL=${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
           GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
-          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}
           YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
           LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
           LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
@@ -64,9 +64,10 @@ jobs:
           python3 scripts/apply_ads_notification_reliability_fix.py
 
       - name: Apply Startup Recovery Patch LAST
-        run: |
-          python3 scripts/apply_startup_recovery_patch.py
-          dart format lib/main.dart lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart lib/core/ads/levelplay_service.dart lib/core/ads/levelplay_config.dart lib/core/ads/mrec_ad_manager.dart lib/core/ads/premium_mrec_ad_card.dart lib/core/notifications/notification_service.dart
+        run: python3 scripts/apply_startup_recovery_patch.py
+
+      - name: Normalize Generated Source
+        run: dart format $(git ls-files -- '*.dart')
 
       - name: Validate Startup Patch
         run: |
@@ -77,9 +78,7 @@ jobs:
           grep -q 'late-audio-bind' lib/main.dart
           python3 scripts/ensure_flutter_v2_android.py
           grep -q 'android:name=".MainActivity"' android/app/src/main/AndroidManifest.xml
-
-      - name: Format Check
-        run: git ls-files -z -- '*.dart' | xargs -0 -r dart format --output=none --set-exit-if-changed
+          git diff --check
 
       - name: Analyzer
         run: flutter analyze --no-fatal-infos
@@ -113,16 +112,6 @@ jobs:
           flutter pub get
           python3 scripts/ensure_flutter_v2_android.py
           rm -f android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
-          python3 scripts/apply_dynamic_home_patch.py
-          python3 scripts/run_stability_patch_robust.py
-          python3 scripts/apply_content_policy_patch.py
-          python3 scripts/apply_smart_listening_v2.py
-          python3 scripts/apply_smart_queue_autoadvance.py
-          python3 scripts/apply_runtime_refresh_notification_fix.py
-          python3 scripts/apply_player_notification_actions.py
-          python3 scripts/apply_ads_notification_reliability_fix.py
-          python3 scripts/apply_startup_recovery_patch.py
-          dart format lib/main.dart
           flutter build apk --release
           flutter build appbundle --release
 
