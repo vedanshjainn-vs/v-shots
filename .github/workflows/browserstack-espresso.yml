@@ -18,7 +18,7 @@ jobs:
   espresso-smoke:
     name: BrowserStack Espresso cold-launch smoke (release)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: 1. Checkout
         uses: actions/checkout@v4
@@ -54,7 +54,6 @@ jobs:
       - name: 5. Install Dependencies
         run: flutter pub get
 
-      # Keep the build deterministic and identical to build-apk.yml.
       - name: 6. Apply Feature Patches (5b-5j)
         run: |
           python3 scripts/apply_dynamic_home_patch.py
@@ -86,94 +85,11 @@ jobs:
           cd android
           ./gradlew assembleReleaseAndroidTest
 
-      - name: 8. Upload app + test suite to BrowserStack
+      - name: 8. Upload + Run BrowserStack Espresso Smoke
         env:
           BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
           BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
+          APP_APK: build/app/outputs/flutter-apk/app-release.apk
+          TEST_APK: app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
         run: |
-          set -e
-          BASE="https://api-cloud.browserstack.com"
-          ls -la build/app/outputs/flutter-apk/app-release.apk
-          ls -la app/build/outputs/apk/androidTest/release/app-release-androidTest.apk
-          APP_RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST \
-            "$BASE/app-automate/upload" \
-            -F "file=@build/app/outputs/flutter-apk/app-release.apk" \
-            -F "custom_id=v-shots-coldlaunch-${{ github.run_number }}-app")
-          APP_URL=$(echo "$APP_RES" | grep -o '"app_url":"[^"]*"' | cut -d'"' -f4)
-          echo "APP_URL=$APP_URL"
-          TEST_RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST \
-            "$BASE/app-automate/espresso/v2/test-suite" \
-            -F "file=@app/build/outputs/apk/androidTest/release/app-release-androidTest.apk")
-          TEST_URL=$(echo "$TEST_RES" | grep -o '"test_suite_url":"[^"]*"' | cut -d'"' -f4)
-          if [ -z "$TEST_URL" ]; then echo "TEST_URL empty. Test-suite response: $TEST_RES"; TEST_URL=$(echo "$TEST_RES" | grep -o '"test_suite_id":"[^"]*"' | cut -d'"' -f4); fi
-          echo "TEST_URL=$TEST_URL"
-          echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
-          echo "TEST_URL=$TEST_URL" >> "$GITHUB_ENV"
-
-      - name: 9. Run BrowserStack Espresso Build
-        env:
-          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
-          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
-        run: |
-          set -e
-          BASE="https://api-cloud.browserstack.com"
-          PAYLOAD=$(cat <<EOP
-          {
-            "devices": ["Google Pixel 8-13"],
-            "app": "$APP_URL",
-            "testSuite": "$TEST_URL",
-            "name": "V Shots cold launch smoke #${{ github.run_number }}"
-          }
-          EOP
-          )
-          BUILD_RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST \
-            "$BASE/app-automate/espresso/v2/build" -H "Content-Type: application/json" \
-            -d "$PAYLOAD")
-          echo "$BUILD_RES"
-          BUILD_ID=$(echo "$BUILD_RES" | python3 -c "import sys,json; print(json.load(sys.stdin).get('build_id',''))" 2>/dev/null || echo "$BUILD_RES" | grep -o '"build_id":"[^"]*"' | cut -d'"' -f4)
-          echo "BUILD_ID=$BUILD_ID"
-          echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
-
-      - name: 10. Poll Espresso Build & Report Result
-        env:
-          BROWSERSTACK_USERNAME: ${{ secrets.BROWSERSTACK_USERNAME }}
-          BROWSERSTACK_ACCESS_KEY: ${{ secrets.BROWSERSTACK_ACCESS_KEY }}
-        run: |
-          set -e
-          BASE="https://api-cloud.browserstack.com"
-          if [ -z "${BUILD_ID:-}" ] || [ "$BUILD_ID" = "None" ]; then
-            echo "::error::No BUILD_ID returned — Espresso build may have failed to start."
-            echo "Recent builds:"
-            curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" "$BASE/app-automate/espresso/v2/builds" | head -c 2000
-            exit 1
-          fi
-          for i in $(seq 1 40); do
-            RES=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" \
-              "$BASE/app-automate/espresso/v2/builds/$BUILD_ID")
-            STATUS=$(echo "$RES" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
-            echo "[$i] status=$STATUS"
-            if [ "$STATUS" = "done" ]; then
-              echo "$RES" > espresso_result.json
-              echo "=== RESULT ==="
-              python3 -c "
-import json
-d=json.load(open('espresso_result.json'))
-print('status:', d.get('status'))
-print('device tests:', json.dumps(d.get('device_tests', []), indent=2)[:4000])
-"
-              # Determine pass/fail
-              python3 -c "
-import json,sys
-d=json.load(open('espresso_result.json'))
-tests=[t for dt in d.get('device_tests',[]) for t in dt.get('tests',[])]
-fails=[t for t in tests if t.get('status')!='passed']
-print('PASSED tests:', sum(1 for t in tests if t.get('status')=='passed'))
-print('FAILED tests:', len(fails))
-for f in fails:
-    print('  FAILED:', f.get('name'), '|', f.get('status'), '|', (f.get('error','') or '')[:1500])
-sys.exit(1 if fails else 0)
-"
-              break
-            fi
-            sleep 30
-          done
+          bash scripts/run_browserstack_espresso.sh
