@@ -120,8 +120,6 @@ void main() async {
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
       androidNotificationClickStartsActivity: true,
-      androidNotificationColor: 0xFF0E1420,
-      androidNotificationShowStopButton: false,
       preloadArtwork: true,
       rewindInterval: Duration(seconds: 10),
       fastForwardInterval: Duration(seconds: 10),

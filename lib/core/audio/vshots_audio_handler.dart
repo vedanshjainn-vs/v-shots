@@ -77,28 +77,10 @@ class VShotsAudioHandler extends BaseAudioHandler with SeekHandler {
     playbackState.add(
       PlaybackState(
         controls: [
-          MediaControl(
-            id: 'vshots_prev',
-            label: 'Previous',
-            icon: 'drawable/ic_skip_previous',
-          ),
-          if (_player.playing)
-            MediaControl(
-              id: 'vshots_pause',
-              label: 'Pause',
-              icon: 'drawable/ic_pause',
-            )
-          else
-            MediaControl(
-              id: 'vshots_play',
-              label: 'Play',
-              icon: 'drawable/ic_play_arrow',
-            ),
-          MediaControl(
-            id: 'vshots_next',
-            label: 'Next',
-            icon: 'drawable/ic_skip_next',
-          ),
+          MediaControl.skipToPrevious,
+          if (_player.playing) MediaControl.pause else MediaControl.play,
+          MediaControl.stop,
+          MediaControl.skipToNext,
         ],
         systemActions: const {
           MediaAction.seek,
