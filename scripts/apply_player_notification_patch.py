@@ -17,24 +17,15 @@ def patch_main_audio_service() -> None:
     path = 'lib/main.dart'
     p = ROOT / path
     text = p.read_text()
-    text = text.replace(
-        '      androidStopForegroundOnPause: true,\n',
-        '      androidStopForegroundOnPause: false,\n',
-        1,
-    )
-    text = text.replace(
-        '      androidShowNotificationBadge: true,\n',
-        '      androidShowNotificationBadge: false,\n',
-        1,
-    )
-    p.write_text(text)
+    # Keep this config deliberately minimal and const-safe. Notification
+    # appearance/controls are driven by the AudioHandler state; these options
+    # only improve artwork loading and seek intervals.
     patch(
         path,
         """      androidNotificationClickStartsActivity: true,
     ),""",
         """      androidNotificationClickStartsActivity: true,
       androidResumeOnClick: true,
-      notificationColor: const Color(0xFF111522),
       preloadArtwork: true,
       artDownscaleWidth: 512,
       artDownscaleHeight: 512,
