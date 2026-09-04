@@ -25,18 +25,19 @@ class MRECConfig {
 
   static bool get mrecEnabled => true;
 
-  // Frequency intervals (number of content items between ads)
-  static const int homeMRECInterval = 6;
-  static const int discoverMRECInterval = 4;
-  static const int searchMRECInterval = 4;
+  // Higher, but still non-intrusive, in-feed cadence.
+  static const int homeMRECInterval = 4;
+  static const int discoverMRECInterval = 3;
+  static const int searchMRECInterval = 3;
 
-  // Cooldown between MREC displays (seconds)
-  static const int mrecCooldownSeconds = 120;
+  // Keep enough breathing room between impressions when users move
+  // quickly between Home / Discover / Search.
+  static const int mrecCooldownSeconds = 60;
 
-  // Dwell time before showing MREC on Discover (seconds)
-  static const int discoverDwellTime = 15;
+  // Discover dwell placement can appear after a short engaged session.
+  static const int discoverDwellTime = 10;
 
-  // Maximum MRECs visible at once
+  // Never stack two MRECs on screen at once.
   static const int maxVisibleMRECs = 1;
 }
 
