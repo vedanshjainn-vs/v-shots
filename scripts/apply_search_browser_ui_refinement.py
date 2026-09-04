@@ -23,8 +23,6 @@ def patch_main() -> None:
 
 class SearchScreen extends StatefulWidget {""", """// ═══════════════════════════════════════════════
 
-/// Stable relevance ranking for global search. Home/Discovery policy remains
-/// separate; search simply prefers exact matches and official music.
 List<Map<String, dynamic>> _rankVShotsSearchResults(String query, List<Map<String, dynamic>> input) {
   String n(Object? v) => (v?.toString() ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim().replaceAll(RegExp(r'\\s+'), ' ');
   final q = n(query);
@@ -109,70 +107,9 @@ class SearchScreen extends StatefulWidget {""", 'Search + More Like This helper'
                         : 'Up Next',""", 'Player heading')
 
 
-def patch_browser() -> None:
-    path = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt'
-    try_patch(path, '''            override fun onPageFinished(view: WebView?, url: String?) {
-                events.invokeMethod("pageFinished", null)
-                startPlaybackPolling()
-                attemptAutoplayWithAudio()
-            }
-''', '''            override fun onPageFinished(view: WebView?, url: String?) {
-                events.invokeMethod("pageFinished", null)
-                isolateYoutubePlayerUi()
-                startPlaybackPolling()
-                attemptAutoplayWithAudio()
-            }
-''', 'Browser player hook')
-    try_patch(path, '''    fun load(url: String) {
-        if (!url.startsWith("https://")) return
-''', '''    /** Keep only the real YouTube player visible; V Shots owns everything below it. */
-    private fun isolateYoutubePlayerUi() {
-        evaluateJavascript(
-            """
-            (function(){
-              try {
-                var host=(location.hostname||'').toLowerCase();
-                if(host.indexOf('youtube.com')<0 && host.indexOf('youtu.be')<0) return;
-                function isolate(){
-                  var player=document.querySelector('#movie_player,.html5-video-player');
-                  if(!player) return;
-                  var node=player;
-                  for(var depth=0;depth<12 && node && node.parentElement;depth++){
-                    var parent=node.parentElement;
-                    Array.prototype.forEach.call(parent.children,function(child){if(child!==node)child.style.setProperty('display','none','important');});
-                    parent.style.setProperty('margin','0','important');
-                    parent.style.setProperty('padding','0','important');
-                    parent.style.setProperty('width','100%','important');
-                    parent.style.setProperty('max-width','none','important');
-                    node=parent;
-                    if(parent===document.body)break;
-                  }
-                  document.documentElement.style.setProperty('margin','0','important');
-                  document.documentElement.style.setProperty('padding','0','important');
-                  document.body.style.setProperty('margin','0','important');
-                  document.body.style.setProperty('padding','0','important');
-                  document.body.style.setProperty('background','#000','important');
-                  player.style.setProperty('width','100%','important');
-                  player.style.setProperty('max-width','100vw','important');
-                }
-                isolate();
-                if(!window.__vshotsPlayerOnlyObserver && document.body){
-                  window.__vshotsPlayerOnlyObserver=new MutationObserver(function(){clearTimeout(window.__vshotsPlayerOnlyTimer);window.__vshotsPlayerOnlyTimer=setTimeout(isolate,120);});
-                  window.__vshotsPlayerOnlyObserver.observe(document.body,{childList:true,subtree:true});
-                }
-              }catch(e){}
-            })()
-            """.trimIndent(),
-            null,
-        )
-    }
-
-    fun load(url: String) {
-        if (!url.startsWith("https://")) return
-''', 'Browser player isolation')
-
-
 if __name__ == '__main__':
     patch_main()
-    patch_browser()
-    print('Search/browser refinement patch completed.')
+    # Native browser/WebView DOM and layout are intentionally left untouched.
+    # This is a playback-critical PlatformView; search changes must not
+    # resize, hide, or mutate the real YouTube player.
+    print('Search refinement applied; native browser playback left untouched.')
