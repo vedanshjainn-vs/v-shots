@@ -12,7 +12,6 @@ import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
 import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/ads/premium_mrec_ad_card.dart';
-import '../../core/ads/native_ad_widget.dart';
 import '../../core/ads/player_sponsored_ad_policy.dart';
 import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
@@ -1233,9 +1232,8 @@ class _ForYouAdCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              const NativeAdWidget(
-                height: 220,
-                placement: AdPlacement.forYouFeed,
+              const PremiumMRECAdCard(
+                placement: MRECPlacement.discoverFeed,
               ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
