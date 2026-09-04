@@ -43,42 +43,42 @@ def patch_sheet() -> None:
     p = ROOT / path
     text = p.read_text()
 
-    # Keep notification seek controls, but never put lyrics/network work in
-    # the same widget subtree as the Android PlatformView. That combination
-    # caused repeated rebuilds and could disturb YouTube playback.
+    # Notification seek actions operate directly on the existing HTML media
+    # element. They never reload or rebuild the player.
     text = text.replace(
         "          case 'next':\n            VShotsPlaybackManager.instance.next();\n            break;\n          case 'previous':\n            VShotsPlaybackManager.instance.previous();\n            break;",
         "          case 'next':\n            VShotsPlaybackManager.instance.next();\n            break;\n          case 'previous':\n            VShotsPlaybackManager.instance.previous();\n            break;\n          case 'rewind':\n            await _session.seekBy(-10);\n            break;\n          case 'fastForward':\n            await _session.seekBy(10);\n            break;",
         1,
     )
 
-    # Restore a stable browser surface: the PlatformView owns the complete
-    # player area and is never placed inside a scrolling/fetching lyrics tree.
+    # CRITICAL playback rule: never resize the native WebView when expanded
+    # controls or lyrics are shown. The WebView stays a fixed full player
+    # surface and the V Shots controls are painted ON TOP of it.
     replace_once(
         path,
         r"  Widget _buildBrowserBody\(\) \{.*?\n  \}\n\n  /// The app-level full-player controls",
         '''  Widget _buildBrowserBody() {
     if (widget.controller.error != null) return _buildError();
-    return Column(
+    return Stack(
+      fit: StackFit.expand,
       children: [
-        Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _session.buildWidget(),
-              if (widget.controller.isLoading)
-                IgnorePointer(
-                  child: Container(
-                    color: Colors.black.withValues(alpha: 0.35),
-                    child: const Center(
-                      child: CircularProgressIndicator(color: AppColors.accent),
-                    ),
-                  ),
-                ),
-            ],
+        _session.buildWidget(),
+        if (widget.controller.isLoading)
+          IgnorePointer(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.35),
+              child: const Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              ),
+            ),
           ),
-        ),
-        if (_extent.value > 0.5) _buildExpandedControls(),
+        if (_extent.value > 0.5)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildExpandedControls(),
+          ),
       ],
     );
   }
@@ -88,8 +88,8 @@ def patch_sheet() -> None:
         re.S,
     )
 
-    # Lyrics are a separate modal surface. Playback continues underneath and
-    # no lyric request/rebuild can resize or compete with the WebView.
+    # Lyrics are always a separate modal surface. Opening them must not change
+    # the WebView size, detach the native player, or trigger a reload.
     if 'void _openPlayerLyrics()' not in text:
         anchor = '  /// The app-level full-player controls over the WebView engine.'
         helper = '''  void _openPlayerLyrics() {
@@ -99,8 +99,9 @@ def patch_sheet() -> None:
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
       builder: (sheetContext) => FractionallySizedBox(
-        heightFactor: 0.86,
+        heightFactor: 0.72,
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           child: LyricsScreen(track: track),
@@ -114,7 +115,6 @@ def patch_sheet() -> None:
             text = text.replace(anchor, helper + anchor, 1)
             print('Player lyrics modal: applied')
 
-    # Existing Lyrics button becomes a dedicated bottom-sheet action.
     text = text.replace(
         "onPressed: () => Navigator.push(\n                  context,\n                  MaterialPageRoute<void>(\n                    builder: (_) => LyricsScreen(track: track),\n                  ),\n                ),",
         "onPressed: _openPlayerLyrics,",
