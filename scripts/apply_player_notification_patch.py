@@ -20,6 +20,10 @@ def patch_main_audio_service() -> None:
         """      androidNotificationClickStartsActivity: true,
     ),""",
         """      androidNotificationClickStartsActivity: true,
+      androidResumeOnClick: true,
+      androidStopForegroundOnPause: false,
+      androidShowNotificationBadge: false,
+      notificationColor: const Color(0xFF111522),
       preloadArtwork: true,
       artDownscaleWidth: 512,
       artDownscaleHeight: 512,
@@ -143,8 +147,6 @@ def patch_session() -> None:
         text = text.replace('    this.onAdState,\n', '    this.onAdState,\n    this.onNotificationAction,\n', 1)
         text = text.replace('  final void Function(bool adActive)? onAdState;\n', '''  final void Function(bool adActive)? onAdState;
 
-  /// Android notification/lock-screen media actions are routed back through
-  /// the single global playback manager.
   final Future<void> Function(String action)? onNotificationAction;
 ''', 1)
     if "case 'notificationAction':" not in text:
