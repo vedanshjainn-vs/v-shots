@@ -81,7 +81,11 @@ jobs:
         run: |
           python3 scripts/apply_player_notification_patch.py
           dart format lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart
-      - name: 5h. Apply Search + Browser UI Refinement
+      - name: 5h. Apply Browser Player Polish
+        run: |
+          python3 scripts/apply_browser_player_polish.py
+          dart format lib/features/foryou/discovery_browser_sheet.dart lib/features/foryou/vshots_browser_session.dart
+      - name: 5i. Apply Search + Browser UI Refinement
         run: |
           python3 scripts/apply_search_browser_ui_refinement.py
           dart format lib/main.dart lib/features/foryou/discovery_browser_sheet.dart lib/features/foryou/vshots_browser_session.dart
