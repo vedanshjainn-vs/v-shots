@@ -15,14 +15,25 @@ def patch(path: str, old: str, new: str) -> None:
 
 def patch_main_audio_service() -> None:
     path = 'lib/main.dart'
+    p = ROOT / path
+    text = p.read_text()
+    text = text.replace(
+        '      androidStopForegroundOnPause: true,\n',
+        '      androidStopForegroundOnPause: false,\n',
+        1,
+    )
+    text = text.replace(
+        '      androidShowNotificationBadge: true,\n',
+        '      androidShowNotificationBadge: false,\n',
+        1,
+    )
+    p.write_text(text)
     patch(
         path,
         """      androidNotificationClickStartsActivity: true,
     ),""",
         """      androidNotificationClickStartsActivity: true,
       androidResumeOnClick: true,
-      androidStopForegroundOnPause: false,
-      androidShowNotificationBadge: false,
       notificationColor: const Color(0xFF111522),
       preloadArtwork: true,
       artDownscaleWidth: 512,
@@ -36,7 +47,6 @@ def patch_main_audio_service() -> None:
 def patch_native_browser() -> None:
     path = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt'
     p = ROOT / path
-    text = p.read_text()
     patch(path, '    init {\n        setBackgroundColor(Color.BLACK)\n', '    init {\n        VShotsBrowserPlaybackService.eventChannel = events\n        setBackgroundColor(Color.BLACK)\n')
     patch(path, '''    fun setMediaPlaying(value: Boolean) {
         if (mediaPlaying == value) return
