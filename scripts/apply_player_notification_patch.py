@@ -34,6 +34,12 @@ def patch_search_and_more_like_this() -> None:
 
     patch(
         path,
+        "import 'core/recommendation/music_recommendation_engine.dart';\n",
+        "import 'core/recommendation/feed_intent.dart';\nimport 'core/recommendation/music_recommendation_engine.dart';\n",
+    )
+
+    patch(
+        path,
         """// ═══════════════════════════════════════════════
 
 class SearchScreen extends StatefulWidget {""",
