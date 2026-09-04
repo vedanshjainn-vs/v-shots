@@ -33,6 +33,8 @@ class VShotsBrowserPlaybackService : Service() {
         const val ACTION_TOGGLE = "com.vshots.live.PLAYBACK_TOGGLE"
         const val ACTION_NEXT = "com.vshots.live.PLAYBACK_NEXT"
         const val ACTION_PREVIOUS = "com.vshots.live.PLAYBACK_PREVIOUS"
+        const val ACTION_REWIND = "com.vshots.live.PLAYBACK_REWIND"
+        const val ACTION_FORWARD = "com.vshots.live.PLAYBACK_FORWARD"
         const val ACTION_STOP = "com.vshots.live.PLAYBACK_STOP"
 
         @Volatile
@@ -66,6 +68,8 @@ class VShotsBrowserPlaybackService : Service() {
             ACTION_TOGGLE -> dispatch("toggle")
             ACTION_NEXT -> dispatch("next")
             ACTION_PREVIOUS -> dispatch("previous")
+            ACTION_REWIND -> dispatch("rewind")
+            ACTION_FORWARD -> dispatch("fastForward")
             ACTION_STOP -> {
                 dispatch("stop")
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -83,6 +87,8 @@ class VShotsBrowserPlaybackService : Service() {
                 override fun onPause() = dispatch("toggle")
                 override fun onSkipToNext() = dispatch("next")
                 override fun onSkipToPrevious() = dispatch("previous")
+                override fun onFastForward() = dispatch("fastForward")
+                override fun onRewind() = dispatch("rewind")
                 override fun onStop() = dispatch("stop")
             })
             isActive = true
@@ -97,6 +103,8 @@ class VShotsBrowserPlaybackService : Service() {
             PlaybackState.ACTION_PLAY_PAUSE or
             PlaybackState.ACTION_SKIP_TO_NEXT or
             PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+            PlaybackState.ACTION_FAST_FORWARD or
+            PlaybackState.ACTION_REWIND or
             PlaybackState.ACTION_STOP
         val state = if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
         session.setPlaybackState(
@@ -142,49 +150,40 @@ class VShotsBrowserPlaybackService : Service() {
             pendingIntentFlags(),
         )
 
-        val previous = actionIntent(ACTION_PREVIOUS, 2403)
-        val toggle = actionIntent(ACTION_TOGGLE, 2404)
-        val next = actionIntent(ACTION_NEXT, 2405)
-
         val notificationBuilder = builder
             .setContentTitle(title)
             .setContentText(artist)
-            .setSmallIcon(if (playing) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause)
+            .setSubText("V Shots")
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setShowWhen(false)
+            .setOnlyAlertOnce(true)
 
-        if (artwork != null) {
-            notificationBuilder.setLargeIcon(artwork)
-        }
+        if (artwork != null) notificationBuilder.setLargeIcon(artwork)
 
-        notificationBuilder
-            .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_previous),
-                "Previous",
-                previous,
-            ).build())
-            .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(
-                    this,
-                    if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-                ),
-                if (playing) "Pause" else "Play",
-                toggle,
-            ).build())
-            .addAction(Notification.Action.Builder(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_next),
-                "Next",
-                next,
-            ).build())
+        // Five transport controls: previous, -10s, play/pause, +10s, next.
+        // Android may show the compact three-action subset, while expanded
+        // MediaStyle exposes the complete transport row.
+        addAction(notificationBuilder, android.R.drawable.ic_media_previous, "Previous", ACTION_PREVIOUS, 2403)
+        addAction(notificationBuilder, android.R.drawable.ic_media_rew, "Rewind 10 seconds", ACTION_REWIND, 2404)
+        addAction(
+            notificationBuilder,
+            if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            if (playing) "Pause" else "Play",
+            ACTION_TOGGLE,
+            2405,
+        )
+        addAction(notificationBuilder, android.R.drawable.ic_media_ff, "Forward 10 seconds", ACTION_FORWARD, 2406)
+        addAction(notificationBuilder, android.R.drawable.ic_media_next, "Next", ACTION_NEXT, 2407)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             notificationBuilder.setStyle(
                 Notification.MediaStyle()
                     .setMediaSession(mediaSession?.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2),
+                    .setShowActionsInCompactView(0, 2, 4),
             )
         }
 
@@ -201,6 +200,22 @@ class VShotsBrowserPlaybackService : Service() {
         manager?.notify(NOTIFICATION_ID, notification)
     }
 
+    private fun addAction(
+        builder: Notification.Builder,
+        icon: Int,
+        label: String,
+        action: String,
+        requestCode: Int,
+    ) {
+        builder.addAction(
+            Notification.Action.Builder(
+                android.graphics.drawable.Icon.createWithResource(this, icon),
+                label,
+                actionIntent(action, requestCode),
+            ).build(),
+        )
+    }
+
     private fun loadArtworkAsync(url: String) {
         Thread {
             var connection: HttpURLConnection? = null
@@ -212,9 +227,7 @@ class VShotsBrowserPlaybackService : Service() {
                 connection.connect()
                 if (connection.responseCode !in 200..299) return@Thread
                 val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) } ?: return@Thread
-                if (url == artworkUrl) {
-                    publishNotification(bitmap)
-                }
+                if (url == artworkUrl) publishNotification(bitmap)
             } catch (_: Throwable) {
                 // Artwork is enhancement only; notification remains usable.
             } finally {
