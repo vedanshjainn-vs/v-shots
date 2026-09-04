@@ -153,7 +153,7 @@ def patch_sheet() -> None:
         final hasLyrics = result?.hasAny == true;
         final preview = lines.isNotEmpty
             ? lines.take(5).map((line) => line.text).where((t) => t.isNotEmpty).toList()
-            : (plain ?? '').split('\n').where((t) => t.trim().isNotEmpty).take(5).toList();
+            : (plain ?? '').split('\\n').where((t) => t.trim().isNotEmpty).take(5).toList();
 
         return Container(
           margin: const EdgeInsets.fromLTRB(12, 10, 12, 2),
