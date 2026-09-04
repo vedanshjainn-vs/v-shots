@@ -1487,12 +1487,18 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResultsList() {
-    // Insert one clearly-labeled native ad after ~8 organic results. When ads
-    // are not enabled (no production ad config / ad-free / consent pending)
-    // the ad slot count is 0, so the list behaves exactly as before.
-    final bool showAd = AdPolicy.instance.canShowNative(AdPlacement.search) &&
-        _results.length >= AdConfig.searchAdEvery;
-    final int adCount = showAd ? 1 : 0;
+    // Single pilot Native ad in Search results (conservative cadence, max 1).
+    final bool showNative =
+        AdPolicy.instance.canShowNative(AdPlacement.search) &&
+            _results.length >= 3;
+    // Preserved 300x250 MREC box ad.
+    final bool showMrec =
+        AdPolicy.instance.canShowMREC(MRECPlacement.search) &&
+            _results.length >= AdConfig.searchAdEvery;
+    final int nativeSlot = showNative ? 3 : -1;
+    final int mrecSlot =
+        showMrec ? (AdConfig.searchAdEvery + (showNative ? 1 : 0)) : -1;
+    final int adCount = (showNative ? 1 : 0) + (showMrec ? 1 : 0);
     final int footerIndex = _results.length + adCount;
     final artists = _derivedArtists();
     return Column(
@@ -1589,13 +1595,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 );
               }
-              // Native ad slot after the 8th organic result.
-              if (showAd && i == AdConfig.searchAdEvery) {
+              // Single pilot Native ad placement in Search results.
+              if (showNative && i == nativeSlot) {
+                return const NativeAdWidget(placement: AdPlacement.search);
+              }
+              // Preserved existing 300x250 MREC box ad slot.
+              if (showMrec && i == mrecSlot) {
                 return const PremiumMRECAdCard(placement: MRECPlacement.search);
               }
-              // Account for the ad slot offset when indexing results.
-              final int resultIndex =
-                  showAd && i > AdConfig.searchAdEvery ? i - 1 : i;
+              // Account for active ad slot offsets when indexing results.
+              var resultIndex = i;
+              if (showNative && i > nativeSlot) resultIndex--;
+              if (showMrec && i > mrecSlot) resultIndex--;
+
               final track = _results[resultIndex];
               final title = (track['title'] as String?) ?? '';
               final artist = (track['artist'] as String?) ?? '';

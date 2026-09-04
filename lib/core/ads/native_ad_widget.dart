@@ -184,7 +184,8 @@ class _NativeAdWidgetState extends State<NativeAdWidget>
     final ad = _nativeAd;
     if (!AdPolicy.instance.adsAvailable ||
         ad == null ||
-        !VShotsLevelPlay.instance.initSucceeded) {
+        !VShotsLevelPlay.instance.initSucceeded ||
+        _loadError != null) {
       return const SizedBox.shrink();
     }
 
@@ -223,18 +224,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (!_loaded)
-                  Center(
-                    child: _loadError == null
-                        ? const SizedBox.shrink()
-                        : const Text(
-                            'Sponsored content unavailable',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                  ),
+                if (!_loaded) const SizedBox.shrink(),
                 AnimatedOpacity(
                   opacity: _loaded ? 1 : 0,
                   duration: const Duration(milliseconds: 180),
