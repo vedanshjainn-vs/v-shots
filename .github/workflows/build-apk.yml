@@ -139,6 +139,10 @@ jobs:
           fi
           flutter build apk --release
           flutter build appbundle --release
+      - name: 9b. Stop Gradle daemons before Debug build
+        run: |
+          cd android
+          ./gradlew --stop || true
       - name: 10. Build Debug APK
         run: flutter build apk --debug
       - name: 11. Validate Generated APKs & AAB
