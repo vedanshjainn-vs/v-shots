@@ -3,8 +3,8 @@
 //
 // A real LevelPlay MEDIUM_RECTANGLE (300x250) in-flow ad. The widget waits
 // for the asynchronous LevelPlay initialization, loads only after the SDK is
-// ready, and retries failed loads with a bounded timer. No fake ad state is
-// ever rendered.
+// ready, and keeps retrying failed loads while the slot remains mounted.
+// No fake ad state is ever rendered.
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -20,8 +20,6 @@ import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 import 'mrec_ad_manager.dart';
 
-/// Premium MREC ad card. The actual ad is supplied by LevelPlay; this widget
-/// never fabricates a sponsored surface when there is no fill.
 class PremiumMRECAdCard extends StatefulWidget {
   const PremiumMRECAdCard({
     super.key,
@@ -44,6 +42,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       GlobalKey<LevelPlayBannerAdViewState>();
 
   Timer? _retryTimer;
+  Timer? _loadingWatchdog;
   bool _isLoaded = false;
   bool _loadInFlight = false;
   int _retryAttempt = 0;
@@ -60,6 +59,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _loadingWatchdog?.cancel();
     _bannerKey.currentState?.destroy();
     MRECAdManager.instance.hideMREC();
     super.dispose();
@@ -71,9 +71,18 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     if (!VShotsLevelPlay.instance.initSucceeded) return;
 
     _loadInFlight = true;
+    _loadingWatchdog?.cancel();
     MRECAdManager.instance.loadMREC(widget.placement);
     try {
       _bannerKey.currentState?.loadAd();
+      // Some mediation adapters can leave a platform view waiting without
+      // emitting a callback. Never leave the user staring at a spinner.
+      _loadingWatchdog = Timer(const Duration(seconds: 12), () {
+        if (!mounted || !_loadInFlight || _isLoaded) return;
+        _loadInFlight = false;
+        _scheduleRetry('load watchdog timeout');
+        if (mounted) setState(() {});
+      });
     } catch (e) {
       _loadInFlight = false;
       _scheduleRetry('loadAd exception: $e');
@@ -83,14 +92,14 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   void _scheduleRetry(String reason) {
     _retryTimer?.cancel();
     if (!mounted) return;
-    _retryAttempt = (_retryAttempt + 1).clamp(1, 6);
-    // Bounded exponential backoff: 15s, 30s, 60s, 120s, 180s, 180s.
-    final seconds = [15, 30, 60, 120, 180, 180][_retryAttempt - 1];
+    _retryAttempt = (_retryAttempt + 1).clamp(1, 8);
+    // Keep trying while the slot is alive. This maximises fill after a
+    // transient mediation/no-fill response without creating a request loop.
+    final seconds = [15, 30, 45, 60, 90, 120, 180, 180][_retryAttempt - 1];
     debugPrint('[MREC] retry in ${seconds}s ($reason)');
     _retryTimer = Timer(Duration(seconds: seconds), () {
       if (!mounted) return;
       _loadInFlight = false;
-      setState(() {});
       _loadFromPlatformView();
     });
   }
@@ -103,8 +112,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       return const SizedBox.shrink();
     }
 
-    // Keep a real 300x250 host alive while the SDK is loading. It is not
-    // labeled "Sponsored" until the SDK confirms that an ad loaded.
     return Container(
       width: 300,
       height: 250,
@@ -136,11 +143,13 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
               ),
             ),
             if (!_isLoaded)
-              const Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              const IgnorePointer(
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
               ),
             if (_isLoaded)
@@ -174,9 +183,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   Widget build(BuildContext context) {
-    // The critical fix: LevelPlay initialization is asynchronous. Listening
-    // to readyNotifier makes an already-mounted ad slot rebuild immediately
-    // after SDK initialization instead of staying permanently collapsed.
     return ValueListenableBuilder<bool>(
       valueListenable: VShotsLevelPlay.instance.readyNotifier,
       builder: (context, _, __) => _buildCard(),
@@ -186,6 +192,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   @override
   void onAdLoaded(LevelPlayAdInfo adInfo) {
     if (!mounted) return;
+    _loadingWatchdog?.cancel();
     _retryTimer?.cancel();
     _retryAttempt = 0;
     _loadInFlight = false;
@@ -206,6 +213,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   void onAdLoadFailed(LevelPlayAdError error) {
+    _loadingWatchdog?.cancel();
     _loadInFlight = false;
     if (mounted) setState(() => _isLoaded = false);
     MRECAdManager.instance.onAdLoadFailed(error.toString());
@@ -231,6 +239,8 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {
+    _loadingWatchdog?.cancel();
+    _loadInFlight = false;
     if (mounted) setState(() => _isLoaded = false);
     MRECAdManager.instance.onAdLoadFailed(error.toString());
     AdAnalytics.log(
