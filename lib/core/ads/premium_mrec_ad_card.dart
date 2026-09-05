@@ -138,7 +138,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
                 adUnitId: unitId,
                 adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
                 listener: this,
-                placementName: 'MREC_Android',
+                placementName: widget.placement.name,
                 onPlatformViewCreated: _loadFromPlatformView,
               ),
             ),
