@@ -74,7 +74,16 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     _loadingWatchdog?.cancel();
     MRECAdManager.instance.loadMREC(widget.placement);
     try {
-      _bannerKey.currentState?.loadAd();
+      final state = _bannerKey.currentState;
+      if (state != null) {
+        state.loadAd();
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _loadInFlight && !_isLoaded) {
+            _bannerKey.currentState?.loadAd();
+          }
+        });
+      }
       // Some mediation adapters can leave a platform view waiting without
       // emitting a callback. Never leave the user staring at a spinner.
       _loadingWatchdog = Timer(const Duration(seconds: 12), () {
@@ -142,7 +151,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
                 onPlatformViewCreated: _loadFromPlatformView,
               ),
             ),
-            if (!_isLoaded)
+            if (!_isLoaded && _loadInFlight)
               const IgnorePointer(
                 child: Center(
                   child: SizedBox(

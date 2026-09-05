@@ -8,6 +8,7 @@
 //   - Widget: LevelPlayBannerAdView inside PremiumMRECAdCard
 //   - Independence from normal 320x50 AdBannerWidget
 //   - Zero dependency on MREC_HOME_01
+//   - Multi-cycle lifecycle without permanent loading state
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter_test/flutter_test.dart';
@@ -70,8 +71,10 @@ void main() {
       }
     });
 
-    test('MREC Manager: load and display lifecycle state changes properly', () {
+    test('MREC Lifecycle: multi-cycle transitions recover correctly', () {
       final manager = MRECAdManager.instance;
+
+      // Cycle 1: Load -> Display -> Consume
       manager.onAdLoaded();
       expect(manager.isLoaded, isTrue);
       expect(manager.isMRECReady(), isTrue);
@@ -79,7 +82,18 @@ void main() {
       manager.markDisplayed();
       expect(manager.isLoaded, isFalse);
 
-      manager.onAdLoadFailed('test error');
+      // Cycle 2: Failed load / no-fill -> transitions out of loading
+      manager.onAdLoadFailed('no-fill mediation error');
+      expect(manager.isLoaded, isFalse);
+
+      // Cycle 3: Hide on dispose -> resets state
+      manager.hideMREC();
+      expect(manager.isLoaded, isFalse);
+
+      // Cycle 4: Subsequent successful load
+      manager.onAdLoaded();
+      expect(manager.isLoaded, isTrue);
+      manager.hideMREC();
       expect(manager.isLoaded, isFalse);
     });
   });
