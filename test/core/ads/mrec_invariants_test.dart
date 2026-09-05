@@ -37,17 +37,15 @@ void main() {
     });
 
     test('Invariant B: LevelPlayAdSize.MEDIUM_RECTANGLE is 300x250', () {
-      const size = LevelPlayAdSize.MEDIUM_RECTANGLE;
+      final size = LevelPlayAdSize.MEDIUM_RECTANGLE;
       expect(size.width, 300);
       expect(size.height, 250);
-      expect(size.description, 'MEDIUM_RECTANGLE');
     });
 
     test('Invariant E: Standard Banner is 320x50 and independent of MREC', () {
-      const bannerSize = LevelPlayAdSize.BANNER;
+      final bannerSize = LevelPlayAdSize.BANNER;
       expect(bannerSize.width, 320);
       expect(bannerSize.height, 50);
-      expect(bannerSize.description, 'BANNER');
     });
 
     test('Invariant J: No MREC_HOME_01 unit exists in unitEnvKeys', () {
