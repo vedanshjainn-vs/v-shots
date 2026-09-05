@@ -47,8 +47,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   bool _loadInFlight = false;
   int _retryAttempt = 0;
 
-  String? get _unitId =>
-      LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
+  String? get _unitId => LevelPlayConfig.unitIdFor(LevelPlayPlacement.mrecHome);
 
   @override
   void initState() {

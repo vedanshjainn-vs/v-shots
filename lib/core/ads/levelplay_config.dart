@@ -39,6 +39,7 @@ abstract class LevelPlayPlacement {
       'INTERSTITIAL_SESSION_BREAK_01';
   static const String rewardedFeature = 'REWARDED_FEATURE_01';
   static const String bannerHome = 'BANNER_HOME_01';
+  static const String mrecHome = 'MREC_HOME_01';
 }
 
 class LevelPlayConfig {
@@ -52,6 +53,7 @@ class LevelPlayConfig {
         'LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01',
     LevelPlayPlacement.rewardedFeature: 'LEVELPLAY_UNIT_REWARDED_FEATURE_01',
     LevelPlayPlacement.bannerHome: 'LEVELPLAY_UNIT_BANNER_HOME_01',
+    LevelPlayPlacement.mrecHome: 'LEVELPLAY_UNIT_MREC_HOME_01',
   };
 
   // Official Unity LevelPlay TEST credentials (public in the official
@@ -139,13 +141,19 @@ class LevelPlayConfig {
         case LevelPlayPlacement.rewardedFeature:
           return _testRewardedUnit;
         case LevelPlayPlacement.bannerHome:
+        case LevelPlayPlacement.mrecHome:
           return _testBannerUnit;
       }
     }
 
     final key = unitEnvKeys[placement];
     if (key == null) return null; // native placements: app-level unit
-    return _env(key);
+    final value = _env(key);
+    if (value != null) return value;
+    if (placement == LevelPlayPlacement.mrecHome) {
+      return _env('LEVELPLAY_UNIT_BANNER_HOME_01');
+    }
+    return null;
   }
 
   static bool unitConfigured(String placement) => unitIdFor(placement) != null;
