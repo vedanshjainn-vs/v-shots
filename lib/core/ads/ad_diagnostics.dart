@@ -249,7 +249,6 @@ class _AdDiagnosticsPanelState extends State<AdDiagnosticsPanel> {
             label: 'REWARDED_FEATURE_01',
           ),
           unitRow(LevelPlayPlacement.bannerHome, label: 'BANNER_HOME_01'),
-          unitRow(LevelPlayPlacement.mrecHome, label: 'MREC_HOME_01'),
           const SizedBox(height: 4),
           const Text(
             'FORMAT ACTIVITY (requested → loaded → shown)',

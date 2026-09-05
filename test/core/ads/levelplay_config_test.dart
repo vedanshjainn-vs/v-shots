@@ -15,7 +15,7 @@ void main() {
   group('LevelPlayConfig', () {
     tearDown(() => LevelPlayConfig.debugSetEnv(null));
 
-    test('all 9 stable placement identifiers are defined and unique', () {
+    test('all 8 stable placement identifiers are defined and unique', () {
       const ids = [
         LevelPlayPlacement.homeNative,
         LevelPlayPlacement.discoveryNative,
@@ -25,16 +25,14 @@ void main() {
         LevelPlayPlacement.interstitialSessionBreak,
         LevelPlayPlacement.rewardedFeature,
         LevelPlayPlacement.bannerHome,
-        LevelPlayPlacement.mrecHome,
       ];
-      expect(ids, hasLength(9));
-      expect(ids.toSet(), hasLength(9));
-      expect(LevelPlayConfig.unitEnvKeys, hasLength(4));
+      expect(ids, hasLength(8));
+      expect(ids.toSet(), hasLength(8));
+      expect(LevelPlayConfig.unitEnvKeys, hasLength(3));
       for (final p in [
         LevelPlayPlacement.interstitialSessionBreak,
         LevelPlayPlacement.rewardedFeature,
         LevelPlayPlacement.bannerHome,
-        LevelPlayPlacement.mrecHome,
       ]) {
         final envKey = LevelPlayConfig.unitEnvKeys[p];
         expect(envKey, isNotNull);
@@ -103,8 +101,6 @@ void main() {
         'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
         'LEVELPLAY_APP_KEY': 'prod-app-key',
         'LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01': 'prod-inter-unit',
-        'LEVELPLAY_UNIT_BANNER_HOME_01': 'prod-banner-unit',
-        'LEVELPLAY_UNIT_MREC_HOME_01': 'prod-mrec-unit',
       });
       final wasInTests = LevelPlayConfig.debugIsRunningInTests;
       LevelPlayConfig.debugIsRunningInTests = false;
@@ -117,34 +113,6 @@ void main() {
               LevelPlayPlacement.interstitialSessionBreak,
             ),
             'prod-inter-unit',
-          );
-          expect(
-            LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome),
-            'prod-banner-unit',
-          );
-          expect(
-            LevelPlayConfig.unitIdFor(LevelPlayPlacement.mrecHome),
-            'prod-mrec-unit',
-          );
-        }
-      } finally {
-        LevelPlayConfig.debugIsRunningInTests = wasInTests;
-      }
-    });
-
-    test('mrecHome falls back to bannerHome unit when omitted', () {
-      LevelPlayConfig.debugSetEnv({
-        'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
-        'LEVELPLAY_APP_KEY': 'prod-app-key',
-        'LEVELPLAY_UNIT_BANNER_HOME_01': 'prod-banner-unit',
-      });
-      final wasInTests = LevelPlayConfig.debugIsRunningInTests;
-      LevelPlayConfig.debugIsRunningInTests = false;
-      try {
-        if (kDebugMode) {
-          expect(
-            LevelPlayConfig.unitIdFor(LevelPlayPlacement.mrecHome),
-            'prod-banner-unit',
           );
         }
       } finally {
