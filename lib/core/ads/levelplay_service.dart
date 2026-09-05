@@ -147,9 +147,8 @@ class VShotsLevelPlay {
     } catch (e) {
       _initError = e.toString();
       AdAnalytics.log('ad_load_failed', detail: 'LevelPlay.init: $e');
+      _completeReady();
     }
-    _completeReady();
-    if (_initSucceeded) _preloadIfAllowed();
   }
 
   void _completeReady() {
@@ -168,6 +167,7 @@ class VShotsLevelPlay {
       unawaited(LevelPlay.launchTestSuite().catchError((_) {}));
     }
     _createAdObjects();
+    _completeReady();
     // Register impression-level revenue analytics only once the SDK is
     // actually up (the plugin's addImpressionDataListener fires an
     // unawaited platform channel call — must not run in test envs where
@@ -178,6 +178,7 @@ class VShotsLevelPlay {
   void _onInitFailed(LevelPlayInitError error) {
     _initError = error.toString();
     AdAnalytics.log('ad_load_failed', detail: 'LevelPlay init failed: $error');
+    _completeReady();
   }
 
   void _createAdObjects() {
@@ -318,6 +319,29 @@ class VShotsLevelPlay {
     }
     noteActivity('rewarded', 'requested (test button)');
     AdAnalytics.log('rewarded_started', placement: 'rewarded_test');
+
+    var ready = await ad.isAdReady();
+    if (!ready) {
+      final loaded = Completer<void>();
+      final prev = rewardedLoadedHook;
+      rewardedLoadedHook = () {
+        if (!loaded.isCompleted) loaded.complete();
+      };
+      unawaited(ad.loadAd());
+      try {
+        await loaded.future.timeout(const Duration(seconds: 30));
+      } catch (_) {
+        // timeout
+      } finally {
+        rewardedLoadedHook = prev;
+      }
+      ready = await ad.isAdReady();
+      if (!ready) {
+        final err = formatErrors['rewarded'];
+        return 'FAILED to load (30 s): ${err ?? 'no fill'}';
+      }
+    }
+
     bool earned = false;
     final closed = Completer<void>();
     rewardSession = RewardSession(
@@ -329,30 +353,20 @@ class VShotsLevelPlay {
         if (!closed.isCompleted) closed.complete();
       },
     );
-    if (!(await ad.isAdReady())) {
-      final loaded = Completer<void>();
-      final prev = rewardedLoadedHook;
-      rewardedLoadedHook = () {
-        if (!loaded.isCompleted) loaded.complete();
-      };
-      unawaited(ad.loadAd());
-      try {
-        await loaded.future.timeout(const Duration(seconds: 30));
-      } catch (_) {
-        // timeout
-      }
-      rewardedLoadedHook = prev;
-      if (!(await ad.isAdReady())) {
-        rewardSession = null;
-        final err = formatErrors['rewarded'];
-        return 'FAILED to load (30 s): ${err ?? 'no fill'}';
-      }
+
+    try {
+      await ad.showAd(placementName: LevelPlayPlacement.rewardedFeature);
+    } catch (e) {
+      rewardSession = null;
+      noteActivity('rewarded', 'SHOW FAILED — $e');
+      return 'FAILED to show: $e';
     }
-    await ad.showAd(placementName: 'REWARDED_TEST');
+
     try {
       await closed.future.timeout(const Duration(seconds: 180));
     } catch (_) {
-      // timeout
+      rewardSession = null;
+      return 'FAILED — session timed out waiting for ad completion (180 s)';
     }
     rewardSession = null;
     return earned
@@ -484,8 +498,10 @@ class _RewardedListener with LevelPlayRewardedAdListener {
   }
 
   @override
-  void onAdDisplayed(LevelPlayAdInfo adInfo) =>
-      service.noteActivity('rewarded', 'SHOWN (playing)');
+  void onAdDisplayed(LevelPlayAdInfo adInfo) {
+    service.rewardedReady = false;
+    service.noteActivity('rewarded', 'SHOWN (playing)');
+  }
 
   @override
   void onAdDisplayFailed(LevelPlayAdError error, LevelPlayAdInfo adInfo) {
@@ -498,6 +514,10 @@ class _RewardedListener with LevelPlayRewardedAdListener {
       placement: 'rewarded',
       detail: 'display: $msg',
     );
+    final session = service.rewardSession;
+    service.rewardSession = null;
+    session?.onClosed(false);
+    service._preloadIfAllowed();
   }
 
   @override
@@ -512,8 +532,8 @@ class _RewardedListener with LevelPlayRewardedAdListener {
       session.granted = true;
       AdAnalytics.log(
         'rewarded_completed',
-        detail:
-            'amount=${reward.amount} name=${reward.name} network=${adInfo.adNetwork}',
+        detail: 'amount=${reward.amount} name=${reward.name} '
+            'network=${adInfo.adNetwork}',
       );
       session.onGrant();
     }
@@ -544,8 +564,10 @@ class _ImpressionDataListener with LevelPlayImpressionDataListener {
     AdAnalytics.log(
       'ad_revenue',
       placement: impressionData.placement ?? impressionData.adFormat,
-      detail:
-          'network=${impressionData.adNetwork ?? '-'} format=${impressionData.adFormat ?? '-'} revenue=${impressionData.revenue ?? 0} precision=${impressionData.precision ?? '-'}',
+      detail: 'network=${impressionData.adNetwork ?? '-'} '
+          'format=${impressionData.adFormat ?? '-'} '
+          'revenue=${impressionData.revenue ?? 0} '
+          'precision=${impressionData.precision ?? '-'}',
     );
   }
 }

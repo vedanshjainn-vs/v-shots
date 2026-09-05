@@ -123,7 +123,7 @@ class VShotsAds {
       };
       try {
         unawaited(ad.loadAd());
-        await loaded.future.timeout(const Duration(seconds: 8));
+        await loaded.future.timeout(const Duration(seconds: 15));
       } catch (_) {
         // timeout / error — proceed with whatever is ready
       } finally {
@@ -153,7 +153,7 @@ class VShotsAds {
     );
 
     try {
-      await ad.showAd(placementName: purpose);
+      await ad.showAd(placementName: LevelPlayPlacement.rewardedFeature);
     } catch (e) {
       VShotsLevelPlay.instance.rewardSession = null;
       AdAnalytics.log('ad_load_failed', placement: purpose, detail: 'show: $e');
