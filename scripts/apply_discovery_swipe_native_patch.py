@@ -123,8 +123,6 @@ def patch_discovery() -> None:
     _prevCard = track;
 
     setState(() => _currentIndex = index);
-    final shownId = track['id'] as String? ?? '';
-    if (shownId.isNotEmpty) LocalLibrary.instance.recordShownSong(shownId);
 
     // Programmatic auto-advance already owns playback. Never trigger another
     // ad page or re-run playQueue from this callback.
