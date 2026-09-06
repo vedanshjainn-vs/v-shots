@@ -13,7 +13,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 import 'package:v_shots/core/ads/ad_config.dart';
-import 'package:v_shots/core/ads/ad_policy.dart';
 import 'package:v_shots/core/ads/levelplay_config.dart';
 import 'package:v_shots/core/ads/mrec_ad_manager.dart';
 import 'package:v_shots/core/ads/player_sponsored_ad_policy.dart';
@@ -117,7 +116,8 @@ void main() {
       final now = DateTime(2026, 9, 6, 12, 0, 0);
       policy.noteExternalAdShown(now: now);
 
-      // Verify that after viewing the discovery ad page, player sponsored card is in cooldown
+      // Verify that after viewing the discovery ad page, player sponsored
+      // card is in cooldown.
       policy.onSongStarted();
       for (var i = 0; i < 15; i++) {
         policy.tick(isPlaying: true);
@@ -126,7 +126,8 @@ void main() {
       expect(
         policy.frequencyAllows(now: now.add(const Duration(seconds: 30))),
         isFalse,
-        reason: 'Player sponsored card must respect 75s cooldown after in-feed ad',
+        reason:
+            'Player sponsored card must respect 75s cooldown after in-feed ad',
       );
       expect(
         policy.frequencyAllows(now: now.add(const Duration(seconds: 80))),
@@ -152,76 +153,92 @@ void main() {
       expect(songIndexForPage(5, true), 4);
     });
 
-    test('Rapid consecutive swipes do not produce out-of-bounds song indices', () {
-      const totalSongs = 20;
-      final totalPages = pageCount(totalSongs, true);
+    test(
+      'Rapid consecutive swipes do not produce out-of-bounds song indices',
+      () {
+        const totalSongs = 20;
+        final totalPages = pageCount(totalSongs, true);
 
-      for (var page = 0; page < totalPages; page++) {
-        if (!isAdPage(page, true)) {
-          final idx = songIndexForPage(page, true);
-          expect(idx, greaterThanOrEqualTo(0));
-          expect(idx, lessThan(totalSongs));
+        for (var page = 0; page < totalPages; page++) {
+          if (!isAdPage(page, true)) {
+            final idx = songIndexForPage(page, true);
+            expect(idx, greaterThanOrEqualTo(0));
+            expect(idx, lessThan(totalSongs));
+          }
         }
-      }
-    });
+      },
+    );
   });
 
   group('Discovery In-Feed Ad Page — Hard Safety Locks', () {
     tearDown(() => LevelPlayConfig.debugSetEnv(null));
 
-    test('Hard Lock 1: MREC unit, size, and placement are strictly unchanged', () {
-      LevelPlayConfig.debugSetEnv({
-        'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
-        'LEVELPLAY_APP_KEY': '27c0e8465',
-        'LEVELPLAY_UNIT_BANNER_HOME_01': 'eotgb78qisj7sis8',
-      });
-      final wasInTests = LevelPlayConfig.debugIsRunningInTests;
-      LevelPlayConfig.debugIsRunningInTests = false;
-      try {
-        final unitId = LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
-        expect(unitId, 'eotgb78qisj7sis8');
-      } finally {
-        LevelPlayConfig.debugIsRunningInTests = wasInTests;
-      }
+    test(
+      'Hard Lock 1: MREC unit, size, and placement are strictly unchanged',
+      () {
+        LevelPlayConfig.debugSetEnv({
+          'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
+          'LEVELPLAY_APP_KEY': '27c0e8465',
+          'LEVELPLAY_UNIT_BANNER_HOME_01': 'eotgb78qisj7sis8',
+        });
+        final wasInTests = LevelPlayConfig.debugIsRunningInTests;
+        LevelPlayConfig.debugIsRunningInTests = false;
+        try {
+          final unitId = LevelPlayConfig.unitIdFor(
+            LevelPlayPlacement.bannerHome,
+          );
+          expect(unitId, 'eotgb78qisj7sis8');
+        } finally {
+          LevelPlayConfig.debugIsRunningInTests = wasInTests;
+        }
 
-      final size = LevelPlayAdSize.MEDIUM_RECTANGLE;
-      expect(size.width, 300);
-      expect(size.height, 250);
-      expect(MRECPlacement.discoverFeed.name, 'discoverFeed');
-    });
+        final size = LevelPlayAdSize.MEDIUM_RECTANGLE;
+        expect(size.width, 300);
+        expect(size.height, 250);
+        expect(MRECPlacement.discoverFeed.name, 'discoverFeed');
+      },
+    );
 
-    test('Hard Lock 2: Rewarded units and identifiers are strictly unchanged', () {
-      LevelPlayConfig.debugSetEnv({
-        'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
-        'LEVELPLAY_APP_KEY': '27c0e8465',
-        'LEVELPLAY_UNIT_REWARDED_FEATURE_01': '2izjczd4ox2wj6yd',
-      });
-      final wasInTests = LevelPlayConfig.debugIsRunningInTests;
-      LevelPlayConfig.debugIsRunningInTests = false;
-      try {
-        final unitId = LevelPlayConfig.unitIdFor(LevelPlayPlacement.rewardedFeature);
-        expect(unitId, '2izjczd4ox2wj6yd');
-      } finally {
-        LevelPlayConfig.debugIsRunningInTests = wasInTests;
-      }
-    });
+    test(
+      'Hard Lock 2: Rewarded units and identifiers are strictly unchanged',
+      () {
+        LevelPlayConfig.debugSetEnv({
+          'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
+          'LEVELPLAY_APP_KEY': '27c0e8465',
+          'LEVELPLAY_UNIT_REWARDED_FEATURE_01': '2izjczd4ox2wj6yd',
+        });
+        final wasInTests = LevelPlayConfig.debugIsRunningInTests;
+        LevelPlayConfig.debugIsRunningInTests = false;
+        try {
+          final unitId = LevelPlayConfig.unitIdFor(
+            LevelPlayPlacement.rewardedFeature,
+          );
+          expect(unitId, '2izjczd4ox2wj6yd');
+        } finally {
+          LevelPlayConfig.debugIsRunningInTests = wasInTests;
+        }
+      },
+    );
 
-    test('Hard Lock 3: Interstitial session break unit is strictly unchanged', () {
-      LevelPlayConfig.debugSetEnv({
-        'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
-        'LEVELPLAY_APP_KEY': '27c0e8465',
-        'LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01': 'h3xw38h9214adgxo',
-      });
-      final wasInTests = LevelPlayConfig.debugIsRunningInTests;
-      LevelPlayConfig.debugIsRunningInTests = false;
-      try {
-        final unitId = LevelPlayConfig.unitIdFor(
-          LevelPlayPlacement.interstitialSessionBreak,
-        );
-        expect(unitId, 'h3xw38h9214adgxo');
-      } finally {
-        LevelPlayConfig.debugIsRunningInTests = wasInTests;
-      }
-    });
+    test(
+      'Hard Lock 3: Interstitial session break unit is strictly unchanged',
+      () {
+        LevelPlayConfig.debugSetEnv({
+          'LEVELPLAY_DEBUG_USE_PRODUCTION': 'true',
+          'LEVELPLAY_APP_KEY': '27c0e8465',
+          'LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01': 'h3xw38h9214adgxo',
+        });
+        final wasInTests = LevelPlayConfig.debugIsRunningInTests;
+        LevelPlayConfig.debugIsRunningInTests = false;
+        try {
+          final unitId = LevelPlayConfig.unitIdFor(
+            LevelPlayPlacement.interstitialSessionBreak,
+          );
+          expect(unitId, 'h3xw38h9214adgxo');
+        } finally {
+          LevelPlayConfig.debugIsRunningInTests = wasInTests;
+        }
+      },
+    );
   });
 }
