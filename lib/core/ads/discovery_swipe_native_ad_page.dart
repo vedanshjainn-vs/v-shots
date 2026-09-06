@@ -172,7 +172,7 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
             child: RepaintBoundary(
               child: LevelPlayNativeAdView(
                 nativeAd: ad,
-                templateType: LevelPlayTemplateType.MEDIUM,
+                templateType: LevelPlayTemplateType.SMALL,
                 width: size.width,
                 height: size.height,
                 onPlatformViewCreated: _loadOnce,
