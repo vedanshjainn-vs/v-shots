@@ -377,6 +377,7 @@ class VShotsLevelPlay {
   // ── Hooks (wired by the listeners below; used by VShotsAds for bounded
   // on-demand loads) ─────────────────────────────────────────────────────────
   VoidCallback? interstitialLoadedHook;
+  VoidCallback? interstitialClosedHook;
   VoidCallback? rewardedLoadedHook;
 
   /// Ad object accessors for the facade (null until created after init).
@@ -454,6 +455,7 @@ class _InterstitialListener with LevelPlayInterstitialAdListener {
       placement: 'interstitial',
       detail: 'display: $msg',
     );
+    service.interstitialClosedHook?.call();
   }
 
   @override
@@ -465,6 +467,7 @@ class _InterstitialListener with LevelPlayInterstitialAdListener {
     service.noteActivity('interstitial', 'closed');
     AdAnalytics.log('ad_closed', placement: 'interstitial');
     service.interstitialReady = false;
+    service.interstitialClosedHook?.call();
     service._preloadIfAllowed();
   }
 

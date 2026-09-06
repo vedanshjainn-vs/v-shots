@@ -24,6 +24,7 @@ import 'ad_analytics.dart';
 import 'ad_policy.dart';
 import 'levelplay_config.dart';
 import 'levelplay_service.dart';
+import 'player_sponsored_ad_policy.dart';
 
 /// Result of a user-initiated rewarded ad session.
 enum RewardOutcome { completed, canceled, failed }
@@ -83,6 +84,58 @@ class VShotsAds {
       // Presentation failure is also reported via the listener; the app
       // continues normally.
       debugPrint('[VShotsAds] interstitial show error: $e');
+    }
+  }
+
+  /// Shows a discovery swipe interstitial when eligible and awaits completion
+  /// or failure. If not ready/policy blocked/error, returns false immediately
+  /// without blocking the feed.
+  Future<bool> showDiscoverySwipeInterstitial({
+    required String trigger,
+  }) async {
+    final policy = AdPolicy.instance;
+    if (!policy.canShowInterstitial()) return false;
+    final unitId = LevelPlayConfig.unitIdFor(
+      LevelPlayPlacement.interstitialSessionBreak,
+    );
+    if (unitId == null) return false;
+
+    await VShotsLevelPlay.instance.waitReady(
+      timeout: const Duration(milliseconds: 500),
+    );
+    if (!VShotsLevelPlay.instance.initSucceeded) return false;
+
+    final ad = VShotsLevelPlay.instance.peekInterstitial();
+    if (ad == null) return false;
+
+    final isReady = await ad.isAdReady();
+    if (!isReady) {
+      // Fail-safe: if not preloaded/ready, don't stall the vertical swipe.
+      // Trigger preload for the next opportunity and continue immediately.
+      unawaited(ad.loadAd());
+      return false;
+    }
+
+    final closed = Completer<void>();
+    final prevHook = VShotsLevelPlay.instance.interstitialClosedHook;
+    VShotsLevelPlay.instance.interstitialClosedHook = () {
+      prevHook?.call();
+      if (!closed.isCompleted) closed.complete();
+    };
+
+    policy.frequency.recordShown();
+    AdAnalytics.log('interstitial_shown', placement: trigger);
+    PlayerSponsoredAdPolicy.instance.noteExternalAdShown();
+
+    try {
+      await ad.showAd(placementName: trigger);
+      await closed.future.timeout(const Duration(seconds: 45));
+      return true;
+    } catch (e) {
+      debugPrint('[VShotsAds] discovery swipe interstitial error: $e');
+      return false;
+    } finally {
+      VShotsLevelPlay.instance.interstitialClosedHook = prevHook;
     }
   }
 
