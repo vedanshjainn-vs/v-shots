@@ -80,8 +80,8 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
         .withListener(this)
         .build();
 
-    // Allow normal mediation latency, but never strand the user on an empty
-    // page. The page remains visually non-black while the SDK request runs.
+    // Never leave the user stranded on an ad page. If the platform view or
+    // mediation request does not settle promptly, skip the ad page cleanly.
     _loadTimeout = Timer(const Duration(seconds: 4), _failClosed);
     if (mounted) setState(() {});
   }
@@ -196,18 +196,17 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
-                AnimatedOpacity(
-                  opacity: _loaded ? 1 : 0,
-                  duration: const Duration(milliseconds: 100),
-                  child: RepaintBoundary(
-                    child: LevelPlayNativeAdView(
-                      nativeAd: ad,
-                      // SMALL is the existing proven LevelPlay Native template.
-                      templateType: LevelPlayTemplateType.SMALL,
-                      width: width,
-                      height: height,
-                      onPlatformViewCreated: _loadOnce,
-                    ),
+                // Keep the platform view mounted AND visible while loading.
+                // Hiding a native PlatformView with AnimatedOpacity can cause
+                // black/blank composition on Android; the SDK itself owns the
+                // ad surface until onAdLoaded fires.
+                RepaintBoundary(
+                  child: LevelPlayNativeAdView(
+                    nativeAd: ad,
+                    templateType: LevelPlayTemplateType.SMALL,
+                    width: width,
+                    height: height,
+                    onPlatformViewCreated: _loadOnce,
                   ),
                 ),
               ],
