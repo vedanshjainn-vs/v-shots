@@ -89,6 +89,10 @@ jobs:
         run: |
           python3 scripts/apply_search_browser_ui_refinement.py
           dart format lib/main.dart lib/features/foryou/discovery_browser_sheet.dart lib/features/foryou/vshots_browser_session.dart
+      - name: 5j. Apply Discovery Swipeable Native Ad Page
+        run: |
+          python3 scripts/apply_discovery_swipe_native_patch.py
+          dart format lib/features/foryou/for_you_feed_screen.dart lib/core/ads/discovery_swipe_native_ad_page.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
