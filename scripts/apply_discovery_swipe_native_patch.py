@@ -20,9 +20,10 @@ def patch_discovery() -> None:
     text = replace_once(
         text,
         "import '../../core/ads/ad_service.dart';\n",
+        "import '../../core/ads/ad_policy.dart';\n"
         "import '../../core/ads/ad_service.dart';\n"
         "import '../../core/ads/discovery_swipe_native_ad_page.dart';\n",
-        'Discovery native ad import',
+        'Discovery native ad imports',
     )
 
     text = replace_once(
