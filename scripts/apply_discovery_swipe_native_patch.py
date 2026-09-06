@@ -95,7 +95,6 @@ def patch_discovery() -> None:
       if (VShotsPlaybackManager.instance.isOpen) {
         VShotsPlaybackManager.instance.pause();
       }
-      setState(() {});
       return;
     }
 
@@ -189,7 +188,10 @@ def patch_discovery() -> None:
     new = '''            child: PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
-              physics: const BouncingScrollPhysics(),
+              // Default PageView paging is lighter than BouncingScrollPhysics
+              // for Android and avoids extra overscroll work during fast swipes.
+              physics: const PageScrollPhysics(),
+              allowImplicitScrolling: false,
               itemCount: _pageCount,
               onPageChanged: _onPageChanged,
               itemBuilder: (context, page) {
@@ -221,13 +223,13 @@ def patch_discovery() -> None:
                     onDoubleTapLike: () => _handleDoubleTapLike(track),
                     onSkipPrevious: page > 0
                         ? () => _pageController.previousPage(
-                              duration: const Duration(milliseconds: 300),
+                              duration: const Duration(milliseconds: 220),
                               curve: Curves.easeOutCubic,
                             )
                         : null,
                     onSkipNext: page < _pageCount - 1
                         ? () => _pageController.nextPage(
-                              duration: const Duration(milliseconds: 300),
+                              duration: const Duration(milliseconds: 220),
                               curve: Curves.easeOutCubic,
                             )
                         : null,
