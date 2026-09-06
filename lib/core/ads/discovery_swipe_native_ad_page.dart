@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
@@ -6,9 +8,8 @@ import 'ad_policy.dart';
 import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 
-/// Full-viewport, swipeable Discovery ad page backed by the existing
-/// LevelPlay Native ad format. This is an embeddable ad surface, not a
-/// modal interstitial and not a custom/fake ad.
+/// Real embeddable LevelPlay Native ad page for Discovery.
+/// No modal Interstitial, MREC, or fake/custom ad surface is used.
 class DiscoverySwipeNativeAdPage extends StatefulWidget {
   const DiscoverySwipeNativeAdPage({
     super.key,
@@ -25,6 +26,7 @@ class DiscoverySwipeNativeAdPage extends StatefulWidget {
 class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
     with LevelPlayNativeAdListener {
   LevelPlayNativeAd? _nativeAd;
+  Timer? _loadTimeout;
   bool _platformViewCreated = false;
   bool _loaded = false;
   bool _unavailableSent = false;
@@ -34,24 +36,26 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
   @override
   void initState() {
     super.initState();
-    if (AdPolicy.instance.adsAvailable &&
-        VShotsLevelPlay.instance.initSucceeded) {
-      _createAd();
-    } else if (AdPolicy.instance.adsAvailable) {
-      VShotsLevelPlay.instance.readyNotifier.addListener(_onReadyChanged);
-    } else {
+    _startWhenReady();
+  }
+
+  void _startWhenReady() {
+    if (!AdPolicy.instance.adsAvailable) {
       _failClosed();
+      return;
     }
+    if (VShotsLevelPlay.instance.initSucceeded) {
+      _createAd();
+      return;
+    }
+    VShotsLevelPlay.instance.readyNotifier.addListener(_onReadyChanged);
   }
 
   void _onReadyChanged() {
     if (!mounted) return;
     VShotsLevelPlay.instance.readyNotifier.removeListener(_onReadyChanged);
-    if (!VShotsLevelPlay.instance.initSucceeded) {
-      _failClosed();
-      return;
-    }
-    if (AdPolicy.instance.adsAvailable) {
+    if (AdPolicy.instance.adsAvailable &&
+        VShotsLevelPlay.instance.initSucceeded) {
       _createAd();
     } else {
       _failClosed();
@@ -59,7 +63,9 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
   }
 
   void _createAd() {
-    if (!mounted || _nativeAd != null) return;
+    if (!mounted || _nativeAd != null || !AdPolicy.instance.adsAvailable) {
+      return;
+    }
     AdAnalytics.log(
       'ad_request',
       placement: AdPlacement.forYouFeed.key,
@@ -73,6 +79,10 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
         .withPlacementName(_placementName)
         .withListener(this)
         .build();
+
+    // Allow normal mediation latency, but never strand the user on an empty
+    // page. The page remains visually non-black while the SDK request runs.
+    _loadTimeout = Timer(const Duration(seconds: 4), _failClosed);
     if (mounted) setState(() {});
   }
 
@@ -90,6 +100,7 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
   void _failClosed() {
     if (_unavailableSent) return;
     _unavailableSent = true;
+    _loadTimeout?.cancel();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onUnavailable();
     });
@@ -97,6 +108,7 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
 
   @override
   void dispose() {
+    _loadTimeout?.cancel();
     VShotsLevelPlay.instance.readyNotifier.removeListener(_onReadyChanged);
     _nativeAd?.destroyAd();
     _nativeAd = null;
@@ -105,6 +117,7 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
 
   @override
   void onAdLoaded(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    _loadTimeout?.cancel();
     VShotsLevelPlay.instance.noteFill('native', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
       'native',
@@ -139,6 +152,7 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
 
   @override
   void onAdLoadFailed(LevelPlayNativeAd nativeAd, dynamic error) {
+    _loadTimeout?.cancel();
     VShotsLevelPlay.instance.noteActivity(
       'native',
       'LOAD FAILED (discovery swipe) — $error',
@@ -157,26 +171,46 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
     if (ad == null ||
         !AdPolicy.instance.adsAvailable ||
         !VShotsLevelPlay.instance.initSucceeded) {
-      return const ColoredBox(color: Colors.black);
+      return const SizedBox.expand();
     }
 
     final size = MediaQuery.sizeOf(context);
+    final width = size.width.clamp(280.0, 420.0);
+    final height = (size.height * 0.48).clamp(280.0, 420.0);
 
     return ColoredBox(
-      color: Colors.black,
+      color: Colors.transparent,
       child: SafeArea(
         child: Center(
-          child: AnimatedOpacity(
-            opacity: _loaded ? 1 : 0,
-            duration: const Duration(milliseconds: 180),
-            child: RepaintBoundary(
-              child: LevelPlayNativeAdView(
-                nativeAd: ad,
-                templateType: LevelPlayTemplateType.SMALL,
-                width: size.width,
-                height: size.height,
-                onPlatformViewCreated: _loadOnce,
-              ),
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (!_loaded)
+                  const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                AnimatedOpacity(
+                  opacity: _loaded ? 1 : 0,
+                  duration: const Duration(milliseconds: 100),
+                  child: RepaintBoundary(
+                    child: LevelPlayNativeAdView(
+                      nativeAd: ad,
+                      // SMALL is the existing proven LevelPlay Native template.
+                      templateType: LevelPlayTemplateType.SMALL,
+                      width: width,
+                      height: height,
+                      onPlatformViewCreated: _loadOnce,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
