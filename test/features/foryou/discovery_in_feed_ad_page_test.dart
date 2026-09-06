@@ -55,57 +55,58 @@ int pageForSongIndex(int songIndex, bool adsEnabled) {
 
 void main() {
   group('Discovery In-Feed Ad Page — Lifecycle & Index Mapping', () {
-    const cadence = AdConfig.discoveryAdEvery; // 4
+    const cadence = AdConfig.discoveryAdEvery;
     final tracks = List.generate(12, (i) => _track('track_$i'));
 
-    test('Video 1 (page 0..3) -> Ad Page (page 4) -> Video 2 (page 5)', () {
-      expect(pageCount(tracks.length, true), 14); // 12 songs + 2 ads
+    test('Video 1 (page 0..2) -> Ad Page (page 3) -> Video 2 (page 4)', () {
+      final totalPages = pageCount(tracks.length, true);
+      expect(totalPages, 12 + (12 - 1) ~/ cadence);
 
-      // Songs 0, 1, 2, 3 occupy pages 0, 1, 2, 3
+      // Songs before first ad page
       for (var i = 0; i < cadence; i++) {
         expect(isAdPage(i, true), isFalse);
         expect(songIndexForPage(i, true), i);
       }
 
-      // Page 4 is the In-Feed Ad Page
+      // First In-Feed Ad Page
       expect(isAdPage(cadence, true), isTrue);
 
-      // Page 5 resumes with Song 4
+      // Next song right after ad page
       expect(isAdPage(cadence + 1, true), isFalse);
       expect(songIndexForPage(cadence + 1, true), cadence);
 
-      // Page 9 is the next In-Feed Ad Page
+      // Second In-Feed Ad Page
       expect(isAdPage(2 * cadence + 1, true), isTrue);
 
-      // Page 10 resumes with Song 8
+      // Resumes next song after second ad page
       expect(isAdPage(2 * cadence + 2, true), isFalse);
       expect(songIndexForPage(2 * cadence + 2, true), 2 * cadence);
     });
 
     test('Entering Ad Page pauses previous video audio cleanly', () {
       final mgr = VShotsPlaybackManager.instance;
-      mgr.playQueue(tracks, 3);
+      mgr.playQueue(tracks, cadence - 1);
       expect(mgr.isOpen, isTrue);
-      expect(mgr.currentIndex, 3);
-      expect(mgr.currentTrack?['id'], 'track_3');
+      expect(mgr.currentIndex, cadence - 1);
+      expect(mgr.currentTrack?['id'], 'track_${cadence - 1}');
 
-      // User swipes from page 3 (song 3) to page 4 (ad page)
-      const targetPage = 4;
-      expect(isAdPage(targetPage, true), isTrue);
+      // User swipes to the ad page
+      final adPage = cadence;
+      expect(isAdPage(adPage, true), isTrue);
 
       // Feed pauses playback when entering ad page
       mgr.pause();
-      expect(mgr.isOpen, isTrue); // Session preserved, webview pause requested
+      expect(mgr.isOpen, isTrue);
 
-      // User swipes from page 4 (ad page) to page 5 (song 4)
-      const nextSongPage = 5;
+      // User swipes from ad page to next song page
+      final nextSongPage = cadence + 1;
       expect(isAdPage(nextSongPage, true), isFalse);
       final nextSongIdx = songIndexForPage(nextSongPage, true);
-      expect(nextSongIdx, 4);
+      expect(nextSongIdx, cadence);
 
       mgr.playQueue(tracks, nextSongIdx);
-      expect(mgr.currentIndex, 4);
-      expect(mgr.currentTrack?['id'], 'track_4');
+      expect(mgr.currentIndex, cadence);
+      expect(mgr.currentTrack?['id'], 'track_$cadence');
       mgr.close();
     });
 
@@ -149,8 +150,9 @@ void main() {
       expect(mrecMgr.isLoaded, isFalse);
 
       // Page mapping remains consistent and unblocked
-      expect(isAdPage(4, true), isTrue);
-      expect(songIndexForPage(5, true), 4);
+      const cadence = AdConfig.discoveryAdEvery;
+      expect(isAdPage(cadence, true), isTrue);
+      expect(songIndexForPage(cadence + 1, true), cadence);
     });
 
     test(
