@@ -34,6 +34,16 @@ class _DiscoverySwipeNativeAdPageState
       LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
 
   @override
+  void initState() {
+    super.initState();
+    if (!AdPolicy.instance.adsAvailable) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onUnavailable?.call();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _bannerKey.currentState?.destroy();
     super.dispose();
