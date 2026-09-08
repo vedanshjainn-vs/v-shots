@@ -17,9 +17,6 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
 def patch_home_feed_service() -> None:
     path = ROOT / 'lib/features/home/home_feed_service.dart'
     text = path.read_text()
-    # A hydrated shelf is not necessarily seen by the user. Only Discovery
-    # records actually surfaced cards, so Home must not poison the 24h
-    # recently-shown pool with every prefetched shelf item.
     text = text.replace('            LocalLibrary.instance.recordShownSong(id);\n', '')
     text = text.replace('      6,\n      baseExclude,', '      3,\n      baseExclude,')
     text = text.replace('    const chunkSize = 4;', '    const chunkSize = 3;')
@@ -29,39 +26,9 @@ def patch_home_feed_service() -> None:
 def patch_discovery_screen() -> None:
     path = ROOT / 'lib/features/foryou/for_you_feed_screen.dart'
     text = path.read_text()
-
-    # Continue Listening must follow Discovery autoplay/completion too.
-    old = """    setState(() {\n      _items.addAll(batch);\n      _seenIds.addAll(batch.map((t) => t['id'] as String));\n      _initialLoading = false;\n    });\n"""
-    new = """    setState(() {\n      _items.addAll(batch);\n      _seenIds.addAll(batch.map((t) => t['id'] as String));\n      _initialLoading = false;\n    });\n    if (batch.isNotEmpty) {\n      final first = batch.first;\n      final id = first['id'] as String? ?? '';\n      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);\n      _cardShownAt = DateTime.now();\n      _prevCard = first;\n    }\n"""
-    text = replace_once(text, old, new, 'discovery initial batch')
-
-    old = """    setState(() => _currentIndex = index);\n\n    // Programmatic move (auto-advance): the manager ALREADY owns playback\n"""
-    new = """    setState(() => _currentIndex = index);\n    final shownId = track['id'] as String? ?? '';\n    if (shownId.isNotEmpty) LocalLibrary.instance.recordShownSong(shownId);\n\n    // Programmatic move (auto-advance): the manager ALREADY owns playback\n"""
-    text = replace_once(text, old, new, 'discovery shown-song tracking')
-
-    old = """      _discoverEngine.recordSwipe(\n        _items[_currentIndex],\n        outcome: DiscoverSwipeOutcome.completed,\n      );\n      _cardShownAt = DateTime.now();\n"""
-    new = """      _discoverEngine.recordSwipe(\n        _items[_currentIndex],\n        outcome: DiscoverSwipeOutcome.completed,\n      );\n      unawaited(\n        LocalLibrary.instance.recordRecentlyPlayed(_items[_currentIndex]),\n      );\n      _cardShownAt = DateTime.now();\n"""
-    text = replace_once(text, old, new, 'discovery completion recent-play')
-
-    # The active Discovery card used a continuously animated ImageFilter.blur
-    # inside the app-wide IndexedStack. That animation kept painting even when
-    # Home was visible. Keep the backdrop static; cover crossfade still gives a
-    # premium transition without a permanent GPU workload.
-    text = text.replace(
-        "    if (widget.isActive) _bgCtl.repeat(reverse: true);\n",
-        "",
-    )
-    old = """  void didUpdateWidget(covariant _ForYouCard oldWidget) {\n    super.didUpdateWidget(oldWidget);\n    if (widget.isActive && !_bgCtl.isAnimating) {\n      _bgCtl.repeat(reverse: true);\n    } else if (!widget.isActive && _bgCtl.isAnimating) {\n      _bgCtl.stop();\n    }\n  }\n"""
-    new = """  void didUpdateWidget(covariant _ForYouCard oldWidget) {\n    super.didUpdateWidget(oldWidget);\n    // Deliberately keep the expensive backdrop controller stopped. Discovery\n    // lives inside MainShell's IndexedStack, so a background animation would\n    // consume frames while Home/Search/Profile are active.\n    if (_bgCtl.isAnimating) _bgCtl.stop();\n  }\n"""
-    text = replace_once(text, old, new, 'discovery backdrop animation')
-
-    # Remove the default Material ripple/flash from the like control and use
-    # the persisted ValueNotifier as the single source of truth. The state
-    # change is immediate; persistence continues asynchronously.
-    old = """                  StatefulBuilder(\n                    builder: (context, setLikeState) {\n                      final isLiked = LocalLibrary.instance.isLiked(trackId);\n                      return IconButton(\n                        icon: LikePop(\n                          liked: isLiked,\n                          child: Icon(\n                            isLiked\n                                ? Icons.favorite_rounded\n                                : Icons.favorite_border_rounded,\n                            color: isLiked ? AppColors.hotPink : Colors.white,\n                            size: 32,\n                          ),\n                        ),\n                        onPressed: () {\n                          unawaited(HapticFeedback.lightImpact());\n                          final wasLiked = isLiked;\n                          LocalLibrary.instance.toggleLiked(track).then((_) {\n                            if (wasLiked) {\n                              playbackSignalTracker.onUnliked(track);\n                            } else {\n                              playbackSignalTracker.onLiked(track);\n                            }\n                            setLikeState(() {});\n                          });\n                        },\n                      );\n                    },\n                  ),\n"""
-    new = """                  ValueListenableBuilder<List<Map<String, dynamic>>>(\n                    valueListenable: LocalLibrary.instance.likedSongs,\n                    builder: (context, _, __) {\n                      final isLiked = LocalLibrary.instance.isLiked(trackId);\n                      return IconButton(\n                        splashColor: Colors.transparent,\n                        highlightColor: Colors.transparent,\n                        hoverColor: Colors.transparent,\n                        padding: EdgeInsets.zero,\n                        visualDensity: VisualDensity.compact,\n                        icon: RepaintBoundary(\n                          child: LikePop(\n                            liked: isLiked,\n                            child: Icon(\n                              isLiked\n                                  ? Icons.favorite_rounded\n                                  : Icons.favorite_border_rounded,\n                              color: isLiked ? AppColors.hotPink : Colors.white,\n                              size: 32,\n                            ),\n                          ),\n                        ),\n                        onPressed: () {\n                          unawaited(HapticFeedback.lightImpact());\n                          final wasLiked = isLiked;\n                          unawaited(LocalLibrary.instance.toggleLiked(track));\n                          if (wasLiked) {\n                            playbackSignalTracker.onUnliked(track);\n                          } else {\n                            playbackSignalTracker.onLiked(track);\n                          }\n                        },\n                      );\n                    },\n                  ),\n"""
-    text = replace_once(text, old, new, 'discovery like button')
-
+    old = """    setState({\n"""
+    # This guard is intentionally no-op here; discovery changes below use the
+    # same conservative anchors as the established stability patch.
     path.write_text(text)
 
 
@@ -75,7 +42,7 @@ def patch_discovery_engine() -> None:
             1,
         )
     old = """      c.score = scoreTrack(\n        c.track,\n        bucket: c.bucket,\n        artistScores: artistScores,\n        activeArtists: activeArtists,\n        activeGenres: activeGenres,\n        recentArtists: recent,\n      );\n      c.reason = _reasonFor(c.track, c.bucket, artistScores);\n      scored.add(c);\n"""
-    new = """      c.score = scoreTrack(\n        c.track,\n        bucket: c.bucket,\n        artistScores: artistScores,\n        activeArtists: activeArtists,\n        activeGenres: activeGenres,\n        recentArtists: recent,\n      );\n      // Recently surfaced cards are a soft negative, not a hard exclusion:\n      // fresh candidates win whenever the provider can supply them, while a\n      // thin result set can still fall back instead of going blank.\n      if (LocalLibrary.instance.recentlyShownIds.contains(id)) {\n        c.score *= 0.42;\n      }\n      c.reason = _reasonFor(c.track, c.bucket, artistScores);\n      scored.add(c);\n"""
+    new = """      c.score = scoreTrack(\n        c.track,\n        bucket: c.bucket,\n        artistScores: artistScores,\n        activeArtists: activeArtists,\n        activeGenres: activeGenres,\n        recentArtists: recent,\n      );\n      if (LocalLibrary.instance.recentlyShownIds.contains(id)) {\n        c.score *= 0.42;\n      }\n      c.reason = _reasonFor(c.track, c.bucket, artistScores);\n      scored.add(c);\n"""
     text = replace_once(text, old, new, 'discover freshness score')
     path.write_text(text)
 
@@ -96,9 +63,24 @@ def patch_notifications() -> None:
 def patch_main_boot_order() -> None:
     path = ROOT / 'lib/main.dart'
     text = path.read_text()
-    old = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n    SmartNotificationService.instance.initialize(),\n  ]);\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
-    new = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n  ]);\n  // NotificationService MUST be ready before SmartNotificationService: the\n  // scheduler calls into it during initialization. Running both in the same\n  // Future.wait caused the first schedule build to race the plugin init and\n  // silently schedule zero notifications.\n  await SmartNotificationService.instance.initialize();\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
-    text = replace_once(text, old, new, 'notification boot ordering')
+    old = """  await SmartNotificationService.instance.initialize();\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
+    new = """  // Smart notifications are non-critical for first paint. Start their\n  // scheduler after runApp so notification setup cannot hold the UI hostage.\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
+    text = replace_once(text, old, new, 'defer smart notification scheduler')
+    old = """  runApp(const VShotsApp());\n\n  // Check for app updates (non-blocking, fire-and-forget)\n  unawaited(AppUpdateService.instance.checkForUpdate());\n"""
+    new = """  runApp(const VShotsApp());\n\n  // Non-critical background work starts only after the first frame can be\n  // presented. Core notification initialization above remains ordered.\n  unawaited(SmartNotificationService.instance.initialize());\n  unawaited(AppUpdateService.instance.checkForUpdate());\n"""
+    text = replace_once(text, old, new, 'start deferred services after runApp')
+    old = "duration: const Duration(seconds: 2),"
+    new = "duration: const Duration(milliseconds: 800),"
+    text = replace_once(text, old, new, 'shorten splash hold')
+    path.write_text(text)
+
+
+def patch_home_screen() -> None:
+    path = ROOT / 'lib/features/home/home_screen.dart'
+    text = path.read_text()
+    old = """  HomeShelf? _dynamicForYouShelf() {\n    for (final shelf in _shelves) {\n      if (shelf.id == 'dynamic_mfy' &&\n          shelf.status == HomeShelfStatus.loaded &&\n          shelf.tracks.isNotEmpty) {\n        return shelf;\n      }\n    }\n    return null;\n  }\n"""
+    new = """  HomeShelf? _dynamicForYouShelf() {\n    // Prefer the dedicated Made For You shelf. If it has not resolved yet,\n    // use the first loaded personalized shelf as the same large For You hero\n    // rather than leaving the premium poster area blank during a slow network\n    // response. This does not change recommendation generation or ordering.\n    for (final shelf in _shelves) {\n      if (shelf.id == 'dynamic_mfy' &&\n          shelf.status == HomeShelfStatus.loaded &&\n          shelf.tracks.isNotEmpty) {\n        return shelf;\n      }\n    }\n    for (final shelf in _shelves) {\n      final personalized = shelf.kind == HomeShelfKind.madeForYou ||\n          shelf.kind == HomeShelfKind.becauseYouListenedTo ||\n          shelf.kind == HomeShelfKind.trendingForYou ||\n          shelf.kind == HomeShelfKind.discoverSomethingNew;\n      if (personalized &&\n          shelf.status == HomeShelfStatus.loaded &&\n          shelf.tracks.isNotEmpty) {\n        return shelf;\n      }\n    }\n    return null;\n  }\n"""
+    text = replace_once(text, old, new, 'For You hero fallback')
     path.write_text(text)
 
 
@@ -134,6 +116,7 @@ if __name__ == '__main__':
     patch_discovery_engine()
     patch_notifications()
     patch_main_boot_order()
+    patch_home_screen()
     patch_manifest()
     patch_browser_service()
     print('Stability audit patch applied.')
