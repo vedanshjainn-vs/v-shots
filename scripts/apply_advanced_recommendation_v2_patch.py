@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 ROOT = Path('.')
 
@@ -16,20 +15,11 @@ def patch_engine() -> None:
     text = replace_once(text, "import 'music_recommendation_context.dart';\n", "import 'advanced_recommendation_v2.dart';\nimport 'music_recommendation_context.dart';\nimport 'taste_profile.dart';\n", 'engine imports')
     text = replace_once(text, "  final MusicCandidateGenerator _generator;\n", "  final MusicCandidateGenerator _generator;\n  final MusicSearch _search;\n", 'engine search field')
     text = replace_once(text, "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        config = config,\n", "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        _search = search,\n        config = config,\n", 'engine constructor')
-    # Keep the existing repository adapter exactly as-is. Its closure is a
-    # harmless compatibility adapter because the typedef marks limit required.
-    # Suppress only this lint rather than changing the repository API.
-    text = text.replace(
-        "        search: (query, {required limit, excludeIds = const {}}) =>\n            repository.search(query, limit: limit, excludeIds: excludeIds),",
-        "        // ignore: unnecessary_lambdas\n        search: (query, {required limit, excludeIds = const {}}) =>\n            repository.search(query, limit: limit, excludeIds: excludeIds),",
-    )
     marker = "\n}\n\n/// The For You score."
     if marker not in text:
         raise RuntimeError('Advanced recommendation patch: engine class marker missing')
     method = r'''
 
-  /// V2 shelf-aware entry point. Candidate generation stays on the existing
-  /// pipeline; this layer changes how candidates are ranked and mixed.
   Future<List<Map<String, dynamic>>> generateShelf({
     required RecommendationShelf shelf,
     required Set<String> excludeIds,
@@ -44,9 +34,7 @@ def patch_engine() -> None:
     }
     _session.requestToken++;
     final deviceRegion = MusicRegionProfile.current();
-    final effectiveRegions = regions.isNotEmpty
-        ? regions
-        : <String>[deviceRegion.countryName];
+    final effectiveRegions = regions.isNotEmpty ? regions : <String>[deviceRegion.countryName];
     final effectiveLanguages = languages.isNotEmpty
         ? languages
         : (deviceRegion.countryCode == 'IN' ? <String>['Hindi'] : const <String>[]);
@@ -77,16 +65,8 @@ def patch_engine() -> None:
           effectiveLanguages.isEmpty ? 'popular new songs official audio 2026' : '${effectiveLanguages.first} new songs official audio 2026',
         _ => effectiveLanguages.isEmpty ? 'popular songs official audio 2026' : '${effectiveLanguages.first} popular songs official audio 2026',
       };
-      final raw = await _search(
-        fallbackQuery,
-        limit: (count * 2).clamp(1, 20),
-        excludeIds: excludeIds,
-      );
-      return raw
-          .where((m) => m['isOfficial'] == true)
-          .map((m) => Map<String, dynamic>.from(m))
-          .take(count)
-          .toList();
+      final raw = await _search(fallbackQuery, limit: (count * 2).clamp(1, 20), excludeIds: excludeIds);
+      return raw.where((m) => m['isOfficial'] == true).map(Map<String, dynamic>.from).take(count).toList();
     }
     final scored = <ScoredMusicCandidate>[];
     final artistCounts = <String, int>{};
@@ -116,14 +96,8 @@ def patch_engine() -> None:
       if (countForArtist >= 2 && result.length < count - 2) continue;
       if (!_session.emitSong(c.songId, c.track.id)) continue;
       final map = c.track.toTrackMap();
-      map['recommendationReason'] = AdvancedRecommendationV2.reason(
-        candidate: c,
-        profile: taste,
-        shelf: shelf,
-      );
-      if (c.seedArtist != null && c.seedArtist!.isNotEmpty) {
-        map['discoverSeedArtist'] = c.seedArtist;
-      }
+      map['recommendationReason'] = AdvancedRecommendationV2.reason(candidate: c, profile: taste, shelf: shelf);
+      if (c.seedArtist != null && c.seedArtist!.isNotEmpty) map['discoverSeedArtist'] = c.seedArtist;
       result.add(map);
       emittedSongs.add(c.songId);
       emittedArtists[artist] = countForArtist + 1;
@@ -136,11 +110,7 @@ def patch_engine() -> None:
         final c = item.candidate;
         if (emittedSongs.contains(c.songId)) continue;
         final map = c.track.toTrackMap();
-        map['recommendationReason'] = AdvancedRecommendationV2.reason(
-          candidate: c,
-          profile: taste,
-          shelf: shelf,
-        );
+        map['recommendationReason'] = AdvancedRecommendationV2.reason(candidate: c, profile: taste, shelf: shelf);
         result.add(map);
         emittedSongs.add(c.songId);
       }
@@ -149,6 +119,12 @@ def patch_engine() -> None:
   }
 '''
     text = text.replace(marker, method + marker, 1)
+    # Keep the existing repository adapter and explicitly suppress only its
+    # lint; changing the typedef would affect existing callers.
+    text = text.replace(
+        "        search: (query, {required limit, excludeIds = const {}}) =>\n            repository.search(query, limit: limit, excludeIds: excludeIds),",
+        "        // ignore: unnecessary_lambdas\n        search: (query, {required limit, excludeIds = const {}}) =>\n            repository.search(query, limit: limit, excludeIds: excludeIds),",
+    )
     path.write_text(text)
 
 
