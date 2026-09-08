@@ -26,4 +26,5 @@ if __name__ == '__main__':
     runpy.run_path('scripts/apply_home_discovery_final_guard.py', run_name='__main__')
     runpy.run_path('scripts/apply_home_discovery_ai_guard.py', run_name='__main__')
     runpy.run_path('scripts/apply_home_discovery_compile_guard.py', run_name='__main__')
+    runpy.run_path('scripts/apply_home_discovery_import_cleanup.py', run_name='__main__')
     print('Discovery uses swipeable LevelPlay in-feed ad cards.')
