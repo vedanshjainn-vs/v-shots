@@ -12,6 +12,9 @@ def patch_main() -> None:
             "import 'core/recommendation/music_recommendation_engine.dart';\nimport 'core/recommendation/music_region_profile.dart';\n",
             1,
         )
+    # Keep notification permission initialization ordered, but never wait for
+    # the smart scheduler before first paint. This is non-critical background
+    # work and was previously adding avoidable startup latency.
     old_boot = '''    AdFreeManager.instance.init(),
     AppVersion.load(),
     NotificationService.instance.initialize(),
@@ -20,14 +23,28 @@ def patch_main() -> None:
 '''
     new_boot = '''    AdFreeManager.instance.init(),
     AppVersion.load(),
+    NotificationService.instance.initialize(),
   ]);
 
-  // NotificationService must be ready before the smart scheduler starts.
-  await NotificationService.instance.initialize();
-  await SmartNotificationService.instance.initialize();
 '''
     if old_boot in text:
         text = text.replace(old_boot, new_boot, 1)
+    # Older builds may already have NotificationService removed from the
+    # Future.wait. Keep it ordered but do not reintroduce SmartNotification as
+    # a blocking await.
+    old_await = '''  // NotificationService must be ready before the smart scheduler starts.
+  await NotificationService.instance.initialize();
+  await SmartNotificationService.instance.initialize();
+'''
+    if old_await in text:
+        text = text.replace(old_await, '', 1)
+    old_smart = '''  await SmartNotificationService.instance.initialize();
+  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
+'''
+    new_smart = '''  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
+'''
+    if old_smart in text:
+        text = text.replace(old_smart, new_smart, 1)
     marker = "  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');\n"
     if 'unawaited(MusicRegionProfile.initialize());' not in text:
         if marker not in text:
@@ -36,6 +53,17 @@ def patch_main() -> None:
             marker,
             "  // Resolve network country after core boot without delaying first paint.\n"
             "  unawaited(MusicRegionProfile.initialize());\n" + marker,
+            1,
+        )
+    run_app_marker = '  runApp(const VShotsApp());\n'
+    if 'unawaited(SmartNotificationService.instance.initialize());' not in text:
+        if run_app_marker not in text:
+            raise SystemExit('main runApp call not found')
+        text = text.replace(
+            run_app_marker,
+            run_app_marker +
+            "\n  // Non-critical scheduler starts after the UI is mounted.\n"
+            "  unawaited(SmartNotificationService.instance.initialize());\n",
             1,
         )
     p.write_text(text)
