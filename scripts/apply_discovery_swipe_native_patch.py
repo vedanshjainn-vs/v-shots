@@ -264,4 +264,10 @@ def patch_discovery() -> None:
 
 if __name__ == '__main__':
     patch_discovery()
-    print('Discovery now uses a true swipeable LevelPlay Native ad page.')
+    # The Discovery script is already wired into CI as step 5j. Run the
+    # recommendation/home V2 patch immediately after it so the implementation
+    # is always applied to the same known-good source baseline.
+    from scripts.apply_recommendation_v2_surgical_patch import main as apply_recommendation_v2
+
+    apply_recommendation_v2()
+    print('Discovery native + Recommendation V2 surgical patches applied.')
