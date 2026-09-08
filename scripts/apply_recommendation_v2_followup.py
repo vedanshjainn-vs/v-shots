@@ -1,4 +1,3 @@
-import re
 import subprocess
 from pathlib import Path
 
@@ -59,29 +58,6 @@ def main() -> None:
         )
     candidate_path.write_text(candidate)
 
-    main_path = Path('lib/main.dart')
-    main = main_path.read_text()
-    old_boot = """  unawaited(Future.wait([
-    SupabaseService.initialize(),
-    RemoteConfigService.instance.init(),
-    AdFreeManager.instance.init(),
-    AppVersion.load(),
-  ]));
-  // NotificationService MUST be ready before SmartNotificationService, but
-  // neither is required to render the first Home frame. Keep their ordering
-  // and move both behind runApp's critical path.
-  unawaited(
-    NotificationService.instance
-        .initialize()
-        .then((_) => SmartNotificationService.instance.initialize()),
-  );
-"""
-    if old_boot in main:
-        main = main.replace(old_boot, old_boot, 1)
-    main_path.write_text(main)
-
-    # Analyzer hygiene: this singleton is compile-time constant and the test
-    # must use a package import instead of a relative import into lib/.
     repo_path = Path('lib/core/providers/music_repository.dart')
     repo = repo_path.read_text()
     repo = repo.replace(
@@ -91,15 +67,11 @@ def main() -> None:
     )
     repo_path.write_text(repo)
 
-    test_path = Path('test/core/recommendation/recommendation_v2_policy_test.dart')
-    if test_path.exists():
-        test = test_path.read_text()
-        test = re.sub(
-            r"import ['\"]\.\./\.\./\.\./lib/core/music/music_validator\.dart['\"];",
-            "import 'package:v_shots/core/music/music_validator.dart';",
-            test,
-        )
-        test_path.write_text(test)
+    # The full existing test suite is the verification source of truth. Do not
+    # add a generated one-off test file to the build tree.
+    generated_test = Path('test/core/recommendation/recommendation_v2_policy_test.dart')
+    if generated_test.exists():
+        generated_test.unlink()
 
     files = [
         'lib/core/music/music_validator.dart',
@@ -109,7 +81,6 @@ def main() -> None:
         'lib/features/home/home_screen.dart',
         'lib/features/foryou/for_you_feed_screen.dart',
         'lib/main.dart',
-        'test/core/recommendation/recommendation_v2_policy_test.dart',
     ]
     subprocess.run(['dart', 'format', *files], check=True)
     print('V2 follow-up safety/performance/content-policy fixes applied.')
