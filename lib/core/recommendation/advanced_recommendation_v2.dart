@@ -28,7 +28,6 @@ class AdvancedRecommendationV2 {
     final genre = candidate.genre.trim();
     final language = candidate.language.trim();
     final title = candidate.track.title.trim();
-
     final artistAffinity = _norm(profile.artistAffinity[artist], 10);
     final songAffinity = _norm(profile.songAffinity[candidate.songId], 5);
     final genreAffinity = _norm(profile.genreAffinity[genre], 10);
@@ -42,7 +41,6 @@ class AdvancedRecommendationV2 {
     final recentGenre = profile.shortTermGenres.contains(genre) ? 1.0 : 0.0;
     final fatigue = min(1.0, (artistCounts[artist] ?? 0) / 3.0);
     final seenPenalty = context.seenStore.penalty(candidate.songId).clamp(0.0, 1.0);
-
     final age = candidate.track.publishedDaysAgo;
     final freshness = age == null ? 0.35 : 1.0 / (1.0 + age / 14.0);
     final recency = age == null ? 0.45 : 1.0 / (1.0 + age / 30.0);
@@ -59,7 +57,6 @@ class AdvancedRecommendationV2 {
       'exploration' => 0.9,
       _ => 0.35,
     };
-
     final maturityFactor = switch (profile.maturity) {
       TasteMaturity.cold => 0.0,
       TasteMaturity.earlySignal => 0.25,
@@ -74,7 +71,6 @@ class AdvancedRecommendationV2 {
     final artistConfidence = profile.confidenceScores['artist'] ?? 0.0;
     final genreConfidence = profile.confidenceScores['genre'] ?? 0.0;
     final languageConfidence = profile.confidenceScores['language'] ?? 0.0;
-
     var score =
         artistAffinity * 0.24 * personalization * max(0.35, artistConfidence) +
         songAffinity * 0.10 * personalization +
@@ -93,17 +89,17 @@ class AdvancedRecommendationV2 {
 
     switch (shelf) {
       case RecommendationShelf.madeForYou:
-        score += artistAffinity * 0.08 + completion * 0.04 + replay * 0.04;
+        score += (artistAffinity * 0.08 + completion * 0.04 + replay * 0.04) * personalization;
       case RecommendationShelf.becauseYouListenedTo:
         final causal = candidate.seedArtist != null &&
                 profile.shortTermArtists.contains(candidate.seedArtist!.trim())
             ? 1.0
             : (recentArtist * 0.6 + artistAffinity * 0.4);
-        score += causal * 0.24 + recentArtist * 0.08;
+        score += (causal * 0.24 + recentArtist * 0.08) * personalization;
       case RecommendationShelf.quickPicks:
-        score += recentArtist * 0.14 + replay * 0.08 + recency * 0.08;
+        score += (recentArtist * 0.14 + replay * 0.08 + recency * 0.08) * personalization;
       case RecommendationShelf.trendingForYou:
-        score += sourceBoost * 0.10 + genreAffinity * 0.08;
+        score += sourceBoost * 0.10 + genreAffinity * 0.08 * personalization;
       case RecommendationShelf.freshDiscovery:
         score += freshness * 0.15 + novelty * 0.10 + sourceBoost * 0.05;
       case RecommendationShelf.discovery:
@@ -163,11 +159,7 @@ class AdvancedRecommendationV2 {
     return (value / divisor).clamp(0.0, 1.0);
   }
 
-  static double _searchAffinity(
-    TasteProfile profile,
-    String artist,
-    String title,
-  ) {
+  static double _searchAffinity(TasteProfile profile, String artist, String title) {
     final direct = profile.searchAffinity[artist] ?? 0.0;
     if (direct > 0) return _norm(direct, 6);
     final normalizedArtist = artist.toLowerCase();
@@ -176,9 +168,7 @@ class AdvancedRecommendationV2 {
     for (final entry in profile.searchAffinity.entries) {
       final query = entry.key.toLowerCase();
       if (query.isEmpty) continue;
-      if (normalizedArtist.contains(query) ||
-          normalizedTitle.contains(query) ||
-          query.contains(normalizedArtist)) {
+      if (normalizedArtist.contains(query) || normalizedTitle.contains(query) || query.contains(normalizedArtist)) {
         best = max(best, entry.value);
       }
     }
