@@ -12,6 +12,11 @@ def main() -> None:
         text = text.replace(old, new, 1)
     home_path.write_text(text)
 
+    feed_path = Path('lib/features/home/home_feed_service.dart')
+    feed = feed_path.read_text()
+    feed = feed.replace("import 'dart:io' as io;\n", '', 1)
+    feed_path.write_text(feed)
+
     candidate_path = Path('lib/core/recommendation/candidate_generator.dart')
     candidate = candidate_path.read_text()
     if "import 'dart:math';" not in candidate:
