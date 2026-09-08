@@ -206,7 +206,7 @@ class VShotsAds {
     );
 
     try {
-      await ad.showAd(placementName: LevelPlayPlacement.rewardedFeature);
+      await ad.showAd();
     } catch (e) {
       VShotsLevelPlay.instance.rewardSession = null;
       AdAnalytics.log('ad_load_failed', placement: purpose, detail: 'show: $e');

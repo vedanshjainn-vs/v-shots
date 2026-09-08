@@ -8,19 +8,16 @@ def patch_discovery() -> None:
     text = path.read_text()
 
     if (
-        'VShotsAds.instance.showDiscoverySwipeInterstitial' in text
-        and '_lastInterstitialIndex' in text
-        and '_showSwipeInterstitialAndResume' in text
+        'DiscoverySwipeNativeAdPage' in text
+        and '_isAdPage' in text
+        and '_pageCount' in text
     ):
-        print('Discovery swipe interstitial ad: verified active and intact')
+        print('Discovery swipeable ad page: verified active and intact')
         return
 
-    raise RuntimeError('Discovery swipe interstitial ad configuration missing')
+    raise RuntimeError('Discovery swipeable ad page configuration missing')
 
 
 if __name__ == '__main__':
     patch_discovery()
-    print(
-        'Discovery uses full-screen LevelPlay Interstitial Video ads on swipe'
-        ' cadence.'
-    )
+    print('Discovery uses swipeable LevelPlay in-feed ad cards.')

@@ -350,7 +350,7 @@ class VShotsLevelPlay {
     );
 
     try {
-      await ad.showAd(placementName: LevelPlayPlacement.rewardedFeature);
+      await ad.showAd();
     } catch (e) {
       rewardSession = null;
       noteActivity('rewarded', 'SHOW FAILED — $e');

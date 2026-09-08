@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
@@ -8,260 +6,214 @@ import 'ad_policy.dart';
 import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 
-/// Real embeddable LevelPlay Native ad page for Discovery.
-/// No modal Interstitial, MREC, or fake/custom ad surface is used.
+/// Real embeddable LevelPlay swipeable ad card for the Discovery feed.
+/// TikTok/Reels style in-feed card: user can swipe past it at ANY time.
 class DiscoverySwipeNativeAdPage extends StatefulWidget {
   const DiscoverySwipeNativeAdPage({
     super.key,
-    required this.onUnavailable,
+    this.onUnavailable,
   });
 
-  final VoidCallback onUnavailable;
+  final VoidCallback? onUnavailable;
 
   @override
   State<DiscoverySwipeNativeAdPage> createState() =>
       _DiscoverySwipeNativeAdPageState();
 }
 
-class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
-    with LevelPlayNativeAdListener {
-  LevelPlayNativeAd? _nativeAd;
-  Timer? _loadTimeout;
-  bool _platformViewCreated = false;
-  bool _loaded = false;
-  bool _unavailableSent = false;
+class _DiscoverySwipeNativeAdPageState
+    extends State<DiscoverySwipeNativeAdPage>
+    with LevelPlayBannerAdViewListener {
+  final GlobalKey<LevelPlayBannerAdViewState> _bannerKey =
+      GlobalKey<LevelPlayBannerAdViewState>();
 
-  String get _placementName => LevelPlayPlacement.discoveryNative;
+  bool _isLoaded = false;
+  bool _loadInFlight = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _startWhenReady();
-  }
-
-  void _startWhenReady() {
-    if (!AdPolicy.instance.adsAvailable) {
-      _failClosed();
-      return;
-    }
-    if (VShotsLevelPlay.instance.initSucceeded) {
-      _createAd();
-      return;
-    }
-    VShotsLevelPlay.instance.readyNotifier.addListener(_onReadyChanged);
-  }
-
-  void _onReadyChanged() {
-    if (!mounted) return;
-    VShotsLevelPlay.instance.readyNotifier.removeListener(_onReadyChanged);
-    if (AdPolicy.instance.adsAvailable &&
-        VShotsLevelPlay.instance.initSucceeded) {
-      _createAd();
-    } else {
-      _failClosed();
-    }
-  }
-
-  void _createAd() {
-    if (!mounted || _nativeAd != null || !AdPolicy.instance.adsAvailable) {
-      return;
-    }
-    AdAnalytics.log(
-      'ad_request',
-      placement: AdPlacement.forYouFeed.key,
-      detail: 'discovery_swipe_native',
-    );
-    VShotsLevelPlay.instance.noteActivity(
-      'native',
-      'REQUESTED (discovery swipe)',
-    );
-    _nativeAd = LevelPlayNativeAd.builder()
-        .withPlacementName(_placementName)
-        .withListener(this)
-        .build();
-
-    // Never leave the user stranded on an empty ad page. If mediation does not
-    // settle promptly (within 1.5s), skip cleanly to the next video.
-    _loadTimeout = Timer(const Duration(milliseconds: 1500), _failClosed);
-    if (mounted) setState(() {});
-  }
-
-  void _loadOnce() {
-    final ad = _nativeAd;
-    if (ad == null || _platformViewCreated) return;
-    _platformViewCreated = true;
-    VShotsLevelPlay.instance.noteActivity(
-      'native',
-      'SDK REQUESTED (discovery swipe)',
-    );
-    ad.loadAd();
-  }
-
-  void _failClosed() {
-    if (_unavailableSent) return;
-    _unavailableSent = true;
-    _loadTimeout?.cancel();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onUnavailable();
-    });
-  }
+  String? get _unitId =>
+      LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
 
   @override
   void dispose() {
-    _loadTimeout?.cancel();
-    VShotsLevelPlay.instance.readyNotifier.removeListener(_onReadyChanged);
-    _nativeAd?.destroyAd();
-    _nativeAd = null;
+    _bannerKey.currentState?.destroy();
     super.dispose();
   }
 
-  @override
-  void onAdLoaded(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
-    _loadTimeout?.cancel();
-    VShotsLevelPlay.instance.noteFill('native', adInfo.adNetwork);
-    VShotsLevelPlay.instance.noteActivity(
-      'native',
-      'LOADED (discovery swipe, network: ${adInfo.adNetwork})',
-    );
-    AdAnalytics.log(
-      'native_rendered',
-      placement: AdPlacement.forYouFeed.key,
-      detail: adInfo.adNetwork ?? '-',
-    );
-    if (mounted) setState(() => _loaded = true);
-  }
-
-  @override
-  void onAdImpression(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
-    VShotsLevelPlay.instance.noteActivity(
-      'native',
-      'DISPLAYED (discovery swipe, network: ${adInfo.adNetwork})',
-    );
-    AdAnalytics.log(
-      'ad_impression',
-      placement: AdPlacement.forYouFeed.key,
-      detail:
-          'network=${adInfo.adNetwork ?? '-'} revenue=${adInfo.revenue ?? 0}',
-    );
-  }
-
-  @override
-  void onAdClicked(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
-    VShotsLevelPlay.instance.noteActivity(
-      'native',
-      'CLICKED (discovery swipe)',
-    );
-  }
-
-  @override
-  void onAdLoadFailed(LevelPlayNativeAd nativeAd, dynamic error) {
-    _loadTimeout?.cancel();
-    VShotsLevelPlay.instance.noteActivity(
-      'native',
-      'LOAD FAILED (discovery swipe) — $error',
-    );
-    AdAnalytics.log(
-      'ad_load_failed',
-      placement: AdPlacement.forYouFeed.key,
-      detail: '$error',
-    );
-    _failClosed();
+  void _loadAd() {
+    if (!mounted || _loadInFlight || _isLoaded) return;
+    _loadInFlight = true;
+    _bannerKey.currentState?.loadAd();
   }
 
   @override
   Widget build(BuildContext context) {
-    final ad = _nativeAd;
-    if (ad == null ||
-        !AdPolicy.instance.adsAvailable ||
-        !VShotsLevelPlay.instance.initSucceeded) {
+    final unitId = _unitId;
+    if (unitId == null || !AdPolicy.instance.adsAvailable) {
       return const SizedBox.expand();
     }
-
-    final size = MediaQuery.sizeOf(context);
-    final cardWidth = (size.width - 32).clamp(280.0, 420.0);
-    final cardHeight = (size.height * 0.42).clamp(240.0, 360.0);
 
     return ColoredBox(
       color: Colors.black,
       child: SafeArea(
         child: Center(
-          child: Container(
-            width: cardWidth,
-            height: cardHeight,
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF161622),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.12),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  blurRadius: 20,
-                  offset: const Offset(0, 6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Sponsored Badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Positioned.fill(
-                    child: RepaintBoundary(
-                      child: LevelPlayNativeAdView(
-                        nativeAd: ad,
-                        templateType: LevelPlayTemplateType.SMALL,
-                        width: cardWidth,
-                        height: cardHeight,
-                        onPlatformViewCreated: _loadOnce,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    width: 1,
+                  ),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.star_rounded,
+                      size: 16,
+                      color: Color(0xFFFF2E93),
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Sponsored',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
                       ),
                     ),
+                  ],
+                ),
+              ),
+
+              // 300x250 Real LevelPlay Card
+              Container(
+                width: 300,
+                height: 250,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161622),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    width: 1,
                   ),
-                  if (!_loaded)
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'Sponsored',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: LevelPlayBannerAdView(
+                          key: _bannerKey,
+                          adUnitId: unitId,
+                          adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
+                          listener: this,
+                          onPlatformViewCreated: _loadAd,
+                        ),
+                      ),
+                      if (!_isLoaded)
+                        const IgnorePointer(
+                          child: Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFFFF2E93),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFFFF2E93),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Swipe Up To Continue Hint
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.keyboard_arrow_up_rounded,
+                    color: Colors.white54,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Swipe up to continue',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.60),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
+                  ),
                 ],
               ),
-            ),
+            ],
           ),
         ),
       ),
     );
   }
+
+  @override
+  void onAdLoaded(LevelPlayAdInfo adInfo) {
+    if (!mounted) return;
+    setState(() => _isLoaded = true);
+    VShotsLevelPlay.instance.noteFill('mrec_discovery', adInfo.adNetwork);
+    AdAnalytics.log('mrec_loaded', placement: 'discovery_swipe');
+  }
+
+  @override
+  void onAdLoadFailed(LevelPlayAdError error) {
+    VShotsLevelPlay.instance.noteActivity(
+      'discovery_swipe',
+      'LOAD FAILED — $error',
+    );
+    AdAnalytics.log(
+      'mrec_load_failed',
+      placement: 'discovery_swipe',
+      detail: '$error',
+    );
+    widget.onUnavailable?.call();
+  }
+
+  @override
+  void onAdDisplayed(LevelPlayAdInfo adInfo) {
+    AdAnalytics.log('mrec_displayed', placement: 'discovery_swipe');
+  }
+
+  @override
+  void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {}
+
+  @override
+  void onAdClicked(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdExpanded(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdCollapsed(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdLeftApplication(LevelPlayAdInfo adInfo) {}
 }

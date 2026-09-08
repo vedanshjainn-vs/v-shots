@@ -9,7 +9,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
@@ -86,13 +85,11 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
           }
         });
       }
-      // Never leave the user staring at an unresolved loading space.
-      // If the mediation adapter does not settle promptly, collapse cleanly.
-      _loadingWatchdog = Timer(const Duration(seconds: 8), () {
+      _loadingWatchdog = Timer(const Duration(seconds: 15), () {
         if (!mounted || !_loadInFlight || _isLoaded) return;
         _loadInFlight = false;
         _hasFailed = true;
-        _scheduleRetry('load watchdog timeout');
+        _scheduleRetry('load watchdog timeout (15s)');
         if (mounted) setState(() {});
       });
     } catch (e) {
@@ -107,15 +104,18 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     _retryTimer?.cancel();
     if (!mounted) return;
     _retryAttempt = (_retryAttempt + 1).clamp(1, 8);
-    // Keep trying with backoff while the slot remains alive.
-    final seconds = [15, 30, 45, 60, 90, 120, 180, 180][_retryAttempt - 1];
+    final seconds = [10, 20, 30, 45, 60, 90, 120, 180][_retryAttempt - 1];
     debugPrint('[MREC] retry in ${seconds}s ($reason)');
     _retryTimer = Timer(Duration(seconds: seconds), () {
       if (!mounted) return;
       _loadInFlight = false;
       _hasFailed = false;
-      _loadFromPlatformView();
-      if (mounted) setState(() {});
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isLoaded) {
+          _loadFromPlatformView();
+        }
+      });
     });
   }
 
@@ -127,9 +127,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       return const SizedBox.shrink();
     }
 
-    // Fail-safe UX rule: if the ad failed to load, has an error, or timed out,
-    // collapse completely to zero occupied height so no permanent blank box
-    // remains on screen.
     if (_hasFailed && !_isLoaded) {
       return const SizedBox.shrink();
     }
@@ -161,7 +158,6 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
                   adUnitId: unitId,
                   adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
                   listener: this,
-                  placementName: 'MREC_Android',
                   onPlatformViewCreated: _loadFromPlatformView,
                 ),
               ),
