@@ -180,7 +180,7 @@ MusicRepository _makeRepo() {
   final reg = ProviderRegistry()..register(provider);
   final cfg = ProviderConfig(
     activeProvider: provider.id,
-    enabledProviders: {provider.id},
+    enabledProviders: [provider.id],
     providerPriority: [provider.id],
   );
   final mgr = ProviderManager(
