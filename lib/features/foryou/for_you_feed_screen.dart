@@ -233,20 +233,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _cardShownAt = DateTime.now();
       _prevCard = first;
     }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
+  }
+
+  void _skipUnavailableDiscoveryAd(int page) {
+    if (!mounted || !_isAdPage(page)) return;
+    final nextPage = page + 1;
+    if (nextPage >= _pageCount) {
+      unawaited(_maybeLoadMore());
+      return;
     }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      if (_pageController.page?.round() == page) {
+        _pageController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   /// Play tap on a Discovery card → open the selected video in the in-app
@@ -599,8 +604,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                 }
 
                 if (_isAdPage(page)) {
-                  return const RepaintBoundary(
-                    child: DiscoverySwipeNativeAdPage(),
+                  return RepaintBoundary(
+                    child: DiscoverySwipeNativeAdPage(
+                      onUnavailable: () => _skipUnavailableDiscoveryAd(page),
+                    ),
                   );
                 }
 

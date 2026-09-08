@@ -63,15 +63,6 @@ class LevelPlayConfig {
   static const String _testRewardedUnit = 'syz3d8ekts22q0or';
   static const String _testBannerUnit = '4fpetq4lhe5lsw3e';
 
-  /// Production fallback credentials (ensures 100% ad reliability on real
-  /// device runs regardless of .env asset timing).
-  static const Map<String, String> _compiledProductionDefaults = {
-    'LEVELPLAY_APP_KEY': '27c0e8465',
-    'LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01': '2brlm0jzztis28j2',
-    'LEVELPLAY_UNIT_REWARDED_FEATURE_01': '2izjczd4ox2wj6yd',
-    'LEVELPLAY_UNIT_BANNER_HOME_01': 'eotgb78qisj7sis8',
-  };
-
   /// Test-only env override (unit tests).
   static Map<String, String>? _debugEnv;
 
@@ -98,20 +89,13 @@ class LevelPlayConfig {
     if (override != null) {
       final v = override[key];
       if (v != null && v.trim().isNotEmpty) return v.trim();
-      return null;
-    }
-    if (debugIsRunningInTests) {
-      if (dotenv.isInitialized) {
-        final v = dotenv.maybeGet(key);
-        if (v != null && v.trim().isNotEmpty) return v.trim();
-      }
-      return null;
+      if (override.containsKey(key)) return null;
     }
     if (dotenv.isInitialized) {
       final v = dotenv.maybeGet(key);
       if (v != null && v.trim().isNotEmpty) return v.trim();
     }
-    return _compiledProductionDefaults[key];
+    return null;
   }
 
   /// Debug builds use official test credentials by default. A developer can
