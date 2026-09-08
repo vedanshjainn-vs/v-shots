@@ -176,10 +176,16 @@ class TestMatrixProvider implements MusicProvider {
 }
 
 MusicRepository _makeRepo() {
-  final reg = ProviderRegistry()..register(TestMatrixProvider());
+  final provider = TestMatrixProvider();
+  final reg = ProviderRegistry()..register(provider);
+  final cfg = ProviderConfig(
+    activeProvider: provider.id,
+    enabledProviders: {provider.id},
+    providerPriority: [provider.id],
+  );
   final mgr = ProviderManager(
     registry: reg,
-    config: ProviderConfig.defaultConfig,
+    config: cfg,
   );
   return MusicRepository(mgr);
 }
