@@ -39,7 +39,8 @@ def patch_validator() -> None:
 
     anchor = "  /// Confidence below which an item is not considered music.\n"
     public_method = "  /// Hard app-wide AI gate used by repository-level consumers that\n  /// intentionally preserve non-music/manual semantics but must never expose\n  /// AI-generated songs or AI music channels.\n  bool isAiContent(Map<String, dynamic> track) {\n    final title = (track['title'] as String?) ?? '';\n    final artist = (track['artist'] as String?) ?? '';\n    final channel = (track['channelTitle'] as String?) ??\n        (track['channel'] as String?) ?? '';\n    return _vShotsLooksLikeAi(title, artist, channel);\n  }\n\n"
-    text = replace_once(text, anchor, public_method + anchor, 'music_validator.dart: public AI gate')
+    if 'bool isAiContent' not in text:
+        text = replace_once(text, anchor, public_method + anchor, 'music_validator.dart: public AI gate')
     path.write_text(text)
 
 
@@ -55,8 +56,9 @@ def patch_repository() -> None:
         )
 
     anchor = "  final ProviderManager _manager;\n"
-    helper = """  static final MusicContentValidator _contentValidator =\n      const MusicContentValidator();\n\n  List<Map<String, dynamic>> _withoutAi(\n    Iterable<Map<String, dynamic>> tracks,\n  ) => tracks.where((track) => !_contentValidator.isAiContent(track)).toList();\n\n"""
-    text = replace_once(text, anchor, anchor + "\n" + helper, 'music_repository.dart: AI helper')
+    helper = """  static const MusicContentValidator _contentValidator =\n      MusicContentValidator();\n\n  List<Map<String, dynamic>> _withoutAi(\n    Iterable<Map<String, dynamic>> tracks,\n  ) => tracks.where((track) => !_contentValidator.isAiContent(track)).toList();\n\n"""
+    if '_withoutAi' not in text:
+        text = replace_once(text, anchor, anchor + "\n" + helper, 'music_repository.dart: AI helper')
 
     text = replace_once(
         text,
