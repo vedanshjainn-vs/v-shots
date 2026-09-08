@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
@@ -6,8 +8,11 @@ import 'ad_policy.dart';
 import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 
-/// Real embeddable LevelPlay swipeable ad card for the Discovery feed.
-/// TikTok/Reels style in-feed card: user can swipe past it at ANY time.
+/// Real embeddable LevelPlay Native ad page for the Discovery PageView.
+///
+/// Interstitials are modal in the LevelPlay SDK and cannot be embedded as a
+/// PageView child. Discovery therefore uses the existing Native ad format,
+/// which can be rendered inline and swiped past like an ordinary feed page.
 class DiscoverySwipeNativeAdPage extends StatefulWidget {
   const DiscoverySwipeNativeAdPage({
     super.key,
@@ -23,20 +28,94 @@ class DiscoverySwipeNativeAdPage extends StatefulWidget {
 
 class _DiscoverySwipeNativeAdPageState
     extends State<DiscoverySwipeNativeAdPage>
-    with LevelPlayBannerAdViewListener {
-  final GlobalKey<LevelPlayBannerAdViewState> _bannerKey =
-      GlobalKey<LevelPlayBannerAdViewState>();
+    with LevelPlayNativeAdListener {
+  LevelPlayNativeAd? _nativeAd;
+  bool _platformViewCreated = false;
+  bool _loaded = false;
+  bool _failed = false;
+  Timer? _timeout;
+  VoidCallback? _readyListener;
 
-  bool _isLoaded = false;
-  bool _loadInFlight = false;
-
-  String? get _unitId =>
-      LevelPlayConfig.unitIdFor(LevelPlayPlacement.bannerHome);
+  String get _placementName => LevelPlayPlacement.discoveryNative;
 
   @override
   void initState() {
     super.initState();
     if (!AdPolicy.instance.adsAvailable) {
+      _failClosed();
+      return;
+    }
+    if (VShotsLevelPlay.instance.initSucceeded) {
+      _createAd();
+    } else {
+      _readyListener = _onLevelPlayReady;
+      VShotsLevelPlay.instance.readyNotifier.addListener(_readyListener!);
+      _timeout = Timer(const Duration(seconds: 4), _failClosed);
+    }
+  }
+
+  void _onLevelPlayReady() {
+    if (!mounted || _failed) return;
+    if (!VShotsLevelPlay.instance.initSucceeded) return;
+    final listener = _readyListener;
+    if (listener != null) {
+      VShotsLevelPlay.instance.readyNotifier.removeListener(listener);
+      _readyListener = null;
+    }
+    _timeout?.cancel();
+    _timeout = null;
+    if (AdPolicy.instance.adsAvailable) {
+      _createAd();
+    } else {
+      _failClosed();
+    }
+  }
+
+  void _createAd() {
+    if (!mounted || _failed || _nativeAd != null) return;
+    _nativeAd = LevelPlayNativeAd.builder()
+        .withPlacementName(_placementName)
+        .withListener(this)
+        .build();
+    VShotsLevelPlay.instance.noteActivity(
+      'native_discovery',
+      'OBJECT CREATED',
+    );
+    AdAnalytics.log(
+      'ad_request',
+      placement: 'discovery_swipe',
+      detail: 'native',
+    );
+    if (mounted) setState(() {});
+  }
+
+  void _loadNativeAd() {
+    if (!mounted || _failed || _platformViewCreated) return;
+    final ad = _nativeAd;
+    if (ad == null) return;
+    _platformViewCreated = true;
+    VShotsLevelPlay.instance.noteActivity(
+      'native_discovery',
+      'LOAD REQUESTED',
+    );
+    ad.loadAd();
+    _timeout?.cancel();
+    _timeout = Timer(const Duration(seconds: 4), () {
+      if (mounted && !_loaded) _failClosed();
+    });
+  }
+
+  void _failClosed() {
+    if (_failed) return;
+    _failed = true;
+    _timeout?.cancel();
+    _timeout = null;
+    final listener = _readyListener;
+    if (listener != null) {
+      VShotsLevelPlay.instance.readyNotifier.removeListener(listener);
+      _readyListener = null;
+    }
+    if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.onUnavailable?.call();
       });
@@ -45,140 +124,35 @@ class _DiscoverySwipeNativeAdPageState
 
   @override
   void dispose() {
-    _bannerKey.currentState?.destroy();
+    _timeout?.cancel();
+    final listener = _readyListener;
+    if (listener != null) {
+      VShotsLevelPlay.instance.readyNotifier.removeListener(listener);
+    }
+    _nativeAd?.destroyAd();
+    _nativeAd = null;
     super.dispose();
-  }
-
-  void _loadAd() {
-    if (!mounted || _loadInFlight || _isLoaded) return;
-    _loadInFlight = true;
-    _bannerKey.currentState?.loadAd();
   }
 
   @override
   Widget build(BuildContext context) {
-    final unitId = _unitId;
-    if (unitId == null || !AdPolicy.instance.adsAvailable) {
-      return const SizedBox.expand();
+    final ad = _nativeAd;
+    if (_failed || ad == null || !AdPolicy.instance.adsAvailable) {
+      return const SizedBox.shrink();
     }
 
     return ColoredBox(
-      color: Colors.black,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Sponsored Badge
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 6,
-                ),
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    width: 1,
-                  ),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.star_rounded,
-                      size: 16,
-                      color: Color(0xFFFF2E93),
-                    ),
-                    SizedBox(width: 6),
-                    Text(
-                      'Sponsored',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 300x250 Real LevelPlay Card
-              Container(
-                width: 300,
-                height: 250,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF161622),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      blurRadius: 20,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: LevelPlayBannerAdView(
-                          key: _bannerKey,
-                          adUnitId: unitId,
-                          adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
-                          listener: this,
-                          onPlatformViewCreated: _loadAd,
-                        ),
-                      ),
-                      if (!_isLoaded)
-                        const IgnorePointer(
-                          child: Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFFFF2E93),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Swipe Up To Continue Hint
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.keyboard_arrow_up_rounded,
-                    color: Colors.white54,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Swipe up to continue',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.60),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          child: RepaintBoundary(
+            child: LevelPlayNativeAdView(
+              nativeAd: ad,
+              templateType: LevelPlayTemplateType.SMALL,
+              width: 350,
+              height: 300,
+              onPlatformViewCreated: _loadNativeAd,
+            ),
           ),
         ),
       ),
@@ -186,44 +160,53 @@ class _DiscoverySwipeNativeAdPageState
   }
 
   @override
-  void onAdLoaded(LevelPlayAdInfo adInfo) {
-    if (!mounted) return;
-    setState(() => _isLoaded = true);
-    VShotsLevelPlay.instance.noteFill('mrec_discovery', adInfo.adNetwork);
-    AdAnalytics.log('mrec_loaded', placement: 'discovery_swipe');
+  void onAdLoaded(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    if (!mounted || _failed) return;
+    _timeout?.cancel();
+    _timeout = null;
+    VShotsLevelPlay.instance.noteFill('native_discovery', adInfo.adNetwork);
+    VShotsLevelPlay.instance.noteActivity(
+      'native_discovery',
+      'LOADED (network: ${adInfo.adNetwork})',
+    );
+    AdAnalytics.log(
+      'native_rendered',
+      placement: 'discovery_swipe',
+      detail: adInfo.adNetwork ?? '-',
+    );
+    setState(() => _loaded = true);
   }
 
   @override
-  void onAdLoadFailed(LevelPlayAdError error) {
+  void onAdImpression(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
     VShotsLevelPlay.instance.noteActivity(
-      'discovery_swipe',
+      'native_discovery',
+      'DISPLAYED (network: ${adInfo.adNetwork})',
+    );
+    AdAnalytics.log(
+      'ad_impression',
+      placement: 'discovery_swipe',
+      detail:
+          'network=${adInfo.adNetwork ?? '-'} revenue=${adInfo.revenue ?? 0}',
+    );
+  }
+
+  @override
+  void onAdClicked(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
+    VShotsLevelPlay.instance.noteActivity('native_discovery', 'CLICKED');
+  }
+
+  @override
+  void onAdLoadFailed(LevelPlayNativeAd nativeAd, dynamic error) {
+    VShotsLevelPlay.instance.noteActivity(
+      'native_discovery',
       'LOAD FAILED — $error',
     );
     AdAnalytics.log(
-      'mrec_load_failed',
+      'ad_load_failed',
       placement: 'discovery_swipe',
       detail: '$error',
     );
-    widget.onUnavailable?.call();
+    _failClosed();
   }
-
-  @override
-  void onAdDisplayed(LevelPlayAdInfo adInfo) {
-    AdAnalytics.log('mrec_displayed', placement: 'discovery_swipe');
-  }
-
-  @override
-  void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {}
-
-  @override
-  void onAdClicked(LevelPlayAdInfo adInfo) {}
-
-  @override
-  void onAdExpanded(LevelPlayAdInfo adInfo) {}
-
-  @override
-  void onAdCollapsed(LevelPlayAdInfo adInfo) {}
-
-  @override
-  void onAdLeftApplication(LevelPlayAdInfo adInfo) {}
 }
