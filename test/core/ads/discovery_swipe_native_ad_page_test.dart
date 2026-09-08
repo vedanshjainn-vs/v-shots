@@ -73,8 +73,8 @@ void main() {
       expect(LevelPlayTemplateType.SMALL.name, 'SMALL');
     });
 
-    test('Discovery placement resolves to discovery_native', () {
-      expect(LevelPlayPlacement.discoveryNative, 'discovery_native');
+    test('Discovery placement resolves to DISCOVERY_NATIVE_01', () {
+      expect(LevelPlayPlacement.discoveryNative, 'DISCOVERY_NATIVE_01');
     });
   });
 }
