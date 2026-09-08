@@ -15,6 +15,24 @@ def main() -> None:
     feed_path = Path('lib/features/home/home_feed_service.dart')
     feed = feed_path.read_text()
     feed = feed.replace("import 'dart:io' as io;\n", '', 1)
+    if "import '../../core/music/music_validator.dart';" not in feed:
+        anchor = "import '../../core/music/music_catalog_service.dart';\n"
+        if anchor not in feed:
+            raise SystemExit('home_feed_service.dart: validator import anchor not found')
+        feed = feed.replace(
+            anchor,
+            anchor + "import '../../core/music/music_validator.dart';\n",
+            1,
+        )
+    anchor = "      var tracks = await _fetch(shelf, excludeIds);\n"
+    if "tracks = tracks.where((track) => !const MusicContentValidator().isAiContent(track)).toList();" not in feed:
+        if anchor not in feed:
+            raise SystemExit('home_feed_service.dart: fetch track gate anchor not found')
+        feed = feed.replace(
+            anchor,
+            anchor + "      tracks = tracks\n          .where((track) => !const MusicContentValidator().isAiContent(track))\n          .toList();\n",
+            1,
+        )
     feed_path.write_text(feed)
 
     candidate_path = Path('lib/core/recommendation/candidate_generator.dart')
@@ -32,18 +50,14 @@ def main() -> None:
         )
     candidate_path.write_text(candidate)
 
-    # Notification + SmartNotification are not needed for the first content
-    # frame. Initialize them in order in the background so their existing
-    # dependency relationship is preserved without blocking startup.
     main_path = Path('lib/main.dart')
     main = main_path.read_text()
-    old_boot = """  unawaited(Future.wait([\n    SupabaseService.initialize(),\n    RemoteConfigService.instance.init(),\n    AdFreeManager.instance.init(),\n    AppVersion.load(),\n    NotificationService.instance.initialize(),\n  ]));\n  // NotificationService MUST be ready before SmartNotificationService: the\n  // scheduler calls into it during initialization. Running both in the same\n  // Future.wait caused the first schedule build to race the plugin init and\n  // silently schedule zero notifications.\n  await SmartNotificationService.instance.initialize();\n"""
+    old_boot = """  unawaited(Future.wait([\n    SupabaseService.initialize(),\n    RemoteConfigService.instance.init(),\n    AdFreeManager.instance.init(),\n    AppVersion.load(),\n  ]));\n  // NotificationService MUST be ready before SmartNotificationService, but\n  // neither is required to render the first Home frame. Keep their ordering\n  // and move both behind runApp's critical path.\n  unawaited(\n    NotificationService.instance\n        .initialize()\n        .then((_) => SmartNotificationService.instance.initialize()),\n  );\n"""
     new_boot = """  unawaited(Future.wait([\n    SupabaseService.initialize(),\n    RemoteConfigService.instance.init(),\n    AdFreeManager.instance.init(),\n    AppVersion.load(),\n  ]));\n  // NotificationService MUST be ready before SmartNotificationService, but\n  // neither is required to render the first Home frame. Keep their ordering\n  // and move both behind runApp's critical path.\n  unawaited(\n    NotificationService.instance\n        .initialize()\n        .then((_) => SmartNotificationService.instance.initialize()),\n  );\n"""
-    if old_boot not in main:
-        raise SystemExit('main.dart: deferred notification boot block not found')
-    main = main.replace(old_boot, new_boot, 1)
+    if old_boot in main:
+        main = main.replace(old_boot, new_boot, 1)
     main_path.write_text(main)
-    print('V2 follow-up safety/performance fixes applied.')
+    print('V2 follow-up safety/performance/content-policy fixes applied.')
 
 
 if __name__ == '__main__':
