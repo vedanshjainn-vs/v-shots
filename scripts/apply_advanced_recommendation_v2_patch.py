@@ -16,11 +16,12 @@ def patch_engine() -> None:
     text = replace_once(text, "import 'music_recommendation_context.dart';\n", "import 'advanced_recommendation_v2.dart';\nimport 'music_recommendation_context.dart';\nimport 'taste_profile.dart';\n", 'engine imports')
     text = replace_once(text, "  final MusicCandidateGenerator _generator;\n", "  final MusicCandidateGenerator _generator;\n  final MusicSearch _search;\n", 'engine search field')
     text = replace_once(text, "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        config = config,\n", "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        _search = search,\n        config = config,\n", 'engine constructor')
-    text = re.sub(
-        r"search:\s*\(query, \{required limit, excludeIds = const \{\}\}\) =>\s*repository\.search\(query, limit: limit, excludeIds: excludeIds\),",
-        "search: repository.search,",
-        text,
-        count=1,
+    # Keep the existing repository adapter exactly as-is. Its closure is a
+    # harmless compatibility adapter because the typedef marks limit required.
+    # Suppress only this lint rather than changing the repository API.
+    text = text.replace(
+        "        search: (query, {required limit, excludeIds = const {}}) =>\n            repository.search(query, limit: limit, excludeIds: excludeIds),",
+        "        // ignore: unnecessary_lambdas\n        search: (query, {required limit, excludeIds = const {}}) =>\n            repository.search(query, limit: limit, excludeIds: excludeIds),",
     )
     marker = "\n}\n\n/// The For You score."
     if marker not in text:
@@ -76,8 +77,16 @@ def patch_engine() -> None:
           effectiveLanguages.isEmpty ? 'popular new songs official audio 2026' : '${effectiveLanguages.first} new songs official audio 2026',
         _ => effectiveLanguages.isEmpty ? 'popular songs official audio 2026' : '${effectiveLanguages.first} popular songs official audio 2026',
       };
-      final raw = await _search(fallbackQuery, limit: (count * 2).clamp(1, 20), excludeIds: excludeIds);
-      return raw.where((m) => m['isOfficial'] == true).map((m) => Map<String, dynamic>.from(m)).take(count).toList();
+      final raw = await _search(
+        fallbackQuery,
+        limit: (count * 2).clamp(1, 20),
+        excludeIds: excludeIds,
+      );
+      return raw
+          .where((m) => m['isOfficial'] == true)
+          .map((m) => Map<String, dynamic>.from(m))
+          .take(count)
+          .toList();
     }
     final scored = <ScoredMusicCandidate>[];
     final artistCounts = <String, int>{};
@@ -107,8 +116,14 @@ def patch_engine() -> None:
       if (countForArtist >= 2 && result.length < count - 2) continue;
       if (!_session.emitSong(c.songId, c.track.id)) continue;
       final map = c.track.toTrackMap();
-      map['recommendationReason'] = AdvancedRecommendationV2.reason(candidate: c, profile: taste, shelf: shelf);
-      if (c.seedArtist != null && c.seedArtist!.isNotEmpty) map['discoverSeedArtist'] = c.seedArtist;
+      map['recommendationReason'] = AdvancedRecommendationV2.reason(
+        candidate: c,
+        profile: taste,
+        shelf: shelf,
+      );
+      if (c.seedArtist != null && c.seedArtist!.isNotEmpty) {
+        map['discoverSeedArtist'] = c.seedArtist;
+      }
       result.add(map);
       emittedSongs.add(c.songId);
       emittedArtists[artist] = countForArtist + 1;
@@ -121,7 +136,11 @@ def patch_engine() -> None:
         final c = item.candidate;
         if (emittedSongs.contains(c.songId)) continue;
         final map = c.track.toTrackMap();
-        map['recommendationReason'] = AdvancedRecommendationV2.reason(candidate: c, profile: taste, shelf: shelf);
+        map['recommendationReason'] = AdvancedRecommendationV2.reason(
+          candidate: c,
+          profile: taste,
+          shelf: shelf,
+        );
         result.add(map);
         emittedSongs.add(c.songId);
       }
@@ -151,7 +170,7 @@ def patch_home() -> None:
         raise RuntimeError('Advanced recommendation patch: home cold-start gate missing')
     text = text.replace(old, new, 1)
     old_switch = """        // \"Made For You\" goes through MUSIC INTELLIGENCE V3 (taste → candidate\n        // → rank → diversity → exploration) with the existing engine as\n        // fallback.\n        if (shelf.kind == HomeShelfKind.madeForYou && _musicEngine != null) {\n          try {\n            final music = await _musicEngine.generateForYou(\n              excludeIds: excludeIds,\n              count: shelf.limit,\n            );\n            if (music.isNotEmpty) return music;\n          } catch (e) {\n            debugPrint('[HomeFeedService] music engine failed: $e');\n          }\n        }\n"""
-    new_switch = """        // All personalized Home shelves share the V2 behavior-driven ranking\n        // layer. The existing RecommendationEngine remains the safe fallback.\n        if (_musicEngine != null) {\n          try {\n            final advancedShelf = switch (shelf.kind) {\n              HomeShelfKind.madeForYou => RecommendationShelf.madeForYou,\n              HomeShelfKind.becauseYouListenedTo => RecommendationShelf.becauseYouListenedTo,\n              HomeShelfKind.quickPicks => RecommendationShelf.quickPicks,\n              HomeShelfKind.trendingForYou => RecommendationShelf.trendingForYou,\n              HomeShelfKind.discoverSomethingNew => RecommendationShelf.freshDiscovery,\n              _ => RecommendationShelf.madeForYou,\n            };\n            final music = await _musicEngine.generateShelf(shelf: advancedShelf, excludeIds: excludeIds, count: shelf.limit);\n            if (music.isNotEmpty) {\n              if (shelf.kind == HomeShelfKind.becauseYouListenedTo) {\n                final seed = music.first['discoverSeedArtist'] as String?;\n                if (seed != null && seed.isNotEmpty) shelf.subtitle = 'Because you listened to $seed';\n              }\n              return music;\n            }\n          } catch (e) {\n            debugPrint('[HomeFeedService] advanced music engine failed: $e');\n          }\n        }\n"""
+    new_switch = """        // All personalized Home shelves share the V2 behavior-driven ranking\n        // layer. The existing RecommendationEngine remains the safe fallback.\n        if (_musicEngine != null) {\n          try {\n            final advancedShelf = switch (shelf.kind) {\n              HomeShelfKind.madeForYou => RecommendationShelf.madeForYou,\n              HomeShelfKind.becauseYouListenedTo => RecommendationShelf.becauseYouListenedTo,\n              HomeShelfKind.quickPicks => RecommendationShelf.quickPicks,\n              HomeShelfKind.trendingForYou => RecommendationShelf.trendingForYou,\n              HomeShelfKind.discoverSomethingNew => RecommendationShelf.freshDiscovery,\n              _ => RecommendationShelf.madeForYou,\n            };\n            final music = await _musicEngine.generateShelf(\n              shelf: advancedShelf,\n              excludeIds: excludeIds,\n              count: shelf.limit,\n            );\n            if (music.isNotEmpty) {\n              if (shelf.kind == HomeShelfKind.becauseYouListenedTo) {\n                final seed = music.first['discoverSeedArtist'] as String?;\n                if (seed != null && seed.isNotEmpty) {\n                  shelf.subtitle = 'Because you listened to $seed';\n                }\n              }\n              return music;\n            }\n          } catch (e) {\n            debugPrint('[HomeFeedService] advanced music engine failed: $e');\n          }\n        }\n"""
     if old_switch not in text:
         raise RuntimeError('Advanced recommendation patch: old Home V3 block missing')
     text = text.replace(old_switch, new_switch, 1)
