@@ -96,5 +96,23 @@ void main() {
       manager.hideMREC();
       expect(manager.isLoaded, isFalse);
     });
+
+    test('MREC Multi-Placement: independent loading across screens', () {
+      final manager = MRECAdManager.instance;
+
+      manager.onAdLoaded(MRECPlacement.home);
+      expect(manager.isPlacementLoaded(MRECPlacement.home), isTrue);
+      expect(manager.isPlacementLoaded(MRECPlacement.search), isFalse);
+
+      manager.onAdLoaded(MRECPlacement.search);
+      expect(manager.isPlacementLoaded(MRECPlacement.search), isTrue);
+
+      manager.markDisplayed(MRECPlacement.home);
+      expect(manager.isPlacementLoaded(MRECPlacement.home), isFalse);
+      expect(manager.isPlacementLoaded(MRECPlacement.search), isTrue);
+
+      manager.hideMREC(MRECPlacement.search);
+      expect(manager.isPlacementLoaded(MRECPlacement.search), isFalse);
+    });
   });
 }

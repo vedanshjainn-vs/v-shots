@@ -145,7 +145,13 @@ def patch_discovery() -> None:
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_pageController.hasClients) return;
-      _pageController.jumpToPage(nextPage);
+      if (_pageController.page?.round() == page) {
+        _pageController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
     });
   }
 

@@ -45,6 +45,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   Timer? _loadingWatchdog;
   bool _isLoaded = false;
   bool _loadInFlight = false;
+  bool _hasFailed = false;
   int _retryAttempt = 0;
 
   String? get _unitId =>
@@ -61,7 +62,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     _retryTimer?.cancel();
     _loadingWatchdog?.cancel();
     _bannerKey.currentState?.destroy();
-    MRECAdManager.instance.hideMREC();
+    MRECAdManager.instance.hideMREC(widget.placement);
     super.dispose();
   }
 
@@ -71,6 +72,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     if (!VShotsLevelPlay.instance.initSucceeded) return;
 
     _loadInFlight = true;
+    _hasFailed = false;
     _loadingWatchdog?.cancel();
     MRECAdManager.instance.loadMREC(widget.placement);
     try {
@@ -84,17 +86,20 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
           }
         });
       }
-      // Some mediation adapters can leave a platform view waiting without
-      // emitting a callback. Never leave the user staring at a spinner.
-      _loadingWatchdog = Timer(const Duration(seconds: 12), () {
+      // Never leave the user staring at an unresolved loading space.
+      // If the mediation adapter does not settle promptly, collapse cleanly.
+      _loadingWatchdog = Timer(const Duration(seconds: 8), () {
         if (!mounted || !_loadInFlight || _isLoaded) return;
         _loadInFlight = false;
+        _hasFailed = true;
         _scheduleRetry('load watchdog timeout');
         if (mounted) setState(() {});
       });
     } catch (e) {
       _loadInFlight = false;
+      _hasFailed = true;
       _scheduleRetry('loadAd exception: $e');
+      if (mounted) setState(() {});
     }
   }
 
@@ -102,14 +107,15 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     _retryTimer?.cancel();
     if (!mounted) return;
     _retryAttempt = (_retryAttempt + 1).clamp(1, 8);
-    // Keep trying while the slot is alive. This maximises fill after a
-    // transient mediation/no-fill response without creating a request loop.
+    // Keep trying with backoff while the slot remains alive.
     final seconds = [15, 30, 45, 60, 90, 120, 180, 180][_retryAttempt - 1];
     debugPrint('[MREC] retry in ${seconds}s ($reason)');
     _retryTimer = Timer(Duration(seconds: seconds), () {
       if (!mounted) return;
       _loadInFlight = false;
+      _hasFailed = false;
       _loadFromPlatformView();
+      if (mounted) setState(() {});
     });
   }
 
@@ -121,70 +127,79 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
       return const SizedBox.shrink();
     }
 
-    return Container(
-      width: 300,
-      height: 250,
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: LevelPlayBannerAdView(
-                key: _bannerKey,
-                adUnitId: unitId,
-                adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
-                listener: this,
-                placementName: 'MREC_Android',
-                onPlatformViewCreated: _loadFromPlatformView,
-              ),
+    // Fail-safe UX rule: if the ad failed to load, has an error, or timed out,
+    // collapse completely to zero occupied height so no permanent blank box
+    // remains on screen.
+    if (_hasFailed && !_isLoaded) {
+      return const SizedBox.shrink();
+    }
+
+    return Center(
+      child: Container(
+        width: 300,
+        height: 250,
+        margin: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-            if (!_isLoaded && _loadInFlight)
-              const IgnorePointer(
-                child: Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: LevelPlayBannerAdView(
+                  key: _bannerKey,
+                  adUnitId: unitId,
+                  adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
+                  listener: this,
+                  placementName: 'MREC_Android',
+                  onPlatformViewCreated: _loadFromPlatformView,
                 ),
               ),
-            if (_isLoaded)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.62),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Ad',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
+              if (!_isLoaded && _loadInFlight)
+                const IgnorePointer(
+                  child: Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                   ),
                 ),
-              ),
-          ],
+              if (_isLoaded)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Ad',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -205,8 +220,9 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
     _retryTimer?.cancel();
     _retryAttempt = 0;
     _loadInFlight = false;
+    _hasFailed = false;
     setState(() => _isLoaded = true);
-    MRECAdManager.instance.onAdLoaded();
+    MRECAdManager.instance.onAdLoaded(widget.placement);
     VShotsLevelPlay.instance.noteFill('mrec', adInfo.adNetwork);
     VShotsLevelPlay.instance.noteActivity(
       'mrec',
@@ -224,8 +240,9 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   void onAdLoadFailed(LevelPlayAdError error) {
     _loadingWatchdog?.cancel();
     _loadInFlight = false;
+    _hasFailed = true;
     if (mounted) setState(() => _isLoaded = false);
-    MRECAdManager.instance.onAdLoadFailed(error.toString());
+    MRECAdManager.instance.onAdLoadFailed(error.toString(), widget.placement);
     VShotsLevelPlay.instance.noteActivity('mrec', 'LOAD FAILED — $error');
     AdAnalytics.log(
       'mrec_load_failed',
@@ -238,7 +255,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   void onAdDisplayed(LevelPlayAdInfo adInfo) {
-    MRECAdManager.instance.markDisplayed();
+    MRECAdManager.instance.markDisplayed(widget.placement);
     AdAnalytics.log(
       'mrec_displayed',
       placement: widget.placement.name,
@@ -250,8 +267,9 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
   void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {
     _loadingWatchdog?.cancel();
     _loadInFlight = false;
+    _hasFailed = true;
     if (mounted) setState(() => _isLoaded = false);
-    MRECAdManager.instance.onAdLoadFailed(error.toString());
+    MRECAdManager.instance.onAdLoadFailed(error.toString(), widget.placement);
     AdAnalytics.log(
       'mrec_display_failed',
       placement: widget.placement.name,
@@ -262,7 +280,7 @@ class _PremiumMRECAdCardState extends State<PremiumMRECAdCard>
 
   @override
   void onAdClicked(LevelPlayAdInfo adInfo) {
-    MRECAdManager.instance.markClicked();
+    MRECAdManager.instance.markClicked(widget.placement);
   }
 
   @override

@@ -80,9 +80,9 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
         .withListener(this)
         .build();
 
-    // Never leave the user stranded on an ad page. If the platform view or
-    // mediation request does not settle promptly, skip the ad page cleanly.
-    _loadTimeout = Timer(const Duration(seconds: 4), _failClosed);
+    // Never leave the user stranded on an empty ad page. If mediation does not
+    // settle promptly (within 1.5s), skip cleanly to the next video.
+    _loadTimeout = Timer(const Duration(milliseconds: 1500), _failClosed);
     if (mounted) setState(() {});
   }
 
@@ -175,41 +175,86 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
     }
 
     final size = MediaQuery.sizeOf(context);
-    final width = size.width.clamp(280.0, 420.0);
-    final height = (size.height * 0.48).clamp(280.0, 420.0);
+    final cardWidth = (size.width - 32).clamp(280.0, 420.0);
+    final cardHeight = (size.height * 0.42).clamp(240.0, 360.0);
 
     return ColoredBox(
-      color: Colors.transparent,
+      color: Colors.black,
       child: SafeArea(
         child: Center(
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (!_loaded)
-                  const Center(
-                    child: SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                // Keep the platform view mounted AND visible while loading.
-                // Hiding a native PlatformView with AnimatedOpacity can cause
-                // black/blank composition on Android; the SDK itself owns the
-                // ad surface until onAdLoaded fires.
-                RepaintBoundary(
-                  child: LevelPlayNativeAdView(
-                    nativeAd: ad,
-                    templateType: LevelPlayTemplateType.SMALL,
-                    width: width,
-                    height: height,
-                    onPlatformViewCreated: _loadOnce,
-                  ),
+          child: Container(
+            width: cardWidth,
+            height: cardHeight,
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF161622),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.12),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
                 ),
               ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(
+                    child: RepaintBoundary(
+                      child: LevelPlayNativeAdView(
+                        nativeAd: ad,
+                        templateType: LevelPlayTemplateType.SMALL,
+                        width: cardWidth,
+                        height: cardHeight,
+                        onPlatformViewCreated: _loadOnce,
+                      ),
+                    ),
+                  ),
+                  if (!_loaded)
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'Sponsored',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFFFF2E93),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

@@ -250,6 +250,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _cardShownAt = DateTime.now();
       _prevCard = first;
     }
+    if (batch.isNotEmpty) {
+      final first = batch.first;
+      final id = first['id'] as String? ?? '';
+      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
+      _cardShownAt = DateTime.now();
+      _prevCard = first;
+    }
   }
 
   /// Play tap on a Discovery card → open the selected video in the in-app
@@ -505,7 +512,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_pageController.hasClients) return;
-      _pageController.jumpToPage(nextPage);
+      if (_pageController.page?.round() == page) {
+        _pageController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
     });
   }
 
