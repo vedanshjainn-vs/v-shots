@@ -102,7 +102,7 @@ void main() async {
 
   // Initialize FCM / Google Sign In (non-blocking, fire-and-forget)
   unawaited(
-    AuthService.instance.initializeGoogleSignIn().catchError((e) {
+    AuthService.instance.initializeGoogleSignIn().catchError((Object e) {
       debugPrint('[Boot] Google Sign-In init error: $e');
     }),
   );
