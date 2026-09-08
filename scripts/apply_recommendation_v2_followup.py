@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 
@@ -41,22 +42,28 @@ def main() -> None:
         if anchor not in feed:
             raise SystemExit('home_feed_service.dart: fetch track gate anchor not found')
         feed = feed.replace(anchor, anchor + gate, 1)
+
+    # Keep CMS/default shelf ordering intact. The surgical V2 patch only needs
+    # semantic de-duplication; globally sorting shelves breaks existing CMS
+    # ordering contracts and changes the proven Home layout unexpectedly.
+    feed = re.sub(
+        r"\n    // User-first Home order:.*?\n    return kept;\n  }",
+        "\n    return kept;\n  }",
+        feed,
+        count=1,
+        flags=re.S,
+    )
     feed_path.write_text(feed)
 
-    candidate_path = Path('lib/core/recommendation/candidate_generator.dart')
-    candidate = candidate_path.read_text()
-    if "import 'dart:math';" not in candidate:
-        candidate = "import 'dart:math';\n\n" + candidate
-    if 'final _random = Random();' not in candidate:
-        anchor = '  final RecommendationConfig config;\n'
-        if anchor not in candidate:
-            raise SystemExit('candidate_generator.dart: config anchor not found')
-        candidate = candidate.replace(
-            anchor,
-            anchor + '  final _random = Random();\n',
-            1,
-        )
-    candidate_path.write_text(candidate)
+    # Restore the proven candidate-generation algorithm exactly. V2 improves
+    # filtering, refresh behavior and presentation around it; it must not
+    # remove or reorder the established similar/genre/recent/liked/search/
+    # trending/new/exploration pools. This preserves cold-start, mood and
+    # favorite-artist coverage.
+    subprocess.run(
+        ['git', 'checkout', 'HEAD', '--', 'lib/core/recommendation/candidate_generator.dart'],
+        check=True,
+    )
 
     repo_path = Path('lib/core/providers/music_repository.dart')
     repo = repo_path.read_text()
