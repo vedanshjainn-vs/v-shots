@@ -44,9 +44,12 @@ import 'core/playback/playback_router.dart';
 import 'core/providers/adapters/youtube/youtube_data_api_client.dart';
 import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/music_recommendation_engine.dart';
+import 'core/recommendation/music_region_profile.dart';
+import 'core/recommendation/feed_intent.dart';
 import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
+import 'core/recommendation/smart_listening_service.dart';
 import 'core/recommendation/taste_profile.dart';
 import 'core/services/profile_service.dart';
 import 'core/theme/app_colors.dart';
@@ -89,8 +92,12 @@ void main() async {
     AdFreeManager.instance.init(),
     AppVersion.load(),
     NotificationService.instance.initialize(),
-    SmartNotificationService.instance.initialize(),
   ]);
+  // NotificationService MUST be ready before SmartNotificationService: the
+  // scheduler calls into it during initialization. Running both in the same
+  // Future.wait caused the first schedule build to race the plugin init and
+  // silently schedule zero notifications.
+  await SmartNotificationService.instance.initialize();
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
   // Initialize FCM (non-blocking, fire-and-forget)
@@ -121,12 +128,21 @@ void main() async {
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
       androidNotificationClickStartsActivity: true,
+      androidResumeOnClick: true,
+      preloadArtwork: true,
+      artDownscaleWidth: 512,
+      artDownscaleHeight: 512,
+      fastForwardInterval: Duration(seconds: 10),
+      rewindInterval: Duration(seconds: 10),
     ),
   );
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
+  _configureSmartListening();
+  // Resolve network country after core boot without delaying first paint.
+  unawaited(MusicRegionProfile.initialize());
   debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
   runApp(const VShotsApp());
 
@@ -196,11 +212,26 @@ final musicRecommendationEngine = MusicRecommendationEngine.withRepository(
   musicRepository,
 );
 final playbackSignalTracker = PlaybackSignalTracker(recommendationEngine);
+final smartListeningService = SmartListeningService.instance;
 final homeFeedService = HomeFeedService(
   repository: musicRepository,
   engine: recommendationEngine,
   musicEngine: musicRecommendationEngine,
 );
+
+void _configureSmartListening() {
+  smartListeningService.configure(
+    engine: musicRecommendationEngine,
+    repository: musicRepository,
+    playQueue: (tracks, index) =>
+        VShotsPlaybackManager.instance.playQueue(tracks, index),
+  );
+  VShotsPlaybackManager.instance.configureSmartQueue(
+    (seed, excludeIds) =>
+        smartListeningService.nextSongQueue(seed: seed, count: 10),
+  );
+}
+
 
 void _log(String message) {
   debugPrint('[VShots] $message');
@@ -209,6 +240,7 @@ void _log(String message) {
 /// Adds [track] to the END of the global queue. If nothing is queued yet,
 /// it starts playing immediately (same as tapping a song).
 void addToQueueEnd(BuildContext? context, Map<String, dynamic> track) {
+  currentQueueIsMoreLikeThis = false;
   VShotsPlaybackManager.instance.addToEnd(track);
   currentQueue = VShotsPlaybackManager.instance.queue;
   queueVersionNotifier.value++;
@@ -226,6 +258,7 @@ void addToQueueEnd(BuildContext? context, Map<String, dynamic> track) {
 /// Inserts [track] right after the currently playing track so it plays
 /// next. If nothing is queued yet, it starts playing immediately.
 void playNextInQueue(BuildContext? context, Map<String, dynamic> track) {
+  currentQueueIsMoreLikeThis = false;
   VShotsPlaybackManager.instance.playNext(track);
   currentQueue = VShotsPlaybackManager.instance.queue;
   queueVersionNotifier.value++;
@@ -725,11 +758,15 @@ Future<void> playTrack(
     'URL: ${resolvedTrack['url']}',
   );
 
+  currentQueueIsMoreLikeThis = resolvedQueue.length <= 1;
   VShotsPlaybackManager.instance.playQueue(
     resolvedQueue.isEmpty ? [resolvedTrack] : resolvedQueue,
     safeIndex,
     expanded: expanded,
   );
+  if (currentQueueIsMoreLikeThis) {
+    unawaited(_populateMoreLikeThis(resolvedTrack));
+  }
 
   // Update the OS media notification with track metadata
   final artworkUrl = (resolvedTrack['artwork'] as String?) ?? '';
@@ -771,6 +808,55 @@ Future<void> playTrack(
 }
 
 // ═══════════════════════════════════════════════
+
+List<Map<String, dynamic>> _rankVShotsSearchResults(String query, List<Map<String, dynamic>> input) {
+  String n(Object? v) => (v?.toString() ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim().replaceAll(RegExp(r'\s+'), ' ');
+  final q = n(query);
+  final ranked = input.asMap().entries.map((e) {
+    final t = e.value;
+    final title = n(t['title']);
+    final artist = n(t['artist']);
+    var score = 0;
+    if (q.isNotEmpty && title == q) score += 120;
+    if (q.isNotEmpty && artist == q) score += 110;
+    if (q.isNotEmpty && title.startsWith(q)) score += 70;
+    if (q.isNotEmpty && title.contains(q)) score += 45;
+    if (q.isNotEmpty && artist.contains(q)) score += 40;
+    if (t['isOfficial'] == true) score += 30;
+    if (t['channelVerified'] == true || t['isVerified'] == true) score += 8;
+    return (score: score, index: e.key, track: t);
+  }).toList();
+  ranked.sort((a, b) => b.score != a.score ? b.score.compareTo(a.score) : a.index.compareTo(b.index));
+  return ranked.map((e) => e.track).toList();
+}
+
+Future<void> _populateMoreLikeThis(Map<String, dynamic> seedTrack) async {
+  final seedId = seedTrack['id']?.toString() ?? '';
+  if (seedId.isEmpty) return;
+  try {
+    final scored = await recommendationEngine.generateFeed(
+      intent: FeedIntent.moreLikeThis,
+      excludeIds: {seedId},
+      seedTrackId: seedId,
+      count: 12,
+      forceRefresh: true,
+    );
+    if (currentTrack?['id']?.toString() != seedId) return;
+    final seen = <String>{seedId, ...VShotsPlaybackManager.instance.queue.map((t) => t['id']?.toString() ?? '')};
+    for (final item in scored) {
+      final track = item.track.toTrackMap();
+      final id = track['id']?.toString() ?? '';
+      if (id.isEmpty || !seen.add(id) || track['isOfficial'] != true) continue;
+      VShotsPlaybackManager.instance.addToEnd(track);
+    }
+    currentQueue = VShotsPlaybackManager.instance.queue;
+    queueVersionNotifier.value++;
+  } catch (e) {
+    debugPrint('[VShots] More Like This generation failed: $e');
+  }
+}
+
+bool currentQueueIsMoreLikeThis = false;
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -905,9 +991,12 @@ class _SearchScreenState extends State<SearchScreen> {
       final musicResults = const MusicCatalogService()
           .ingest(merged.isNotEmpty ? merged : uniqueResults, label: '.search')
           .items;
-      final toShow = musicResults.isNotEmpty
-          ? musicResults
-          : (merged.isNotEmpty ? merged : uniqueResults);
+      final toShow = _rankVShotsSearchResults(
+        query,
+        musicResults.isNotEmpty
+            ? musicResults
+            : (merged.isNotEmpty ? merged : uniqueResults),
+      );
       if (toShow.isNotEmpty) {
         SearchCache.instance.set(query, toShow);
       }

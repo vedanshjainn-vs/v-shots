@@ -17,6 +17,10 @@ def patch_discovery() -> None:
     path = ROOT / 'lib/features/foryou/for_you_feed_screen.dart'
     text = path.read_text()
 
+    if 'DiscoverySwipeNativeAdPage' in text and '_isAdPage' in text:
+        print('Discovery native ad page: already applied')
+        return
+
     text = replace_once(
         text,
         "import '../../core/ads/ad_service.dart';\n",

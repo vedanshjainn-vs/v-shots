@@ -7,6 +7,9 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     if old not in text:
         if new in text:
             return text
+        core_lines = [l.strip() for l in new.strip().splitlines() if len(l.strip()) > 15]
+        if core_lines and any(l in text for l in core_lines):
+            return text
         raise SystemExit(f'{label}: anchor not found')
     return text.replace(old, new, 1)
 

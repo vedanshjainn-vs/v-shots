@@ -89,5 +89,10 @@ class MusicRecommendationConfig {
   final double trendingQuota;
   final double explorationQuota;
 
+  /// Smart Next queue composition contract.
+  static const double smartNextProvenRatio = 0.70;
+  static const double smartNextSimilarRatio = 0.20;
+  static const double smartNextExplorationRatio = 0.10;
+
   static const defaultConfig = MusicRecommendationConfig();
 }

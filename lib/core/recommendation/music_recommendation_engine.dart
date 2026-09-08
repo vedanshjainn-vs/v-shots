@@ -106,6 +106,8 @@ class MusicRecommendationEngine {
     final artistCounts = <String, int>{};
     final scored = <ScoredMusicCandidate>[];
     for (final candidate in candidates) {
+      final validation = _validator.validate(candidate.track.toTrackMap());
+      if (!validation.isMusic) continue;
       final score = scoreForYou(
         candidate: candidate,
         profile: profile,

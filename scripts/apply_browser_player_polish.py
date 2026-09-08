@@ -20,6 +20,11 @@ def replace_once(path: str, pattern: str, replacement: str, label: str, flags=0)
 
 def patch_session() -> None:
     path = 'lib/features/foryou/vshots_browser_session.dart'
+    p = ROOT / path
+    text = p.read_text()
+    if 'Future<void> seekBy(int seconds)' in text:
+        print('Browser seek bridge: already applied')
+        return
     replace_once(
         path,
         r"(  Future<void> play\(\) async \{.*?\n  \}\n)(\n  Widget buildWidget\(\) \{)",
@@ -45,19 +50,21 @@ def patch_sheet() -> None:
 
     # Notification seek actions operate directly on the existing HTML media
     # element. They never reload or rebuild the player.
-    text = text.replace(
-        "          case 'next':\n            VShotsPlaybackManager.instance.next();\n            break;\n          case 'previous':\n            VShotsPlaybackManager.instance.previous();\n            break;",
-        "          case 'next':\n            VShotsPlaybackManager.instance.next();\n            break;\n          case 'previous':\n            VShotsPlaybackManager.instance.previous();\n            break;\n          case 'rewind':\n            await _session.seekBy(-10);\n            break;\n          case 'fastForward':\n            await _session.seekBy(10);\n            break;",
-        1,
-    )
+    if "case 'rewind':" not in text:
+        text = text.replace(
+            "          case 'next':\n            VShotsPlaybackManager.instance.next();\n            break;\n          case 'previous':\n            VShotsPlaybackManager.instance.previous();\n            break;",
+            "          case 'next':\n            VShotsPlaybackManager.instance.next();\n            break;\n          case 'previous':\n            VShotsPlaybackManager.instance.previous();\n            break;\n          case 'rewind':\n            await _session.seekBy(-10);\n            break;\n          case 'fastForward':\n            await _session.seekBy(10);\n            break;",
+            1,
+        )
 
     # CRITICAL playback rule: never resize the native WebView when expanded
     # controls or lyrics are shown. The WebView stays a fixed full player
     # surface and the V Shots controls are painted ON TOP of it.
-    replace_once(
-        path,
-        r"  Widget _buildBrowserBody\(\) \{.*?\n  \}\n\n  /// The app-level full-player controls",
-        '''  Widget _buildBrowserBody() {
+    if 'if (widget.controller.error != null) return _buildError();' not in text:
+        replace_once(
+            path,
+            r"  Widget _buildBrowserBody\(\) \{.*?\n  \}\n\n  /// The app-level full-player controls",
+            '''  Widget _buildBrowserBody() {
     if (widget.controller.error != null) return _buildError();
     return Stack(
       fit: StackFit.expand,
@@ -84,9 +91,9 @@ def patch_sheet() -> None:
   }
 
   /// The app-level full-player controls''',
-        'Stable browser playback surface',
-        re.S,
-    )
+            'Stable browser playback surface',
+            re.S,
+        )
 
     # Lyrics are always a separate modal surface. Opening them must not change
     # the WebView size, detach the native player, or trigger a reload.

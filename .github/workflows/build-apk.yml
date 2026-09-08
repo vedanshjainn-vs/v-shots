@@ -182,8 +182,17 @@ jobs:
         run: |
           RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@build/app/outputs/flutter-apk/app-release.apk" -F "custom_id=v-shots-ci-${{ github.run_number }}")
           echo "$RESPONSE"
-          APP_URL=$(echo "$RESPONSE" | grep -o '\"app_url\":\"[^\"]*\"' | cut -d'\"' -f4)
-          [ -z "$APP_URL" ] || echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+          APP_URL=$(python3 -c '
+          import sys, json
+          try:
+              data = json.loads(sys.argv[1])
+              print(data.get("app_url", "") or "")
+          except Exception:
+              print("")
+          ' "$RESPONSE")
+          if [ -n "$APP_URL" ]; then
+            echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+          fi
       - name: 16. Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
         continue-on-error: true
