@@ -89,7 +89,9 @@ def main() -> None:
         'lib/features/foryou/for_you_feed_screen.dart',
         'lib/main.dart',
     ]
-    subprocess.run(['dart', 'format', *files], check=True)
+    import shutil
+    if shutil.which('dart'):
+        subprocess.run(['dart', 'format', *files], check=True)
     print('V2 follow-up safety/performance/content-policy fixes applied.')
 
 
