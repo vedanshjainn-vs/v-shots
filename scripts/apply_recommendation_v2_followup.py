@@ -1,15 +1,25 @@
+import re
 from pathlib import Path
 
 
 def main() -> None:
     home_path = Path('lib/features/home/home_screen.dart')
     text = home_path.read_text()
-    if 'homeScrollToTopSignal' in text and 'homeScrollToTopSignal,' not in text:
-        old = "        show currentTrackNotifier, homeFeedService, musicRepository, playTrack;"
-        new = "        show\n        currentTrackNotifier,\n        homeFeedService,\n        homeScrollToTopSignal,\n        musicRepository,\n        playTrack;"
-        if old not in text:
-            raise SystemExit('home_screen.dart: main.dart show import anchor not found')
-        text = text.replace(old, new, 1)
+    if 'homeScrollToTopSignal' in text:
+        start = text.find("import '../../main.dart'")
+        if start >= 0:
+            end = text.find(';', start)
+            if end >= 0:
+                block = text[start:end + 1]
+                if 'homeScrollToTopSignal' not in block:
+                    if 'show' not in block:
+                        raise SystemExit('home_screen.dart: main.dart import has no show clause')
+                    block = block.replace(
+                        'currentTrackNotifier,',
+                        'currentTrackNotifier,\n        homeScrollToTopSignal,',
+                        1,
+                    )
+                    text = text[:start] + block + text[end + 1:]
     home_path.write_text(text)
 
     feed_path = Path('lib/features/home/home_feed_service.dart')
@@ -25,14 +35,14 @@ def main() -> None:
             1,
         )
     anchor = "      var tracks = await _fetch(shelf, excludeIds);\n"
-    if "tracks = tracks.where((track) => !const MusicContentValidator().isAiContent(track)).toList();" not in feed:
+    gate = """      tracks = tracks
+          .where((track) => !const MusicContentValidator().isAiContent(track))
+          .toList();
+"""
+    if gate not in feed:
         if anchor not in feed:
             raise SystemExit('home_feed_service.dart: fetch track gate anchor not found')
-        feed = feed.replace(
-            anchor,
-            anchor + "      tracks = tracks\n          .where((track) => !const MusicContentValidator().isAiContent(track))\n          .toList();\n",
-            1,
-        )
+        feed = feed.replace(anchor, anchor + gate, 1)
     feed_path.write_text(feed)
 
     candidate_path = Path('lib/core/recommendation/candidate_generator.dart')
@@ -52,8 +62,36 @@ def main() -> None:
 
     main_path = Path('lib/main.dart')
     main = main_path.read_text()
-    old_boot = """  unawaited(Future.wait([\n    SupabaseService.initialize(),\n    RemoteConfigService.instance.init(),\n    AdFreeManager.instance.init(),\n    AppVersion.load(),\n  ]));\n  // NotificationService MUST be ready before SmartNotificationService, but\n  // neither is required to render the first Home frame. Keep their ordering\n  // and move both behind runApp's critical path.\n  unawaited(\n    NotificationService.instance\n        .initialize()\n        .then((_) => SmartNotificationService.instance.initialize()),\n  );\n"""
-    new_boot = """  unawaited(Future.wait([\n    SupabaseService.initialize(),\n    RemoteConfigService.instance.init(),\n    AdFreeManager.instance.init(),\n    AppVersion.load(),\n  ]));\n  // NotificationService MUST be ready before SmartNotificationService, but\n  // neither is required to render the first Home frame. Keep their ordering\n  // and move both behind runApp's critical path.\n  unawaited(\n    NotificationService.instance\n        .initialize()\n        .then((_) => SmartNotificationService.instance.initialize()),\n  );\n"""
+    old_boot = """  unawaited(Future.wait([
+    SupabaseService.initialize(),
+    RemoteConfigService.instance.init(),
+    AdFreeManager.instance.init(),
+    AppVersion.load(),
+  ]));
+  // NotificationService MUST be ready before SmartNotificationService, but
+  // neither is required to render the first Home frame. Keep their ordering
+  // and move both behind runApp's critical path.
+  unawaited(
+    NotificationService.instance
+        .initialize()
+        .then((_) => SmartNotificationService.instance.initialize()),
+  );
+"""
+    new_boot = """  unawaited(Future.wait([
+    SupabaseService.initialize(),
+    RemoteConfigService.instance.init(),
+    AdFreeManager.instance.init(),
+    AppVersion.load(),
+  ]));
+  // NotificationService MUST be ready before SmartNotificationService, but
+  // neither is required to render the first Home frame. Keep their ordering
+  // and move both behind runApp's critical path.
+  unawaited(
+    NotificationService.instance
+        .initialize()
+        .then((_) => SmartNotificationService.instance.initialize()),
+  );
+"""
     if old_boot in main:
         main = main.replace(old_boot, new_boot, 1)
     main_path.write_text(main)
