@@ -80,24 +80,25 @@ class CandidateGenerator {
 
   List<CandidateQuery> generate(TasteProfile profile, {int count = 12}) {
     if (!profile.hasEnoughHistoryForPersonalization) {
-      return _coldStartCandidates(count: count);
+      return _coldStartCandidates(count: count, profile: profile);
     }
 
     final candidates = <CandidateQuery>[];
     final topArtists = profile.topArtists.take(5).toList();
 
-    // 1. Search Behavior — Explicit search queries are top priority
+    // 1. Search Behavior — Explicit search queries
     final topSearches = profile.topSearches.take(3).toList();
     for (final q in topSearches) {
       candidates.add(
         CandidateQuery(
           query: '$q songs official audio',
           source: CandidateSource.searchBehavior,
+          seedArtist: q,
         ),
       );
     }
 
-    // 2. Similar artists (content-based discovery seeded from top artists)
+    // 2. Similar artists
     for (final artist in topArtists) {
       final template = _genreDiscoveryTemplates[_random.nextInt(
         _genreDiscoveryTemplates.length,
@@ -125,7 +126,7 @@ class CandidateGenerator {
       }
     }
 
-    // 4. Recently played patterns — top artists' own catalog
+    // 4. Recently played patterns
     for (final artist in topArtists.take(3)) {
       candidates.add(
         CandidateQuery(
@@ -178,9 +179,10 @@ class CandidateGenerator {
       ),
     );
 
-    // 9. Controlled exploration — genres outside user's current top genres
+    // 9. Controlled exploration — strictly outside user's current top genres
+    final userTopGenres = profile.topGenres.toSet();
     final unexploredGenres = _allKnownGenreQueries.keys
-        .where((g) => !profile.topGenres.take(3).contains(g))
+        .where((g) => !userTopGenres.contains(g))
         .toList()
       ..shuffle(_random);
     for (final genre in unexploredGenres.take(2)) {
@@ -197,7 +199,10 @@ class CandidateGenerator {
     return candidates.take(count).toList();
   }
 
-  List<CandidateQuery> _coldStartCandidates({required int count}) {
+  List<CandidateQuery> _coldStartCandidates({
+    required int count,
+    TasteProfile? profile,
+  }) {
     final store = PersonalizationStore.instance;
     final ordered = <CandidateQuery>[];
     final seenQueries = <String>{};
@@ -207,6 +212,16 @@ class CandidateGenerator {
       ordered.add(
         CandidateQuery(query: query, source: source, seedGenre: seed),
       );
+    }
+
+    // Explicit search queries take immediate priority even during cold start
+    if (profile != null) {
+      for (final q in profile.topSearches) {
+        addPref('$q songs official audio', CandidateSource.searchBehavior, q);
+      }
+      for (final a in profile.topArtists) {
+        addPref('$a songs official audio', CandidateSource.recentlyPlayedPattern, a);
+      }
     }
 
     // 1. Preferred genres first (stated taste from onboarding)

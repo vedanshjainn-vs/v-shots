@@ -88,14 +88,14 @@ class TestMatrixProvider implements MusicProvider {
 
     final tracks = <ProviderTrack>[];
     for (var i = 0; i < limit; i++) {
-      final id = 'test-track-${Object.hash(artist, i, query)}';
+      final id = 'test-track-${Object.hash(artist, i, query).abs()}';
       if (excludeIds.contains(id)) continue;
       tracks.add(
         ProviderTrack(
           id: id,
           title: '$artist — Track $i ($genre Hit)',
           artist: artist,
-          artworkUrl: '',
+          artworkUrl: 'https://i.ytimg.com/vi/$id/hqdefault.jpg',
           durationSeconds: 180 + i,
           isOfficial: true,
         ),

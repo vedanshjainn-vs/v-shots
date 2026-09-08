@@ -76,7 +76,8 @@ class TasteProfile {
   final Set<String> longTermGenres;
   final int totalSignalCount;
 
-  bool get hasEnoughHistoryForPersonalization => maturity != TasteMaturity.cold;
+  bool get hasEnoughHistoryForPersonalization =>
+      totalSignalCount >= 3 || maturity != TasteMaturity.cold;
 
   static const empty = TasteProfile(
     artistAffinity: {},
@@ -257,12 +258,17 @@ class TasteProfileBuilder {
           }
         } else {
           // Positive actions
-          artistPlays[artist] = (artistPlays[artist] ?? 0) + 1;
-          if (event.type == SignalType.completed) {
-            artistCompletions[artist] = (artistCompletions[artist] ?? 0) + 1;
-          }
-          if (event.type == SignalType.replay) {
-            artistReplays[artist] = (artistReplays[artist] ?? 0) + 1;
+          if (event.type == SignalType.play ||
+              event.type == SignalType.completed ||
+              event.type == SignalType.replay ||
+              event.type == SignalType.playDuration) {
+            artistPlays[artist] = (artistPlays[artist] ?? 0) + 1;
+            if (event.type == SignalType.completed) {
+              artistCompletions[artist] = (artistCompletions[artist] ?? 0) + 1;
+            }
+            if (event.type == SignalType.replay) {
+              artistReplays[artist] = (artistReplays[artist] ?? 0) + 1;
+            }
           }
 
           artistAffinity[artist] =
