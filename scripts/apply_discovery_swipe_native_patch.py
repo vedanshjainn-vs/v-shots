@@ -21,6 +21,7 @@ def patch_discovery() -> None:
 if __name__ == '__main__':
     patch_discovery()
     runpy.run_path('scripts/apply_advanced_recommendation_v2_patch.py', run_name='__main__')
+    runpy.run_path('scripts/apply_home_discovery_polish_compat.py', run_name='__main__')
     runpy.run_path('scripts/apply_home_discovery_product_polish_patch.py', run_name='__main__')
     runpy.run_path('scripts/apply_home_discovery_final_guard.py', run_name='__main__')
     runpy.run_path('scripts/apply_home_discovery_ai_guard.py', run_name='__main__')
