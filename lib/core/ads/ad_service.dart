@@ -1,19 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════
 // V Shots — VShotsAds (central ad facade, Unity LevelPlay backed)
-//
-// UI → VShotsAds → VShotsLevelPlay → Unity LevelPlay → mediated networks.
-//
-// Screens/widgets talk ONLY to this facade (and the self-contained
-// NativeAdWidget / AdBannerWidget which are policy-gated internally).
-//
-// Guarantees (fail-safe, per spec):
-//   - no fill / SDK error / timeout / not-ready / not-configured
-//     ⇒ normal app behavior continues
-//   - no ad is ever shown when AdPolicy denies it
-//   - interstitials only at natural transitions, with the centralized
-//     cooldown / session cap / dwell guard (AdPolicy.frequency)
-//   - rewarded ads are USER-INITIATED ONLY; the reward is granted only
-//     when the LevelPlay SDK confirms completion (onAdRewarded)
 // ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -26,7 +12,6 @@ import 'levelplay_config.dart';
 import 'levelplay_service.dart';
 import 'player_sponsored_ad_policy.dart';
 
-/// Result of a user-initiated rewarded ad session.
 enum RewardOutcome { completed, canceled, failed }
 
 class VShotsAds {
@@ -34,12 +19,6 @@ class VShotsAds {
 
   static final VShotsAds instance = VShotsAds._();
 
-  // ── Interstitial (natural transitions only) ───────────────────────────
-
-  /// Shows an interstitial at a user-initiated transition (tab switch).
-  /// Cooldown (180 s), session cap (4) and the 60 s dwell guard live
-  /// centrally in AdPolicy. If anything is not ready, the app simply
-  /// continues. Callers must NOT call this during playback.
   Future<void> maybeShowInterstitial({required String trigger}) async {
     final policy = AdPolicy.instance;
     if (!policy.canShowInterstitial()) return;
@@ -58,38 +37,31 @@ class VShotsAds {
 
     var ready = await ad.isAdReady();
     if (!ready) {
-      // Bounded on-demand load: request, wait for the listener event.
       final loaded = Completer<void>();
       final prev = VShotsLevelPlay.instance.interstitialLoadedHook;
       VShotsLevelPlay.instance.interstitialLoadedHook = () {
         if (!loaded.isCompleted) loaded.complete();
       };
       try {
-        unawaited(ad.loadAd());
+        VShotsLevelPlay.instance.requestInterstitialLoad();
         await loaded.future.timeout(const Duration(seconds: 3));
       } catch (_) {
-        // timeout / error — proceed with whatever is ready
       } finally {
         VShotsLevelPlay.instance.interstitialLoadedHook = prev;
       }
       ready = await ad.isAdReady();
     }
-    if (!ready) return; // fail-safe: continue normal behavior
+    if (!ready) return;
 
     policy.frequency.recordShown();
     AdAnalytics.log('interstitial_shown', placement: trigger);
     try {
       await ad.showAd(placementName: trigger);
     } catch (e) {
-      // Presentation failure is also reported via the listener; the app
-      // continues normally.
       debugPrint('[VShotsAds] interstitial show error: $e');
     }
   }
 
-  /// Shows a discovery swipe interstitial when eligible and awaits completion
-  /// or failure. If not ready/policy blocked/error, returns false immediately
-  /// without blocking the feed.
   Future<bool> showDiscoverySwipeInterstitial({
     required String trigger,
   }) async {
@@ -110,9 +82,7 @@ class VShotsAds {
 
     final isReady = await ad.isAdReady();
     if (!isReady) {
-      // Fail-safe: if not preloaded/ready, don't stall the vertical swipe.
-      // Trigger preload for the next opportunity and continue immediately.
-      unawaited(ad.loadAd());
+      VShotsLevelPlay.instance.requestInterstitialLoad();
       return false;
     }
 
@@ -139,12 +109,6 @@ class VShotsAds {
     }
   }
 
-  // ── Rewarded (user-initiated only) ────────────────────────────────────
-
-  /// Shows a rewarded ad. MUST be called from an explicit user action
-  /// (Settings → Rewards). The reward is granted ONLY when the LevelPlay
-  /// SDK confirms completion (onAdRewarded). Canceling or failing grants
-  /// nothing.
   Future<RewardOutcome> showRewarded({
     required String purpose,
     FutureOr<void> Function()? onRewardGranted,
@@ -175,10 +139,9 @@ class VShotsAds {
         if (!loaded.isCompleted) loaded.complete();
       };
       try {
-        unawaited(ad.loadAd());
+        VShotsLevelPlay.instance.requestRewardedLoad();
         await loaded.future.timeout(const Duration(seconds: 15));
       } catch (_) {
-        // timeout / error — proceed with whatever is ready
       } finally {
         VShotsLevelPlay.instance.rewardedLoadedHook = prev;
       }
@@ -186,7 +149,6 @@ class VShotsAds {
     }
     if (!ready) return RewardOutcome.failed;
 
-    // Wire the session: reward granted ONLY on SDK-confirmed completion.
     final result = Completer<RewardOutcome>();
     VShotsLevelPlay.instance.rewardSession = RewardSession(
       onGrant: () {
