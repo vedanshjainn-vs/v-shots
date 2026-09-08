@@ -66,7 +66,9 @@ class MRECAdManager extends ChangeNotifier {
     if (lastShown != null) {
       final cooldown = DateTime.now().difference(lastShown);
       if (cooldown.inSeconds < MRECConfig.mrecCooldownSeconds) {
-        debugPrint('[MREC] Cooldown active for ${placement.name}: ${cooldown.inSeconds}s');
+        debugPrint(
+          '[MREC] Cooldown active for ${placement.name}: ${cooldown.inSeconds}s',
+        );
         return;
       }
     }
@@ -100,7 +102,10 @@ class MRECAdManager extends ChangeNotifier {
     } else {
       _loadedPlacements.clear();
       _legacyLoaded = false;
-      AdAnalytics.log('mrec_hidden', placement: _currentPlacement?.name ?? '');
+      AdAnalytics.log(
+        'mrec_hidden',
+        placement: _currentPlacement?.name ?? '',
+      );
     }
     notifyListeners();
   }
