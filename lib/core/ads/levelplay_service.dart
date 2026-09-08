@@ -161,11 +161,6 @@ class VShotsLevelPlay {
   void _onInitSuccess(LevelPlayConfiguration configuration) {
     _initSucceeded = true;
     AdAnalytics.log('levelplay_initialized', detail: configuration.toString());
-    if (kDebugMode) {
-      // Launch the official integration test suite for on-device
-      // verification (debug builds only).
-      unawaited(LevelPlay.launchTestSuite().catchError((_) {}));
-    }
     _createAdObjects();
     _completeReady();
     // Register impression-level revenue analytics only once the SDK is

@@ -9,8 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ads/ad_config.dart';
-import '../../core/ads/ad_policy.dart';
-import '../../core/ads/discovery_swipe_native_ad_page.dart';
+import '../../core/ads/ad_service.dart';
 import '../../core/ads/player_sponsored_ad_policy.dart';
 import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
@@ -63,36 +62,10 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   bool _isLoadingMore = false;
   bool _initialLoading = true;
 
-  // Discovery is a true vertical PageView: organic video pages are
-  // interleaved with embeddable LevelPlay Native ad pages. The ad page is a
-  // real SDK view, never a modal interstitial or a fake placeholder.
-  bool get _adsEnabled =>
-      AdPolicy.instance.canShowNative(AdPlacement.forYouFeed);
-
-  int _adCountFor(int songCount) {
-    if (!_adsEnabled || songCount <= 0) return 0;
-    return (songCount - 1) ~/ AdConfig.discoveryAdEvery;
-  }
-
-  int get _pageCount => _items.length + _adCountFor(_items.length);
-
-  bool _isAdPage(int page) {
-    if (!_adsEnabled || page == 0) return false;
-    return (page - AdConfig.discoveryAdEvery) %
-            (AdConfig.discoveryAdEvery + 1) ==
-        0;
-  }
-
-  int _songIndexForPage(int page) {
-    if (!_adsEnabled) return page;
-    final adsBefore = page ~/ (AdConfig.discoveryAdEvery + 1);
-    return page - adsBefore;
-  }
-
-  int _pageForSongIndex(int songIndex) {
-    if (!_adsEnabled) return songIndex;
-    return songIndex + (songIndex ~/ AdConfig.discoveryAdEvery);
-  }
+  /// The index of the last organic video where a swipe interstitial was
+  /// triggered (prevents re-triggering on backward/rapid swipes).
+  int _lastInterstitialIndex = -1;
+  bool _showingInterstitial = false;
 
   /// The APPLIED Discovery filter configuration — the only state the feed
   /// actually fetches from. The Explore sheet works on a DRAFT copy and only
@@ -180,9 +153,7 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _syncingFromManager = true;
     setState(() => _currentIndex = idx);
     if (_pageController.hasClients) {
-      _pageController.jumpToPage(
-        _pageForSongIndex(idx).clamp(0, _pageCount - 1),
-      );
+      _pageController.jumpToPage(idx.clamp(0, _items.length - 1));
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncingFromManager = false;
@@ -222,20 +193,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _seenIds.addAll(batch.map((t) => t['id'] as String));
       _initialLoading = false;
     });
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
     if (batch.isNotEmpty) {
       final first = batch.first;
       final id = first['id'] as String? ?? '';
@@ -456,22 +413,16 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _isLoadingMore = false;
   }
 
-  void _onPageChanged(int page) {
-    if (page < 0 || page >= _pageCount) return;
-    unawaited(HapticFeedback.selectionClick());
-
-    // This is the actual in-feed ad page. It owns no playback and never calls
-    // the modal Interstitial API. The user simply swipes through it.
-    if (_isAdPage(page)) {
-      if (VShotsPlaybackManager.instance.isOpen) {
-        VShotsPlaybackManager.instance.pause();
-      }
-      return;
-    }
-
-    final index = _songIndexForPage(page);
+  void _onPageChanged(int index) {
     if (index < 0 || index >= _items.length) return;
+    unawaited(HapticFeedback.selectionClick());
     final track = _items[index];
+
+    final isForwardSwipe = index > _currentIndex;
+    final isAdBoundary = isForwardSwipe &&
+        index > 0 &&
+        index % AdConfig.discoveryAdEvery == 0 &&
+        index > _lastInterstitialIndex;
 
     final prev = _prevCard;
     if (prev != null) {
@@ -492,10 +443,20 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     _prevCard = track;
 
     setState(() => _currentIndex = index);
+    final shownId = track['id'] as String? ?? '';
+    if (shownId.isNotEmpty) LocalLibrary.instance.recordShownSong(shownId);
 
-    // Programmatic auto-advance already owns playback. Never trigger another
-    // ad page or re-run playQueue from this callback.
+    // Programmatic auto-advance already owns playback.
     if (_syncingFromManager) return;
+
+    if (isAdBoundary) {
+      _lastInterstitialIndex = index;
+      if (VShotsPlaybackManager.instance.isOpen) {
+        VShotsPlaybackManager.instance.pause();
+      }
+      unawaited(_showSwipeInterstitialAndResume(index));
+      return;
+    }
 
     VShotsPlaybackManager.instance.playQueue(List.of(_items), index);
     unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
@@ -503,23 +464,25 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     unawaited(_maybeLoadMore());
   }
 
-  void _skipUnavailableDiscoveryAd(int page) {
-    if (!mounted || !_isAdPage(page)) return;
-    final nextPage = page + 1;
-    if (nextPage >= _pageCount) {
-      unawaited(_maybeLoadMore());
-      return;
+  Future<void> _showSwipeInterstitialAndResume(int index) async {
+    if (_showingInterstitial) return;
+    _showingInterstitial = true;
+    try {
+      await VShotsAds.instance.showDiscoverySwipeInterstitial(
+        trigger: 'discovery_swipe',
+      );
+    } catch (e) {
+      debugPrint('[ForYouFeed] swipe interstitial error: $e');
+    } finally {
+      _showingInterstitial = false;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
-      if (_pageController.page?.round() == page) {
-        _pageController.animateToPage(
-          nextPage,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-        );
-      }
-    });
+    if (!mounted) return;
+    if (_currentIndex == index) {
+      VShotsPlaybackManager.instance.playQueue(List.of(_items), index);
+      unawaited(LocalLibrary.instance.recordRecentlyPlayed(_items[index]));
+      playbackSignalTracker.onTrackStarted(_items[index]);
+      unawaited(_maybeLoadMore());
+    }
   }
 
   /// Opens the Explore panel: the full filter hierarchy (DISCOVER / MOODS /
@@ -619,30 +582,16 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             child: PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
-              // Default PageView paging is lighter than BouncingScrollPhysics
-              // on Android and avoids overscroll work during fast swipes.
               physics: const PageScrollPhysics(),
               allowImplicitScrolling: false,
-              itemCount: _pageCount,
+              itemCount: _items.length,
               onPageChanged: _onPageChanged,
-              itemBuilder: (context, page) {
-                if (page < 0 || page >= _pageCount) {
-                  return const SizedBox.shrink();
-                }
-
-                if (_isAdPage(page)) {
-                  return RepaintBoundary(
-                    child: DiscoverySwipeNativeAdPage(
-                      onUnavailable: () => _skipUnavailableDiscoveryAd(page),
-                    ),
-                  );
-                }
-
-                final index = _songIndexForPage(page);
+              itemBuilder: (context, index) {
                 if (index < 0 || index >= _items.length) {
                   return const SizedBox.shrink();
                 }
-                final isCurrent = page == _pageForSongIndex(_currentIndex);
+
+                final isCurrent = index == _currentIndex;
                 final track = _items[index];
                 return RepaintBoundary(
                   child: _ForYouCard(
@@ -652,13 +601,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                     onPlayPauseToggle: _onPlayTap,
                     onNotInterested: () => _handleNotInterested(index),
                     onDoubleTapLike: () => _handleDoubleTapLike(track),
-                    onSkipPrevious: page > 0
+                    onSkipPrevious: index > 0
                         ? () => _pageController.previousPage(
                               duration: const Duration(milliseconds: 220),
                               curve: Curves.easeOutCubic,
                             )
                         : null,
-                    onSkipNext: page < _pageCount - 1
+                    onSkipNext: index < _items.length - 1
                         ? () => _pageController.nextPage(
                               duration: const Duration(milliseconds: 220),
                               curve: Curves.easeOutCubic,

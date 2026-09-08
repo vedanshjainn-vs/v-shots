@@ -80,6 +80,11 @@ class AdPolicy {
   bool canShowInterstitial() =>
       adsAvailable && _interstitialEnabled && frequency.canShow();
 
+  /// Discovery swipe cadence is governed by song swipe index and
+  /// _lastInterstitialIndex (every AdConfig.discoveryAdEvery songs).
+  bool canShowDiscoverySwipeInterstitial() =>
+      adsAvailable && _interstitialEnabled;
+
   bool canShowRewarded() => adsAvailable && _rewardedEnabled;
 
   bool canShowBanner(AdPlacement placement) {

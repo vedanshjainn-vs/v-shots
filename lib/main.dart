@@ -100,9 +100,12 @@ void main() async {
   await SmartNotificationService.instance.initialize();
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
-  // Initialize FCM (non-blocking, fire-and-forget)
-
-  await AuthService.instance.initializeGoogleSignIn();
+  // Initialize FCM / Google Sign In (non-blocking, fire-and-forget)
+  unawaited(
+    AuthService.instance.initializeGoogleSignIn().catchError((e) {
+      debugPrint('[Boot] Google Sign-In init error: $e');
+    }),
+  );
 
   // Ads (AppLovin MAX mediation): one-time, NON-BLOCKING init (Phase 18).
   // The existing UMP consent system is REUSED as the single consent source;
@@ -291,10 +294,10 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     _c = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 600),
     );
     _c.forward();
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (!mounted) return;
       // Capture the NavigatorState now — it outlives this Splash widget.
       // (The onComplete callback fires much later, after the user finishes

@@ -94,7 +94,7 @@ class VShotsAds {
     required String trigger,
   }) async {
     final policy = AdPolicy.instance;
-    if (!policy.canShowInterstitial()) return false;
+    if (!policy.canShowDiscoverySwipeInterstitial()) return false;
     final unitId = LevelPlayConfig.unitIdFor(
       LevelPlayPlacement.interstitialSessionBreak,
     );
