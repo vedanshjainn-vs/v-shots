@@ -48,6 +48,7 @@ enum HomeShelfKind {
   /// Personalized via the recommendation engine.
   madeForYou,
   becauseYouListenedTo,
+  quickPicks,
   trendingForYou,
   discoverSomethingNew,
 
@@ -177,10 +178,13 @@ class HomeFeedService {
     'because_listened': HomeShelfKind.becauseYouListenedTo,
     'because_you_listened': HomeShelfKind.becauseYouListenedTo,
     'because_you_listened_to': HomeShelfKind.becauseYouListenedTo,
+    'quick_picks': HomeShelfKind.quickPicks,
+    'quickpicks': HomeShelfKind.quickPicks,
     'tfy': HomeShelfKind.trendingForYou,
     'trending_for_you': HomeShelfKind.trendingForYou,
     'discover': HomeShelfKind.discoverSomethingNew,
     'discover_something_new': HomeShelfKind.discoverSomethingNew,
+    'fresh_discovery': HomeShelfKind.discoverSomethingNew,
     'artists': HomeShelfKind.artistsForYou,
     'artists_for_you': HomeShelfKind.artistsForYou,
     'official': HomeShelfKind.officialMusic,
@@ -236,6 +240,14 @@ class HomeFeedService {
           kind: HomeShelfKind.becauseYouListenedTo,
           limit: 12,
           onlyWhenPersonalized: true,
+        ),
+      if (!existing.contains('dynamic_quick_picks'))
+        HomeShelf(
+          id: 'dynamic_quick_picks',
+          title: 'Quick Picks',
+          subtitle: 'What you might want right now',
+          kind: HomeShelfKind.quickPicks,
+          limit: 12,
         ),
       if (!existing.contains('dynamic_tfy'))
         HomeShelf(
@@ -438,6 +450,8 @@ class HomeFeedService {
         return 'Personalized from your listening';
       case HomeShelfKind.becauseYouListenedTo:
         return 'Based on your recent plays';
+      case HomeShelfKind.quickPicks:
+        return 'What you might want right now';
       case HomeShelfKind.trendingForYou:
         return 'Trending, ranked by your taste';
       case HomeShelfKind.discoverSomethingNew:
@@ -496,6 +510,13 @@ class HomeFeedService {
           kind: HomeShelfKind.becauseYouListenedTo,
           limit: 12,
           onlyWhenPersonalized: true,
+        ),
+        HomeShelf(
+          id: 'quick_picks',
+          title: 'Quick Picks',
+          subtitle: 'What you might want right now',
+          kind: HomeShelfKind.quickPicks,
+          limit: 12,
         ),
         HomeShelf(
           id: 'trending',
@@ -915,6 +936,7 @@ class HomeFeedService {
       final intent = switch (shelf.kind) {
         HomeShelfKind.madeForYou => FeedIntent.madeForYou,
         HomeShelfKind.becauseYouListenedTo => FeedIntent.becauseYouListenedTo,
+        HomeShelfKind.quickPicks => FeedIntent.quickPicks,
         HomeShelfKind.trendingForYou => FeedIntent.trendingForYou,
         HomeShelfKind.discoverSomethingNew => FeedIntent.discoverSomethingNew,
         _ => FeedIntent.madeForYou,
@@ -968,6 +990,7 @@ class HomeFeedService {
 
       case HomeShelfKind.madeForYou:
       case HomeShelfKind.becauseYouListenedTo:
+      case HomeShelfKind.quickPicks:
       case HomeShelfKind.trendingForYou:
       case HomeShelfKind.discoverSomethingNew:
         // "Made For You" goes through MUSIC INTELLIGENCE V3 (taste → candidate
@@ -987,6 +1010,7 @@ class HomeFeedService {
         final intent = switch (shelf.kind) {
           HomeShelfKind.madeForYou => FeedIntent.madeForYou,
           HomeShelfKind.becauseYouListenedTo => FeedIntent.becauseYouListenedTo,
+          HomeShelfKind.quickPicks => FeedIntent.quickPicks,
           HomeShelfKind.trendingForYou => FeedIntent.trendingForYou,
           _ => FeedIntent.discoverSomethingNew,
         };
@@ -1186,6 +1210,8 @@ class HomeFeedService {
         return 'trending hits top songs official audio';
       case HomeShelfKind.becauseYouListenedTo:
         return 'similar artists popular songs official audio';
+      case HomeShelfKind.quickPicks:
+        return 'top hit songs 2026 official audio';
       case HomeShelfKind.trendingForYou:
         return 'trending songs official music video 2026';
       default:
@@ -1230,6 +1256,7 @@ class HomeFeedService {
         return ranker.rankPopular(tracks);
       case HomeShelfKind.madeForYou:
       case HomeShelfKind.becauseYouListenedTo:
+      case HomeShelfKind.quickPicks:
       case HomeShelfKind.continueListening:
       case HomeShelfKind.artistsForYou:
       case HomeShelfKind.manual:

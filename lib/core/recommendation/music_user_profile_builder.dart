@@ -1,11 +1,5 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// V Shots — MusicUserProfileBuilder
-// ═════════════════════════════════════════════════════════════════════════════
-//
-// Builds the multi-dimensional taste profile from the EXISTING signal
-// infrastructure (SignalStore.events + TasteProfileBuilder + LocalLibrary).
-// Adds language/mood/song/album affinities and recent lists on top — never a
-// second signal store.
+// V Shots — MusicUserProfileBuilder (V2 Multi-Dimensional Taste)
 // ═════════════════════════════════════════════════════════════════════════════
 
 import '../music/music_entities.dart';
@@ -25,7 +19,7 @@ class MusicUserProfileBuilder {
 
   MusicUserProfile build() {
     final events = SignalStore.instance.events;
-    final taste = TasteProfileBuilder().build(events: events); // reuse
+    final taste = TasteProfileBuilder().build(events: events);
 
     final languageAffinity = <String, double>{};
     final moodAffinity = <String, double>{};
@@ -40,7 +34,7 @@ class MusicUserProfileBuilder {
         halfLifeHours: config.genreAffinityHalfLifeHours,
       );
       final text =
-          '${event.title ?? ''} ${event.artist ?? ''} ${event.query ?? ''}'
+          '${event.title ?? ''} ${event.artist ?? ''} ${event.query ?? ''} ${event.playlistTheme ?? ''}'
               .toLowerCase();
 
       final language = _detectLanguage(text);
@@ -52,7 +46,6 @@ class MusicUserProfileBuilder {
       if (mood != null) {
         moodAffinity[mood] = (moodAffinity[mood] ?? 0) + weight * decay;
       }
-      // Song affinity keyed by canonical identity (title + artist).
       if (event.title != null && event.title!.isNotEmpty && weight > 0) {
         final songKey = canonicalSongId(
           title: event.title!,
@@ -66,7 +59,6 @@ class MusicUserProfileBuilder {
     _clamp(moodAffinity);
     _clamp(songAffinity);
 
-    // Recents from LocalLibrary (most-recent-first, already persisted).
     final recent = LocalLibrary.instance.recentlyPlayed.value;
     final recentArtists = <String>[];
     final recentSongs = <String>[];
@@ -94,7 +86,7 @@ class MusicUserProfileBuilder {
       genreAffinity: taste.genreAffinity,
       languageAffinity: languageAffinity,
       moodAffinity: moodAffinity,
-      albumAffinity: albumAffinity, // no album signal in the pipeline (honest)
+      albumAffinity: albumAffinity,
       songAffinity: songAffinity,
       artistSkipPenalty: taste.artistSkipPenalty,
       recentArtists: recentArtists,
@@ -102,10 +94,10 @@ class MusicUserProfileBuilder {
     );
   }
 
-  /// Same per-event weight scale as the existing taste engine (consistent,
-  /// not a second, divergent scale).
   double _weightFor(SignalEvent event) {
     switch (event.type) {
+      case SignalType.search:
+        return MusicSignalWeights.search;
       case SignalType.like:
         return MusicSignalWeights.like;
       case SignalType.replay:
@@ -114,6 +106,11 @@ class MusicUserProfileBuilder {
         return MusicSignalWeights.completed;
       case SignalType.addToPlaylist:
         return MusicSignalWeights.playlistAdd;
+      case SignalType.playlistOpen:
+      case SignalType.playlistInteraction:
+        return MusicSignalWeights.playlistOpen;
+      case SignalType.discoveryListen:
+        return MusicSignalWeights.longListen;
       case SignalType.playDuration:
         final seconds = event.value ?? 0;
         return seconds >= 60
@@ -122,15 +119,16 @@ class MusicUserProfileBuilder {
       case SignalType.play:
         return MusicSignalWeights.play;
       case SignalType.unlike:
+        return -1.5;
+      case SignalType.removeFromPlaylist:
         return -1.0;
+      case SignalType.discoverySwipe:
+        return -1.5;
       case SignalType.skip:
         final seconds = event.value ?? 0;
         if (seconds < 10) return MusicSignalWeights.immediateSkip;
         if (seconds < 30) return MusicSignalWeights.shortSkip;
         return MusicSignalWeights.lateSkip;
-      case SignalType.search:
-      case SignalType.removeFromPlaylist:
-        return 0;
     }
   }
 

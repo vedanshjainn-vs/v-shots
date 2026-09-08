@@ -6,13 +6,15 @@ import 'dart:math';
 
 /// Signal → affinity weights (same scale as the existing taste engine).
 class MusicSignalWeights {
-  static const double play = 1.0;
-  static const double longListen = 2.0;
-  static const double completed = 3.0;
-  static const double replay = 4.0;
+  static const double search = 6.0;
   static const double like = 5.0;
+  static const double replay = 4.5;
+  static const double completed = 3.5;
   static const double playlistAdd = 3.5;
-  static const double immediateSkip = -2.5;
+  static const double playlistOpen = 3.0;
+  static const double longListen = 2.0;
+  static const double play = 1.0;
+  static const double immediateSkip = -3.0;
   static const double shortSkip = -1.5;
   static const double lateSkip = -0.5;
 }

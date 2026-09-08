@@ -1,31 +1,6 @@
-// ════════════════════════════════════════════════
-// V Shots — Recommendation Engine: Candidate Generation (Phase 7, Part J)
-// ════════════════════════════════════════════════
-//
-// Generates raw candidate SEARCH QUERIES (not tracks directly — actual
-// track fetching still goes through the existing MusicRepository ->
-// ProviderManager -> YouTubeMusicProvider chain from the Provider
-// Architecture task, per this task's own "DO NOT change the current
-// YouTube integration" constraint) from multiple real sources, per
-// Part J's list:
-//   1. Similar artists       -> topArtists' "similar to X" queries
-//   2. Similar titles/tags   -> genre-tag-based queries
-//   3. Recently played patterns -> topArtists' own-catalog queries
-//   4. Liked music           -> queries built from liked tracks' artists
-//   5. Search behavior       -> the user's own recent search queries
-//   6. Trending content      -> a fixed trending query
-//   7. New content           -> a fixed "new releases" query
-//   8. Exploration candidates -> genre/mood queries OUTSIDE the user's
-//      established top genres, for real discovery (Part O)
-//
-// HONEST SCOPE NOTE: "candidates" here means SEARCH QUERIES whose
-// results become candidate tracks after going through the existing
-// YoutubeMusicMapper filter (podcast/compilation/duration exclusion,
-// already enforced by the Provider layer — Part U's requirement is
-// satisfied by REUSING that existing filter, not reimplementing it).
-// This is not pretending to have a track-level catalog index YouTube
-// doesn't expose an API for.
-// ════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
+// V Shots — Recommendation Engine: Candidate Generation (V2 Engine)
+// ═════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
 
@@ -40,16 +15,12 @@ enum CandidateSource {
   recentlyPlayedPattern,
   likedMusic,
   searchBehavior,
+  playlistTheme,
   trending,
   newContent,
   exploration,
 }
 
-/// One candidate query plus the source that generated it — the source
-/// is threaded through to `RecommendationScorer` so contextMatch/
-/// novelty scoring can weigh candidates differently depending on where
-/// they came from (an exploration candidate SHOULD score high on
-/// novelty even with zero user affinity, for example).
 class CandidateQuery {
   const CandidateQuery({
     required this.query,
@@ -91,17 +62,11 @@ class CandidateGenerator {
     'K-Pop': 'k-pop hits official',
     'Indie': 'indie songs official audio',
     'RnB': 'rnb slow jams',
-    'Lo-Fi': 'lofi chill study beats instrumental',
-    'Party': 'party dance bollywood punjabi hits',
     'Devotional': 'bhajan devotional songs official audio',
-    'Rock': 'best rock songs classic modern official',
-    'Electronic': 'electronic edm dance music hits official',
     '90s': '90s hindi evergreen songs official',
     '2000s': '2000s bollywood hit songs official',
-    'Global': 'global pop hits official video',
   };
 
-  /// Language preference → discovery query (used for cold-start seeding).
   static const _languageQueries = {
     'Hindi': 'hindi songs official audio',
     'Punjabi': 'punjabi songs official audio',
@@ -113,25 +78,26 @@ class CandidateGenerator {
     'Gujarati': 'gujarati garba folk songs official',
   };
 
-  /// Generates a pool of candidate queries from every real source
-  /// available. [excludeIds]/session-level de-dup happens downstream
-  /// (against actual fetched tracks) — this stage just decides WHICH
-  /// QUERIES to try, already avoiding obvious duplicates (Part J: "Avoid
-  /// returning the same songs repeatedly" — achieved by varying which
-  /// query is picked, not by only ever using one).
   List<CandidateQuery> generate(TasteProfile profile, {int count = 12}) {
-    final candidates = <CandidateQuery>[];
-
     if (!profile.hasEnoughHistoryForPersonalization) {
-      // Part M — Cold Start: no meaningful history yet. Use trending +
-      // regional/global popularity + genre diversity + exploration,
-      // never an empty feed.
       return _coldStartCandidates(count: count);
     }
 
-    // 1. Similar artists (content-based discovery seeded from top
-    // artists, not just their own catalog).
+    final candidates = <CandidateQuery>[];
     final topArtists = profile.topArtists.take(5).toList();
+
+    // 1. Search Behavior — Explicit search queries are top priority
+    final topSearches = profile.topSearches.take(3).toList();
+    for (final q in topSearches) {
+      candidates.add(
+        CandidateQuery(
+          query: '$q songs official audio',
+          source: CandidateSource.searchBehavior,
+        ),
+      );
+    }
+
+    // 2. Similar artists (content-based discovery seeded from top artists)
     for (final artist in topArtists) {
       final template = _genreDiscoveryTemplates[_random.nextInt(
         _genreDiscoveryTemplates.length,
@@ -145,7 +111,7 @@ class CandidateGenerator {
       );
     }
 
-    // 2. Genre/tag-based candidates from the user's real top genres.
+    // 3. Genre/tag-based candidates from top genres
     for (final genre in profile.topGenres.take(3)) {
       final q = _allKnownGenreQueries[genre];
       if (q != null) {
@@ -159,7 +125,7 @@ class CandidateGenerator {
       }
     }
 
-    // 3. Recently played patterns — top artists' own catalog.
+    // 4. Recently played patterns — top artists' own catalog
     for (final artist in topArtists.take(3)) {
       candidates.add(
         CandidateQuery(
@@ -170,9 +136,7 @@ class CandidateGenerator {
       );
     }
 
-    // 4. Liked music — real LocalLibrary liked-songs artists (a signal
-    // the pre-Phase-7 engine never used directly for query generation
-    // at all, only via the merged recentlyPlayed-based affinity).
+    // 5. Liked music artists
     final likedArtists = LocalLibrary.instance.likedSongs.value
         .map((t) => t['artist'] as String? ?? '')
         .where((a) => a.isNotEmpty)
@@ -188,20 +152,17 @@ class CandidateGenerator {
       );
     }
 
-    // 5. Search behavior — the user's own real recent searches are a
-    // strong, direct signal of current interest.
-    final recentSearches = LocalLibrary.instance.recentSearches.value
-        .map((s) => s['query'] as String? ?? '')
-        .where((q) => q.isNotEmpty)
-        .take(2);
-    for (final q in recentSearches) {
+    // 6. Playlist Theme candidates
+    for (final pl in profile.playlistAffinity.keys.take(2)) {
       candidates.add(
-        CandidateQuery(query: q, source: CandidateSource.searchBehavior),
+        CandidateQuery(
+          query: '$pl songs official audio',
+          source: CandidateSource.playlistTheme,
+        ),
       );
     }
 
-    // 6. Trending content — always included, a real, live signal
-    // (matches Home's existing "Trending Now" query).
+    // 7. Trending content
     candidates.add(
       const CandidateQuery(
         query: 'trending music today official audio',
@@ -209,7 +170,7 @@ class CandidateGenerator {
       ),
     );
 
-    // 7. New content.
+    // 8. New content
     candidates.add(
       const CandidateQuery(
         query: 'new music releases official audio',
@@ -217,8 +178,7 @@ class CandidateGenerator {
       ),
     );
 
-    // 8. Exploration — genres OUTSIDE the user's current top genres,
-    // for real discovery rather than an echo chamber (Part O).
+    // 9. Controlled exploration — genres outside user's current top genres
     final unexploredGenres = _allKnownGenreQueries.keys
         .where((g) => !profile.topGenres.take(3).contains(g))
         .toList()
@@ -237,17 +197,8 @@ class CandidateGenerator {
     return candidates.take(count).toList();
   }
 
-  /// Part M — Cold Start. No play history yet.
-  ///
-  /// When the user completed onboarding, their stated genre/language
-  /// preferences come FIRST (in the order they chose them) so a brand-new
-  /// user's Home/Discovery is seeded with their taste — never a completely
-  /// generic feed. The remaining slots are filled from the regional/global
-  /// defaults and then shuffled, so there is always real diversity. Never
-  /// returns an empty list.
   List<CandidateQuery> _coldStartCandidates({required int count}) {
     final store = PersonalizationStore.instance;
-
     final ordered = <CandidateQuery>[];
     final seenQueries = <String>{};
 
@@ -258,18 +209,19 @@ class CandidateGenerator {
       );
     }
 
-    // 1. Preferred genres first (user's explicit stated taste).
+    // 1. Preferred genres first (stated taste from onboarding)
     for (final genre in store.preferredGenres) {
       final q = _allKnownGenreQueries[genre];
       if (q != null) addPref(q, CandidateSource.genreTag, genre);
     }
-    // 2. Preferred languages.
+
+    // 2. Preferred languages
     for (final lang in store.preferredLanguages) {
       final q = _languageQueries[lang];
       if (q != null) addPref(q, CandidateSource.exploration, lang);
     }
 
-    // 3. Default regional/global pool (deduped against preferences).
+    // 3. Safe broad discovery defaults
     final defaults = <CandidateQuery>[
       const CandidateQuery(
         query: 'trending music today official audio',

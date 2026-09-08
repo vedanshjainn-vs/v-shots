@@ -1,49 +1,15 @@
-// ════════════════════════════════════════════════
-// V Shots — Recommendation Engine: Scoring (Phase 7, Part K)
-// ════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
+// V Shots — Recommendation Engine: Scoring (V2 Engine)
+// ═════════════════════════════════════════════════════════════════════════
 //
-// Implements the weighted ranking model from Part K's conceptual
-// formula:
-//   score = userAffinity + artistAffinity + recency + similarity
-//         + completionProbability + popularity + contextMatch
-//         + novelty - skipPenalty - repetitionPenalty
-//
-// Every term below maps to a REAL, computable signal — nothing here
-// is a placeholder/fake number:
-//   - userAffinity / artistAffinity: from TasteProfile (real signal
-//     history).
-//   - recency: how recently the CANDIDATE's seed artist/genre was
-//     actually engaged with (favors "because you just listened to X"
-//     over a stale interest from weeks ago).
-//   - similarity: GenreClassifier's real Jaccard tag-overlap between
-//     the candidate and the user's top genres.
-//   - completionProbability: a real, computable proxy — the
-//     candidate artist's historical completion rate (completions vs.
-//     total plays for that artist in the signal history), NOT a
-//     fabricated ML prediction. Falls back to a neutral 0.5 when there
-//     isn't enough history for that specific artist (honest — not
-//     claiming false precision).
-//   - popularity: NOT claimed (YouTube's API exposes no public view-
-//     count/popularity figure through this app's search results in a
-//     comparable normalized form) — see this class's own
-//     `_popularityScore` doc for the honest, minimal proxy actually
-//     used (candidate source: trending/newContent get a small boost,
-//     everything else 0), rather than pretending to have real
-//     popularity data.
-//   - contextMatch: time-of-day match against the candidate's genre
-//     (see `_contextMatchScore`) — ONLY applied where a real,
-//     pre-established mapping exists (matches
-//     ForYouFeedService's existing day/evening/night query buckets),
-//     per Part P's explicit instruction: "Do NOT claim to detect user
-//     mood automatically unless we actually have a reliable signal."
-//   - novelty: inverse of the candidate artist's existing affinity —
-//     an artist the user has never engaged with scores high novelty;
-//     a heavily-played artist scores low (this is what makes
-//     exploration candidates score competitively despite zero
-//     affinity).
-//   - skipPenalty / repetitionPenalty: from TasteProfile's decayed
-//     skip penalties, and a same-session repetition check.
-// ════════════════════════════════════════════════
+// Multi-objective weighted ranking model:
+//   Score = UserAffinity + ArtistAffinity + SearchAffinity + GenreAffinity
+//         + LanguageAffinity + Recency + Similarity + CompletionProbability
+//         + ReplaySignal + Popularity + ContextMatch + Novelty + OfficialBoost
+//         + Freshness - SkipPenalty - RepetitionPenalty
+// ═════════════════════════════════════════════════════════════════════════
+
+import 'dart:math';
 
 import '../providers/provider_models.dart';
 import 'genre_classifier.dart';
@@ -52,23 +18,20 @@ import 'signal_event.dart';
 import 'signal_store.dart';
 import 'taste_profile.dart';
 
-/// A scored candidate track, ready for ranking/diversity filtering.
+/// A scored candidate track with full metadata and explainable reason.
 class ScoredTrack {
   const ScoredTrack({
     required this.track,
     required this.score,
     required this.genreTags,
+    this.reason,
     this.debugBreakdown,
   });
 
   final ProviderTrack track;
   final double score;
   final Set<String> genreTags;
-
-  /// Optional per-term breakdown, populated only when scoring is run
-  /// with `debug: true` (see `RecommendationScorer.score`) — used by
-  /// tests to assert individual terms, and available for any future
-  /// debug UI, without costing anything in the normal (non-debug) path.
+  final String? reason;
   final Map<String, double>? debugBreakdown;
 }
 
@@ -95,48 +58,75 @@ class RecommendationScorer {
     );
 
     final userAffinity = profile.artistAffinity[track.artist] ?? 0.0;
-    final artistAffinity =
-        userAffinity; // same signal, kept as a separate term per Part K's formula shape
+    final artistAffinity = userAffinity;
+
+    // Search affinity: check if candidate artist or title matches recent search queries
+    final searchAffinity = _searchAffinityScore(track, profile);
+
+    // Genre & Language affinities
+    final genreAffinity = _genreAffinityScore(tags, profile);
+    final languageAffinity = _languageAffinityScore(track, profile);
+
     final recency = _recencyScore(track.artist);
     final similarity = _similarityScore(tags, profile);
-    final completionProbability = _completionProbabilityScore(track.artist);
+    final completionProbability = _completionProbabilityScore(track.artist, profile);
+    final replaySignal = profile.artistRepeatRate[track.artist] ?? 0.0;
     final popularity = _popularityScore(isTrendingOrNewSource);
     final contextMatch = _contextMatchScore(tags);
     final novelty = _noveltyScore(track.artist, profile);
-    final skipPenalty = profile.artistSkipPenalty[track.artist] ?? 0.0;
-    const repetitionPenalty =
-        0.0; // applied downstream by DiversityFilter, not per-track here (see that file)
-    // Official/verified uploads get a small, honest ranking boost (real
-    // InnerTube badge metadata only — never guessed from channel names).
     final officialBoost = track.isOfficial ? 1.0 : 0.0;
+    final freshness = isTrendingOrNewSource ? 0.8 : 0.4;
+    final skipPenalty = profile.artistSkipPenalty[track.artist] ?? 0.0;
+    const repetitionPenalty = 0.0;
 
     final total = config.weightUserAffinity * userAffinity +
         config.weightArtistAffinity * artistAffinity +
+        config.weightSearchAffinity * searchAffinity +
+        config.weightGenreAffinity * genreAffinity +
+        config.weightLanguageAffinity * languageAffinity +
         config.weightRecency * recency +
         config.weightSimilarity * similarity +
         config.weightCompletionProbability * completionProbability +
+        config.weightReplaySignal * replaySignal +
         config.weightPopularity * popularity +
         config.weightContextMatch * contextMatch +
         config.weightNovelty * novelty +
-        config.weightOfficialBoost * officialBoost -
+        config.weightOfficialBoost * officialBoost +
+        config.weightFreshness * freshness -
         config.weightSkipPenalty * skipPenalty -
         config.weightRepetitionPenalty * repetitionPenalty;
+
+    final reason = _determineReason(
+      track,
+      profile,
+      tags,
+      isTrendingOrNewSource: isTrendingOrNewSource,
+      searchAffinity: searchAffinity,
+      completionRate: completionProbability,
+      replaySignal: replaySignal,
+    );
 
     return ScoredTrack(
       track: track,
       score: total,
       genreTags: tags,
+      reason: reason,
       debugBreakdown: debug
           ? {
               'userAffinity': userAffinity,
               'artistAffinity': artistAffinity,
+              'searchAffinity': searchAffinity,
+              'genreAffinity': genreAffinity,
+              'languageAffinity': languageAffinity,
               'recency': recency,
               'similarity': similarity,
               'completionProbability': completionProbability,
+              'replaySignal': replaySignal,
               'popularity': popularity,
               'contextMatch': contextMatch,
               'novelty': novelty,
               'officialBoost': officialBoost,
+              'freshness': freshness,
               'skipPenalty': skipPenalty,
               'repetitionPenalty': repetitionPenalty,
             }
@@ -144,10 +134,39 @@ class RecommendationScorer {
     );
   }
 
-  /// How recently the user actually engaged with this artist — a
-  /// track from an artist you listened to an hour ago scores higher
-  /// than one from an artist you last heard a week ago, independent
-  /// of overall affinity magnitude.
+  double _searchAffinityScore(ProviderTrack track, TasteProfile profile) {
+    if (profile.searchAffinity.isEmpty) return 0.0;
+    final artistLower = track.artist.toLowerCase();
+    final titleLower = track.title.toLowerCase();
+    for (final entry in profile.searchAffinity.entries) {
+      final q = entry.key.toLowerCase();
+      if (artistLower.contains(q) || titleLower.contains(q) || q.contains(artistLower)) {
+        return min(3.0, entry.value / 4.0);
+      }
+    }
+    return 0.0;
+  }
+
+  double _genreAffinityScore(Set<String> tags, TasteProfile profile) {
+    if (tags.isEmpty || profile.genreAffinity.isEmpty) return 0.0;
+    var sum = 0.0;
+    for (final tag in tags) {
+      sum += profile.genreAffinity[tag] ?? 0.0;
+    }
+    return min(2.5, sum / 5.0);
+  }
+
+  double _languageAffinityScore(ProviderTrack track, TasteProfile profile) {
+    if (profile.languageAffinity.isEmpty) return 0.0;
+    final text = '${track.title} ${track.artist}';
+    final detected = _genres.detectLanguages(text);
+    var sum = 0.0;
+    for (final lang in detected) {
+      sum += profile.languageAffinity[lang] ?? 0.0;
+    }
+    return min(2.0, sum / 5.0);
+  }
+
   double _recencyScore(String artist) {
     final events = SignalStore.instance.events
         .where((e) => e.artist == artist && e.type != SignalType.skip)
@@ -156,7 +175,6 @@ class RecommendationScorer {
     events.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     final hoursAgo =
         DateTime.now().difference(events.first.timestamp).inMinutes / 60.0;
-    // Decays to ~0 after a week — a simple, honest recency curve.
     return (1.0 - (hoursAgo / (24 * 7)).clamp(0.0, 1.0));
   }
 
@@ -166,13 +184,9 @@ class RecommendationScorer {
     return _genres.similarity(candidateTags, topGenres);
   }
 
-  /// Real, computable proxy for "will this user finish this track":
-  /// this specific artist's historical completion rate from the
-  /// user's own signal history (completions / (completions + skips)).
-  /// Falls back to a neutral 0.5 when there's no history for this
-  /// artist yet — an honest "we don't know" rather than a fabricated
-  /// prediction.
-  double _completionProbabilityScore(String artist) {
+  double _completionProbabilityScore(String artist, TasteProfile profile) {
+    final recorded = profile.artistCompletionRate[artist];
+    if (recorded != null) return recorded;
     final relevant = SignalStore.instance.events.where(
       (e) =>
           e.artist == artist &&
@@ -184,21 +198,9 @@ class RecommendationScorer {
     return completions / relevant.length;
   }
 
-  /// Honest, minimal popularity proxy — NOT a fabricated view-count
-  /// number (see this file's header). Only distinguishes "this
-  /// candidate came from an explicitly popularity-driven source
-  /// (trending/new-releases)" vs. everything else, which is real
-  /// information (the query itself), not invented.
   double _popularityScore(bool isTrendingOrNewSource) =>
       isTrendingOrNewSource ? 1.0 : 0.0;
 
-  /// Time-of-day context match — ONLY for genre/mood buckets that
-  /// already have an established, real mapping (matches
-  /// ForYouFeedService's pre-existing day/evening/night query pools),
-  /// per Part P's explicit "do not claim mood detection without a
-  /// reliable signal" instruction. This is a real, simple, declared
-  /// heuristic (time of day is a 100% reliable signal — `DateTime.now()`
-  /// — unlike "mood," which this app makes no claim to detect).
   double _contextMatchScore(Set<String> tags) {
     final hour = DateTime.now().hour;
     final isNight = hour >= 22 || hour < 5;
@@ -216,13 +218,40 @@ class RecommendationScorer {
     return 0.0;
   }
 
-  /// Inverse of existing affinity — rewards genuinely new artists so
-  /// exploration candidates aren't drowned out by heavily-affine ones.
   double _noveltyScore(String artist, TasteProfile profile) {
     final affinity = profile.artistAffinity[artist] ?? 0.0;
-    if (affinity <= 0) return 1.0; // never engaged with before = fully novel
-    // Decays toward 0 as affinity grows — a moderately-known artist
-    // still gets some novelty credit, a heavily-played one gets none.
+    if (affinity <= 0) return 1.0;
     return (1.0 / (1.0 + affinity)).clamp(0.0, 1.0);
+  }
+
+  String _determineReason(
+    ProviderTrack track,
+    TasteProfile profile,
+    Set<String> tags, {
+    required bool isTrendingOrNewSource,
+    required double searchAffinity,
+    required double completionRate,
+    required double replaySignal,
+  }) {
+    if (searchAffinity > 0.5) {
+      return 'because_search_interest';
+    }
+    if (replaySignal > 0.3) {
+      return 'because_frequently_replayed';
+    }
+    final artistAffinity = profile.artistAffinity[track.artist] ?? 0.0;
+    if (artistAffinity > 3.0) {
+      return 'because_recently_played_artist';
+    }
+    if (completionRate > 0.75) {
+      return 'because_high_completion';
+    }
+    if (tags.any(profile.topGenres.take(2).contains)) {
+      return 'because_favorite_genre';
+    }
+    if (isTrendingOrNewSource) {
+      return 'because_trending_in_preferred_genre';
+    }
+    return 'similar_to_your_taste';
   }
 }

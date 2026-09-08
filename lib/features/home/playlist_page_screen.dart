@@ -18,7 +18,12 @@ import '../../core/ads/premium_mrec_ad_card.dart';
 import '../../core/ads/native_ad_widget.dart';
 import '../../core/providers/music_repository.dart';
 import '../../core/theme/app_colors.dart';
-import '../../main.dart' show currentTrackNotifier, musicRepository, playTrack;
+import '../../main.dart'
+    show
+        currentTrackNotifier,
+        musicRepository,
+        playbackSignalTracker,
+        playTrack;
 import '../../shared/utils/youtube_url.dart';
 import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_image.dart';
@@ -60,6 +65,10 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
     super.initState();
     _tracks = List.of(widget.initialTracks);
     _loading = _tracks.isEmpty;
+    playbackSignalTracker.onPlaylistOpened(
+      widget.title,
+      subtitle: widget.subtitle,
+    );
     _load();
   }
 
@@ -250,7 +259,10 @@ class _PlaylistPageScreenState extends State<PlaylistPageScreen> {
     final artist = (track['artist'] as String?) ?? '';
     final artwork = (track['artwork'] as String?) ?? '';
     return InkWell(
-      onTap: () => playTrack(context, track, _tracks, i),
+      onTap: () {
+        playbackSignalTracker.onPlaylistInteraction(track, widget.title);
+        playTrack(context, track, _tracks, i);
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         child: Row(
