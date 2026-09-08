@@ -199,7 +199,7 @@ def patch_discovery() -> None:
               controller: _pageController,
               scrollDirection: Axis.vertical,
               // Default PageView paging is lighter than BouncingScrollPhysics
-              // for Android and avoids extra overscroll work during fast swipes.
+              // on Android and avoids overscroll work during fast swipes.
               physics: const PageScrollPhysics(),
               allowImplicitScrolling: false,
               itemCount: _pageCount,
