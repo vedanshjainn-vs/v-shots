@@ -13,30 +13,9 @@ def patch_engine() -> None:
     path = ROOT / 'lib/core/recommendation/music_recommendation_engine.dart'
     text = path.read_text()
 
-    text = replace_once(
-        text,
-        "import 'music_recommendation_context.dart';\n",
-        "import 'advanced_recommendation_v2.dart';\nimport 'music_recommendation_context.dart';\nimport 'taste_profile.dart';\n",
-        'engine imports',
-    )
-    text = replace_once(
-        text,
-        "  final MusicCandidateGenerator _generator;\n",
-        "  final MusicCandidateGenerator _generator;\n  final MusicSearch _search;\n",
-        'engine search field',
-    )
-    text = replace_once(
-        text,
-        "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        config = config,\n",
-        "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        _search = search,\n        config = config,\n",
-        'engine constructor',
-    )
-    text = replace_once(
-        text,
-        "    final profile = MusicUserProfileBuilder(config: config).build();\n    final candidates = await _generator.generate(\n",
-        "    final profile = MusicUserProfileBuilder(config: config).build();\n    final candidates = await _generator.generate(\n",
-        'engine profile anchor',
-    )
+    text = replace_once(text, "import 'music_recommendation_context.dart';\n", "import 'advanced_recommendation_v2.dart';\nimport 'music_recommendation_context.dart';\nimport 'taste_profile.dart';\n", 'engine imports')
+    text = replace_once(text, "  final MusicCandidateGenerator _generator;\n", "  final MusicCandidateGenerator _generator;\n  final MusicSearch _search;\n", 'engine search field')
+    text = replace_once(text, "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        config = config,\n", "  })  : _generator = MusicCandidateGenerator(search: search, config: config),\n        _search = search,\n        config = config,\n", 'engine constructor')
 
     marker = "\n}\n\n/// The For You score."
     if marker not in text:
@@ -45,7 +24,7 @@ def patch_engine() -> None:
     method = r'''
 
   /// V2 shelf-aware entry point. Candidate generation stays on the existing
-  /// pipeline; this layer changes only how candidates are ranked and mixed.
+  /// pipeline; this layer changes how candidates are ranked and mixed.
   Future<List<Map<String, dynamic>>> generateShelf({
     required RecommendationShelf shelf,
     required Set<String> excludeIds,
@@ -88,9 +67,6 @@ def patch_engine() -> None:
     final taste = TasteProfileBuilder().build();
     final profile = MusicUserProfileBuilder(config: config).build();
 
-    // COLD is intentionally not personalized. Use the existing safe
-    // candidate pools and deterministic ranking, then let the profile take
-    // over as real signals arrive.
     final candidates = await _generator.generate(profile: profile, context: context);
     if (candidates.isEmpty) {
       final fallbackQuery = switch (shelf) {
@@ -123,10 +99,11 @@ def patch_engine() -> None:
         candidateIndex: i,
       );
       scored.add(ScoredMusicCandidate(candidate: candidate, score: value));
+      final artist = candidate.artist.trim();
+      artistCounts[artist] = (artistCounts[artist] ?? 0) + 1;
     }
     scored.sort((a, b) => b.score.compareTo(a.score));
 
-    // Greedy diversity pass: an artist can lead once, then must pay fatigue.
     final result = <Map<String, dynamic>>[];
     final emittedSongs = <String>{};
     final emittedArtists = <String, int>{};
@@ -153,8 +130,6 @@ def patch_engine() -> None:
       if (result.length >= count) break;
     }
 
-    // If diversity was too strict for a small candidate pool, fill from the
-    // already-ranked list rather than returning an empty/short shelf.
     if (result.length < count) {
       for (final item in scored) {
         if (result.length >= count) break;
@@ -180,44 +155,24 @@ def patch_engine() -> None:
 def patch_generator() -> None:
     path = ROOT / 'lib/core/music/music_candidate_generator.dart'
     text = path.read_text()
-    if '..shuffle();' in text:
-        text = text.replace('..shuffle();', '..sort();')
+    text = text.replace('..shuffle();', '..sort();')
     path.write_text(text)
 
 
 def patch_home() -> None:
     path = ROOT / 'lib/features/home/home_feed_service.dart'
     text = path.read_text()
-    text = replace_once(
-        text,
-        "import '../../core/recommendation/music_recommendation_engine.dart';\n",
-        "import '../../core/recommendation/advanced_recommendation_v2.dart';\nimport '../../core/recommendation/music_recommendation_engine.dart';\n",
-        'home advanced import',
-    )
-    text = replace_once(
-        text,
-        "    final existing = base.map((s) => s.id).toSet();\n",
-        "    final existing = base.map((s) => s.id).toSet();\n",
-        'home shelf anchor',
-    )
-    # Remove the old odd/even shelf rotation. Recommendations themselves are
-    # deterministic; Home ordering must not appear random on refresh.
-    text = text.replace(
-        "    if (dynamic.isNotEmpty && _homeRotationNonce.isOdd) {\n      final first = dynamic.removeAt(0);\n      dynamic.add(first);\n    }\n",
-        "",
-    )
+    text = replace_once(text, "import '../../core/recommendation/music_recommendation_engine.dart';\n", "import '../../core/recommendation/advanced_recommendation_v2.dart';\nimport '../../core/recommendation/music_recommendation_engine.dart';\n", 'home advanced import')
+    text = text.replace("    if (dynamic.isNotEmpty && _homeRotationNonce.isOdd) {\n      final first = dynamic.removeAt(0);\n      dynamic.add(first);\n    }\n", "")
 
-    # Cold-start gate for shelves whose names imply personalization. Broad
-    # catalog/fresh discovery remains available and the V2 engine takes over
-    # progressively after real signals arrive.
     old = """    // Skip shelves that need history the user doesn't have yet.\n    if (shelf.onlyWhenPersonalized && !hasPersonalization) {\n"""
-    new = """    // Skip shelves that need history the user doesn't have yet.\n    final profileSignals = TasteProfileBuilder().build().totalSignalCount;\n    final coldStartPersonalizedShelf =\n        !hasPersonalization &&\n        (shelf.kind == HomeShelfKind.madeForYou ||\n            shelf.kind == HomeShelfKind.quickPicks ||\n            shelf.kind == HomeShelfKind.trendingForYou);\n    if (shelf.onlyWhenPersonalized || coldStartPersonalizedShelf) {\n      if (profileSignals < 3 || shelf.onlyWhenPersonalized) {\n"""
+    new = """    // Personalized shelf names are hidden until real intent exists.\n    // This prevents a cold install from pretending it already knows the user.\n    final profileSignals = TasteProfileBuilder().build().totalSignalCount;\n    final requiresPersonalization =\n        shelf.onlyWhenPersonalized ||\n        shelf.kind == HomeShelfKind.madeForYou ||\n        shelf.kind == HomeShelfKind.quickPicks ||\n        shelf.kind == HomeShelfKind.trendingForYou;\n    if (requiresPersonalization && profileSignals < 3) {\n"""
     if old not in text:
         raise RuntimeError('Advanced recommendation patch: home cold-start gate missing')
     text = text.replace(old, new, 1)
 
     old_switch = """        // \"Made For You\" goes through MUSIC INTELLIGENCE V3 (taste → candidate\n        // → rank → diversity → exploration) with the existing engine as\n        // fallback.\n        if (shelf.kind == HomeShelfKind.madeForYou && _musicEngine != null) {\n          try {\n            final music = await _musicEngine.generateForYou(\n              excludeIds: excludeIds,\n              count: shelf.limit,\n            );\n            if (music.isNotEmpty) return music;\n          } catch (e) {\n            debugPrint('[HomeFeedService] music engine failed: $e');\n          }\n        }\n"""
-    new_switch = """        // All recommendation shelves now use the same V2 behavior-driven\n        // ranking layer. The legacy RecommendationEngine remains the safe\n        // fallback if V2 cannot produce candidates.\n        if (_musicEngine != null) {\n          try {\n            final advancedShelf = switch (shelf.kind) {\n              HomeShelfKind.madeForYou => RecommendationShelf.madeForYou,\n              HomeShelfKind.becauseYouListenedTo => RecommendationShelf.becauseYouListenedTo,\n              HomeShelfKind.quickPicks => RecommendationShelf.quickPicks,\n              HomeShelfKind.trendingForYou => RecommendationShelf.trendingForYou,\n              HomeShelfKind.discoverSomethingNew => RecommendationShelf.freshDiscovery,\n              _ => RecommendationShelf.madeForYou,\n            };\n            final music = await _musicEngine.generateShelf(\n              shelf: advancedShelf,\n              excludeIds: excludeIds,\n              count: shelf.limit,\n            );\n            if (music.isNotEmpty) {\n              if (shelf.kind == HomeShelfKind.becauseYouListenedTo) {\n                final seed = music.first['discoverSeedArtist'] as String?;\n                if (seed != null && seed.isNotEmpty) {\n                  shelf.subtitle = 'Because you listened to $seed';\n                }\n              }\n              return music;\n            }\n          } catch (e) {\n            debugPrint('[HomeFeedService] advanced music engine failed: $e');\n          }\n        }\n"""
+    new_switch = """        // All personalized Home shelves share the V2 behavior-driven ranking\n        // layer. The existing RecommendationEngine remains the safe fallback.\n        if (_musicEngine != null) {\n          try {\n            final advancedShelf = switch (shelf.kind) {\n              HomeShelfKind.madeForYou => RecommendationShelf.madeForYou,\n              HomeShelfKind.becauseYouListenedTo => RecommendationShelf.becauseYouListenedTo,\n              HomeShelfKind.quickPicks => RecommendationShelf.quickPicks,\n              HomeShelfKind.trendingForYou => RecommendationShelf.trendingForYou,\n              HomeShelfKind.discoverSomethingNew => RecommendationShelf.freshDiscovery,\n              _ => RecommendationShelf.madeForYou,\n            };\n            final music = await _musicEngine.generateShelf(\n              shelf: advancedShelf,\n              excludeIds: excludeIds,\n              count: shelf.limit,\n            );\n            if (music.isNotEmpty) {\n              if (shelf.kind == HomeShelfKind.becauseYouListenedTo) {\n                final seed = music.first['discoverSeedArtist'] as String?;\n                if (seed != null && seed.isNotEmpty) {\n                  shelf.subtitle = 'Because you listened to $seed';\n                }\n              }\n              return music;\n            }\n          } catch (e) {\n            debugPrint('[HomeFeedService] advanced music engine failed: $e');\n          }\n        }\n"""
     if old_switch not in text:
         raise RuntimeError('Advanced recommendation patch: old Home V3 block missing')
     text = text.replace(old_switch, new_switch, 1)
