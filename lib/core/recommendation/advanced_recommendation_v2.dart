@@ -4,7 +4,6 @@ import '../music/music_candidate.dart';
 import 'music_recommendation_context.dart';
 import 'taste_profile.dart';
 
-/// Shelf objective used by the behavior-driven ranking layer.
 enum RecommendationShelf {
   madeForYou,
   becauseYouListenedTo,
@@ -14,11 +13,6 @@ enum RecommendationShelf {
   discovery,
 }
 
-/// Deterministic ranking layer over the existing candidate generator.
-///
-/// The existing TasteProfile remains the source of truth for behavioral
-/// signals. This layer adds confidence-aware weighting, short/long-term
-/// intent, fatigue, diversity, novelty, freshness and shelf-specific goals.
 class AdvancedRecommendationV2 {
   const AdvancedRecommendationV2._();
 
@@ -52,7 +46,7 @@ class AdvancedRecommendationV2 {
     final age = candidate.track.publishedDaysAgo;
     final freshness = age == null ? 0.35 : 1.0 / (1.0 + age / 14.0);
     final recency = age == null ? 0.45 : 1.0 / (1.0 + age / 30.0);
-    final quality = 0.5;
+    const quality = 0.5;
     final novelty = 1.0 - artistAffinity;
     final sourceBoost = switch (candidate.source) {
       'trending' => 1.0,
@@ -116,15 +110,10 @@ class AdvancedRecommendationV2 {
         score += novelty * 0.14 + freshness * 0.10 + sourceBoost * 0.06;
     }
 
-    // Repetition/fatigue and negative behavior are always active. One skip is
-    // intentionally small; repeated skips accumulate in TasteProfile.
     score -= skip * 0.16;
     score -= negative * 0.10;
     score -= fatigue * 0.13;
     score -= seenPenalty * 0.12;
-
-    // Deterministic tie-breaker: never inject randomness into recommendation
-    // ordering, especially on cold start.
     score += max(0, 0.000001 * (1000 - candidateIndex));
     return score;
   }
@@ -155,9 +144,15 @@ class AdvancedRecommendationV2 {
           ? 'because_favorite_genre'
           : 'because_similar_genre';
     }
-    if (candidate.source == 'trending') return 'because_trending_in_preferred_genre';
-    if (candidate.source == 'new_release') return 'because_fresh_release';
-    if (candidate.source == 'similar_artist') return 'because_similar_artist';
+    if (candidate.source == 'trending') {
+      return 'because_trending_in_preferred_genre';
+    }
+    if (candidate.source == 'new_release') {
+      return 'because_fresh_release';
+    }
+    if (candidate.source == 'similar_artist') {
+      return 'because_similar_artist';
+    }
     return shelf == RecommendationShelf.discovery
         ? 'because_discovery_value'
         : 'because_relevant_to_taste';
