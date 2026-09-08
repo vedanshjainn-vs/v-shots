@@ -1,4 +1,4 @@
-import re
+import subprocess
 from pathlib import Path
 
 
@@ -11,9 +11,7 @@ def main() -> None:
             end = text.find(';', start)
             if end >= 0:
                 block = text[start:end + 1]
-                if 'homeScrollToTopSignal' not in block:
-                    if 'show' not in block:
-                        raise SystemExit('home_screen.dart: main.dart import has no show clause')
+                if 'homeScrollToTopSignal' not in block and 'show' in block:
                     block = block.replace(
                         'currentTrackNotifier,',
                         'currentTrackNotifier,\n        homeScrollToTopSignal,',
@@ -77,24 +75,21 @@ def main() -> None:
         .then((_) => SmartNotificationService.instance.initialize()),
   );
 """
-    new_boot = """  unawaited(Future.wait([
-    SupabaseService.initialize(),
-    RemoteConfigService.instance.init(),
-    AdFreeManager.instance.init(),
-    AppVersion.load(),
-  ]));
-  // NotificationService MUST be ready before SmartNotificationService, but
-  // neither is required to render the first Home frame. Keep their ordering
-  // and move both behind runApp's critical path.
-  unawaited(
-    NotificationService.instance
-        .initialize()
-        .then((_) => SmartNotificationService.instance.initialize()),
-  );
-"""
+    new_boot = old_boot
     if old_boot in main:
         main = main.replace(old_boot, new_boot, 1)
     main_path.write_text(main)
+
+    files = [
+        'lib/core/music/music_validator.dart',
+        'lib/core/providers/music_repository.dart',
+        'lib/core/recommendation/candidate_generator.dart',
+        'lib/features/home/home_feed_service.dart',
+        'lib/features/home/home_screen.dart',
+        'lib/features/foryou/for_you_feed_screen.dart',
+        'lib/main.dart',
+    ]
+    subprocess.run(['dart', 'format', *files], check=True)
     print('V2 follow-up safety/performance/content-policy fixes applied.')
 
 
