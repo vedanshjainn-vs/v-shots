@@ -60,28 +60,11 @@ def patch_repository_ai_gate():
 
 
 def patch_candidate_generator():
+    # Keep the stable candidate-generation/search-intent implementation intact.
+    # This V2 layer must not inject a second recentSearches declaration or
+    # remove/shuffle the existing candidate pool.
     p = ROOT / 'lib/core/recommendation/candidate_generator.dart'
     t = p.read_text()
-    if 'SEARCH INTENT — additive priority' not in t:
-        block = """    // SEARCH INTENT — additive priority. Keep every existing candidate
-    // source so cold-start coverage is not sacrificed for personalization.
-    final recentSearches = LocalLibrary.instance.recentSearches.value
-        .map((s) => s['query'] as String? ?? '')
-        .where((q) => q.trim().isNotEmpty)
-        .take(3)
-        .toList();
-    for (final q in recentSearches) {
-      candidates.insert(
-        0,
-        CandidateQuery(query: q.trim(), source: CandidateSource.searchBehavior),
-      );
-    }
-
-"""
-        anchor = "    // 1. Similar artists"
-        if anchor in t:
-            t = t.replace(anchor, block + anchor, 1)
-        t = re.sub(r"\n\s*candidates\.shuffle\([^\n]+\);", "", t)
     p.write_text(t)
 
 
@@ -219,28 +202,11 @@ def patch_discovery():
         );
         if (batch.isNotEmpty) return _refineForMode(source, batch);
       } catch (e) {
-        debugPrint('[ForYouFeed] Discover fallback failed: $e');
+        debugPrint('[ForYouFeed] Discover engine failed, falling back: $e');
       }
 """
     if old in t:
         t = t.replace(old, new, 1)
-    p.write_text(t)
-
-
-def patch_main():
-    p = ROOT / 'lib/main.dart'
-    t = p.read_text()
-    if 'homeScrollToTopSignal' not in t:
-        anchor = "final ValueNotifier<int> currentTabIndexNotifier = ValueNotifier<int>(0);\n"
-        if anchor in t:
-            t = t.replace(anchor, anchor + "final ValueNotifier<int> homeScrollToTopSignal = ValueNotifier<int>(0);\n", 1)
-        tap = """                          setState(() {
-                            _index = target;
-                            currentTabIndexNotifier.value = target;
-                          });
-"""
-        if tap in t:
-            t = t.replace(tap, tap + "                          if (target == 0) homeScrollToTopSignal.value++;\n", 1)
     p.write_text(t)
 
 
@@ -251,7 +217,6 @@ def main():
     patch_home_feed()
     patch_home_screen()
     patch_discovery()
-    patch_main()
     print('Polish V2 surgical patch applied')
 
 
