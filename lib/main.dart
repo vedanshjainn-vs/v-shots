@@ -21,9 +21,9 @@ import 'core/ads/consent_manager.dart';
 import 'core/ads/levelplay_service.dart';
 import '../core/ads/mrec_ad_manager.dart';
 import '../core/ads/premium_mrec_ad_card.dart';
-import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'core/observing/error_reporting.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
 import 'core/notifications/app_update_service.dart';
@@ -76,6 +76,11 @@ import 'shared/widgets/offline_banner.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
+
+  // Global error reporting (Firebase Crashlytics). Fire-and-forget by
+  // design: installs the Flutter/zone error hooks immediately and never
+  // blocks or breaks boot — worst case the app runs without reporting.
+  unawaited(initializeErrorReporting());
 
   // Initialize Firebase first (required for FCM)
   debugPrint('[Boot] Firebase initialized');

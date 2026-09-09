@@ -1,5 +1,3 @@
-import 'dart:ui' show PlatformDispatcher;
-
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -46,12 +44,10 @@ class MusicRegionProfile {
       }
 
       try {
-        final response = await http
-            .get(
-              Uri.parse('https://ipapi.co/country/'),
-              headers: const {'Accept': 'text/plain'},
-            )
-            .timeout(const Duration(seconds: 3));
+        final response = await http.get(
+          Uri.parse('https://ipapi.co/country/'),
+          headers: const {'Accept': 'text/plain'},
+        ).timeout(const Duration(seconds: 3));
         final networkCode = _normalizeCountry(response.body);
         // For Indian Standard Time, do not let a stale/proxy network result
         // immediately flip the device back to US/another country.

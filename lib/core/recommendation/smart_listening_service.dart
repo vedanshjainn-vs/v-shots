@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import '../music/music_validator.dart';
 import '../providers/music_repository.dart';
 import '../storage/local_library.dart';
@@ -114,7 +112,8 @@ class SmartListeningService {
     final repo = _repository;
     if (repo == null) return;
     final exclude = _cooldownIds(seedId: seed['id'] as String? ?? '');
-    final related = await repo.getRelated(seed['id'] as String? ?? '', limit: 18);
+    final related =
+        await repo.getRelated(seed['id'] as String? ?? '', limit: 18);
     final searched = await repo.search(
       '${seed['artist'] ?? ''} similar songs official audio',
       limit: 18,
