@@ -52,7 +52,10 @@ jobs:
           python3 scripts/apply_search_browser_ui_refinement.py
           python3 scripts/apply_discovery_swipe_native_patch.py
       - name: Apply Polish V2
-        run: python3 scripts/apply_polish_v2.py
+        run: |
+          python3 scripts/apply_polish_v2.py
+          python3 scripts/apply_polish_v2_fix.py
+          python3 scripts/apply_player_notification_v2.py
       - name: Format changed sources
         run: dart format lib test
       - name: Analyze
