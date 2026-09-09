@@ -1,0 +1,93 @@
+name: V Shots Polish V2 Clean Build
+
+on:
+  push:
+    branches: [polish-v2-clean]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Configure environment
+        run: |
+          cat > .env <<EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
+          LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
+          LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
+          LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          LEVELPLAY_DEBUG_USE_PRODUCTION=true
+          EOF
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Apply stable production patches
+        run: |
+          python3 scripts/apply_dynamic_home_patch.py
+          python3 scripts/apply_stability_patch.py
+          python3 scripts/apply_content_policy_patch.py
+          python3 scripts/apply_smart_listening_v2.py
+          python3 scripts/apply_smart_queue_autoadvance.py
+          python3 scripts/apply_runtime_refresh_notification_fix.py
+          python3 scripts/apply_player_notification_patch.py
+          python3 scripts/apply_browser_player_polish.py
+          python3 scripts/apply_search_browser_ui_refinement.py
+          python3 scripts/apply_discovery_swipe_native_patch.py
+      - name: Apply Polish V2
+        run: python3 scripts/apply_polish_v2.py
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Test
+        run: flutter test
+      - name: Build release APK and AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+          else
+            PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$PASS" -alias ci-build -keypass "$PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+            export ANDROID_KEYSTORE_PASSWORD="$PASS"
+            export ANDROID_KEY_ALIAS=ci-build
+            export ANDROID_KEY_PASSWORD="$PASS"
+          fi
+          flutter build apk --release
+          flutter build appbundle --release
+      - name: Validate artifacts
+        run: |
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          test -f build/app/outputs/bundle/release/app-release.aab
+          sha256sum build/app/outputs/flutter-apk/app-release.apk build/app/outputs/bundle/release/app-release.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vshots-polish-v2-clean
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
