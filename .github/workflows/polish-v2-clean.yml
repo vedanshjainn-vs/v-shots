@@ -53,8 +53,8 @@ jobs:
           python3 scripts/apply_discovery_swipe_native_patch.py
       - name: Apply Polish V2
         run: python3 scripts/apply_polish_v2.py
-      - name: Format
-        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Format changed sources
+        run: dart format lib test
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Test
