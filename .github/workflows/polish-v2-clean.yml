@@ -80,7 +80,15 @@ jobs:
             export ANDROID_KEY_ALIAS=ci-build
             export ANDROID_KEY_PASSWORD="$PASS"
           fi
-          flutter build apk --release
+          echo "--- Android embedding guard ---"
+          grep -q 'android:name="${applicationName}"' android/app/src/main/AndroidManifest.xml
+          grep -q 'name="flutterEmbedding"' android/app/src/main/AndroidManifest.xml
+          grep -q 'android:value="2"' android/app/src/main/AndroidManifest.xml
+          ! grep -q 'io.flutter.app.' android/app/src/main/AndroidManifest.xml
+          ! grep -R -n 'io.flutter.app\.' android/app/src/main/kotlin android/app/src/main/java 2>/dev/null || true
+          flutter clean
+          flutter pub get
+          flutter build apk --release -v
           flutter build appbundle --release
       - name: Validate artifacts
         run: |
