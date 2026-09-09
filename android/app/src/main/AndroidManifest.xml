@@ -35,6 +35,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Required to declare Flutter Android embedding v2 explicitly. -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
         <!-- Meta Audience Network activity required for mediated Meta creatives. -->
         <activity
             android:name="com.facebook.ads.AudienceNetworkActivity"
