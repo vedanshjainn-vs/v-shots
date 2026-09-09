@@ -99,3 +99,15 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
+      - name: Upload Play Store APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vshots-playstore-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 90
+      - name: Upload Play Store AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vshots-playstore-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 90
