@@ -80,10 +80,6 @@
             </intent-filter>
         </receiver>
 
-        <meta-data
-            name="flutterEmbedding"
-            android:value="2" />
-
         <!-- Google AdMob App ID. The real production App ID is injected by CI. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
