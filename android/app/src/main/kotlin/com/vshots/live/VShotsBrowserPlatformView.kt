@@ -296,6 +296,7 @@ private class VShotsBackgroundMediaWebView(
     }
 
     init {
+        VShotsBrowserPlaybackService.eventChannel = events
         setBackgroundColor(Color.BLACK)
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
@@ -617,14 +618,17 @@ private class VShotsBackgroundMediaWebView(
     }
 
     fun setMediaPlaying(value: Boolean) {
-        if (mediaPlaying == value) return
-        mediaPlaying = value
-        if (value) {
-            startPlaybackForegroundService()
-        } else {
-            stopPlaybackForegroundService()
+        if (mediaPlaying == value) {
+            updatePlaybackNotification(value)
+            return
         }
+        mediaPlaying = value
+        startPlaybackForegroundService(playing = value)
         events.invokeMethod("playbackState", value)
+    }
+
+    fun updateNotification(title: String, artist: String, artwork: String, playing: Boolean) {
+        startPlaybackForegroundService(title = title, artist = artist, artwork = artwork, playing = playing)
     }
 
     private fun startPlaybackPolling() {
@@ -636,8 +640,19 @@ private class VShotsBackgroundMediaWebView(
         handler.removeCallbacks(playbackPoll)
     }
 
-    private fun startPlaybackForegroundService() {
-        val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java)
+    private fun startPlaybackForegroundService(
+        title: String? = null,
+        artist: String? = null,
+        artwork: String? = null,
+        playing: Boolean = mediaPlaying,
+    ) {
+        val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java).apply {
+            action = VShotsBrowserPlaybackService.ACTION_UPDATE
+            putExtra("title", title ?: "V Shots")
+            putExtra("artist", artist ?: "Music playback")
+            putExtra("artwork", artwork ?: "")
+            putExtra("playing", playing)
+        }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 appContext.startForegroundService(intent)
@@ -647,6 +662,10 @@ private class VShotsBackgroundMediaWebView(
         } catch (_: Exception) {
             // FGS startup is a hardening layer and must never crash Discovery.
         }
+    }
+
+    private fun updatePlaybackNotification(playing: Boolean) {
+        startPlaybackForegroundService(playing = playing)
     }
 
     private fun stopPlaybackForegroundService() {
@@ -771,7 +790,11 @@ private class VShotsBackgroundMediaWebView(
 
     fun disposeMedia() {
         stopPlaybackPolling()
-        setMediaPlaying(false)
+        stopPlaybackForegroundService()
+        if (VShotsBrowserPlaybackService.eventChannel === events) {
+            VShotsBrowserPlaybackService.eventChannel = null
+        }
+        mediaPlaying = false
         stopLoading()
         loadUrl("about:blank")
     }
@@ -828,6 +851,15 @@ private class VShotsBrowserPlatformView(
                 }
                 "setAdAssist" -> {
                     webView.setAdAssist((call.arguments as? Boolean) ?: true)
+                    result.success(null)
+                }
+                "updateNotification" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val title = args?.get("title")?.toString() ?: "V Shots"
+                    val artist = args?.get("artist")?.toString() ?: "Music playback"
+                    val artwork = args?.get("artwork")?.toString() ?: ""
+                    val playing = args?.get("playing") as? Boolean ?: true
+                    webView.updateNotification(title, artist, artwork, playing)
                     result.success(null)
                 }
                 "dispose" -> {

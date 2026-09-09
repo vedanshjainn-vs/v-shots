@@ -1,3 +1,5 @@
+import 'dart:async';
+
 // ═════════════════════════════════════════════════════════════════════════════
 // V Shots — Discovery in-app YouTube browser (mini player + expandable sheet)
 // ═════════════════════════════════════════════════════════════════════════════
@@ -89,6 +91,28 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       // In-stream ad start/end from the native WebView → "Ad" badge in the
       // player UI (mute/skip/resume is handled natively).
       onAdState: (on) => widget.controller.setAdActive(on),
+      onNotificationAction: (action) async {
+        switch (action) {
+          case 'toggle':
+            await _togglePagePlayback();
+            break;
+          case 'next':
+            VShotsPlaybackManager.instance.next();
+            break;
+          case 'previous':
+            VShotsPlaybackManager.instance.previous();
+            break;
+          case 'rewind':
+            await _session.seekBy(-10);
+            break;
+          case 'fastForward':
+            await _session.seekBy(10);
+            break;
+          case 'stop':
+            _close();
+            break;
+        }
+      },
       // Player-essential hosts are ALWAYS allowed, so the general content
       // blocker can never break video/audio/thumbnail delivery.
       contentBlocker: VShotsContentBlocker(
@@ -266,6 +290,14 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
+    unawaited(
+      _session.updateNotification(
+        title: widget.controller.title ?? 'V Shots',
+        artist: widget.controller.artist ?? 'Music playback',
+        artwork: widget.controller.artwork ?? '',
+        playing: true,
+      ),
+    );
     await _session.load(url);
   }
 
@@ -618,6 +650,24 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
+  void _openPlayerLyrics() {
+    final track = widget.controller.track;
+    if (track == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.72,
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          child: LyricsScreen(track: track),
+        ),
+      ),
+    );
+  }
+
   /// The app-level full-player controls over the WebView engine. The real
   /// YouTube page provides its own seek bar; V Shots adds queue control
   /// (prev/next/shuffle/repeat), like, playlist, lyrics and share.
@@ -802,12 +852,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
               IconButton(
                 icon: const Icon(Icons.lyrics_outlined, color: Colors.white70),
                 tooltip: 'Lyrics',
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => LyricsScreen(track: track),
-                  ),
-                ),
+                onPressed: _openPlayerLyrics,
               ),
               IconButton(
                 icon: const Icon(Icons.share_rounded, color: Colors.white70),

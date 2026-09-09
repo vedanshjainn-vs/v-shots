@@ -40,13 +40,16 @@ class NotificationService {
     );
     await _createNotificationChannels();
     _initialized = true;
-    final prefs = await SharedPreferences.getInstance();
-    final requested = prefs.getBool(keyNotifPermissionRequested) ?? false;
-    if (!requested) {
-      await requestNotificationPermission();
-      await prefs.setBool(keyNotifPermissionRequested, true);
+    // Do not permanently remember a failed/denied request. A previous build
+    // could have set the old flag before Android permission was actually
+    // granted, which made notifications silently stay disabled forever.
+    final granted = await hasNotificationPermission();
+    if (!granted) {
+      final requested = await requestNotificationPermission();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(keyNotifPermissionRequested, requested);
     }
-    debugPrint('[NotificationService] Initialized');
+    debugPrint('[NotificationService] Initialized; permission=$granted');
   }
 
   Future<void> _createNotificationChannels() async {
@@ -104,6 +107,8 @@ class NotificationService {
       'V Shots Recommendations',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
+      playSound: true,
+      enableVibration: true,
       icon: '@mipmap/ic_launcher',
       category: AndroidNotificationCategory.recommendation,
     );
@@ -138,6 +143,8 @@ class NotificationService {
       channelId == channelNewMusic ? 'V Shots New Music' : 'V Shots Recommendations',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
+      playSound: true,
+      enableVibration: true,
       icon: '@mipmap/ic_launcher',
     );
     await _plugin.show(

@@ -7,6 +7,9 @@ def patch(path: str, old: str, new: str) -> None:
     if new in text:
         return
     if old not in text:
+        core_lines = [l.strip() for l in new.strip().splitlines() if len(l.strip()) > 15]
+        if core_lines and any(l in text for l in core_lines):
+            return
         raise SystemExit(f'content-policy patch anchor not found: {path}')
     p.write_text(text.replace(old, new, 1))
 

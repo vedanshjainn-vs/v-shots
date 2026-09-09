@@ -2,7 +2,7 @@
 // V Shots — MREC Ad Manager (Unity LevelPlay 300x250)
 //
 // Centralized manager for MREC (Medium Rectangle) 300x250 ads.
-// Handles loading, display, lifecycle, and frequency control.
+// Handles loading, display, lifecycle, and frequency control per placement.
 // ════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -41,71 +41,106 @@ class MRECConfig {
   static const int maxVisibleMRECs = 1;
 }
 
-/// MREC Ad Manager - handles loading and lifecycle
+/// MREC Ad Manager - handles loading and lifecycle per placement
 class MRECAdManager extends ChangeNotifier {
   MRECAdManager._();
   static final MRECAdManager instance = MRECAdManager._();
 
-  bool _isLoaded = false;
-  DateTime? _lastShownAt;
+  final Map<MRECPlacement, DateTime> _lastShownByPlacement = {};
+  final Set<MRECPlacement> _loadedPlacements = {};
+  bool _legacyLoaded = false;
   MRECPlacement? _currentPlacement;
 
-  bool get isLoaded => _isLoaded;
+  bool get isLoaded => _loadedPlacements.isNotEmpty || _legacyLoaded;
+
+  bool isPlacementLoaded(MRECPlacement placement) =>
+      _loadedPlacements.contains(placement);
 
   /// Load MREC ad for a specific placement
   Future<void> loadMREC(MRECPlacement placement) async {
     if (!MRECConfig.mrecEnabled) return;
-    if (_isLoaded) return;
+    _currentPlacement = placement;
 
-    // Check cooldown
-    if (_lastShownAt != null) {
-      final cooldown = DateTime.now().difference(_lastShownAt!);
+    // Check per-placement cooldown so Home does not block Search/Playlist
+    final lastShown = _lastShownByPlacement[placement];
+    if (lastShown != null) {
+      final cooldown = DateTime.now().difference(lastShown);
       if (cooldown.inSeconds < MRECConfig.mrecCooldownSeconds) {
-        debugPrint('[MREC] Cooldown active: ${cooldown.inSeconds}s');
+        debugPrint(
+          '[MREC] Cooldown active for ${placement.name}: ${cooldown.inSeconds}s',
+        );
         return;
       }
     }
 
-    _currentPlacement = placement;
     AdAnalytics.log('mrec_load_attempt', placement: placement.name);
   }
 
   /// Mark MREC as displayed
-  void markDisplayed() {
-    _lastShownAt = DateTime.now();
-    _isLoaded = false;
-    AdAnalytics.log('mrec_impression',
-        placement: _currentPlacement?.name ?? '');
+  void markDisplayed([MRECPlacement? placement]) {
+    final p = placement ?? _currentPlacement;
+    if (p != null) {
+      _lastShownByPlacement[p] = DateTime.now();
+      _loadedPlacements.remove(p);
+      AdAnalytics.log('mrec_impression', placement: p.name);
+    }
+    _legacyLoaded = false;
     notifyListeners();
   }
 
   /// Mark MREC as clicked
-  void markClicked() {
-    AdAnalytics.log('mrec_click', placement: _currentPlacement?.name ?? '');
+  void markClicked([MRECPlacement? placement]) {
+    final p = placement ?? _currentPlacement;
+    AdAnalytics.log('mrec_click', placement: p?.name ?? '');
   }
 
   /// Hide/collapse MREC
-  void hideMREC() {
-    _isLoaded = false;
-    AdAnalytics.log('mrec_hidden', placement: _currentPlacement?.name ?? '');
+  void hideMREC([MRECPlacement? placement]) {
+    if (placement != null) {
+      _loadedPlacements.remove(placement);
+      AdAnalytics.log('mrec_hidden', placement: placement.name);
+    } else {
+      _loadedPlacements.clear();
+      _legacyLoaded = false;
+      AdAnalytics.log(
+        'mrec_hidden',
+        placement: _currentPlacement?.name ?? '',
+      );
+    }
     notifyListeners();
   }
 
   /// Check if MREC is ready to show
-  bool isMRECReady() => _isLoaded;
+  bool isMRECReady([MRECPlacement? placement]) {
+    if (placement != null) return _loadedPlacements.contains(placement);
+    return isLoaded;
+  }
 
-  void onAdLoaded() {
-    debugPrint('[MREC] Ad loaded');
-    _isLoaded = true;
-    AdAnalytics.log('mrec_loaded', placement: _currentPlacement?.name ?? '');
+  void onAdLoaded([MRECPlacement? placement]) {
+    final p = placement ?? _currentPlacement;
+    if (p != null) {
+      _loadedPlacements.add(p);
+      debugPrint('[MREC] Ad loaded for ${p.name}');
+      AdAnalytics.log('mrec_loaded', placement: p.name);
+    } else {
+      debugPrint('[MREC] Ad loaded');
+      AdAnalytics.log('mrec_loaded', placement: '');
+    }
+    _legacyLoaded = true;
     notifyListeners();
   }
 
-  void onAdLoadFailed(String error) {
-    debugPrint('[MREC] Load failed: $error');
-    _isLoaded = false;
-    AdAnalytics.log('mrec_load_failed',
-        placement: _currentPlacement?.name ?? '');
+  void onAdLoadFailed(String error, [MRECPlacement? placement]) {
+    final p = placement ?? _currentPlacement;
+    if (p != null) {
+      _loadedPlacements.remove(p);
+      debugPrint('[MREC] Load failed for ${p.name}: $error');
+      AdAnalytics.log('mrec_load_failed', placement: p.name, detail: error);
+    } else {
+      debugPrint('[MREC] Load failed: $error');
+      AdAnalytics.log('mrec_load_failed', placement: '', detail: error);
+    }
+    _legacyLoaded = false;
     notifyListeners();
   }
 

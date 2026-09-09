@@ -48,6 +48,51 @@ class VShotsPlaybackManager extends ChangeNotifier {
   PlaybackRepeat _repeat = PlaybackRepeat.off;
   final Random _random = Random();
 
+  /// Injected Smart Listening provider. Playback itself remains owned by this
+  /// manager; recommendations only supply additional queue items.
+  Future<List<Map<String, dynamic>>> Function(
+    Map<String, dynamic> seed,
+    Set<String> excludeIds,
+  )? smartQueueProvider;
+
+  bool _smartQueueLoading = false;
+
+  void configureSmartQueue(
+    Future<List<Map<String, dynamic>>> Function(
+      Map<String, dynamic> seed,
+      Set<String> excludeIds,
+    ) provider,
+  ) {
+    smartQueueProvider = provider;
+  }
+
+  Future<void> _prefetchSmartQueue({bool autoAdvance = false}) async {
+    final provider = smartQueueProvider;
+    if (provider == null || _queue.length > 1 || _queue.isEmpty || _smartQueueLoading) return;
+    _smartQueueLoading = true;
+    try {
+      final additions = await provider(
+        _queue[_index],
+        _queue.map((t) => t['id'] as String? ?? '').toSet(),
+      );
+      final existing = _queue.map((t) => t['id'] as String? ?? '').toSet();
+      for (final track in additions) {
+        final id = track['id'] as String? ?? '';
+        if (id.isNotEmpty && existing.add(id)) _queue.add(track);
+      }
+      _rebuildShuffle(keepCurrentAt: _index);
+      if (autoAdvance && _queue.length > 1) {
+        _index = _nextIndex(1);
+        browser.open(_queue[_index]);
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[PlaybackManager] smart queue prefetch failed: $e');
+    } finally {
+      _smartQueueLoading = false;
+    }
+  }
+
   bool get isOpen => browser.isOpen;
   Map<String, dynamic>? get currentTrack => browser.track;
   List<Map<String, dynamic>> get queue => List.unmodifiable(_queue);
@@ -73,6 +118,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
     browser.startExpanded = expanded;
     browser.open(track);
     notifyListeners();
+    _prefetchSmartQueue();
   }
 
   /// Plays [tracks] starting at [startIndex]. [expanded] opens the full
@@ -91,6 +137,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
     browser.startExpanded = expanded;
     browser.open(_queue[_index]);
     notifyListeners();
+    _prefetchSmartQueue();
   }
 
   /// Jumps to a queue index (tap on the queue list).
@@ -146,7 +193,10 @@ class VShotsPlaybackManager extends ChangeNotifier {
     if (_repeat == PlaybackRepeat.off &&
         !_shuffle &&
         _index >= _queue.length - 1) {
-      return; // end of queue — leave the finished state
+      if (_queue.length < 2) {
+        _prefetchSmartQueue(autoAdvance: true);
+      }
+      return; // normal multi-track queue keeps existing end behavior
     }
     next();
   }

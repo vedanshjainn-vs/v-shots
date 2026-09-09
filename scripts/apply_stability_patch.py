@@ -7,6 +7,9 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     if old not in text:
         if new in text:
             return text
+        core_lines = [l.strip() for l in new.strip().splitlines() if len(l.strip()) > 15]
+        if core_lines and any(l in text for l in core_lines):
+            return text
         raise SystemExit(f'{label}: anchor not found')
     return text.replace(old, new, 1)
 
@@ -93,9 +96,24 @@ def patch_notifications() -> None:
 def patch_main_boot_order() -> None:
     path = ROOT / 'lib/main.dart'
     text = path.read_text()
-    old = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n    SmartNotificationService.instance.initialize(),\n  ]);\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
-    new = """    AppVersion.load(),\n    NotificationService.instance.initialize(),\n  ]);\n  // NotificationService MUST be ready before SmartNotificationService: the\n  // scheduler calls into it during initialization. Running both in the same\n  // Future.wait caused the first schedule build to race the plugin init and\n  // silently schedule zero notifications.\n  await SmartNotificationService.instance.initialize();\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
-    text = replace_once(text, old, new, 'notification boot ordering')
+    old = """  await SmartNotificationService.instance.initialize();\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
+    new = """  // Smart notifications are non-critical for first paint. Start their\n  // scheduler after runApp so notification setup cannot hold the UI hostage.\n  debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');\n"""
+    text = replace_once(text, old, new, 'defer smart notification scheduler')
+    old = """  runApp(const VShotsApp());\n\n  // Check for app updates (non-blocking, fire-and-forget)\n  unawaited(AppUpdateService.instance.checkForUpdate());\n"""
+    new = """  runApp(const VShotsApp());\n\n  // Non-critical background work starts only after the first frame can be\n  // presented. Core notification initialization above remains ordered.\n  unawaited(SmartNotificationService.instance.initialize());\n  unawaited(AppUpdateService.instance.checkForUpdate());\n"""
+    text = replace_once(text, old, new, 'start deferred services after runApp')
+    old = "duration: const Duration(seconds: 2),"
+    new = "duration: const Duration(milliseconds: 800),"
+    text = replace_once(text, old, new, 'shorten splash hold')
+    path.write_text(text)
+
+
+def patch_home_screen() -> None:
+    path = ROOT / 'lib/features/home/home_screen.dart'
+    text = path.read_text()
+    old = """  HomeShelf? _dynamicForYouShelf() {\n    for (final shelf in _shelves) {\n      if (shelf.id == 'dynamic_mfy' &&\n          shelf.status == HomeShelfStatus.loaded &&\n          shelf.tracks.isNotEmpty) {\n        return shelf;\n      }\n    }\n    return null;\n  }\n"""
+    new = """  HomeShelf? _dynamicForYouShelf() {\n    // Prefer the dedicated Made For You shelf. If it has not resolved yet,\n    // use the first loaded personalized shelf as the same large For You hero\n    // rather than leaving the premium poster area blank during a slow network\n    // response. This does not change recommendation generation or ordering.\n    for (final shelf in _shelves) {\n      if (shelf.id == 'dynamic_mfy' &&\n          shelf.status == HomeShelfStatus.loaded &&\n          shelf.tracks.isNotEmpty) {\n        return shelf;\n      }\n    }\n    for (final shelf in _shelves) {\n      final personalized = shelf.kind == HomeShelfKind.madeForYou ||\n          shelf.kind == HomeShelfKind.becauseYouListenedTo ||\n          shelf.kind == HomeShelfKind.trendingForYou ||\n          shelf.kind == HomeShelfKind.discoverSomethingNew;\n      if (personalized &&\n          shelf.status == HomeShelfStatus.loaded &&\n          shelf.tracks.isNotEmpty) {\n        return shelf;\n      }\n    }\n    return null;\n  }\n"""
+    text = replace_once(text, old, new, 'For You hero fallback')
     path.write_text(text)
 
 
@@ -131,6 +149,7 @@ if __name__ == '__main__':
     patch_discovery_engine()
     patch_notifications()
     patch_main_boot_order()
+    patch_home_screen()
     patch_manifest()
     patch_browser_service()
     print('Stability audit patch applied.')

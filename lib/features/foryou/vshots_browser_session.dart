@@ -62,6 +62,7 @@ class VShotsBrowserSession {
     required this.onError,
     this.onVideoEnded,
     this.onAdState,
+    this.onNotificationAction,
     VShotsContentBlocker? contentBlocker,
   }) : contentBlocker = contentBlocker ?? VShotsContentBlocker();
 
@@ -81,6 +82,8 @@ class VShotsBrowserSession {
   /// playing). Used for the UI badge + logging; the mute/skip/resume
   /// handling itself lives in the native WebView.
   final void Function(bool adActive)? onAdState;
+
+  final Future<void> Function(String action)? onNotificationAction;
 
   /// The general-purpose content blocker for this browser session. Owned here
   /// (NOT by the playback manager) — independent from playback.
@@ -151,6 +154,15 @@ class VShotsBrowserSession {
     } catch (_) {
       // The page may still be loading or YouTube may reject unmuted autoplay.
     }
+  }
+
+  /// Seek the real HTML media element without recreating or resizing the WebView.
+  Future<void> seekBy(int seconds) async {
+    final channel = _channel;
+    if (channel == null) return;
+    try {
+      await channel.invokeMethod<void>('seekBy', seconds);
+    } catch (_) {}
   }
 
   Widget buildWidget() {
@@ -250,6 +262,12 @@ class VShotsBrowserSession {
       case 'adState':
         onAdState?.call(call.arguments == true);
         break;
+      case 'notificationAction':
+        final action = call.arguments?.toString() ?? '';
+        if (action.isNotEmpty) {
+          await onNotificationAction?.call(action);
+        }
+        break;
       case 'blocked':
         contentBlocker.recordBlocked(call.arguments?.toString() ?? '');
         break;
@@ -257,6 +275,24 @@ class VShotsBrowserSession {
         onError(call.arguments?.toString() ?? 'Playback failed — please retry');
         break;
     }
+  }
+
+  Future<void> updateNotification({
+    required String title,
+    required String artist,
+    required String artwork,
+    required bool playing,
+  }) async {
+    final channel = _channel;
+    if (channel == null) return;
+    try {
+      await channel.invokeMethod<void>('updateNotification', {
+        'title': title,
+        'artist': artist,
+        'artwork': artwork,
+        'playing': playing,
+      });
+    } catch (_) {}
   }
 
   Future<void> _autoplayPass() async {

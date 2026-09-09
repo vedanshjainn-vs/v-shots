@@ -37,7 +37,9 @@ import '../../shared/widgets/app_image.dart';
 import '../profile/artist_details_screen.dart';
 import '../profile/rewards_sheet.dart';
 import 'home_feed_service.dart';
+import 'dynamic_home_sections.dart';
 import 'playlist_page_screen.dart';
+import 'smart_listening_section.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,8 +51,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late List<HomeShelf> _shelves;
   bool _initialLoading = true;
-  DateTime? _lastRefresh;
-  static const Duration _minRefreshInterval = Duration(minutes: 5);
 
   @override
   void initState() {
@@ -155,15 +155,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Silent refresh when the user returns, rate-limited.
-    if (state == AppLifecycleState.resumed) {
-      final now = DateTime.now();
-      if (_lastRefresh == null ||
-          now.difference(_lastRefresh!) >= _minRefreshInterval) {
-        _lastRefresh = now;
-        unawaited(_load(forceRefresh: true));
-      }
-    }
+    // Returning from another screen must not re-fetch/rebuild the whole Home.
+    // Pull-to-refresh remains the explicit full refresh action.
   }
 
   @override
@@ -243,9 +236,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             slivers: [
               _buildHeroHeader(),
               _buildContinueListeningHero(),
+              if (_dynamicForYouShelf() != null)
+                SliverToBoxAdapter(
+                  child: DynamicForYouHero(
+                    track: _dynamicForYouShelf()!.tracks.first,
+                    onPlay: () {
+                      final shelf = _dynamicForYouShelf()!;
+                      playTrack(context, shelf.tracks.first, shelf.tracks, 0);
+                    },
+                  ),
+                ),
+              const SmartListeningSection(),
               _buildMoodChips(),
               _buildRewardedAdFreeCard(),
               _buildSpotlightSliver(),
+              _buildQuickPicksSliver(),
               if (_initialLoading)
                 ...List.generate(3, (_) => _buildSkeletonSliver())
               else
@@ -509,6 +514,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  HomeShelf? _dynamicForYouShelf() {
+    for (final shelf in _shelves) {
+      if (shelf.id == 'dynamic_mfy' &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.isNotEmpty) {
+        return shelf;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildQuickPicksSliver() {
+    HomeShelf? source;
+    for (final shelf in _shelves) {
+      if ((shelf.id == 'dynamic_tfy' ||
+              shelf.id == 'dynamic_discover' ||
+              shelf.id == 'dynamic_mfy') &&
+          shelf.status == HomeShelfStatus.loaded &&
+          shelf.tracks.length >= 2) {
+        source = shelf;
+        break;
+      }
+    }
+    if (source == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    return SliverToBoxAdapter(
+      child: DynamicQuickPicks(
+        tracks: source.tracks,
+        onPlay: (index) => playTrack(
+          context,
+          source!.tracks[index],
+          source.tracks,
+          index,
         ),
       ),
     );

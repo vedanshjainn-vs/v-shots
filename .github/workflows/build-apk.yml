@@ -2,7 +2,7 @@ name: V Shots APK Build & Test
 
 on:
   push:
-    branches: [ main, feat/dynamic-home-recommendations ]
+    branches: [ main, feat/dynamic-home-recommendations, safe-task-01-audit ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -89,6 +89,10 @@ jobs:
         run: |
           python3 scripts/apply_search_browser_ui_refinement.py
           dart format lib/main.dart lib/features/foryou/discovery_browser_sheet.dart lib/features/foryou/vshots_browser_session.dart
+      - name: 5j. Apply Discovery Swipeable Native Ad Page
+        run: |
+          python3 scripts/apply_discovery_swipe_native_patch.py
+          dart format lib/features/foryou/for_you_feed_screen.dart lib/core/ads/discovery_swipe_native_ad_page.dart
       - name: 6. Run Formatting Check
         run: |
           set -e
@@ -178,8 +182,17 @@ jobs:
         run: |
           RESPONSE=$(curl -sS -u "$BROWSERSTACK_USERNAME:$BROWSERSTACK_ACCESS_KEY" -X POST "https://api-cloud.browserstack.com/app-automate/upload" -F "file=@build/app/outputs/flutter-apk/app-release.apk" -F "custom_id=v-shots-ci-${{ github.run_number }}")
           echo "$RESPONSE"
-          APP_URL=$(echo "$RESPONSE" | grep -o '\"app_url\":\"[^\"]*\"' | cut -d'\"' -f4)
-          [ -z "$APP_URL" ] || echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+          APP_URL=$(python3 -c '
+          import sys, json
+          try:
+              data = json.loads(sys.argv[1])
+              print(data.get("app_url", "") or "")
+          except Exception:
+              print("")
+          ' "$RESPONSE")
+          if [ -n "$APP_URL" ]; then
+            echo "APP_URL=$APP_URL" >> "$GITHUB_ENV"
+          fi
       - name: 16. Run BrowserStack Real-Device Smoke Test
         if: ${{ env.APP_URL != '' }}
         continue-on-error: true

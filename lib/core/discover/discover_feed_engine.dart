@@ -36,13 +36,17 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../music/music_ranker.dart';
+import '../music/music_validator.dart';
 import '../providers/music_repository.dart';
 import '../recommendation/feed_intent.dart';
 import '../recommendation/genre_classifier.dart';
 import '../recommendation/music_recommendation_engine.dart';
 import '../recommendation/recommendation_engine.dart';
 import '../recommendation/recommendation_service.dart';
+import '../recommendation/smart_listening_service.dart';
+import '../recommendation/music_region_profile.dart';
 import '../remote_config/remote_config_service.dart';
+import '../storage/local_library.dart';
 
 /// Adaptive bucket weights. All values 0..1, sum == 1.
 @immutable
@@ -180,9 +184,9 @@ class DiscoverFeedEngine {
     final weights = filtersActive
         ? _filterFirstWeights()
         : (_weightsFromConfig(cfg) ?? adaptiveWeights());
-    final region = (cfg['region'] as String?)?.trim().isNotEmpty == true
-        ? (cfg['region'] as String).trim()
-        : 'IN';
+    // Country is automatic and permission-free. Explore filters still
+    // override the feed when explicitly selected by the user.
+    final region = MusicRegionProfile.current().countryCode;
 
     // Quotas per bucket from weights (proportional, min 1 when enabled).
     final quotas = <DiscoverBucket, int>{};
@@ -241,6 +245,13 @@ class DiscoverFeedEngine {
         ).then(candidates.addAll),
     ]);
 
+    // HARD CONTENT POLICY: remove non-music/unofficial AI candidates before
+    // fallback or ranking. This is intentionally before scoring/diversity.
+    final validator = const MusicContentValidator();
+    candidates.removeWhere(
+      (candidate) => !validator.validate(candidate.track).isMusic,
+    );
+
     // Fallback: pools empty (network hiccup) → one safe popular query so
     // Discover is NEVER blank.
     if (candidates.isEmpty) {
@@ -255,6 +266,10 @@ class DiscoverFeedEngine {
       candidates.addAll(fallback);
     }
 
+    // Fallback results must pass the exact same hard policy.
+    candidates.removeWhere(
+      (candidate) => !validator.validate(candidate.track).isMusic,
+    );
     final ranked = _rankCandidates(candidates, excludeIds, quotas, count);
     return ranked;
   }
@@ -295,7 +310,26 @@ class DiscoverFeedEngine {
     // Engine calls run CONCURRENTLY (they are independent pools) — this is
     // the single biggest cold-start win: two slow engines overlap instead of
     // waiting one-after-another.
-    final engineResults = await Future.wait([
+    final smartHome = SmartListeningService.instance;
+    final smartHomePool = smartHome.isConfigured
+        ? smartHome.nextSongQueue(seed: null, count: 24).then<List<_ScoredCandidate>>(
+            (tracks) => tracks
+                .map(
+                  (t) => _ScoredCandidate(
+                    t,
+                    DiscoverBucket.personal,
+                    'smart-listening-home',
+                  ),
+                )
+                .toList(),
+          ).catchError((Object e) {
+            debugPrint('[DiscoverEngine] smart Home pool failed: $e');
+            return <_ScoredCandidate>[];
+          })
+        : Future.value(const <_ScoredCandidate>[]);
+
+    final engineResults = await Future.wait<List<_ScoredCandidate>>([
+      smartHomePool,
       if (music != null)
         music
             .generateForYou(
@@ -709,6 +743,12 @@ class DiscoverFeedEngine {
         activeGenres: activeGenres,
         recentArtists: recent,
       );
+      // Recently surfaced cards are a soft negative, not a hard exclusion:
+      // fresh candidates win whenever the provider can supply them, while a
+      // thin result set can still fall back instead of going blank.
+      if (LocalLibrary.instance.recentlyShownIds.contains(id)) {
+        c.score *= 0.42;
+      }
       c.reason = _reasonFor(c.track, c.bucket, artistScores);
       scored.add(c);
     }
