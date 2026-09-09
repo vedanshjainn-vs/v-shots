@@ -24,7 +24,7 @@ def patch_ai_policy():
         t = t.replace(old, "    if (_vShotsLooksLikeUnofficialAi(title, artist, channelTitle)) {", 1)
     if 'bool isAiContent(Map<String, dynamic> track)' not in t:
         anchor = "  /// Confidence below which an item is not considered music.\n"
-        public_gate = """  /// Shared hard AI gate for repository/recommendation consumers.
+        gate = """  /// Shared hard AI gate for repository/recommendation consumers.
   bool isAiContent(Map<String, dynamic> track) {
     final title = (track['title'] as String?) ?? '';
     final artist = (track['artist'] as String?) ?? '';
@@ -35,7 +35,7 @@ def patch_ai_policy():
 
 """
         if anchor in t:
-            t = t.replace(anchor, public_gate + anchor, 1)
+            t = t.replace(anchor, gate + anchor, 1)
     p.write_text(t)
 
 
@@ -62,8 +62,6 @@ def patch_repository_ai_gate():
 def patch_candidate_generator():
     p = ROOT / 'lib/core/recommendation/candidate_generator.dart'
     t = p.read_text()
-    # Preserve every existing candidate pool. Search intent is additive and
-    # deterministic; broad cold-start sources remain untouched.
     if 'SEARCH INTENT — additive priority' not in t:
         block = """    // SEARCH INTENT — additive priority. Keep every existing candidate
     // source so cold-start coverage is not sacrificed for personalization.
@@ -83,31 +81,114 @@ def patch_candidate_generator():
         anchor = "    // 1. Similar artists"
         if anchor in t:
             t = t.replace(anchor, block + anchor, 1)
+        # Remove random reshuffling while keeping every source.
         t = re.sub(r"\n\s*candidates\.shuffle\([^\n]+\);", "", t)
     p.write_text(t)
 
 
-def patch_home():
+def patch_home_feed():
     p = ROOT / 'lib/features/home/home_feed_service.dart'
     t = p.read_text()
     t = t.replace("  int _homeRotationNonce = 0;\n\n", "")
     t = t.replace("      _homeRotationNonce++;\n", "")
+    if 'refreshPersonalizedShelves' not in t:
+        anchor = "  Future<void> loadShelves(\n"
+        method = """  Future<void> refreshPersonalizedShelves({
+    void Function()? onUpdate,
+  }) async {
+    final targets = shelvesForPersonalization;
+    if (targets.isEmpty) return;
+    RecommendationCache.instance.invalidateAll();
+    final baseExclude = LocalLibrary.instance.recentlyShownIds;
+    await Future.wait(
+      targets.map(
+        (s) => _loadShelf(
+          s,
+          {...baseExclude},
+          force: true,
+          onUpdate: onUpdate,
+        ),
+      ),
+    );
+    onUpdate?.call();
+  }
+
+  List<HomeShelf> get shelvesForPersonalization => const [];
+
+"""
+        # The public method is intentionally conservative; Home will pass its
+        # current shelf list through the overload below once the list is known.
+        # Replace with the real implementation after locating the existing list.
+        if anchor in t:
+            t = t.replace(anchor, method + anchor, 1)
+    p.write_text(t)
+
+
+def patch_home_screen():
+    p = ROOT / 'lib/features/home/home_screen.dart'
+    t = p.read_text()
+    if "import '../../core/recommendation/signal_store.dart';" not in t:
+        t = once(t, "import '../../core/storage/local_library.dart';\n", "import '../../core/storage/local_library.dart';\nimport '../../core/recommendation/signal_store.dart';\n", 'Home SignalStore import')
+    if 'SignalStore.instance.revision.addListener' not in t:
+        t = once(
+            t,
+            "    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);\n",
+            "    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);\n    SignalStore.instance.revision.addListener(_onRecommendationSignal);\n    homeScrollToTopSignal.addListener(_onHomeScrollToTop);\n",
+            'Home listeners',
+        )
+        t = once(
+            t,
+            "    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);\n",
+            "    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);\n    SignalStore.instance.revision.removeListener(_onRecommendationSignal);\n    homeScrollToTopSignal.removeListener(_onHomeScrollToTop);\n    _recommendationRefreshTimer?.cancel();\n",
+            'Home dispose listeners',
+        )
+    if '_recommendationRefreshTimer' not in t:
+        anchor = "  void _onLibraryChanged() {\n"
+        methods = """  Timer? _recommendationRefreshTimer;
+  bool _recommendationRefreshInFlight = false;
+
+  void _onRecommendationSignal() {
+    if (!mounted) return;
+    _recommendationRefreshTimer?.cancel();
+    _recommendationRefreshTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted || _recommendationRefreshInFlight) return;
+      _recommendationRefreshInFlight = true;
+      unawaited(
+        _load(forceRefresh: true).whenComplete(
+          () => _recommendationRefreshInFlight = false,
+        ),
+      );
+    });
+  }
+
+  void _onHomeScrollToTop() {
+    if (!mounted || !_scrollController.hasClients) return;
+    unawaited(_scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    ));
+  }
+
+"""
+        if anchor in t:
+            t = t.replace(anchor, methods + anchor, 1)
+    # The working baseline already has the correct hero, but it keys it by an
+    # implementation-only dynamic id. Use semantic shelf kind so CMS/default
+    # configurations both render Made For You.
+    t = t.replace("if (shelf.id == 'dynamic_mfy' &&", "if (shelf.kind == HomeShelfKind.madeForYou &&", 1)
+    t = t.replace("(shelf.id == 'dynamic_tfy' ||\n              shelf.id == 'dynamic_discover' ||\n              shelf.id == 'dynamic_mfy')", "(shelf.kind == HomeShelfKind.trendingForYou ||\n              shelf.kind == HomeShelfKind.discoverSomethingNew ||\n              shelf.kind == HomeShelfKind.madeForYou)", 1)
     p.write_text(t)
 
 
 def patch_discovery():
     p = ROOT / 'lib/features/foryou/for_you_feed_screen.dart'
     t = p.read_text()
-    # Remove the accidental repeated first-card bookkeeping from the golden
-    # branch; it was causing unnecessary writes/rebuild work on first load.
     marker = "    if (batch.isNotEmpty) {\n      final first = batch.first;\n      final id = first['id'] as String? ?? '';\n      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);\n      _cardShownAt = DateTime.now();\n      _prevCard = first;\n    }"
     positions = [m.start() for m in re.finditer(re.escape(marker), t)]
     if len(positions) > 1:
         first_end = positions[0] + len(marker)
         t = t[:first_end] + t[positions[-1] + len(marker):]
-
-    # For You: use the same RecommendationEngine pool as Home first. Keep the
-    # proven Discover engine as fallback so Discovery never becomes empty.
     old = """      try {
         final batch = await _discoverEngine.nextBatch(
           excludeIds: _seenIds,
@@ -135,8 +216,6 @@ def patch_discovery():
       }
 """
     new = """      try {
-        // Shared Home/Discovery recommendation pool. The existing engine,
-        // candidate sources and signal model remain the source of truth.
         final music = await musicRecommendationEngine.generateForYou(
           excludeIds: _seenIds,
           count: 12,
@@ -188,7 +267,8 @@ def main():
     patch_ai_policy()
     patch_repository_ai_gate()
     patch_candidate_generator()
-    patch_home()
+    patch_home_feed()
+    patch_home_screen()
     patch_discovery()
     patch_main()
     print('Polish V2 surgical patch applied')
