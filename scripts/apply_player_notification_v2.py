@@ -15,9 +15,7 @@ def replace_once(path: str, old: str, new: str, label: str) -> None:
 
 def patch_mini_player() -> None:
     path = 'lib/features/foryou/discovery_browser_sheet.dart'
-    replace_once(
-        path,
-        '''            IconButton(
+    replace_once(path, '''            IconButton(
               icon: const Icon(
                 Icons.pause_rounded,
                 color: AppColors.accent,
@@ -25,8 +23,7 @@ def patch_mini_player() -> None:
               ),
               tooltip: 'Pause / Resume',
               onPressed: _togglePagePlayback,
-            ),''',
-        '''            IconButton(
+            ),''', '''            IconButton(
               icon: Icon(
                 widget.controller.pagePlaying == false
                     ? Icons.play_arrow_rounded
@@ -38,24 +35,16 @@ def patch_mini_player() -> None:
                   ? 'Play'
                   : 'Pause',
               onPressed: _togglePagePlayback,
-            ),''',
-        'mini-player play state',
-    )
+            ),''', 'mini-player play state')
 
 
 def patch_browser_notification_updates() -> None:
     path = 'lib/features/foryou/discovery_browser_sheet.dart'
     p = ROOT / path
     text = p.read_text()
-    # Refresh native notification metadata whenever the controller switches
-    # tracks, not only on the initial load. Keep the single browser session.
     if '_lastNotificationTrackId' not in text:
-        text = text.replace(
-            '  String? _lastLoadedUrl;\n',
-            '  String? _lastLoadedUrl;\n  String? _lastNotificationTrackId;\n',
-            1,
-        )
-    if '_lastNotificationTrackId != widget.controller.trackId' not in text:
+        text = text.replace('  String? _lastLoadedUrl;\n', '  String? _lastLoadedUrl;\n  String? _lastNotificationTrackId;\n', 1)
+    if '_lastNotificationTrackId != notificationTrackId' not in text:
         old = '''    unawaited(
       _session.updateNotification(
         title: widget.controller.title ?? 'V Shots',
@@ -85,23 +74,32 @@ def patch_audio_media_item() -> None:
     path = 'lib/main.dart'
     p = ROOT / path
     text = p.read_text()
-    old = '''    MediaItem(
-      id: trackId,
-      title: trackTitle,
-      artist: trackArtist,
-      artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,'''
-    new = '''    MediaItem(
-      id: trackId,
-      title: trackTitle,
-      artist: trackArtist,
-      album: 'V Shots',
-      displayTitle: trackTitle,
-      displaySubtitle: trackArtist,
-      artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,'''
-    if new not in text:
-        if old not in text:
-            raise SystemExit('audio MediaItem anchor not found')
-        text = text.replace(old, new, 1)
+    # Stable production patches may already add album. Normalize it first so
+    # this patch can never emit duplicate named arguments.
+    lines = text.splitlines()
+    in_media_item = False
+    album_seen = False
+    out = []
+    for line in lines:
+        if 'MediaItem(' in line:
+            in_media_item = True
+            album_seen = False
+        if in_media_item and line.strip().startswith("album: 'V Shots'"):
+            if album_seen:
+                continue
+            album_seen = True
+        out.append(line)
+        if in_media_item and line.strip() == '),':
+            in_media_item = False
+    text = '\n'.join(out) + ('\n' if text.endswith('\n') else '')
+    if 'displayTitle: trackTitle,' not in text:
+        anchor = "      album: 'V Shots',\n"
+        if anchor not in text:
+            old = "      artist: trackArtist,\n"
+            if old not in text:
+                raise SystemExit('audio MediaItem anchor not found')
+            text = text.replace(old, old + anchor, 1)
+        text = text.replace(anchor, anchor + "      displayTitle: trackTitle,\n      displaySubtitle: trackArtist,\n", 1)
     p.write_text(text)
 
 
@@ -109,13 +107,8 @@ def patch_notification_service_cache() -> None:
     path = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlaybackService.kt'
     p = ROOT / path
     text = p.read_text()
-    # Prevent a late artwork request from replacing a newer track's artwork.
     if 'artworkGeneration' not in text:
-        text = text.replace(
-            '    private var mediaSession: MediaSession? = null\n',
-            '    private var mediaSession: MediaSession? = null\n    @Volatile private var artworkGeneration = 0L\n',
-            1,
-        )
+        text = text.replace('    private var mediaSession: MediaSession? = null\n', '    private var mediaSession: MediaSession? = null\n    @Volatile private var artworkGeneration = 0L\n', 1)
     old = '''                artworkUrl = intent.getStringExtra("artwork")?.takeIf { it.isNotBlank() } ?: ""
                 playing = intent.getBooleanExtra("playing", playing)
                 updateMediaSession()
@@ -143,11 +136,7 @@ def patch_notification_service_cache() -> None:
         if old2 not in text:
             raise SystemExit('artwork loader anchor not found')
         text = text.replace(old2, new2, 1)
-    text = text.replace(
-        '                if (url == artworkUrl) publishNotification(bitmap)',
-        '                if (generation == artworkGeneration && url == artworkUrl) publishNotification(bitmap)',
-        1,
-    )
+    text = text.replace('                if (url == artworkUrl) publishNotification(bitmap)', '                if (generation == artworkGeneration && url == artworkUrl) publishNotification(bitmap)', 1)
     p.write_text(text)
 
 
