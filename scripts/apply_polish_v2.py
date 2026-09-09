@@ -81,7 +81,6 @@ def patch_candidate_generator():
         anchor = "    // 1. Similar artists"
         if anchor in t:
             t = t.replace(anchor, block + anchor, 1)
-        # Remove random reshuffling while keeping every source.
         t = re.sub(r"\n\s*candidates\.shuffle\([^\n]+\);", "", t)
     p.write_text(t)
 
@@ -91,34 +90,30 @@ def patch_home_feed():
     t = p.read_text()
     t = t.replace("  int _homeRotationNonce = 0;\n\n", "")
     t = t.replace("      _homeRotationNonce++;\n", "")
-    if 'refreshPersonalizedShelves' not in t:
+    if 'refreshPersonalizedShelves(List<HomeShelf>' not in t:
         anchor = "  Future<void> loadShelves(\n"
-        method = """  Future<void> refreshPersonalizedShelves({
+        method = """  Future<void> refreshPersonalizedShelves(
+    List<HomeShelf> shelves, {
     void Function()? onUpdate,
   }) async {
-    final targets = shelvesForPersonalization;
+    final targets = shelves.where((s) =>
+        s.kind == HomeShelfKind.madeForYou ||
+        s.kind == HomeShelfKind.becauseYouListenedTo ||
+        s.kind == HomeShelfKind.trendingForYou ||
+        s.kind == HomeShelfKind.discoverSomethingNew).toList();
     if (targets.isEmpty) return;
     RecommendationCache.instance.invalidateAll();
     final baseExclude = LocalLibrary.instance.recentlyShownIds;
-    await Future.wait(
-      targets.map(
-        (s) => _loadShelf(
-          s,
-          {...baseExclude},
-          force: true,
-          onUpdate: onUpdate,
-        ),
-      ),
-    );
+    await Future.wait(targets.map((s) => _loadShelf(
+      s,
+      {...baseExclude},
+      force: true,
+      onUpdate: onUpdate,
+    )));
     onUpdate?.call();
   }
 
-  List<HomeShelf> get shelvesForPersonalization => const [];
-
 """
-        # The public method is intentionally conservative; Home will pass its
-        # current shelf list through the overload below once the list is known.
-        # Replace with the real implementation after locating the existing list.
         if anchor in t:
             t = t.replace(anchor, method + anchor, 1)
     p.write_text(t)
@@ -130,18 +125,8 @@ def patch_home_screen():
     if "import '../../core/recommendation/signal_store.dart';" not in t:
         t = once(t, "import '../../core/storage/local_library.dart';\n", "import '../../core/storage/local_library.dart';\nimport '../../core/recommendation/signal_store.dart';\n", 'Home SignalStore import')
     if 'SignalStore.instance.revision.addListener' not in t:
-        t = once(
-            t,
-            "    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);\n",
-            "    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);\n    SignalStore.instance.revision.addListener(_onRecommendationSignal);\n    homeScrollToTopSignal.addListener(_onHomeScrollToTop);\n",
-            'Home listeners',
-        )
-        t = once(
-            t,
-            "    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);\n",
-            "    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);\n    SignalStore.instance.revision.removeListener(_onRecommendationSignal);\n    homeScrollToTopSignal.removeListener(_onHomeScrollToTop);\n    _recommendationRefreshTimer?.cancel();\n",
-            'Home dispose listeners',
-        )
+        t = once(t, "    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);\n", "    LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);\n    SignalStore.instance.revision.addListener(_onRecommendationSignal);\n    homeScrollToTopSignal.addListener(_onHomeScrollToTop);\n", 'Home listeners')
+        t = once(t, "    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);\n", "    LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);\n    SignalStore.instance.revision.removeListener(_onRecommendationSignal);\n    homeScrollToTopSignal.removeListener(_onHomeScrollToTop);\n    _recommendationRefreshTimer?.cancel();\n", 'Home dispose listeners')
     if '_recommendationRefreshTimer' not in t:
         anchor = "  void _onLibraryChanged() {\n"
         methods = """  Timer? _recommendationRefreshTimer;
@@ -153,11 +138,10 @@ def patch_home_screen():
     _recommendationRefreshTimer = Timer(const Duration(milliseconds: 900), () {
       if (!mounted || _recommendationRefreshInFlight) return;
       _recommendationRefreshInFlight = true;
-      unawaited(
-        _load(forceRefresh: true).whenComplete(
-          () => _recommendationRefreshInFlight = false,
-        ),
-      );
+      unawaited(homeFeedService.refreshPersonalizedShelves(
+        _shelves,
+        onUpdate: _onShelfUpdate,
+      ).whenComplete(() => _recommendationRefreshInFlight = false));
     });
   }
 
@@ -173,9 +157,6 @@ def patch_home_screen():
 """
         if anchor in t:
             t = t.replace(anchor, methods + anchor, 1)
-    # The working baseline already has the correct hero, but it keys it by an
-    # implementation-only dynamic id. Use semantic shelf kind so CMS/default
-    # configurations both render Made For You.
     t = t.replace("if (shelf.id == 'dynamic_mfy' &&", "if (shelf.kind == HomeShelfKind.madeForYou &&", 1)
     t = t.replace("(shelf.id == 'dynamic_tfy' ||\n              shelf.id == 'dynamic_discover' ||\n              shelf.id == 'dynamic_mfy')", "(shelf.kind == HomeShelfKind.trendingForYou ||\n              shelf.kind == HomeShelfKind.discoverSomethingNew ||\n              shelf.kind == HomeShelfKind.madeForYou)", 1)
     p.write_text(t)
