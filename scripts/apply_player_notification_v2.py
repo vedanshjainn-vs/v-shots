@@ -74,8 +74,8 @@ def patch_audio_media_item() -> None:
     path = 'lib/main.dart'
     p = ROOT / path
     text = p.read_text()
-    # Stable production patches may already add album. Normalize it first so
-    # this patch can never emit duplicate named arguments.
+    # The stable production patch already supplies album metadata. Preserve
+    # that field and only add the richer display metadata once.
     lines = text.splitlines()
     in_media_item = False
     album_seen = False
@@ -84,22 +84,24 @@ def patch_audio_media_item() -> None:
         if 'MediaItem(' in line:
             in_media_item = True
             album_seen = False
-        if in_media_item and line.strip().startswith("album: 'V Shots'"):
+        stripped = line.strip()
+        if in_media_item and stripped.startswith('album:'):
             if album_seen:
                 continue
             album_seen = True
         out.append(line)
-        if in_media_item and line.strip() == '),':
+        if in_media_item and stripped == '),':
             in_media_item = False
     text = '\n'.join(out) + ('\n' if text.endswith('\n') else '')
     if 'displayTitle: trackTitle,' not in text:
-        anchor = "      album: 'V Shots',\n"
+        anchor = "      artist: trackArtist,\n"
         if anchor not in text:
-            old = "      artist: trackArtist,\n"
-            if old not in text:
-                raise SystemExit('audio MediaItem anchor not found')
-            text = text.replace(old, old + anchor, 1)
-        text = text.replace(anchor, anchor + "      displayTitle: trackTitle,\n      displaySubtitle: trackArtist,\n", 1)
+            raise SystemExit('audio MediaItem metadata anchor not found')
+        text = text.replace(
+            anchor,
+            anchor + "      displayTitle: trackTitle,\n      displaySubtitle: trackArtist,\n",
+            1,
+        )
     p.write_text(text)
 
 
