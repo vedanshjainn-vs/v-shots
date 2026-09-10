@@ -219,8 +219,9 @@ class PersonalizationStore extends ChangeNotifier {
     final remoteUpdated =
         DateTime.tryParse(bundle['updated_at'] as String? ?? '');
     if (remoteUpdated == null) return false;
-    if (_updatedAt != null && !_updatedAt!.isBefore(remoteUpdated))
+    if (_updatedAt != null && !_updatedAt!.isBefore(remoteUpdated)) {
       return false;
+    }
 
     final languages = (bundle['languages'] as List<dynamic>? ?? [])
         .whereType<String>()
