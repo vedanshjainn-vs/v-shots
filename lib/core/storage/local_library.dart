@@ -100,7 +100,9 @@ class LocalLibrary {
           _shownSongIds.map((e) => {'id': e.id, 'shownAt': e.shownAt}).toList(),
         ),
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[LocalLibrary] persist shownSongs failed: $e');
+    }
   }
 
   void _loadShown() {
@@ -116,7 +118,9 @@ class LocalLibrary {
           _shownSongIds.add((id: id, shownAt: shownAt));
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[LocalLibrary] restore shownSongs failed: $e');
+    }
   }
 
   Future<void> initialize() async {

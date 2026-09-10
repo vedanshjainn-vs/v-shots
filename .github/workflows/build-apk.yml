@@ -10,6 +10,12 @@ on:
 permissions:
   contents: read
 
+# One build per ref at a time: supersede (cancel) the previous run when a
+# new push lands — avoids stacked/zombie runs burning runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build & Validate V Shots APK

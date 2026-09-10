@@ -45,6 +45,7 @@ class AppAvatar extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
+        memCacheWidth: (size * 3).round(),
         placeholder: (context, url) => Container(
           color: AppColors.surface2,
           child: const Center(

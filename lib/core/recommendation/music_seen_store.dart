@@ -81,6 +81,8 @@ class MusicSeenStore {
         jsonEncode(_lastSeen.map((k, v) => MapEntry(k, v.toIso8601String()))),
       );
       await _prefs?.setString(_kCounts, jsonEncode(_counts));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[MusicSeenStore] persist failed: $e');
+    }
   }
 }

@@ -128,6 +128,7 @@ class _ShotCardState extends State<ShotCard> {
                   CachedNetworkImage(
                     imageUrl: _shot.thumbnailUrl,
                     fit: BoxFit.cover,
+                    memCacheWidth: 800,
                     placeholder: (context, url) =>
                         Container(color: AppColors.surface2),
                     errorWidget: (context, url, error) => Container(

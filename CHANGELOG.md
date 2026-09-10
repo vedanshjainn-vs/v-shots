@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased] — Stability & security hardening (2026-09-10)
+
+### Security (database — applied to production)
+- **RLS lockdown (P0):** CMS/flag tables (`feature_flags`, `home_layout_config`,
+  `home_section_items`, `home_config`, `discovery_categories`, `discover_settings`)
+  were anonymously writable by anyone with the embedded anon key. Writes are now
+  gated by `is_home_admin()` (owner OAuth + allowlist — the admin panel's existing
+  auth). Anonymous reads (all the app does) unchanged. Migration:
+  `supabase/migrations/20260910120000_lock_cms_writes.sql`.
+- `notification_history` inserts scoped to the signed-in user's own rows.
+- `home_admins`: added the missing `email` column so `claim_home_admin()` works.
+
+### Architecture (no behavior change)
+- `main.dart` god-file reduction: ProfileScreen + track sheets + creator gating
+  extracted verbatim to `lib/features/profile/profile_screen.dart`
+  (main.dart 2892 → ~1690 lines); main.dart re-exports it so no importer changed.
+- New `lib/core/observing/error_reporting.dart` (from PR #19 line): global
+  FlutterError/PlatformDispatcher hooks → Crashlytics non-fatals.
+
+### Performance (no behavior change)
+- Large JSON payloads (InnerTube, YouTube Data API responses) now decode on a
+  background isolate (`lib/core/services/json_decoder.dart`, 24 KB threshold) —
+  removes scroll-jank sources in feeds.
+- Thumbnail memory caps: `memCacheWidth` added to the remaining direct
+  `CachedNetworkImage` sites (shot cards, video player background, avatars).
+
+### Hygiene
+- `debugPrint` silenced in release builds (no internal logs in production logcat).
+- 6 empty catch blocks now log (debug-only) instead of failing silently.
+- Removed unused `app_links` dependency; deleted legacy `scripts/max_setup.py`.
+- Analyzer: 0 issues repo-wide; 483/483 tests pass; full CI patch-sequence
+  simulation validated (format-check clean, analyzer clean, patches identical).
+- CI: concurrency group added (superseded builds auto-cancel).
+- 12 historical phase/setup docs moved to `docs/history/`.
+- Staged (NOT applied): optional social/creator tables migration —
+  `supabase/migrations/20260910130000_optional_social_tables_STAGED.sql`.
+
+
 ## [Unreleased] — PHASE 17.10: App-wide playback behavior + Discover/Home fixes (2026-08-22)
 
 ### Playback (app-wide — one WebView powers Home/Discover/playlists/queue)

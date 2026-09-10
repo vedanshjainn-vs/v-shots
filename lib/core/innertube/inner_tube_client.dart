@@ -31,6 +31,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'inner_tube_models.dart';
+import '../services/json_decoder.dart';
 
 class InnerTubeClient {
   InnerTubeClient({
@@ -129,7 +130,7 @@ class InnerTubeClient {
           }
           return null;
         }
-        final decoded = jsonDecode(res.body);
+        final decoded = await decodeJsonMaybeOffThread(res.body);
         return decoded is Map<String, dynamic> ? decoded : null;
       } catch (e) {
         debugPrint('[InnerTube] $endpoint failed (attempt ${attempt + 1}): $e');
