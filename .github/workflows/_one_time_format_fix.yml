@@ -21,18 +21,33 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Format the known failing file and commit only that fix
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Pub get, format target, verify only target changed, commit and push
         run: |
           set -e
+          flutter pub get
           dart format lib/features/foryou/for_you_feed_screen.dart
-          dart format --output=none --set-exit-if-changed lib test
-          git status --short
-          if git diff --quiet; then
-            echo 'No formatting changes remain.'
-            exit 0
+
+          CHANGED=$(git status --short | awk '{print $2}')
+          if [ -n "$CHANGED" ] && [ "$CHANGED" != "lib/features/foryou/for_you_feed_screen.dart" ]; then
+            echo 'Unexpected files changed:'
+            git status --short
+            exit 1
           fi
+
+          if git diff --quiet -- lib/features/foryou/for_you_feed_screen.dart; then
+            echo 'Target file produced no formatting diff; nothing to commit.'
+            exit 1
+          fi
+
+          dart format --output=none --set-exit-if-changed lib test
+
+          CHANGED=$(git status --short | awk '{print $2}')
+          if [ -n "$CHANGED" ] && [ "$CHANGED" != "lib/features/foryou/for_you_feed_screen.dart" ]; then
+            echo 'Unexpected files changed after full format verification:'
+            git status --short
+            exit 1
+          fi
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           rm .github/workflows/_one_time_format_fix.yml
