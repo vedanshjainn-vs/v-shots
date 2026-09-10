@@ -306,7 +306,12 @@ class CandidateGenerator {
       final q =
           '${seed.title.trim()} ${seed.artist.trim()} official audio'.trim();
       if (q.isNotEmpty && seenQueries.add(q)) {
-        ordered.add(CandidateQuery(query: q, source: CandidateSource.likedMusic));
+        ordered.add(
+          CandidateQuery(
+            query: q,
+            source: CandidateSource.likedMusic,
+          ),
+        );
       }
     }
 
