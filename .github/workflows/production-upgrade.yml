@@ -4,6 +4,7 @@ name: V Shots Production Upgrade CI
 # The CI patch state was landed as a real commit on this branch
 # (see "chore(ci): land CI patch state"), so the committed tree IS
 # the shipped configuration. Any change must arrive as a commit.
+# CI trigger: run production validation after one-time formatting cleanup.
 
 on:
   push:
