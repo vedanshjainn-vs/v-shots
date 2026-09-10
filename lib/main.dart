@@ -329,6 +329,18 @@ class _SplashScreenState extends State<SplashScreen>
                   MaterialPageRoute<void>(builder: (_) => const MainShell()),
                 );
               },
+              songSearch: (query) async {
+                // Real repository search, validated + blocked-filtered via
+                // the same music-first gate the main Search screen uses.
+                try {
+                  final tracks = await musicRepository.search(query, limit: 14);
+                  return const MusicCatalogService()
+                      .ingest(tracks, label: '.onboarding')
+                      .items;
+                } catch (_) {
+                  return const <Map<String, dynamic>>[];
+                }
+              },
             );
       navigator.pushReplacement(MaterialPageRoute<void>(builder: (_) => next));
     });

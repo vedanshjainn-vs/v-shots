@@ -84,14 +84,29 @@ void main() {
 
       expect(find.byType(OnboardingScreen), findsOneWidget);
 
-      // Swipe through to the personalize page and tap Get Started.
-      final onGetStarted = find.text('Get Started');
-      for (var i = 0; i < 4 && onGetStarted.evaluate().isEmpty; i++) {
-        await tester.tap(find.text('Continue'));
-        await tester.pumpAndSettle();
-      }
+      // New 6-step flow: welcome → languages → artists → songs → genres →
+      // review. Pick real selections so preferences actually persist.
+      await tester.tap(find.text('Get Started'));
+      await tester.pumpAndSettle();
 
-      await tester.tap(onGetStarted);
+      await tester.tap(find.text('Hindi'));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Arijit Singh'));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      // Songs step has no search source in tests — optional, continue.
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Romantic'));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Your taste profile'), findsOneWidget);
+      await tester.tap(find.text('Finish'));
       // Home's shimmer/equalizer animate continuously, so pumpAndSettle
       // would never settle — use fixed pumps for the route transition.
       await tester.pump();
