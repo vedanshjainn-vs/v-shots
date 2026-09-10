@@ -15,7 +15,7 @@ An Android Flutter music discovery app backed by Supabase. YouTube videos play b
 
 - **App Name:** `V Shots`
 - **Package Name:** `com.vshots.live`
-- **Version:** `5.8.0 (Build 20)`
+- **Version:** `5.9.3 (Build 46)`
 - **Design System:** `V Shots Nova UI` (Dark-first `#070A12` with purple, cyan, and pink accents)
 
 ---

@@ -87,6 +87,7 @@ class _VideoPlayerCardState extends State<VideoPlayerCard> {
               CachedNetworkImage(
                 imageUrl: widget.thumbnailUrl,
                 fit: BoxFit.cover,
+                memCacheWidth: 1080,
                 placeholder: (context, url) =>
                     Container(color: AppColors.surface2),
                 errorWidget: (context, url, error) => Container(

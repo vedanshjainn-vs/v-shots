@@ -8,6 +8,8 @@
 // no platform — so they are fully unit-testable and reusable elsewhere later.
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'package:flutter/foundation.dart';
+
 /// Extracts the 11-character video id from a YouTube URL, or returns the input
 /// itself when it is already a bare video id. Returns null for unsupported
 /// URLs. Supported forms:
@@ -15,6 +17,7 @@
 ///   - https://youtube.com/watch?v=ID / https://m.youtube.com/watch?v=ID
 ///   - https://youtu.be/ID
 ///   - https://www.youtube.com/embed/ID | /shorts/ID | /live/ID | /v/ID
+
 String? extractYoutubeVideoId(String url) {
   final trimmed = url.trim();
   if (trimmed.isEmpty) return null;
@@ -79,7 +82,9 @@ String? extractYoutubePlaylistId(String input) {
     if (!isYoutubeHost) return null;
     final list = uri.queryParameters['list'];
     if (list != null && list.isNotEmpty) return list;
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[YouTubeUrl] playlistId parse failed: $e');
+  }
   return null;
 }
 
@@ -109,6 +114,8 @@ String? extractYoutubeChannelId(String input) {
           ? handle
           : null;
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[YouTubeUrl] channelHandle parse failed: $e');
+  }
   return null;
 }

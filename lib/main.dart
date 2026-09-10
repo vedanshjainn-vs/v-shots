@@ -22,6 +22,7 @@ import '../core/ads/mrec_ad_manager.dart';
 import '../core/ads/premium_mrec_ad_card.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'core/observing/error_reporting.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
 import 'core/notifications/app_update_service.dart';
@@ -58,6 +59,7 @@ import 'features/onboarding/onboarding_screen.dart';
 import 'features/profile/artist_details_screen.dart';
 import 'shared/widgets/offline_banner.dart';
 import 'features/profile/profile_screen.dart';
+import 'package:flutter/foundation.dart';
 
 // Re-export so existing `import main.dart` call sites (For You feed,
 // Discovery browser, Edit Profile) keep resolving the moved symbols
@@ -66,7 +68,21 @@ export 'features/profile/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Production hygiene: silence debugPrint in release builds so internal
+  // logging never reaches production logcat (anti-tampering). Debug and
+  // profile builds are unchanged. Overrides the foundation setter — no
+  // call sites anywhere in the app need to change.
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
+
   final bootTimer = Stopwatch()..start();
+
+  // Global error reporting (Firebase Crashlytics). Fire-and-forget by
+  // design: installs the Flutter/zone error hooks immediately and never
+  // blocks or breaks boot — worst case the app runs without reporting.
+  unawaited(initializeErrorReporting());
 
   // Initialize Firebase first (required for FCM)
   debugPrint('[Boot] Firebase initialized');

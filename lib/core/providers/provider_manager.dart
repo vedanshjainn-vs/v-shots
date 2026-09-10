@@ -7,6 +7,7 @@ import 'provider_config.dart';
 import 'provider_models.dart';
 import 'provider_registry.dart';
 import 'provider_result.dart';
+import 'package:flutter/foundation.dart';
 
 class ProviderManager {
   ProviderManager({
@@ -25,7 +26,9 @@ class ProviderManager {
     for (final provider in registry.inPriorityOrder(config)) {
       try {
         await provider.initialize();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[ProviderManager] ${provider.runtimeType} init failed: $e');
+      }
     }
   }
 

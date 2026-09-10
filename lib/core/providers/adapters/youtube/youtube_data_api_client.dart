@@ -3,11 +3,11 @@
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import '../../../services/json_decoder.dart';
 
 /// Data model representing a YouTube video metadata item from Data API v3.
 class YouTubeVideoItem {
@@ -190,7 +190,8 @@ class YouTubeDataApiClient {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = await decodeJsonMaybeOffThread(response.body)
+            as Map<String, dynamic>;
         final items = (data['items'] as List?) ?? [];
 
         final videoIds = <String>[];
@@ -261,7 +262,8 @@ class YouTubeDataApiClient {
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return null;
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data =
+          await decodeJsonMaybeOffThread(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       if (items.isEmpty) return null;
       final snippet = (items.first as Map<String, dynamic>)['snippet']
@@ -334,7 +336,8 @@ class YouTubeDataApiClient {
           nextPageToken: null,
         );
       }
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data =
+          await decodeJsonMaybeOffThread(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       final videoIds = <String>[];
       final rawItems = <Map<String, dynamic>>[];
@@ -406,7 +409,8 @@ class YouTubeDataApiClient {
         );
         return [];
       }
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data =
+          await decodeJsonMaybeOffThread(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       return items
           .whereType<Map<String, dynamic>>()
@@ -433,7 +437,8 @@ class YouTubeDataApiClient {
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return null;
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data =
+          await decodeJsonMaybeOffThread(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       if (items.isEmpty) return null;
       return (items.first as Map<String, dynamic>)['id'] as String?;
@@ -466,7 +471,8 @@ class YouTubeDataApiClient {
           .get(uri, headers: _androidHeaders)
           .timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) return [];
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final data =
+          await decodeJsonMaybeOffThread(response.body) as Map<String, dynamic>;
       final items = (data['items'] as List?) ?? [];
       return items
           .whereType<Map<String, dynamic>>()
@@ -498,7 +504,8 @@ class YouTubeDataApiClient {
           .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = await decodeJsonMaybeOffThread(response.body)
+            as Map<String, dynamic>;
         final items = (data['items'] as List?) ?? [];
         if (items.isNotEmpty && items.first is Map<String, dynamic>) {
           return YouTubeVideoItem.fromJson(items.first as Map<String, dynamic>);
@@ -533,7 +540,8 @@ class YouTubeDataApiClient {
           .timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = await decodeJsonMaybeOffThread(response.body)
+            as Map<String, dynamic>;
         final items = (data['items'] as List?) ?? [];
         for (final item in items) {
           if (item is Map<String, dynamic>) {
