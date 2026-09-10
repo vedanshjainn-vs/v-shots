@@ -33,6 +33,7 @@ import 'core/notifications/smart_notification_service.dart';
 import 'core/remote_config/remote_config_service.dart';
 import 'core/remote_config/remote_feature_flags.dart';
 import 'core/backend/supabase_service.dart';
+import 'core/backend/user_preference_sync.dart';
 import 'core/cache/search_cache.dart';
 import 'core/lyrics/lyrics_service.dart';
 import 'core/music/music_catalog_service.dart';
@@ -47,6 +48,7 @@ import 'core/providers/provider_bootstrap.dart';
 import 'core/recommendation/music_recommendation_engine.dart';
 import 'core/recommendation/music_region_profile.dart';
 import 'core/recommendation/feed_intent.dart';
+import 'core/recommendation/recommendation_cache.dart';
 import 'core/recommendation/recommendation_engine.dart';
 import 'core/recommendation/signal_recorder.dart';
 import 'core/recommendation/signal_store.dart';
@@ -77,6 +79,14 @@ import 'features/profile/settings_screen.dart';
 import 'features/shots/upload_shot_screen.dart';
 import 'shared/widgets/offline_banner.dart';
 
+/// Preferences changed (onboarding, Profile edits, remote merge):
+/// drop every personalized cache so Home/Discovery/For You recompute from
+/// the new taste, and mirror the bundle to the user's own synced row.
+void _onPreferencesChanged() {
+  RecommendationCache.instance.invalidateAll();
+  unawaited(UserPreferenceSync.instance.pushIfSignedIn());
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final bootTimer = Stopwatch()..start();
@@ -104,6 +114,13 @@ void main() async {
   // Initialize FCM (non-blocking, fire-and-forget)
 
   await AuthService.instance.initializeGoogleSignIn();
+
+  // Preference lifecycle: adopt fresher remote preferences on startup
+  // (signed-in users; anonymous is a safe no-op), and keep recommendation
+  // caches + the remote mirror in sync whenever preferences change. A
+  // preference edit must NEVER keep serving stale cached content.
+  unawaited(UserPreferenceSync.instance.pullAndMergeIfSignedIn());
+  PersonalizationStore.instance.addListener(_onPreferencesChanged);
 
   // Ads (AppLovin MAX mediation): one-time, NON-BLOCKING init (Phase 18).
   // The existing UMP consent system is REUSED as the single consent source;
