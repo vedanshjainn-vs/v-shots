@@ -1069,7 +1069,8 @@ class _DiscoveryExploreSheetState extends State<DiscoveryExploreSheet> {
                   spacing: 8,
                   runSpacing: 8,
                   children: widget.catalog.decades.map((decade) {
-                    final selected = _draft.decades.any((d) => d.id == decade.id);
+                    final selected =
+                        _draft.decades.any((d) => d.id == decade.id);
                     return FilterChip(
                       label: Text(decade.label),
                       selected: selected,
