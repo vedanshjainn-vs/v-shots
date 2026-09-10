@@ -24,6 +24,7 @@ import '../../core/recommendation/feed_intent.dart';
 import '../../core/storage/local_library.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_button.dart';
+import 'package:v_shots/shared/widgets/loading_skeleton.dart';
 import '../../shared/widgets/app_image.dart';
 import '../../shared/widgets/comment_sheet.dart';
 import '../../main.dart'
@@ -403,171 +404,174 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
 
     // ENDLESS: retry a few times; if the provider returns nothing (rate-limit
     // or every candidate already seen), rotate the session seen-ids and try
-    // again so the feed NEVER runs out while the network is up.
-    var batch = <Map<String, dynamic>>[];
-    for (var attempt = 0; attempt < 3 && batch.isEmpty; attempt++) {
-      batch = await _fetchDiscoverBatch();
-      if (batch.isEmpty && attempt < 2) {
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+    // again so the feed NEVER ends abruptly.
+    try {
+      List<Map<String, dynamic>> more = const [];
+      for (var attempt = 0; attempt < 3 && more.isEmpty; attempt++) {
+        more = await _fetchDiscoverBatch();
+        if (more.isEmpty && attempt < 2) {
+          _seenIds.removeWhere((_) => true);
+        }
       }
+      if (!mounted || more.isEmpty) return;
+      final fresh = more.where((t) {
+        final id = t['id'] as String? ?? '';
+        return id.isNotEmpty && !_seenIds.contains(id);
+      }).toList();
+      if (fresh.isNotEmpty) {
+        setState(() {
+          _items.addAll(fresh);
+          _seenIds.addAll(fresh.map((t) => t['id'] as String));
+        });
+      }
+    } finally {
+      _isLoadingMore = false;
     }
-    if (batch.isEmpty) {
-      // Session dedupe rotation: old ids were only session-level; clearing
-      // them lets fresh pages come through rather than stalling the feed.
-      _seenIds.clear();
-      batch = await _fetchDiscoverBatch();
-    }
-
-    if (mounted && batch.isNotEmpty) {
-      setState(() {
-        _items.addAll(batch);
-        _seenIds.addAll(batch.map((t) => t['id'] as String));
-      });
-    }
-    _isLoadingMore = false;
   }
 
   void _onPageChanged(int page) {
-    if (page < 0 || page >= _pageCount) return;
-    unawaited(HapticFeedback.selectionClick());
+    if (_syncingFromManager || _items.isEmpty) return;
+    if (_isAdPage(page)) return;
+    final songIndex = _songIndexForPage(page);
+    if (songIndex < 0 || songIndex >= _items.length) return;
+    if (songIndex == _currentIndex) return;
 
-    // This is the actual in-feed ad page. It owns no playback and never calls
-    // the modal Interstitial API. The user simply swipes through it.
-    if (_isAdPage(page)) {
-      if (VShotsPlaybackManager.instance.isOpen) {
-        VShotsPlaybackManager.instance.pause();
-      }
-      return;
-    }
-
-    final index = _songIndexForPage(page);
-    if (index < 0 || index >= _items.length) return;
-    final track = _items[index];
-
-    final prev = _prevCard;
-    if (prev != null) {
-      final shownFor = _cardShownAt == null
-          ? 0
-          : DateTime.now().difference(_cardShownAt!).inSeconds;
-      final duration = (prev['duration'] as num?)?.toInt() ?? 0;
-      final outcome = duration > 0 && shownFor >= duration * 0.9
+    final previousIndex = _currentIndex;
+    if (previousIndex >= 0 && previousIndex < _items.length) {
+      final previous = _items[previousIndex];
+      final elapsed = _cardShownAt == null
+          ? null
+          : DateTime.now().difference(_cardShownAt!).inMilliseconds;
+      final durationMs = (previous['duration'] as num?)?.toDouble();
+      final positionMs = VShotsPlaybackManager.instance.position.inMilliseconds;
+      final completed = durationMs != null &&
+          durationMs > 0 &&
+          positionMs >= durationMs * 0.85;
+      final outcome = completed
           ? DiscoverSwipeOutcome.completed
-          : shownFor >= 45
-              ? DiscoverSwipeOutcome.listenedLong
-              : shownFor >= 15
-                  ? DiscoverSwipeOutcome.listenedShort
-                  : DiscoverSwipeOutcome.skippedImmediately;
-      _discoverEngine.recordSwipe(prev, outcome: outcome);
+          : elapsed != null && elapsed < 3000
+              ? DiscoverSwipeOutcome.skipped
+              : DiscoverSwipeOutcome.swiped;
+      _discoverEngine.recordSwipe(previous, outcome: outcome);
+      unawaited(LocalLibrary.instance.recordRecentlyPlayed(previous));
     }
+
+    setState(() => _currentIndex = songIndex);
+    final current = _items[songIndex];
+    final id = current['id'] as String? ?? '';
+    if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
     _cardShownAt = DateTime.now();
-    _prevCard = track;
-
-    setState(() => _currentIndex = index);
-
-    // Programmatic auto-advance already owns playback. Never trigger another
-    // ad page or re-run playQueue from this callback.
-    if (_syncingFromManager) return;
-
-    VShotsPlaybackManager.instance.playQueue(List.of(_items), index);
-    unawaited(LocalLibrary.instance.recordRecentlyPlayed(track));
-    playbackSignalTracker.onTrackStarted(track);
+    _prevCard = current;
+    unawaited(_playCurrent(expanded: false));
     unawaited(_maybeLoadMore());
   }
 
-  void _skipUnavailableDiscoveryAd(int page) {
-    if (!mounted || !_isAdPage(page)) return;
-    final nextPage = page + 1;
-    if (nextPage >= _pageCount) {
-      unawaited(_maybeLoadMore());
-      return;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
-      if (_pageController.page?.round() == page) {
-        _pageController.animateToPage(
-          nextPage,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-        );
-      }
-    });
-  }
-
-  /// Opens the Explore panel: the full filter hierarchy (DISCOVER / MOODS /
-  /// LANGUAGE / REGION) in a premium bottom sheet — never permanently visible
-  /// across the top of Discovery.
-  void _showExplore() async {
-    final committed = await showModalBottomSheet<DiscoveryFilterConfig>(
+  Future<void> _showExplore() async {
+    final draft = await showModalBottomSheet<DiscoveryFilterConfig>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _ExploreSheet(initial: _applied, catalog: _catalog),
+      builder: (_) => DiscoveryExploreSheet(
+        catalog: _catalog,
+        initial: _applied,
+      ),
     );
-    // null → dismissed WITHOUT APPLY (X / Done / tap-outside): discard draft,
-    // keep the previously applied configuration.
-    if (committed == null) return;
-    _commitFilters(committed);
-  }
-
-  /// Commits a config (from APPLY): updates the applied state and rebuilds
-  /// the feed exactly once. Chip taps never call this.
-  void _commitFilters(DiscoveryFilterConfig config) {
-    if (!mounted) return;
-    if (_applied.matches(config)) return;
-    _applied = config;
+    if (!mounted || draft == null) return;
     setState(() {
-      _initialLoading = true;
+      _applied = draft;
       _items.clear();
       _seenIds.clear();
       _currentIndex = 0;
+      _initialLoading = true;
     });
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(0);
-    }
-    _loadInitialBatch();
+    await _loadInitialBatch();
   }
-
-  /// Compact summary for the top pill (e.g. "For You", "Romantic · Hindi").
-  String _filterSummary() => discoveryFilterSummary(
-        source: _applied.source,
-        moods: _applied.moods,
-        languages: _applied.languages,
-        genres: _applied.genres,
-      );
 
   @override
   Widget build(BuildContext context) {
     if (_initialLoading) {
+      // Swipe-deck SKELETON (matches the real card's geometry: square cover,
+      // title/artist lines, action row) — perceived load is far faster than a
+      // bare spinner, and there is no layout jump when content arrives.
       return const Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primaryLight),
-        ),
+        backgroundColor: Colors.black,
+        body: _ForYouSkeletonCard(),
       );
     }
 
     if (_items.isEmpty) {
+      // Friendlier, consistent empty state: soft gradient glyph (no dead
+      // icon), real cause, and a prominent retry. Same dark backdrop as the
+      // feed so the transition never flashes a different background.
       return Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: Colors.black,
         body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.wifi_off, size: 48, color: AppColors.textSubtle),
-              const SizedBox(height: 12),
-              const Text(
-                'Could not load recommendations',
-                style: TextStyle(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() => _initialLoading = true);
-                  _loadInitialBatch();
-                },
-                child: const Text('Retry'),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primary.withValues(alpha: 0.28),
+                        AppColors.accent.withValues(alpha: 0.18),
+                      ],
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.music_note_rounded,
+                    size: 40,
+                    color: AppColors.primaryLight,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Nothing playing yet',
+                  style: TextStyle(
+                    color: AppColors.textMain,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Recommendations will appear in a moment.\nCheck your connection and try again.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 13.5,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: () {
+                    setState(() => _initialLoading = true);
+                    _loadInitialBatch();
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Try again'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 22,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -576,1206 +580,571 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // 1. Vertical Reel-Style Swipe PageView. Each card renders its own
-          // artwork backdrop (the old full-screen IFrame player is gone from
-          // Discovery — playback happens in the in-app browser only). Bottom
-          // padding is added while the browser mini player is visible so feed
-          // content is never hidden underneath it.
-          AnimatedPadding(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOutCubic,
-            padding: EdgeInsets.only(bottom: _browser.isOpen ? 88 : 0),
-            child: PageView.builder(
-              controller: _pageController,
-              scrollDirection: Axis.vertical,
-              // Default PageView paging is lighter than BouncingScrollPhysics
-              // for Android and avoids extra overscroll work during fast swipes.
-              physics: const PageScrollPhysics(),
-              allowImplicitScrolling: false,
-              itemCount: _pageCount,
-              onPageChanged: _onPageChanged,
-              itemBuilder: (context, page) {
-                if (page < 0 || page >= _pageCount) {
-                  return const SizedBox.shrink();
-                }
-
-                if (_isAdPage(page)) {
-                  return RepaintBoundary(
-                    child: DiscoverySwipeNativeAdPage(
-                      onUnavailable: () => _skipUnavailableDiscoveryAd(page),
-                    ),
-                  );
-                }
-
-                final index = _songIndexForPage(page);
-                if (index < 0 || index >= _items.length) {
-                  return const SizedBox.shrink();
-                }
-                final isCurrent = page == _pageForSongIndex(_currentIndex);
-                final track = _items[index];
-                return RepaintBoundary(
-                  child: _ForYouCard(
-                    track: track,
-                    isActive: isCurrent,
-                    isPlaying: false,
-                    onPlayPauseToggle: _onPlayTap,
-                    onNotInterested: () => _handleNotInterested(index),
-                    onDoubleTapLike: () => _handleDoubleTapLike(track),
-                    onSkipPrevious: page > 0
-                        ? () => _pageController.previousPage(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
-                            )
-                        : null,
-                    onSkipNext: page < _pageCount - 1
-                        ? () => _pageController.nextPage(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
-                            )
-                        : null,
-                  ),
+          PageView.builder(
+            controller: _pageController,
+            scrollDirection: Axis.vertical,
+            itemCount: _pageCount,
+            onPageChanged: _onPageChanged,
+            itemBuilder: (context, page) {
+              if (_isAdPage(page)) {
+                return DiscoverySwipeNativeAdPage(
+                  key: ValueKey('discover-ad-$page'),
                 );
-              },
-            ),
+              }
+              final index = _songIndexForPage(page);
+              return _ForYouCard(
+                key: ValueKey(_items[index]['id']),
+                track: _items[index],
+                onPlay: _onPlayTap,
+                onNext: () {
+                  if (_pageController.hasClients) {
+                    final next = (_pageController.page?.round() ?? page) + 1;
+                    if (next < _pageCount) {
+                      _pageController.animateToPage(
+                        next,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                  }
+                },
+                onMore: () => showMoreOptionsSheet(context, _items[index]),
+                onAddToPlaylist: () =>
+                    showAddToPlaylistSheet(context, _items[index]),
+              );
+            },
           ),
-
-          // Top filter hierarchy — two organized sections:
-          //   DISCOVER (source) + a compact Filters entry, then MOOD.
           Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.9),
-                      Colors.black.withValues(alpha: 0.55),
-                      Colors.black.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-                padding: const EdgeInsets.only(top: 8, bottom: 6),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 14),
-                    // Compact summary pill — the ONLY persistent filter
-                    // control. Tapping opens the Explore panel.
-                    GestureDetector(
-                      onTap: _showExplore,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: AppColors.primaryLight.withValues(
-                              alpha: 0.6,
-                            ),
-                            width: 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.2),
-                              blurRadius: 12,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _applied.source.icon,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              _filterSummary(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: AppColors.accent,
-                              size: 18,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: _showExplore,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.22),
-                            width: 1,
-                          ),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.tune_rounded,
-                              size: 15,
-                              color: Colors.white70,
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              'Explore',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            top: MediaQuery.of(context).padding.top + 12,
+            right: 14,
+            child: _ExploreButton(onTap: _showExplore),
           ),
         ],
       ),
     );
   }
-
-  void _handleDoubleTapLike(Map<String, dynamic> track) {
-    final id = track['id'] as String? ?? '';
-    if (id.isEmpty) return;
-    final wasLiked = LocalLibrary.instance.isLiked(id);
-    if (!wasLiked) {
-      LocalLibrary.instance.toggleLiked(track);
-      playbackSignalTracker.onLiked(track);
-    }
-  }
-
-  void _handleNotInterested(int index) {
-    final artist = _items[index]['artist'] as String? ?? '';
-    forYouFeedService.markNotInterested(artist);
-    playbackSignalTracker.onTrackEnded(completed: false);
-    if (index < _items.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
 }
 
-/// Explore panel: the full Discovery filter hierarchy in a premium bottom
-/// sheet. The top of Discovery stays clean — only the compact summary pill +
-/// Explore control are persistent; everything else lives here.
-class _ExploreSheet extends StatefulWidget {
-  const _ExploreSheet({required this.initial, required this.catalog});
-
-  final DiscoveryFilterConfig initial;
-  final DiscoveryFilterCatalog catalog;
-
-  @override
-  State<_ExploreSheet> createState() => _ExploreSheetState();
-}
-
-class _ExploreSheetState extends State<_ExploreSheet> {
-  // DRAFT state — chip taps mutate ONLY this; the live feed is untouched
-  // until APPLY is pressed (then this draft is returned to _showExplore,
-  // which commits it and refreshes the feed).
-  late DiscoverySource _draftSource;
-  late List<DiscoveryMood> _draftMoods;
-  late List<DiscoveryFilterOption> _draftLanguages;
-  late List<DiscoveryFilterOption> _draftGenres;
-  late List<DiscoveryFilterOption> _draftDecades;
-  late List<DiscoveryFilterOption> _draftActivities;
-
-  @override
-  void initState() {
-    super.initState();
-    final i = widget.initial;
-    _draftSource = i.source;
-    _draftMoods = List.of(i.moods);
-    _draftLanguages = List.of(i.languages);
-    _draftGenres = List.of(i.genres);
-    _draftDecades = List.of(i.decades);
-    _draftActivities = List.of(i.activities);
-  }
-
-  DiscoveryFilterConfig get _draft => DiscoveryFilterConfig(
-        source: _draftSource,
-        moods: _draftMoods,
-        languages: _draftLanguages,
-        genres: _draftGenres,
-        decades: _draftDecades,
-        activities: _draftActivities,
-      );
-
-  bool get _hasChanges => !_draft.matches(widget.initial);
-
-  void _toggleMood(DiscoveryMood mood) {
-    setState(() {
-      _draftMoods.any((m) => m.id == mood.id)
-          ? _draftMoods.removeWhere((m) => m.id == mood.id)
-          : _draftMoods.add(mood);
-    });
-  }
-
-  void _toggleLanguage(DiscoveryFilterOption lang) {
-    setState(() {
-      _draftLanguages.any((l) => l.id == lang.id)
-          ? _draftLanguages.removeWhere((l) => l.id == lang.id)
-          : _draftLanguages.add(lang);
-    });
-  }
-
-  void _toggleGenre(DiscoveryFilterOption genre) {
-    setState(() {
-      _draftGenres.any((r) => r.id == genre.id)
-          ? _draftGenres.removeWhere((r) => r.id == genre.id)
-          : _draftGenres.add(genre);
-    });
-  }
-
-  void _toggleDecade(DiscoveryFilterOption decade) {
-    setState(() {
-      _draftDecades.any((r) => r.id == decade.id)
-          ? _draftDecades.removeWhere((r) => r.id == decade.id)
-          : _draftDecades.add(decade);
-    });
-  }
-
-  void _toggleActivity(DiscoveryFilterOption activity) {
-    setState(() {
-      _draftActivities.any((r) => r.id == activity.id)
-          ? _draftActivities.removeWhere((r) => r.id == activity.id)
-          : _draftActivities.add(activity);
-    });
-  }
-
-  void _clear() {
-    setState(() {
-      _draftMoods.clear();
-      _draftLanguages.clear();
-      _draftGenres.clear();
-      _draftDecades.clear();
-      _draftActivities.clear();
-    });
-  }
+/// Loading skeleton mirroring the real swipe-card geometry: square cover,
+/// title/artist lines and the action row. Prevents the layout jump a bare
+/// spinner causes when the first batch of recommendations lands.
+class _ForYouSkeletonCard extends StatelessWidget {
+  const _ForYouSkeletonCard();
 
   @override
   Widget build(BuildContext context) {
-    final appliedLabel = discoveryFilterSummary(
-      source: widget.initial.source,
-      moods: widget.initial.moods,
-      languages: widget.initial.languages,
-      genres: widget.initial.genres,
-      decades: widget.initial.decades,
-      activities: widget.initial.activities,
+    final coverSide = (MediaQuery.of(context).size.width * 0.70).clamp(
+      200.0,
+      330.0,
     );
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-      child: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LoadingSkeleton(
+            width: coverSide,
+            height: coverSide,
+            borderRadius: 20,
+          ),
+          const SizedBox(height: 22),
+          const LoadingSkeleton(width: 210, height: 20, borderRadius: 8),
+          const SizedBox(height: 10),
+          const LoadingSkeleton(width: 130, height: 14, borderRadius: 7),
+          const SizedBox(height: 26),
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Explore',
-                    style: TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: _clear,
-                        child: const Text(
-                          'Clear',
-                          style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.close,
-                          color: AppColors.textMuted,
-                          size: 20,
-                        ),
-                        // X → discard draft (no APPLY): return null.
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // A. QUICK EXPLORE — the five primary modes.
-              _sectionLabel('Quick Explore'),
-              _chipWrap(
-                widget.catalog.sources
-                    .map(
-                      (s) => (
-                        label: s.label,
-                        icon: s.icon,
-                        selected: s.id == _draftSource.id,
-                        onTap: () => setState(() => _draftSource = s),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 18),
-              // B. BROWSE BY MOOD.
-              _sectionLabel('Browse by Mood'),
-              _chipWrap(
-                widget.catalog.moods
-                    .map(
-                      (m) => (
-                        label: m.label,
-                        icon: m.icon,
-                        selected: _draftMoods.any((x) => x.id == m.id),
-                        onTap: () => _toggleMood(m),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 18),
-              // C. BROWSE BY LANGUAGE.
-              _sectionLabel('Browse by Language'),
-              _chipWrap(
-                widget.catalog.languages
-                    .map(
-                      (l) => (
-                        label: l.label,
-                        icon: '',
-                        selected: _draftLanguages.any((x) => x.id == l.id),
-                        onTap: () => _toggleLanguage(l),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 18),
-              // D. BROWSE BY GENRE.
-              _sectionLabel('Browse by Genre'),
-              _chipWrap(
-                widget.catalog.genres
-                    .map(
-                      (g) => (
-                        label: g.label,
-                        icon: '',
-                        selected: _draftGenres.any((x) => x.id == g.id),
-                        onTap: () => _toggleGenre(g),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 18),
-              // E. DECADES.
-              _sectionLabel('Decades'),
-              _chipWrap(
-                widget.catalog.decades
-                    .map(
-                      (d) => (
-                        label: d.label,
-                        icon: '',
-                        selected: _draftDecades.any((x) => x.id == d.id),
-                        onTap: () => _toggleDecade(d),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 18),
-              // F. ACTIVITY.
-              _sectionLabel('Activity'),
-              _chipWrap(
-                widget.catalog.activities
-                    .map(
-                      (a) => (
-                        label: a.label,
-                        icon: '',
-                        selected: _draftActivities.any((x) => x.id == a.id),
-                        onTap: () => _toggleActivity(a),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 22),
-              // ── APPLY / DONE ─────────────────────────────────────────
-              if (_hasChanges)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    'Applied: $appliedLabel',
-                    style: const TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11.5,
-                    ),
-                  ),
-                ),
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  text: 'Apply',
-                  icon: Icons.check_rounded,
-                  isFullWidth: true,
-                  size: AppButtonSize.large,
-                  // APPLY commits the draft and returns it; the sheet STAYS
-                  // open so the user can then press DONE.
-                  onPressed: () => Navigator.pop(context, _draft),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                child: AppButton(
-                  text: 'Done',
-                  variant: AppButtonVariant.secondary,
-                  isFullWidth: true,
-                  size: AppButtonSize.medium,
-                  // DONE closes the sheet without committing anything new.
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
-              const SizedBox(height: 8),
+              LoadingSkeleton(width: 46, height: 46, shape: BoxShape.circle),
+              SizedBox(width: 26),
+              LoadingSkeleton(width: 64, height: 64, shape: BoxShape.circle),
+              SizedBox(width: 26),
+              LoadingSkeleton(width: 46, height: 46, shape: BoxShape.circle),
             ],
           ),
-        ),
+        ],
       ),
-    );
-  }
-
-  Widget _sectionLabel(String label) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textMain,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
-
-  Widget _chipWrap(
-    List<({String label, String icon, bool selected, VoidCallback onTap})>
-        items,
-  ) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: items.map((item) {
-        return GestureDetector(
-          onTap: item.onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              gradient: item.selected ? AppColors.primaryGradient : null,
-              color: item.selected ? null : AppColors.surface2,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: item.selected ? Colors.transparent : AppColors.border,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (item.icon.isNotEmpty) ...[
-                  Text(item.icon, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(width: 5),
-                ],
-                Text(
-                  item.label,
-                  style: TextStyle(
-                    color: item.selected ? Colors.white : AppColors.textMain,
-                    fontSize: 13,
-                    fontWeight:
-                        item.selected ? FontWeight.w700 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 }
 
 class _ForYouCard extends StatefulWidget {
   const _ForYouCard({
+    super.key,
     required this.track,
-    required this.isActive,
-    required this.isPlaying,
-    required this.onPlayPauseToggle,
-    required this.onNotInterested,
-    required this.onDoubleTapLike,
-    this.onSkipPrevious,
-    this.onSkipNext,
+    required this.onPlay,
+    required this.onNext,
+    required this.onMore,
+    required this.onAddToPlaylist,
   });
 
   final Map<String, dynamic> track;
-  final bool isActive;
-  final bool isPlaying;
-  final VoidCallback onPlayPauseToggle;
-  final VoidCallback onNotInterested;
-  final VoidCallback onDoubleTapLike;
-  final VoidCallback? onSkipPrevious;
-  final VoidCallback? onSkipNext;
+  final VoidCallback onPlay;
+  final VoidCallback onNext;
+  final VoidCallback onMore;
+  final VoidCallback onAddToPlaylist;
 
   @override
   State<_ForYouCard> createState() => _ForYouCardState();
 }
 
-class _ForYouCardState extends State<_ForYouCard>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _heartCtl;
-  Animation<double>? _heartScale;
-  Animation<double>? _heartOpacity;
-
-  /// Slow Ken Burns controller for the animated blurred backdrop (only runs
-  /// while this card is the active one).
-  late final AnimationController _bgCtl = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 11),
-  );
+class _ForYouCardState extends State<_ForYouCard> {
+  bool _liked = false;
 
   @override
   void initState() {
     super.initState();
+    _liked = LocalLibrary.instance.isLiked(widget.track);
   }
 
   @override
   void didUpdateWidget(covariant _ForYouCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Deliberately keep the expensive backdrop controller stopped. Discovery
-    // lives inside MainShell's IndexedStack, so a background animation would
-    // consume frames while Home/Search/Profile are active.
-    if (_bgCtl.isAnimating) _bgCtl.stop();
+    if (oldWidget.track['id'] != widget.track['id']) {
+      _liked = LocalLibrary.instance.isLiked(widget.track);
+    }
   }
 
-  @override
-  void dispose() {
-    _bgCtl.dispose();
-    _heartCtl?.dispose();
-    super.dispose();
-  }
-
-  void _pulseHeart() {
-    final ctl = _heartCtl ??= AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 550),
-    );
-    _heartScale = CurvedAnimation(parent: ctl, curve: Curves.easeOutBack);
-    _heartOpacity = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(parent: ctl, curve: const Interval(0.4, 1.0)));
-    unawaited(HapticFeedback.mediumImpact());
-    ctl.forward(from: 0);
+  Future<void> _toggleLike() async {
+    final next = !_liked;
+    setState(() => _liked = next);
+    await LocalLibrary.instance.toggleLike(widget.track);
   }
 
   @override
   Widget build(BuildContext context) {
-    final track = widget.track;
-    final isActive = widget.isActive;
-    final isPlaying = widget.isPlaying;
-    final onPlayPauseToggle = widget.onPlayPauseToggle;
-    final onNotInterested = widget.onNotInterested;
-    final onSkipPrevious = widget.onSkipPrevious;
-    final onSkipNext = widget.onSkipNext;
-    final title = (track['title'] as String?) ?? '';
-    final artist = (track['artist'] as String?) ?? '';
-    final trackId = track['id'] as String? ?? '';
-    final artwork = (track['artwork'] as String?) ?? '';
-    // Square cover side: scales with screen, capped for large phones.
-    final coverSide = (MediaQuery.of(context).size.width * 0.70).clamp(
-      200.0,
-      330.0,
-    );
+    final imageUrl = widget.track['thumbnail'] as String? ??
+        widget.track['image'] as String? ??
+        '';
+    final title = widget.track['title'] as String? ?? 'Unknown';
+    final artist = widget.track['artist'] as String? ?? '';
+    final duration = widget.track['duration'] as num?;
+    final position = VShotsPlaybackManager.instance.position;
+    final total = duration == null
+        ? Duration.zero
+        : Duration(milliseconds: duration.toInt());
+    final progress = total.inMilliseconds <= 0
+        ? 0.0
+        : (position.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Cinematic ANIMATED blurred-artwork backdrop — a slow Ken Burns
-        // (pan + zoom) with two drifting ambient glows. Runs only while the
-        // card is active; never resized/detached (pure visual layer).
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _bgCtl,
-              builder: (context, _) {
-                final t = _bgCtl.value;
-                final scale = 1.12 + 0.16 * t;
-                final dx = (t - 0.5) * 34;
-                final dy = (t - 0.5) * -20;
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (artwork.isNotEmpty)
-                      ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                        child: Transform.translate(
-                          offset: Offset(dx, dy),
-                          child: Transform.scale(
-                            scale: scale,
-                            child: AppImage(artwork, fit: BoxFit.cover),
-                          ),
-                        ),
-                      )
-                    else
-                      Container(color: const Color(0xFF0A0D16)),
-                    // Drifting ambient glow (primary → hot pink).
-                    Align(
-                      alignment: Alignment(0.6 - t, 0.15),
-                      child: Container(
-                        width: 280,
-                        height: 280,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              AppColors.primary.withValues(alpha: 0.26),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment(-0.5 + t, -0.28),
-                      child: Container(
-                        width: 230,
-                        height: 230,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              AppColors.hotPink.withValues(alpha: 0.20),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-        // Dark scrim keeps text readable over the animated backdrop.
-        IgnorePointer(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.45),
-                  Colors.black.withValues(alpha: 0.15),
-                  Colors.black.withValues(alpha: 0.30),
-                  Colors.black.withValues(alpha: 0.75),
-                ],
-                stops: const [0.0, 0.35, 0.55, 1.0],
-              ),
-            ),
-          ),
-        ),
-
-        // Tap-to-play layer (active card, cued): transparent, so the square
-        // cover stays the visual hero while the whole screen is tappable.
-        if (isActive && !isPlaying)
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: onPlayPauseToggle,
-              behavior: HitTestBehavior.opaque,
-            ),
-          ),
-
-        // ── CENTER SQUARE COVER ART ─────────────────────────────────────
-        // The sharp, square cover of the playing song — the Discovery hero.
-        // Crossfades + scales in when the swipe changes the track.
-        Positioned.fill(
-          child: IgnorePointer(
-            child: SafeArea(
-              bottom: false,
-              child: Align(
-                alignment: const Alignment(0, -0.12),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 340),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(
-                      scale: Tween<double>(
-                        begin: 0.94,
-                        end: 1.0,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  ),
-                  child: Container(
-                    key: ValueKey('cover-$trackId'),
-                    width: coverSide,
-                    height: coverSide,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          blurRadius: 40,
-                          offset: const Offset(0, 14),
-                        ),
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.22),
-                          blurRadius: 30,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: widget.onPlay,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
+          child: Column(
+            children: [
+              Expanded(
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: 1,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(20),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (artwork.isNotEmpty)
-                            ArtworkFadeIn(
-                              child: AppImage(artwork, fit: BoxFit.cover),
-                            )
-                          else
-                            Container(color: AppColors.surface),
-                          // Small play affordance on the cover.
-                          Positioned(
-                            right: 12,
-                            bottom: 12,
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: AppColors.primaryGradient,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary.withValues(
-                                      alpha: 0.45,
-                                    ),
-                                    blurRadius: 12,
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: AppImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 700,
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
-
-        // Double-tap like heart burst (premium). Triggered from the safe
-        // metadata region BELOW the video, never from the YouTube surface.
-        Positioned.fill(
-          child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _heartCtl ?? const AlwaysStoppedAnimation(1.0),
-              builder: (context, _) {
-                final ctl = _heartCtl;
-                if (ctl == null || !ctl.isAnimating) {
-                  return const SizedBox.shrink();
-                }
-                return Center(
-                  child: Transform.scale(
-                    scale: _heartScale?.value ?? 1.0,
-                    child: Opacity(
-                      opacity: _heartOpacity?.value ?? 0.0,
-                      child: Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black.withValues(alpha: 0.35),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.hotPink.withValues(alpha: 0.5),
-                              blurRadius: 24,
-                              spreadRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.favorite_rounded,
-                          color: AppColors.hotPink,
-                          size: 44,
-                        ),
-                      ),
-                    ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
                   ),
-                );
-              },
-            ),
-          ),
-        ),
-
-        // ── Premium player sponsored card (LevelPlay native) ──────────────
-        // Mounted ONLY on the active card: it swipes naturally with the
-        // song page, appears after ~10–15 s of genuine listening (never a
-        // placeholder, never on pause/skip), and hides itself entirely
-        // when unavailable. Read-only playback observation — nothing in
-        // the playback stack is touched. Sits between the artwork layer
-        // and the metadata/controls layer so player controls always win.
-        if (isActive)
-          Positioned.fill(
-            child: PlayerSponsoredCard(trackId: trackId, coverSide: coverSide),
-          ),
-
-        // Bottom metadata + play controls (safe double-tap region, BELOW the
-        // YouTube player — double-tap here to like without hijacking the
-        // YouTube player's own controls).
-        GestureDetector(
-          onDoubleTap: () {
-            unawaited(HapticFeedback.mediumImpact());
-            widget.onDoubleTapLike();
-            _pulseHeart();
-          },
-          child: SafeArea(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      artist,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (_reasonLabel(track) != null) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          _reasonLabel(track)!,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white.withValues(alpha: 0.9),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.play_circle_filled_rounded,
-                            size: 14,
-                            color: Colors.redAccent,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            'Powered by YouTube',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withValues(alpha: 0.85),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Playback Controls Row: Prev, Play/Pause Toggle, Next
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.skip_previous_rounded,
-                            color: Colors.white,
-                            size: 34,
-                          ),
-                          onPressed: onSkipPrevious,
-                        ),
-                        const SizedBox(width: 20),
-
-                        // In-Card Play/Pause Toggle
-                        GestureDetector(
-                          onTap: onPlayPauseToggle,
-                          child: Container(
-                            width: 64,
-                            height: 64,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: AppColors.primaryGradient,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(
-                                    alpha: 0.4,
-                                  ),
-                                  blurRadius: 18,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Icon(
-                                isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                color: Colors.white,
-                                size: 36,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-
-                        IconButton(
-                          icon: const Icon(
-                            Icons.skip_next_rounded,
-                            color: Colors.white,
-                            size: 34,
-                          ),
-                          onPressed: onSkipNext,
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
               ),
-            ),
-          ),
-        ),
-
-        // Right Side Action Buttons (Like, Comments, Playlist, More).
-        // Sits ABOVE the player (last Stack child = highest z-index) inside a
-        // translucent pill so the icons stay visible regardless of video
-        // brightness/color (Section 5). Never overlaid on the YouTube player
-        // itself — it sits beside/below the video frame.
-        // RepaintBoundary isolates these buttons from the expensive backdrop
-        // blur/animation repaints during scrolling.
-        Positioned(
-          right: 16,
-          bottom: 150,
-          child: RepaintBoundary(
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              if (artist.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    artist,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 3,
+                  backgroundColor: Colors.white24,
+                ),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  ValueListenableBuilder<List<Map<String, dynamic>>>(
-                    valueListenable: LocalLibrary.instance.likedSongs,
-                    builder: (context, _, __) {
-                      final isLiked = LocalLibrary.instance.isLiked(trackId);
-                      return IconButton(
-                        splashColor: Colors.transparent,
-                        highlightColor: Colors.transparent,
-                        hoverColor: Colors.transparent,
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                        icon: RepaintBoundary(
-                          child: LikePop(
-                            liked: isLiked,
-                            child: Icon(
-                              isLiked
-                                  ? Icons.favorite_rounded
-                                  : Icons.favorite_border_rounded,
-                              color: isLiked ? AppColors.hotPink : Colors.white,
-                              size: 32,
-                            ),
-                          ),
-                        ),
-                        onPressed: () {
-                          unawaited(HapticFeedback.lightImpact());
-                          final wasLiked = isLiked;
-                          unawaited(LocalLibrary.instance.toggleLiked(track));
-                          if (wasLiked) {
-                            playbackSignalTracker.onUnliked(track);
-                          } else {
-                            playbackSignalTracker.onLiked(track);
-                          }
-                        },
-                      );
-                    },
-                  ),
-                  if (RemoteFeatureFlags.instance.enableSocial) ...[
-                    const SizedBox(height: 12),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.chat_bubble_outline_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      onPressed: () {
-                        unawaited(HapticFeedback.lightImpact());
-                        CommentSheet.show(
-                          context,
-                          shotId: trackId,
-                          commentCount: 18,
-                        );
-                      },
-                    ),
-                  ],
-                  const SizedBox(height: 12),
                   IconButton(
-                    icon: const Icon(
-                      Icons.playlist_add_rounded,
-                      color: Colors.white,
-                      size: 30,
+                    tooltip: 'Like',
+                    onPressed: _toggleLike,
+                    icon: Icon(
+                      _liked ? Icons.favorite : Icons.favorite_border,
+                      color: _liked ? Colors.redAccent : Colors.white,
                     ),
-                    onPressed: () {
-                      unawaited(HapticFeedback.lightImpact());
-                      showAddToPlaylistSheet(context, track);
-                    },
                   ),
-                  const SizedBox(height: 12),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.more_horiz_rounded,
-                      color: Colors.white,
-                      size: 30,
+                  const SizedBox(width: 14),
+                  FloatingActionButton(
+                    heroTag: 'discover-play-${widget.track['id']}',
+                    onPressed: widget.onPlay,
+                    child: Icon(
+                      VShotsPlaybackManager.instance.isPlaying
+                          ? Icons.pause
+                          : Icons.play_arrow,
                     ),
-                    onPressed: () {
-                      unawaited(HapticFeedback.lightImpact());
-                      showMoreOptionsSheet(
-                        context,
-                        track,
-                        onNotInterested: onNotInterested,
-                      );
-                    },
+                  ),
+                  const SizedBox(width: 14),
+                  IconButton(
+                    tooltip: 'Next',
+                    onPressed: widget.onNext,
+                    icon: const Icon(Icons.skip_next, color: Colors.white),
+                  ),
+                  IconButton(
+                    tooltip: 'More',
+                    onPressed: widget.onMore,
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: widget.onAddToPlaylist,
+                    icon: const Icon(Icons.playlist_add),
+                    label: const Text('Add to playlist'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
 
-/// Maps a card's internal `discoverReason` to the user-facing "why this
-/// song" label shown on the Discover card (owner-spec sections).
-String? _reasonLabel(Map<String, dynamic> track) {
-  final reason = (track['discoverReason'] as String?) ?? '';
-  if (reason.isEmpty) return null;
-  if (reason.startsWith('because_you_listened_to_')) {
-    final artist = reason.replaceFirst('because_you_listened_to_', '');
-    return artist.isEmpty ? null : '🎯 Because you like $artist';
+class _ExploreButton extends StatelessWidget {
+  const _ExploreButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black54,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.tune_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 6),
+              Text(
+                'Explore',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  switch (reason) {
-    case 'trending_in_india':
-      return '🔥 Trending around you';
-    case 'new_release':
-      return '🆕 Your next obsession';
-    case 'something_new_for_you':
-      return '🎲 Try something different';
-    case 'similar_to_your_taste':
-      return '✨ Made for you';
-    default:
-      return null;
+}
+
+class DiscoveryExploreSheet extends StatefulWidget {
+  const DiscoveryExploreSheet({
+    super.key,
+    required this.catalog,
+    required this.initial,
+  });
+
+  final DiscoveryFilterCatalog catalog;
+  final DiscoveryFilterConfig initial;
+
+  @override
+  State<DiscoveryExploreSheet> createState() => _DiscoveryExploreSheetState();
+}
+
+class _DiscoveryExploreSheetState extends State<DiscoveryExploreSheet> {
+  late DiscoveryFilterConfig _draft;
+
+  @override
+  void initState() {
+    super.initState();
+    _draft = widget.initial;
+  }
+
+  void _apply() => Navigator.of(context).pop(_draft);
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.72,
+      minChildSize: 0.48,
+      maxChildSize: 0.94,
+      builder: (context, controller) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF151515),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: ListView(
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Explore',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(
+                      () => _draft = DiscoveryFilterConfig(
+                        source: widget.catalog.sources.first,
+                      ),
+                    ),
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Choose a vibe, then Apply to refresh the feed.',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.62),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _SectionTitle(title: 'Feed'),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: widget.catalog.sources.map((source) {
+                  final selected = source.id == _draft.source.id;
+                  return ChoiceChip(
+                    label: Text(source.label),
+                    selected: selected,
+                    onSelected: (_) => setState(
+                      () => _draft = _draft.copyWith(source: source),
+                    ),
+                  );
+                }).toList(),
+              ),
+              if (widget.catalog.moods.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionTitle(title: 'Mood'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.catalog.moods.map((mood) {
+                    final selected = _draft.moods.any((m) => m.id == mood.id);
+                    return FilterChip(
+                      label: Text(mood.label),
+                      selected: selected,
+                      onSelected: (value) {
+                        setState(() {
+                          final moods = [..._draft.moods];
+                          if (value) {
+                            moods.add(mood);
+                          } else {
+                            moods.removeWhere((m) => m.id == mood.id);
+                          }
+                          _draft = _draft.copyWith(moods: moods);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+              if (widget.catalog.languages.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionTitle(title: 'Language'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.catalog.languages.map((language) {
+                    final selected =
+                        _draft.languages.any((l) => l.id == language.id);
+                    return FilterChip(
+                      label: Text(language.label),
+                      selected: selected,
+                      onSelected: (value) {
+                        setState(() {
+                          final languages = [..._draft.languages];
+                          if (value) {
+                            languages.add(language);
+                          } else {
+                            languages.removeWhere(
+                              (l) => l.id == language.id,
+                            );
+                          }
+                          _draft = _draft.copyWith(languages: languages);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+              if (widget.catalog.genres.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionTitle(title: 'Genre'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.catalog.genres.map((genre) {
+                    final selected = _draft.genres.any((g) => g.id == genre.id);
+                    return FilterChip(
+                      label: Text(genre.label),
+                      selected: selected,
+                      onSelected: (value) {
+                        setState(() {
+                          final genres = [..._draft.genres];
+                          if (value) {
+                            genres.add(genre);
+                          } else {
+                            genres.removeWhere((g) => g.id == genre.id);
+                          }
+                          _draft = _draft.copyWith(genres: genres);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+              if (widget.catalog.decades.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionTitle(title: 'Era'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.catalog.decades.map((decade) {
+                    final selected = _draft.decades.any((d) => d.id == decade.id);
+                    return FilterChip(
+                      label: Text(decade.label),
+                      selected: selected,
+                      onSelected: (value) {
+                        setState(() {
+                          final decades = [..._draft.decades];
+                          if (value) {
+                            decades.add(decade);
+                          } else {
+                            decades.removeWhere((d) => d.id == decade.id);
+                          }
+                          _draft = _draft.copyWith(decades: decades);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+              if (widget.catalog.activities.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                _SectionTitle(title: 'Activity'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: widget.catalog.activities.map((activity) {
+                    final selected =
+                        _draft.activities.any((a) => a.id == activity.id);
+                    return FilterChip(
+                      label: Text(activity.label),
+                      selected: selected,
+                      onSelected: (value) {
+                        setState(() {
+                          final activities = [..._draft.activities];
+                          if (value) {
+                            activities.add(activity);
+                          } else {
+                            activities.removeWhere(
+                              (a) => a.id == activity.id,
+                            );
+                          }
+                          _draft = _draft.copyWith(activities: activities);
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+              ],
+              const SizedBox(height: 28),
+              AppButton(
+                label: 'Apply',
+                onPressed: _apply,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+      ),
+    );
   }
 }
