@@ -25,6 +25,7 @@ import 'music_seen_store.dart';
 import 'music_session_state.dart';
 import 'music_user_profile.dart';
 import 'music_user_profile_builder.dart';
+import 'preference_scoring.dart';
 
 class MusicRecommendationEngine {
   MusicRecommendationEngine({
@@ -105,6 +106,9 @@ class MusicRecommendationEngine {
     );
 
     final artistCounts = <String, int>{};
+    // One snapshot for the whole batch — stated preferences must shape the
+    // ranking (onboarding promise) even before any listening history exists.
+    final preferences = PreferenceSnapshot.capture();
     final scored = <ScoredMusicCandidate>[];
     for (final candidate in candidates) {
       final validation = _validator.validate(candidate.track.toTrackMap());
@@ -115,6 +119,7 @@ class MusicRecommendationEngine {
         context: context,
         artistCounts: artistCounts,
         config: config,
+        preferences: preferences,
       );
       scored.add(ScoredMusicCandidate(candidate: candidate, score: score));
       artistCounts[candidate.artist] =
@@ -162,6 +167,7 @@ double scoreForYou({
   required MusicRecommendationContext context,
   required Map<String, int> artistCounts,
   MusicRecommendationConfig config = MusicRecommendationConfig.defaultConfig,
+  PreferenceSnapshot? preferences,
 }) {
   final track = candidate.track;
   final validation = MusicRecommendationEngine._validator.validate(
@@ -184,6 +190,18 @@ double scoreForYou({
       : 0.0;
   final moodAffinity = context.moods.isNotEmpty ? 0.5 : 0.0;
   const albumAffinity = 0.0; // no album signal in the pipeline (honest)
+
+  // Stated preferences (onboarding/profile). Distinct features, weighted
+  // slightly below their behavioral twins so listening history overtakes
+  // stated taste over time — but stated taste dominates cold start.
+  final statedArtist = preferences?.artistMatch(candidate.artist) ?? 0.0;
+  final statedSong = preferences?.songMatch(
+        title: track.title,
+        artist: candidate.artist,
+      ) ??
+      0.0;
+  final statedGenre = preferences?.genreMatch(candidate.genre) ?? 0.0;
+  final statedLanguage = preferences?.languageMatch(candidate.language) ?? 0.0;
 
   final age = track.publishedDaysAgo;
   final recency = age == null ? 0.5 : 1.0 / (1.0 + age / 30.0);
@@ -216,7 +234,11 @@ double scoreForYou({
       officiality * config.wOfficiality +
       freshness * config.wFreshness +
       novelty * config.wNovelty +
-      popularity * config.wPopularity -
+      popularity * config.wPopularity +
+      statedArtist * config.wStatedArtist +
+      statedSong * config.wStatedSong +
+      statedGenre * config.wStatedGenre +
+      statedLanguage * config.wStatedLanguage -
       seenPenalty * config.wSeenPenalty -
       skipPenalty * config.wSkipPenalty -
       repetitionPenalty * config.wRepetitionPenalty;

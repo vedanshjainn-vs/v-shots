@@ -24,6 +24,7 @@ import 'dart:io' as io;
 import 'package:flutter/foundation.dart';
 
 import '../../core/providers/music_repository.dart';
+import '../../core/recommendation/preference_scoring.dart';
 import '../../core/recommendation/feed_intent.dart';
 import '../../core/recommendation/recommendation_cache.dart';
 import '../../core/recommendation/music_recommendation_engine.dart';
@@ -720,6 +721,11 @@ class HomeFeedService {
     final rest = shelves
         .where((s) => !phaseOneIds.contains(s.id) && !s.isSpotlight)
         .toList();
+    // Preference-aware ordering for the CMS tail: shelves whose metadata
+    // (title / query / source) matches the user's stated taste float up.
+    // STABLE sort — CMS order is the tie-breaker, and phase-one +
+    // spotlight shelves are untouched (they are already personal/pinned).
+    reorderShelvesByPreference(rest, PreferenceSnapshot.capture());
     final tail = maxShelves != null && rest.length > maxShelves
         ? rest.take(maxShelves).toList()
         : rest;
@@ -736,6 +742,67 @@ class HomeFeedService {
       onUpdate: onUpdate,
     );
     onUpdate?.call();
+  }
+
+  /// Stable, preference-aware reordering of the CMS shelf tail. Matching is
+  /// metadata-only (title / query / sourceValue / id): a shelf mentioning a
+  /// favorite artist scores highest, then preferred genres/languages.
+  /// CMS sort_order remains the tie-breaker — unmatched shelves keep their
+  /// exact existing order. No-op when the user stated no preferences.
+  @visibleForTesting
+  static void reorderShelvesByPreference(
+    List<HomeShelf> shelves,
+    PreferenceSnapshot preferences,
+  ) {
+    if (preferences.isEmpty || shelves.length < 2) return;
+    final scores = <HomeShelf, double>{
+      for (final s in shelves) s: preferenceAffinity(s, preferences),
+    };
+    final byScore = [...shelves]..sort(
+        (a, b) => scores[b]!.compareTo(scores[a]!),
+      );
+    // Enforce stability manually: equal scores keep CMS order.
+    final originalIndex = <HomeShelf, int>{
+      for (var i = 0; i < shelves.length; i++) shelves[i]: i,
+    };
+    byScore.sort(
+      (a, b) => scores[a] != scores[b]
+          ? scores[b]!.compareTo(scores[a]!)
+          : originalIndex[a]!.compareTo(originalIndex[b]!),
+    );
+    shelves
+      ..clear()
+      ..addAll(byScore);
+  }
+
+  /// 0 when nothing matches; +2 per favorite-artist mention; +1 per
+  /// preferred language/genre token found in the shelf's searchable text.
+  @visibleForTesting
+  static double preferenceAffinity(
+    HomeShelf shelf,
+    PreferenceSnapshot preferences,
+  ) {
+    final text = PreferenceSnapshot.normalize(
+      [
+        shelf.title,
+        shelf.query ?? '',
+        shelf.sourceValue ?? '',
+        shelf.id,
+      ].join(' '),
+    );
+    if (text.isEmpty) return 0;
+    var score = 0.0;
+    // Favorite artists: exact normalized token-sequence presence.
+    for (final artist in preferences.artistTokens) {
+      if (artist.isNotEmpty && text.contains(artist)) score += 2;
+    }
+    for (final token in preferences.languageTokens) {
+      if (token.isNotEmpty && text.contains(token)) score += 1;
+    }
+    for (final token in preferences.genreTokens) {
+      if (token.isNotEmpty && text.contains(token)) score += 1;
+    }
+    return score;
   }
 
   /// Bounded-parallel shelf loader: a shared worker pool keeps the network

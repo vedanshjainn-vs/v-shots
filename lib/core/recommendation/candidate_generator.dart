@@ -267,6 +267,49 @@ class CandidateGenerator {
       if (q != null) addPref(q, CandidateSource.exploration, lang);
     }
 
+    // 2b. Favorite artists (onboarding picks) — the user told us who they
+    // love; with zero listening history these are the strongest intent
+    // seeds.
+    for (final artist in store.favoriteArtists.take(4)) {
+      if (artist.trim().isEmpty) continue;
+      final q = '${artist.trim()} songs official audio';
+      if (seenQueries.add(q)) {
+        ordered.add(
+          CandidateQuery(
+            query: q,
+            source: CandidateSource.similarArtist,
+            seedArtist: artist.trim(),
+          ),
+        );
+      }
+    }
+
+    // 2c. Favorite songs (onboarding picks) — seed discovery around them:
+    // their artist's catalog (deduped against 2b) plus one retrieval of
+    // the favorited song itself (its result set is naturally related).
+    for (final song in store.favoriteSongs.take(3)) {
+      final artist = song.artist.trim();
+      if (artist.isEmpty) continue;
+      final q = '$artist best songs official audio';
+      if (seenQueries.add(q)) {
+        ordered.add(
+          CandidateQuery(
+            query: q,
+            source: CandidateSource.likedMusic,
+            seedArtist: artist,
+          ),
+        );
+      }
+    }
+    if (store.favoriteSongs.isNotEmpty) {
+      final seed = store.favoriteSongs.first;
+      final q =
+          '${seed.title.trim()} ${seed.artist.trim()} official audio'.trim();
+      if (q.isNotEmpty && seenQueries.add(q)) {
+        ordered.add(CandidateQuery(query: q, source: CandidateSource.likedMusic));
+      }
+    }
+
     // 3. Default regional/global pool (deduped against preferences).
     final defaults = <CandidateQuery>[
       const CandidateQuery(

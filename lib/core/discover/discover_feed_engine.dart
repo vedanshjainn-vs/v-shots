@@ -41,6 +41,7 @@ import '../providers/music_repository.dart';
 import '../recommendation/feed_intent.dart';
 import '../recommendation/genre_classifier.dart';
 import '../recommendation/music_recommendation_engine.dart';
+import '../recommendation/preference_scoring.dart';
 import '../recommendation/recommendation_engine.dart';
 import '../recommendation/recommendation_service.dart';
 import '../recommendation/smart_listening_service.dart';
@@ -221,6 +222,13 @@ class DiscoverFeedEngine {
     }
 
     final candidates = <_ScoredCandidate>[];
+    // SOFT preference bias (no explicit Explore filters active): stated
+    // onboarding taste themes the exploration bucket so it explores WITHIN
+    // the user's interests instead of wandering. Trending and fresh stay
+    // untouched — diversity is never sacrificed.
+    final preferenceBias = filtersActive
+        ? const <String>[]
+        : PreferenceSnapshot.capture().queryTokens(max: 2);
     await Future.wait([
       if ((quotas[DiscoverBucket.personal] ?? 0) > 0)
         _personalPool(
@@ -241,7 +249,10 @@ class DiscoverFeedEngine {
         _explorationPool(
           excludeIds,
           cfg,
-          filters: _filterTokens(languages, moods, regions),
+          filters: [
+            ..._filterTokens(languages, moods, regions),
+            ...preferenceBias,
+          ],
         ).then(candidates.addAll),
     ]);
 

@@ -47,6 +47,14 @@ class MusicRecommendationConfig {
     this.wFreshness = 0.05,
     this.wNovelty = 0.08,
     this.wPopularity = 0.05,
+    // Stated preferences (onboarding/profile picks). Deliberately slightly
+    // below their behavioral twins so real listening history overtakes
+    // stated taste as it accumulates, while a fresh user's picks still
+    // dominate cold start.
+    this.wStatedArtist = 0.18,
+    this.wStatedSong = 0.08,
+    this.wStatedGenre = 0.10,
+    this.wStatedLanguage = 0.10,
     this.wSeenPenalty = 0.10,
     this.wSkipPenalty = 0.15,
     this.wRepetitionPenalty = 0.15,
@@ -78,6 +86,10 @@ class MusicRecommendationConfig {
   final double wFreshness;
   final double wNovelty;
   final double wPopularity;
+  final double wStatedArtist;
+  final double wStatedSong;
+  final double wStatedGenre;
+  final double wStatedLanguage;
   final double wSeenPenalty;
   final double wSkipPenalty;
   final double wRepetitionPenalty;

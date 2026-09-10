@@ -10,6 +10,7 @@ import 'package:v_shots/core/recommendation/music_seen_store.dart';
 import 'package:v_shots/core/recommendation/music_session_state.dart';
 import 'package:v_shots/core/recommendation/signal_event.dart';
 import 'package:v_shots/core/recommendation/signal_store.dart';
+import 'package:v_shots/core/storage/personalization_store.dart';
 
 MusicSearch _fakeSearch() {
   return (query, {required limit, excludeIds = const {}}) async {
@@ -133,5 +134,52 @@ void main() {
     final firstId = all.first['id'] as String;
     final again = await engine.generateForYou(excludeIds: {firstId}, count: 12);
     expect(again.any((t) => t['id'] == firstId), isFalse);
+  });
+
+  test('cold start seeds candidate pools from stated preferences', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = PersonalizationStore.instance;
+    await store.initialize();
+    await store.reset();
+    await store.updatePreferences(
+      languages: ['Punjabi'],
+      genres: ['Romantic'],
+      artists: ['Diljit Dosanjh', 'Arijit Singh'],
+      songs: const [
+        FavoriteSong(
+          id: 'vid1',
+          title: 'Lover',
+          artist: 'Diljit Dosanjh',
+        ),
+      ],
+    );
+
+    // Record every query the generator issues.
+    final issued = <String>[];
+    MusicSearch recordingSearch() {
+      return (query, {required limit, excludeIds = const {}}) async {
+        issued.add(query);
+        return <Map<String, dynamic>>[];
+      };
+    }
+
+    final engine = MusicRecommendationEngine(
+      search: recordingSearch(),
+      seenStore: MusicSeenStore(),
+      session: MusicSessionState(),
+    );
+    await engine.generateForYou(excludeIds: const {}, count: 12);
+
+    // Favorite artists seed the pool…
+    expect(issued, contains('Diljit Dosanjh songs official audio'));
+    expect(issued, contains('Arijit Singh songs official audio'));
+    // …preferred genres…
+    expect(issued, contains('romantic songs official'));
+    // …preferred languages…
+    expect(issued, contains('Punjabi songs official audio'));
+    // …and the favorited song itself.
+    expect(issued, contains('Lover Diljit Dosanjh official audio'));
+
+    await store.reset();
   });
 }

@@ -15,6 +15,7 @@ import '../providers/provider_models.dart';
 import '../recommendation/music_recommendation_config.dart';
 import '../recommendation/music_recommendation_context.dart';
 import '../recommendation/music_user_profile.dart';
+import '../storage/personalization_store.dart';
 import 'music_candidate.dart';
 import 'music_entity_resolver.dart';
 import 'music_validator.dart';
@@ -193,6 +194,42 @@ class MusicCandidateGenerator {
           seedGenre: seedGenre,
         ),
       );
+    }
+
+    // COLD START: stated onboarding preferences act as the profile. The
+    // user explicitly told us who/what they love — a fresh install must
+    // surface it immediately, not default to generic trending pools.
+    if (profile.isEmpty) {
+      final store = PersonalizationStore.instance;
+      for (final artist in store.favoriteArtists.take(3)) {
+        if (artist.trim().isEmpty) continue;
+        add(
+          'favorite_artist',
+          '${artist.trim()} songs official audio',
+          2,
+          seedArtist: artist.trim(),
+        );
+      }
+      for (final genre in store.preferredGenres.take(3)) {
+        final q = _genreQueries[genre];
+        if (q != null) {
+          add('favorite_genre', q, 2, seedGenre: genre);
+        }
+      }
+      for (final lang in store.preferredLanguages.take(2)) {
+        if (lang.trim().isEmpty) continue;
+        add(
+          'favorite_language',
+          '${lang.trim()} songs official audio',
+          2,
+        );
+      }
+      if (store.favoriteSongs.isNotEmpty) {
+        final seed = store.favoriteSongs.first;
+        final q =
+            '${seed.title.trim()} ${seed.artist.trim()} official audio'.trim();
+        if (q.isNotEmpty) add('liked', q, 2);
+      }
     }
 
     final topArtists = profile.topArtists.take(3).toList();
