@@ -1,0 +1,41 @@
+name: One-time Dart format fix
+
+on:
+  push:
+    branches: [feat/production-upgrade]
+
+permissions:
+  contents: write
+
+jobs:
+  format-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-upgrade
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Format the known failing file and commit only that fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          dart format lib/features/foryou/for_you_feed_screen.dart
+          dart format --output=none --set-exit-if-changed lib test
+          git status --short
+          if git diff --quiet; then
+            echo 'No formatting changes remain.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm .github/workflows/_one_time_format_fix.yml
+          git add lib/features/foryou/for_you_feed_screen.dart .github/workflows/_one_time_format_fix.yml
+          git commit -m 'style: format For You feed file'
+          git push origin HEAD:feat/production-upgrade
