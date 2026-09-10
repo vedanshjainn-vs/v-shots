@@ -107,13 +107,15 @@ void main() async {
   // NotificationService MUST be ready before SmartNotificationService: the
   // scheduler calls into it during initialization. Running both in the same
   // Future.wait caused the first schedule build to race the plugin init and
-  // silently schedule zero notifications.
-  await SmartNotificationService.instance.initialize();
+  // silently schedule zero notifications. The await above guarantees
+  // NotificationService is done, so this can now run OFF the critical path —
+  // notification scheduling never delays first paint.
+  unawaited(SmartNotificationService.instance.initialize());
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
-  // Initialize FCM (non-blocking, fire-and-forget)
-
-  await AuthService.instance.initializeGoogleSignIn();
+  // Auth (Google sign-in) is only needed by user-triggered flows
+  // (AuthModal, settings) — never for first paint. Fire-and-forget.
+  unawaited(AuthService.instance.initializeGoogleSignIn());
 
   // Preference lifecycle: adopt fresher remote preferences on startup
   // (signed-in users; anonymous is a safe no-op), and keep recommendation
@@ -134,6 +136,28 @@ void main() async {
       () => VShotsLevelPlay.instance.syncConsent();
   unawaited(VShotsLevelPlay.instance.initialize());
 
+  // Media-session bridge is metadata-only now (the native browser media
+  // service owns the foreground notification), so it never blocks boot.
+  unawaited(_initAudioService());
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
+  );
+  _configureSmartListening();
+  // Resolve network country after core boot without delaying first paint.
+  unawaited(MusicRegionProfile.initialize());
+  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
+  runApp(const VShotsApp());
+
+  // Check for app updates (non-blocking, fire-and-forget)
+  unawaited(AppUpdateService.instance.checkForUpdate());
+}
+
+/// Lazily starts the audio_service bridge and wires lock-screen/headset
+/// skips to the global playback manager. Runs off the boot critical path;
+/// until it completes, audioHandler is null and every consumer is
+/// null-safe (the native browser service already owns the notification).
+Future<void> _initAudioService() async {
   audioHandler = await AudioService.init(
     builder: () => VShotsAudioHandler(audioPlayer),
     config: const AudioServiceConfig(
@@ -154,18 +178,11 @@ void main() async {
       rewindInterval: Duration(seconds: 10),
     ),
   );
-
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
-  );
-  _configureSmartListening();
-  // Resolve network country after core boot without delaying first paint.
-  unawaited(MusicRegionProfile.initialize());
-  debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
-  runApp(const VShotsApp());
-
-  // Check for app updates (non-blocking, fire-and-forget)
-  unawaited(AppUpdateService.instance.checkForUpdate());
+  // Lock-screen / headset skip buttons route through the single global
+  // playback manager (same engine as the in-app player).
+  audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
+  audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
+  audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
 }
 
 // ═══════════════════════════════════════════════
@@ -431,11 +448,8 @@ class _MainShellState extends State<MainShell> {
       isCurrentlyPlaying = state.playing;
     });
 
-    // Lock-screen / headset skip buttons route through the single global
-    // playback manager (same engine as the in-app player).
-    audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
-    audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
-    audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
+    // Lock-screen / headset skip wiring lives in _initAudioService() —
+    // it runs as soon as the deferred audio bridge is ready.
     VShotsPlaybackManager.instance.browser.addListener(_syncPlayerExpanded);
     // Ads: no startup work at all. The interstitial preloads on-demand at
     // the first policy-eligible tab switch (see onTap below) — keeps first
