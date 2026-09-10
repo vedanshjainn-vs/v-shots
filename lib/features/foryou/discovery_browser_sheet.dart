@@ -97,6 +97,22 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
           case 'toggle':
             await _togglePagePlayback();
             break;
+          case 'play':
+            // Precise commands (media session + audio focus) — never a
+            // blind toggle: a focus GAIN must not double-toggle.
+            await _session.play();
+            break;
+          case 'pause':
+            await _session.pause();
+            break;
+          case 'duckOn':
+            // A transient sound (navigation prompt, notification) is
+            // speaking — duck to 15% instead of stopping the music.
+            await _session.setVolume(0.15);
+            break;
+          case 'duckOff':
+            await _session.setVolume(1.0);
+            break;
           case 'next':
             VShotsPlaybackManager.instance.next();
             break;

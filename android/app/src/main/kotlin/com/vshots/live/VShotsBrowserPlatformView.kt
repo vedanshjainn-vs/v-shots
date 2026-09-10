@@ -76,6 +76,23 @@ private const val YT_POLL_JS = """
 """
 
 /**
+ * Position probe (every few poll ticks while playing): returns
+ * "<positionMs>|<durationMs>" from the REAL media element so the media
+ * session can render an accurate lock-screen/notification progress bar.
+ * Returns "none" when no media element exists.
+ */
+private const val YT_POSITION_JS = """
+(function(){
+  try{
+    var v=document.querySelector('video,audio');
+    if(!v){ return 'none'; }
+    var d=(v.duration&&isFinite(v.duration))?Math.round(v.duration*1000):-1;
+    return Math.round(v.currentTime*1000)+'|'+d;
+  }catch(e){ return 'none'; }
+})()
+"""
+
+/**
  * Ad assist pass (runs each poll tick while an ad is active): mute the ad
  * audio, and click YouTube's OWN visible Skip button when it is shown.
  * Returns 'skipped' when a skip was clicked, 'muted' when only muted,
@@ -162,12 +179,32 @@ private class VShotsBackgroundMediaWebView(
     private var popupBlockedCount = 0
 
     private val playbackPoll = object : Runnable {
+        private var tick = 0
+
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
             evaluateJavascript(YT_POLL_JS) { result ->
                 handlePollResult(cleanJsResult(result))
             }
+            // Every ~5s while playing: report real position/duration so the
+            // media session drives an accurate notification progress bar.
+            if (mediaPlaying && tick % 5 == 0) {
+                evaluateJavascript(YT_POSITION_JS) { result ->
+                    handlePositionResult(cleanJsResult(result))
+                }
+            }
+            tick++
             handler.postDelayed(this, 1000L)
+        }
+    }
+
+    private fun handlePositionResult(result: String) {
+        if (result == "none" || !result.contains("|")) return
+        val parts = result.split("|")
+        val positionMs = parts[0].toLongOrNull() ?: return
+        val durationMs = parts.getOrNull(1)?.toLongOrNull() ?: -1L
+        if (positionMs >= 0) {
+            startPlaybackForegroundService(positionMs = positionMs, durationMs = durationMs)
         }
     }
 
@@ -645,6 +682,8 @@ private class VShotsBackgroundMediaWebView(
         artist: String? = null,
         artwork: String? = null,
         playing: Boolean = mediaPlaying,
+        positionMs: Long = -1L,
+        durationMs: Long = -1L,
     ) {
         val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java).apply {
             action = VShotsBrowserPlaybackService.ACTION_UPDATE
@@ -652,6 +691,8 @@ private class VShotsBackgroundMediaWebView(
             putExtra("artist", artist ?: "Music playback")
             putExtra("artwork", artwork ?: "")
             putExtra("playing", playing)
+            putExtra("positionMs", positionMs)
+            putExtra("durationMs", durationMs)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -860,6 +901,45 @@ private class VShotsBrowserPlatformView(
                     val artwork = args?.get("artwork")?.toString() ?: ""
                     val playing = args?.get("playing") as? Boolean ?: true
                     webView.updateNotification(title, artist, artwork, playing)
+                    result.success(null)
+                }
+                "seekBy" -> {
+                    // Seek the REAL media element (±seconds) without
+                    // recreating the WebView. Used by the notification's
+                    // rewind / fast-forward buttons and the media session.
+                    val seconds = (call.arguments as? Number)?.toInt() ?: 10
+                    webView.evaluateJavascript(
+                        """(function(){
+                          try{
+                            var v=document.querySelector('video,audio');
+                            if(!v){return 'none';}
+                            var d=(v.duration&&isFinite(v.duration))?v.duration:null;
+                            var t=v.currentTime+($seconds);
+                            if(d!=null){t=Math.max(0,Math.min(d,t));}
+                            else{t=Math.max(0,t);}
+                            v.currentTime=t;
+                            return 'ok';
+                          }catch(e){return 'err';}
+                        })()""",
+                    ) { _ -> }
+                    result.success(null)
+                }
+                "setVolume" -> {
+                    // Audio-focus ducking: 0..1 on the real media element.
+                    // Volume 0 also unmutes so ducked playback is audible.
+                    val raw = (call.arguments as? Number)?.toDouble() ?: 1.0
+                    val volume = Math.max(0.0, Math.min(1.0, raw))
+                    webView.evaluateJavascript(
+                        """(function(){
+                          try{
+                            var v=document.querySelector('video,audio');
+                            if(!v){return 'none';}
+                            v.muted=false;
+                            v.volume=$volume;
+                            return 'ok';
+                          }catch(e){return 'err';}
+                        })()""",
+                    ) { _ -> }
                     result.success(null)
                 }
                 "dispose" -> {

@@ -5,8 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.session.MediaSession
@@ -45,8 +49,25 @@ class VShotsBrowserPlaybackService : Service() {
     private var artist = "Music playback"
     private var artworkUrl = ""
     private var playing = false
+
+    /** Last reported real media position (ms) — drives the notification
+     *  progress bar. -1 = unknown (keep PLAYBACK_POSITION_UNKNOWN). */
+    private var positionMs: Long = -1L
+    private var durationMs: Long = -1L
+    private var positionAt: Long = 0L // elapsedRealtime anchor for extrapolation
     private var mediaSession: MediaSession? = null
     @Volatile private var artworkGeneration = 0L
+
+    // ── Audio focus (phone calls, other media apps, notifications) ─────────
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
+    private var focusListener: AudioManager.OnAudioFocusChangeListener? = null
+
+    /** Paused by a TRANSIENT focus loss we are allowed to resume from. */
+    @Volatile private var pausedByFocusLoss = false
+
+    /** Volume currently ducked (e.g. a navigation prompt is speaking). */
+    @Volatile private var ducked = false
 
     override fun onCreate() {
         super.onCreate()
@@ -62,7 +83,20 @@ class VShotsBrowserPlaybackService : Service() {
                 artist = intent.getStringExtra("artist")?.takeIf { it.isNotBlank() } ?: "Music playback"
                 artworkUrl = intent.getStringExtra("artwork")?.takeIf { it.isNotBlank() } ?: ""
                 playing = intent.getBooleanExtra("playing", playing)
+                val newPositionMs = intent.getLongExtra("positionMs", -1L)
+                if (newPositionMs >= 0) {
+                    positionMs = newPositionMs
+                    positionAt = android.os.SystemClock.elapsedRealtime()
+                } else if (!playing && positionMs >= 0) {
+                    // Pause freezes the bar at the current estimate.
+                    positionMs = currentEstimatedPositionMs()
+                    positionAt = android.os.SystemClock.elapsedRealtime()
+                }
+                durationMs = intent.getLongExtra("durationMs", durationMs)
                 val generation = ++artworkGeneration
+                // Media apps must hold audio focus while audible. Requesting
+                // while already held is a cheap no-op grant.
+                if (playing) requestAudioFocus()
                 updateMediaSession()
                 publishNotification()
                 if (artworkUrl.isNotBlank()) loadArtworkAsync(artworkUrl, generation)
@@ -74,6 +108,7 @@ class VShotsBrowserPlaybackService : Service() {
             ACTION_FORWARD -> dispatch("fastForward")
             ACTION_STOP -> {
                 dispatch("stop")
+                abandonAudioFocus()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -81,12 +116,88 @@ class VShotsBrowserPlaybackService : Service() {
         return START_NOT_STICKY
     }
 
+    // ── Audio focus implementation ──────────────────────────────────────────
+
+    /**
+     * Focus rules (owner spec — phone-call & interruption handling):
+     *  • AUDIOFOCUS_LOSS            → pause, NO auto-resume (another app owns audio)
+     *  • AUDIOFOCUS_LOSS_TRANSIENT  → pause, auto-resume on regain (phone call)
+     *  • AUDIOFOCUS_LOSS_CAN_DUCK   → duck to 15% volume, restore on regain
+     */
+    private fun ensureFocusListener() {
+        if (focusListener != null) return
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+            when (change) {
+                AudioManager.AUDIOFOCUS_LOSS -> {
+                    pausedByFocusLoss = false
+                    ducked = false
+                    dispatch("pause")
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    if (playing) pausedByFocusLoss = true
+                    ducked = false
+                    dispatch("pause")
+                }
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    ducked = true
+                    dispatch("duckOn")
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    if (ducked) {
+                        ducked = false
+                        dispatch("duckOff")
+                    }
+                    if (pausedByFocusLoss) {
+                        pausedByFocusLoss = false
+                        dispatch("play")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun requestAudioFocus() {
+        ensureFocusListener()
+        val am = audioManager ?: return
+        val listener = focusListener ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                .setOnAudioFocusChangeListener(listener)
+                .setWillPauseWhenDucked(false)
+                .build()
+                .also { focusRequest = it }
+            am.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(listener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN)
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val am = audioManager ?: return
+        pausedByFocusLoss = false
+        ducked = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { am.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            focusListener?.let { am.abandonAudioFocus(it) }
+        }
+    }
+
     private fun createMediaSession() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
         mediaSession = MediaSession(this, "VShotsBrowser").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onPlay() = dispatch("toggle")
-                override fun onPause() = dispatch("toggle")
+                override fun onPlay() = dispatch("play")
+                override fun onPause() = dispatch("pause")
                 override fun onSkipToNext() = dispatch("next")
                 override fun onSkipToPrevious() = dispatch("previous")
                 override fun onFastForward() = dispatch("fastForward")
@@ -109,12 +220,25 @@ class VShotsBrowserPlaybackService : Service() {
             PlaybackState.ACTION_REWIND or
             PlaybackState.ACTION_STOP
         val state = if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+        // Real position when known: the system extrapolates a moving
+        // progress bar from (position, speed, anchor time) between updates.
+        val position = if (positionMs >= 0) currentEstimatedPositionMs()
+            else PlaybackState.PLAYBACK_POSITION_UNKNOWN
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(actions)
-                .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+                .setState(state, position, if (playing) 1.0f else 0.0f)
                 .build(),
         )
+    }
+
+    /** Position estimate between probes: anchor + elapsed while playing. */
+    private fun currentEstimatedPositionMs(): Long {
+        if (positionMs < 0) return PlaybackState.PLAYBACK_POSITION_UNKNOWN
+        if (!playing) return positionMs
+        val elapsed = android.os.SystemClock.elapsedRealtime() - positionAt
+        val estimate = positionMs + elapsed
+        return if (durationMs > 0) minOf(estimate, durationMs) else estimate
     }
 
     private fun dispatch(action: String) {
@@ -268,6 +392,7 @@ class VShotsBrowserPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        abandonAudioFocus()
         mediaSession?.isActive = false
         mediaSession?.release()
         mediaSession = null

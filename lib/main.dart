@@ -824,10 +824,12 @@ Future<void> playTrack(
     ),
   );
 
-  // Ensure audio_service starts the foreground notification
-  if (!audioPlayer.playing) {
-    unawaited(audioHandler?.play());
-  }
+  // NOTE (notification ownership): the REAL playback engine is the native
+  // browser media service, which owns the single foreground notification +
+  // media session (now with audio focus, seek and progress). The empty
+  // just_audio player must NEVER be marked "playing" — that spawned a
+  // phantom second notification with dead controls. audio_service stays
+  // wired for metadata only.
 
   currentTrack = resolvedTrack;
   currentTrackNotifier.value = resolvedTrack;

@@ -156,6 +156,16 @@ class VShotsBrowserSession {
     }
   }
 
+  /// Audio-focus ducking: set the real media element's volume (0..1).
+  /// Volume > 0 also unmutes, so ducked playback stays audible.
+  Future<void> setVolume(double volume) async {
+    final channel = _channel;
+    if (channel == null) return;
+    try {
+      await channel.invokeMethod<void>('setVolume', volume);
+    } catch (_) {}
+  }
+
   /// Seek the real HTML media element without recreating or resizing the WebView.
   Future<void> seekBy(int seconds) async {
     final channel = _channel;
