@@ -21,11 +21,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 import 'package:v_shots/core/ads/ad_config.dart';
-import 'package:v_shots/core/ads/ad_policy.dart';
 import 'package:v_shots/core/ads/ad_service.dart';
 import 'package:v_shots/core/ads/levelplay_config.dart';
 import 'package:v_shots/core/ads/mrec_ad_manager.dart';
-import 'package:v_shots/core/ads/player_sponsored_ad_policy.dart';
 import 'package:v_shots/core/playback/vshots_playback_manager.dart';
 
 Map<String, dynamic> _track(String id) => {

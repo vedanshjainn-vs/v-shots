@@ -66,7 +66,8 @@ class MRECAdManager extends ChangeNotifier {
     if (lastShown != null) {
       final cooldown = DateTime.now().difference(lastShown);
       if (cooldown.inSeconds < MRECConfig.mrecCooldownSeconds) {
-        debugPrint('[MREC] Cooldown active for ${placement.name}: ${cooldown.inSeconds}s');
+        debugPrint(
+            '[MREC] Cooldown active for ${placement.name}: ${cooldown.inSeconds}s');
         return;
       }
     }

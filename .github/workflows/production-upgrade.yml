@@ -1,0 +1,96 @@
+name: V Shots Production Upgrade CI
+
+# Clean pipeline: builds EXACTLY what is committed. No patch scripts.
+# The CI patch state was landed as a real commit on this branch
+# (see "chore(ci): land CI patch state"), so the committed tree IS
+# the shipped configuration. Any change must arrive as a commit.
+
+on:
+  push:
+    branches: [feat/production-upgrade]
+  pull_request:
+    branches: [feat/production-upgrade, baseline-playstore]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Analyze, Test, Build APK & AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Configure environment (.env)
+        run: |
+          cat > .env <<EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
+          LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
+          LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
+          LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          LEVELPLAY_DEBUG_USE_PRODUCTION=true
+          EOF
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Format check
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Analyze (strict)
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+      - name: Build release APK + AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+          else
+            PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$PASS" -alias ci-build -keypass "$PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+            export ANDROID_KEYSTORE_PASSWORD="$PASS"
+            export ANDROID_KEY_ALIAS=ci-build
+            export ANDROID_KEY_PASSWORD="$PASS"
+          fi
+          flutter build apk --release
+          flutter build appbundle --release
+      - name: Validate artifacts
+        run: |
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          test -f build/app/outputs/bundle/release/app-release.aab
+          sha256sum build/app/outputs/flutter-apk/app-release.apk build/app/outputs/bundle/release/app-release.aab
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vshots-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+      - name: Upload release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: vshots-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30

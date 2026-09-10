@@ -232,8 +232,6 @@ class CandidateGenerator {
         ),
       );
     }
-
-    candidates.shuffle(_random);
     return candidates.take(count).toList();
   }
 

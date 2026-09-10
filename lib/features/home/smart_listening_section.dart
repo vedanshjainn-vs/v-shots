@@ -253,7 +253,8 @@ class _ActionCard extends StatelessWidget {
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+              style:
+                  const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
             ),
             Text(
               subtitle,
@@ -317,18 +318,21 @@ class _NextSongPreview extends StatelessWidget {
                     track['title'] as String? ?? '',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w800),
                   ),
                   Text(
                     track['artist'] as String? ?? '',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textMuted),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.play_circle_fill_rounded, color: AppColors.accent, size: 30),
+            const Icon(Icons.play_circle_fill_rounded,
+                color: AppColors.accent, size: 30),
           ],
         ),
       ),

@@ -147,7 +147,8 @@ class _DiscoverySwipeNativeAdPageState extends State<DiscoverySwipeNativeAdPage>
 
   @override
   void onAdClicked(LevelPlayNativeAd nativeAd, AdInfo adInfo) {
-    VShotsLevelPlay.instance.noteActivity('native', 'CLICKED (discovery swipe)');
+    VShotsLevelPlay.instance
+        .noteActivity('native', 'CLICKED (discovery swipe)');
   }
 
   @override

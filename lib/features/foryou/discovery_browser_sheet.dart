@@ -52,6 +52,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   late final AnimationController _extent;
   late final VShotsBrowserSession _session;
   String? _lastLoadedUrl;
+  String? _lastNotificationTrackId;
 
   /// Rebuilds the shield indicator when the blocker is toggled.
   final ValueNotifier<int> _blockerRefresh = ValueNotifier<int>(0);
@@ -290,14 +291,18 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
-    unawaited(
-      _session.updateNotification(
-        title: widget.controller.title ?? 'V Shots',
-        artist: widget.controller.artist ?? 'Music playback',
-        artwork: widget.controller.artwork ?? '',
-        playing: true,
-      ),
-    );
+    final notificationTrackId = widget.controller.track?['id']?.toString();
+    if (_lastNotificationTrackId != notificationTrackId) {
+      _lastNotificationTrackId = notificationTrackId;
+      unawaited(
+        _session.updateNotification(
+          title: widget.controller.title ?? 'V Shots',
+          artist: widget.controller.artist ?? 'Music playback',
+          artwork: widget.controller.artwork ?? '',
+          playing: widget.controller.pagePlaying != false,
+        ),
+      );
+    }
     await _session.load(url);
   }
 
@@ -597,12 +602,15 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
               ),
             ),
             IconButton(
-              icon: const Icon(
-                Icons.pause_rounded,
+              icon: Icon(
+                widget.controller.pagePlaying == false
+                    ? Icons.play_arrow_rounded
+                    : Icons.pause_rounded,
                 color: AppColors.accent,
                 size: 28,
               ),
-              tooltip: 'Pause / Resume',
+              tooltip:
+                  widget.controller.pagePlaying == false ? 'Play' : 'Pause',
               onPressed: _togglePagePlayback,
             ),
             IconButton(

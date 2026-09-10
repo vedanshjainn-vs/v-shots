@@ -46,6 +46,7 @@ class VShotsBrowserPlaybackService : Service() {
     private var artworkUrl = ""
     private var playing = false
     private var mediaSession: MediaSession? = null
+    @Volatile private var artworkGeneration = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -61,9 +62,10 @@ class VShotsBrowserPlaybackService : Service() {
                 artist = intent.getStringExtra("artist")?.takeIf { it.isNotBlank() } ?: "Music playback"
                 artworkUrl = intent.getStringExtra("artwork")?.takeIf { it.isNotBlank() } ?: ""
                 playing = intent.getBooleanExtra("playing", playing)
+                val generation = ++artworkGeneration
                 updateMediaSession()
                 publishNotification()
-                if (artworkUrl.isNotBlank()) loadArtworkAsync(artworkUrl)
+                if (artworkUrl.isNotBlank()) loadArtworkAsync(artworkUrl, generation)
             }
             ACTION_TOGGLE -> dispatch("toggle")
             ACTION_NEXT -> dispatch("next")
@@ -216,7 +218,7 @@ class VShotsBrowserPlaybackService : Service() {
         )
     }
 
-    private fun loadArtworkAsync(url: String) {
+    private fun loadArtworkAsync(url: String, generation: Long) {
         Thread {
             var connection: HttpURLConnection? = null
             try {
@@ -227,7 +229,7 @@ class VShotsBrowserPlaybackService : Service() {
                 connection.connect()
                 if (connection.responseCode !in 200..299) return@Thread
                 val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) } ?: return@Thread
-                if (url == artworkUrl) publishNotification(bitmap)
+                if (generation == artworkGeneration && url == artworkUrl) publishNotification(bitmap)
             } catch (_: Throwable) {
                 // Artwork is enhancement only; notification remains usable.
             } finally {

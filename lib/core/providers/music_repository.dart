@@ -4,11 +4,19 @@
 
 import 'provider_manager.dart';
 import 'provider_models.dart';
+import '../music/music_validator.dart';
 
 class MusicRepository {
   MusicRepository(this._manager);
 
   final ProviderManager _manager;
+
+  static const MusicContentValidator _contentValidator =
+      MusicContentValidator();
+
+  List<Map<String, dynamic>> _withoutAi(
+          Iterable<Map<String, dynamic>> tracks) =>
+      tracks.where((track) => !_contentValidator.isAiContent(track)).toList();
 
   /// Searches for tracks and returns them as `Map<String, dynamic>` track models.
   Future<List<Map<String, dynamic>>> search(
@@ -27,7 +35,7 @@ class MusicRepository {
       minDurationMinutes: minDurationMinutes,
       excludeIds: excludeIds,
     );
-    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+    return _withoutAi(result.orElse(const []).map((t) => t.toTrackMap()));
   }
 
   /// Paginated search — returns one page of tracks plus a token for the next
@@ -48,13 +56,15 @@ class MusicRepository {
       excludeIds: excludeIds,
       pageToken: pageToken,
     );
-    final ({List<Map<String, dynamic>> tracks, String? nextPageToken}) page =
-        result.isSuccess && result.data != null
-            ? (
-                tracks: result.data!.tracks.map((t) => t.toTrackMap()).toList(),
-                nextPageToken: result.data!.nextPageToken,
-              )
-            : (tracks: <Map<String, dynamic>>[], nextPageToken: null);
+    final ({
+      List<Map<String, dynamic>> tracks,
+      String? nextPageToken
+    }) page = result.isSuccess && result.data != null
+        ? (
+            tracks: _withoutAi(result.data!.tracks.map((t) => t.toTrackMap())),
+            nextPageToken: result.data!.nextPageToken,
+          )
+        : (tracks: <Map<String, dynamic>>[], nextPageToken: null);
     return page;
   }
 
@@ -91,7 +101,7 @@ class MusicRepository {
     int limit = 10,
   }) async {
     final result = await _manager.getRelated(trackId, limit: limit);
-    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+    return _withoutAi(result.orElse(const []).map((t) => t.toTrackMap()));
   }
 
   Future<List<Map<String, dynamic>>> getTrending({
@@ -99,7 +109,7 @@ class MusicRepository {
     String region = '',
   }) async {
     final result = await _manager.getTrending(limit: limit, region: region);
-    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+    return _withoutAi(result.orElse(const []).map((t) => t.toTrackMap()));
   }
 
   /// Tracks of a YouTube playlist in playlist order (unavailable entries
@@ -109,7 +119,7 @@ class MusicRepository {
     int limit = 30,
   }) async {
     final result = await _manager.getPlaylistTracks(playlistId, limit: limit);
-    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+    return _withoutAi(result.orElse(const []).map((t) => t.toTrackMap()));
   }
 
   /// Latest uploads of a YouTube channel. Empty on failure.
@@ -118,7 +128,7 @@ class MusicRepository {
     int limit = 30,
   }) async {
     final result = await _manager.getChannelTracks(channelId, limit: limit);
-    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+    return _withoutAi(result.orElse(const []).map((t) => t.toTrackMap()));
   }
 
   Future<List<Map<String, dynamic>>> getRecommendations({
@@ -129,7 +139,7 @@ class MusicRepository {
       excludeIds: excludeIds,
       limit: limit,
     );
-    return result.orElse(const []).map((t) => t.toTrackMap()).toList();
+    return _withoutAi(result.orElse(const []).map((t) => t.toTrackMap()));
   }
 
   Future<String?> getStream(String trackId) async {

@@ -247,7 +247,7 @@ class DiscoverFeedEngine {
 
     // HARD CONTENT POLICY: remove non-music/unofficial AI candidates before
     // fallback or ranking. This is intentionally before scoring/diversity.
-    final validator = const MusicContentValidator();
+    const validator = MusicContentValidator();
     candidates.removeWhere(
       (candidate) => !validator.validate(candidate.track).isMusic,
     );
@@ -312,17 +312,20 @@ class DiscoverFeedEngine {
     // waiting one-after-another.
     final smartHome = SmartListeningService.instance;
     final smartHomePool = smartHome.isConfigured
-        ? smartHome.nextSongQueue(seed: null, count: 24).then<List<_ScoredCandidate>>(
-            (tracks) => tracks
-                .map(
-                  (t) => _ScoredCandidate(
-                    t,
-                    DiscoverBucket.personal,
-                    'smart-listening-home',
-                  ),
-                )
-                .toList(),
-          ).catchError((Object e) {
+        ? smartHome
+            .nextSongQueue(seed: null, count: 24)
+            .then<List<_ScoredCandidate>>(
+              (tracks) => tracks
+                  .map(
+                    (t) => _ScoredCandidate(
+                      t,
+                      DiscoverBucket.personal,
+                      'smart-listening-home',
+                    ),
+                  )
+                  .toList(),
+            )
+            .catchError((Object e) {
             debugPrint('[DiscoverEngine] smart Home pool failed: $e');
             return <_ScoredCandidate>[];
           })

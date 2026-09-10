@@ -11,7 +11,6 @@ import 'package:flutter/services.dart';
 import '../../core/ads/ad_config.dart';
 import '../../core/ads/ad_policy.dart';
 import '../../core/ads/discovery_swipe_native_ad_page.dart';
-import '../../core/ads/player_sponsored_ad_policy.dart';
 import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
 import '../../core/config/discovery_remote.dart';
@@ -229,34 +228,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       _cardShownAt = DateTime.now();
       _prevCard = first;
     }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
-    if (batch.isNotEmpty) {
-      final first = batch.first;
-      final id = first['id'] as String? ?? '';
-      if (id.isNotEmpty) LocalLibrary.instance.recordShownSong(id);
-      _cardShownAt = DateTime.now();
-      _prevCard = first;
-    }
   }
 
   /// Play tap on a Discovery card → open the selected video in the in-app
@@ -338,6 +309,18 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         };
       }
       try {
+        final music = await musicRecommendationEngine.generateForYou(
+          excludeIds: _seenIds,
+          count: 12,
+          languages: _applied.languages.map((l) => l.token).toList(),
+          moods: biases,
+          regions: _applied.genres.map((g) => g.token).toList(),
+        );
+        if (music.isNotEmpty) return _refineForMode(source, music);
+      } catch (e) {
+        debugPrint('[ForYouFeed] Shared recommendation pool failed: $e');
+      }
+      try {
         final batch = await _discoverEngine.nextBatch(
           excludeIds: _seenIds,
           count: 12,
@@ -349,18 +332,6 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
         if (batch.isNotEmpty) return _refineForMode(source, batch);
       } catch (e) {
         debugPrint('[ForYouFeed] Discover engine failed, falling back: $e');
-      }
-      try {
-        final music = await musicRecommendationEngine.generateForYou(
-          excludeIds: _seenIds,
-          count: 12,
-          languages: _applied.languages.map((l) => l.token).toList(),
-          moods: biases,
-          regions: _applied.genres.map((g) => g.token).toList(),
-        );
-        if (music.isNotEmpty) return _refineForMode(source, music);
-      } catch (e) {
-        debugPrint('[ForYouFeed] Music engine failed, falling back: $e');
       }
       // Fallback: existing personalized engine, then mood-biased pool.
       try {

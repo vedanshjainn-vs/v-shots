@@ -140,8 +140,6 @@ class HomeFeedService {
   final RecommendationEngine? _engine;
   final MusicRecommendationEngine? _musicEngine;
 
-  int _homeRotationNonce = 0;
-
   /// Builds shelves from CMS config if available, otherwise defaults.
   List<HomeShelf> buildShelfDescriptors({
     List<Map<String, dynamic>>? cmsSections,
@@ -254,11 +252,6 @@ class HomeFeedService {
           limit: 12,
         ),
     ];
-
-    if (dynamic.isNotEmpty && _homeRotationNonce.isOdd) {
-      final first = dynamic.removeAt(0);
-      dynamic.add(first);
-    }
     return [...dynamic, ...base];
   }
 
@@ -655,6 +648,29 @@ class HomeFeedService {
     _catalogCache[key] = (tracks: List.of(tracks), at: DateTime.now());
   }
 
+  Future<void> refreshPersonalizedShelves(
+    List<HomeShelf> shelves, {
+    void Function()? onUpdate,
+  }) async {
+    final targets = shelves
+        .where((s) =>
+            s.kind == HomeShelfKind.madeForYou ||
+            s.kind == HomeShelfKind.becauseYouListenedTo ||
+            s.kind == HomeShelfKind.trendingForYou ||
+            s.kind == HomeShelfKind.discoverSomethingNew)
+        .toList();
+    if (targets.isEmpty) return;
+    RecommendationCache.instance.invalidateAll();
+    final baseExclude = LocalLibrary.instance.recentlyShownIds;
+    await Future.wait(targets.map((s) => _loadShelf(
+          s,
+          {...baseExclude},
+          force: true,
+          onUpdate: onUpdate,
+        )));
+    onUpdate?.call();
+  }
+
   Future<void> loadShelves(
     List<HomeShelf> shelves, {
     bool forceRefresh = false,
@@ -662,7 +678,6 @@ class HomeFeedService {
     int? maxShelves,
   }) async {
     if (forceRefresh) {
-      _homeRotationNonce++;
       // New listening/like/skip signals must be visible on the next Home
       // load, not up to 5 stale minutes later.
       RecommendationCache.instance.invalidateAll();
@@ -1043,7 +1058,8 @@ class HomeFeedService {
       case HomeShelfKind.manual:
         final pinned = shelf.manualItems.take(shelf.limit).toList();
         if (pinned.length >= shelf.limit || repo == null) return pinned;
-        final seed = shelf.title.trim().isEmpty ? 'new music' : shelf.title.trim();
+        final seed =
+            shelf.title.trim().isEmpty ? 'new music' : shelf.title.trim();
         try {
           final extra = await repo.search(
             '$seed official music',

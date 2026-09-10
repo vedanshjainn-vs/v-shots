@@ -24,13 +24,18 @@ import '../../core/ads/ad_free_manager.dart';
 import '../../core/ads/ad_policy.dart';
 import '../../core/ads/mrec_ad_manager.dart';
 import '../../core/ads/premium_mrec_ad_card.dart';
-import '../../core/ads/native_ad_widget.dart';
 import '../../core/motion/motion.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/storage/local_library.dart';
+import '../../core/recommendation/signal_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../main.dart'
-    show currentTrackNotifier, homeFeedService, musicRepository, playTrack;
+    show
+        currentTrackNotifier,
+        homeFeedService,
+        musicRepository,
+        playTrack,
+        homeScrollToTopSignal;
 import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_avatar.dart';
 import '../../shared/widgets/app_image.dart';
@@ -57,6 +62,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     LocalLibrary.instance.recentlyPlayed.addListener(_onLibraryChanged);
+    SignalStore.instance.revision.addListener(_onRecommendationSignal);
+    homeScrollToTopSignal.addListener(_onHomeScrollToTop);
     // Cold start: the remote CMS fetch may complete AFTER the first build.
     // The revision notifier makes Home rebuild from freshly fetched rows
     // automatically (no manual pull-to-refresh needed).
@@ -153,6 +160,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  Timer? _recommendationRefreshTimer;
+  bool _recommendationRefreshInFlight = false;
+
+  void _onRecommendationSignal() {
+    if (!mounted) return;
+    _recommendationRefreshTimer?.cancel();
+    _recommendationRefreshTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted || _recommendationRefreshInFlight) return;
+      _recommendationRefreshInFlight = true;
+      unawaited(
+        homeFeedService
+            .refreshPersonalizedShelves(_shelves, onUpdate: _onShelfUpdate)
+            .whenComplete(() => _recommendationRefreshInFlight = false),
+      );
+    });
+  }
+
+  void _onHomeScrollToTop() {
+    if (!mounted || !_scrollController.hasClients) return;
+    unawaited(
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Returning from another screen must not re-fetch/rebuild the whole Home.
@@ -163,6 +198,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     LocalLibrary.instance.recentlyPlayed.removeListener(_onLibraryChanged);
+    SignalStore.instance.revision.removeListener(_onRecommendationSignal);
+    homeScrollToTopSignal.removeListener(_onHomeScrollToTop);
+    _recommendationRefreshTimer?.cancel();
     RemoteConfigService.instance.revision.removeListener(
       _onRemoteConfigApplied,
     );
@@ -521,7 +559,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   HomeShelf? _dynamicForYouShelf() {
     for (final shelf in _shelves) {
-      if (shelf.id == 'dynamic_mfy' &&
+      if (shelf.kind == HomeShelfKind.madeForYou &&
           shelf.status == HomeShelfStatus.loaded &&
           shelf.tracks.isNotEmpty) {
         return shelf;
@@ -533,16 +571,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildQuickPicksSliver() {
     HomeShelf? source;
     for (final shelf in _shelves) {
-      if ((shelf.id == 'dynamic_tfy' ||
-              shelf.id == 'dynamic_discover' ||
-              shelf.id == 'dynamic_mfy') &&
+      if ((shelf.kind == HomeShelfKind.trendingForYou ||
+              shelf.kind == HomeShelfKind.discoverSomethingNew ||
+              shelf.kind == HomeShelfKind.madeForYou) &&
           shelf.status == HomeShelfStatus.loaded &&
           shelf.tracks.length >= 2) {
         source = shelf;
         break;
       }
     }
-    if (source == null) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    if (source == null) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
     return SliverToBoxAdapter(
       child: DynamicQuickPicks(
         tracks: source.tracks,

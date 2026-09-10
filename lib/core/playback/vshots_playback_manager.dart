@@ -68,7 +68,12 @@ class VShotsPlaybackManager extends ChangeNotifier {
 
   Future<void> _prefetchSmartQueue({bool autoAdvance = false}) async {
     final provider = smartQueueProvider;
-    if (provider == null || _queue.length > 1 || _queue.isEmpty || _smartQueueLoading) return;
+    if (provider == null ||
+        _queue.length > 1 ||
+        _queue.isEmpty ||
+        _smartQueueLoading) {
+      return;
+    }
     _smartQueueLoading = true;
     try {
       final additions = await provider(

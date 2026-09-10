@@ -79,12 +79,13 @@ class MusicRecommendationEngine {
     _session.requestToken++;
 
     final deviceRegion = MusicRegionProfile.current();
-    final effectiveRegions = regions.isNotEmpty
-        ? regions
-        : <String>[deviceRegion.countryName];
+    final effectiveRegions =
+        regions.isNotEmpty ? regions : <String>[deviceRegion.countryName];
     final effectiveLanguages = languages.isNotEmpty
         ? languages
-        : (deviceRegion.countryCode == 'IN' ? <String>['Hindi'] : const <String>[]);
+        : (deviceRegion.countryCode == 'IN'
+            ? <String>['Hindi']
+            : const <String>[]);
 
     final context = MusicRecommendationContext(
       mode: 'for_you',

@@ -194,6 +194,7 @@ final ValueNotifier<bool> isPlayerExpandedNotifier = ValueNotifier<bool>(false);
 /// renders it on every other tab. This prevents two `YoutubePlayer` widgets
 /// sharing the same controller simultaneously.
 final ValueNotifier<int> currentTabIndexNotifier = ValueNotifier<int>(0);
+final ValueNotifier<int> homeScrollToTopSignal = ValueNotifier<int>(0);
 
 /// Bumped whenever the global queue is mutated (play-next / add-to-queue),
 /// so the full player's "Up Next" list rebuilds against the new queue.
@@ -231,7 +232,6 @@ void _configureSmartListening() {
         smartListeningService.nextSongQueue(seed: seed, count: 10),
   );
 }
-
 
 void _log(String message) {
   debugPrint('[VShots] $message');
@@ -572,6 +572,7 @@ class _MainShellState extends State<MainShell> {
                             _index = target;
                             currentTabIndexNotifier.value = target;
                           });
+                          if (target == 0) homeScrollToTopSignal.value++;
                           if (changed &&
                               !VShotsPlaybackManager.instance.browser.isOpen) {
                             unawaited(
@@ -785,6 +786,8 @@ Future<void> playTrack(
       id: trackId,
       title: trackTitle,
       artist: trackArtist,
+      displayTitle: trackTitle,
+      displaySubtitle: trackArtist,
       artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,
       duration: trackDuration != null ? Duration(seconds: trackDuration) : null,
       album: trackArtist,
@@ -809,8 +812,13 @@ Future<void> playTrack(
 
 // ═══════════════════════════════════════════════
 
-List<Map<String, dynamic>> _rankVShotsSearchResults(String query, List<Map<String, dynamic>> input) {
-  String n(Object? v) => (v?.toString() ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim().replaceAll(RegExp(r'\s+'), ' ');
+List<Map<String, dynamic>> _rankVShotsSearchResults(
+    String query, List<Map<String, dynamic>> input) {
+  String n(Object? v) => (v?.toString() ?? '')
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
   final q = n(query);
   final ranked = input.asMap().entries.map((e) {
     final t = e.value;
@@ -826,7 +834,9 @@ List<Map<String, dynamic>> _rankVShotsSearchResults(String query, List<Map<Strin
     if (t['channelVerified'] == true || t['isVerified'] == true) score += 8;
     return (score: score, index: e.key, track: t);
   }).toList();
-  ranked.sort((a, b) => b.score != a.score ? b.score.compareTo(a.score) : a.index.compareTo(b.index));
+  ranked.sort((a, b) => b.score != a.score
+      ? b.score.compareTo(a.score)
+      : a.index.compareTo(b.index));
   return ranked.map((e) => e.track).toList();
 }
 
@@ -842,7 +852,11 @@ Future<void> _populateMoreLikeThis(Map<String, dynamic> seedTrack) async {
       forceRefresh: true,
     );
     if (currentTrack?['id']?.toString() != seedId) return;
-    final seen = <String>{seedId, ...VShotsPlaybackManager.instance.queue.map((t) => t['id']?.toString() ?? '')};
+    final seen = <String>{
+      seedId,
+      ...VShotsPlaybackManager.instance.queue
+          .map((t) => t['id']?.toString() ?? '')
+    };
     for (final item in scored) {
       final track = item.track.toTrackMap();
       final id = track['id']?.toString() ?? '';
@@ -1581,9 +1595,8 @@ class _SearchScreenState extends State<SearchScreen> {
         AdPolicy.instance.canShowNative(AdPlacement.search) &&
             _results.length >= 3;
     // Preserved 300x250 MREC box ad.
-    final bool showMrec =
-        AdPolicy.instance.canShowMREC(MRECPlacement.search) &&
-            _results.length >= AdConfig.searchAdEvery;
+    final bool showMrec = AdPolicy.instance.canShowMREC(MRECPlacement.search) &&
+        _results.length >= AdConfig.searchAdEvery;
     final int nativeSlot = showNative ? 3 : -1;
     final int mrecSlot =
         showMrec ? (AdConfig.searchAdEvery + (showNative ? 1 : 0)) : -1;

@@ -11,7 +11,8 @@ class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
   static const String channelMusicPlayer = 'vshots_music_player';
@@ -20,7 +21,8 @@ class NotificationService {
   static const String channelNewMusic = 'vshots_new_music';
   static const String keyUpdateDismissed = 'update_dismissed_v';
   static const String keyUpdateReminderDate = 'update_reminder_date';
-  static const String keyNotifPermissionRequested = 'notif_permission_requested';
+  static const String keyNotifPermissionRequested =
+      'notif_permission_requested';
   static const int smartNotificationIdStart = 20000;
   static const int smartNotificationIdEnd = 20999;
 
@@ -28,14 +30,16 @@ class NotificationService {
     if (_initialized) {
       return;
     }
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwinSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
     await _plugin.initialize(
-      const InitializationSettings(android: androidSettings, iOS: darwinSettings),
+      const InitializationSettings(
+          android: androidSettings, iOS: darwinSettings),
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
     await _createNotificationChannels();
@@ -53,7 +57,8 @@ class NotificationService {
   }
 
   Future<void> _createNotificationChannels() async {
-    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     if (android == null) {
       return;
     }
@@ -120,13 +125,16 @@ class NotificationService {
       scheduledDate,
       details,
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
     );
   }
 
   Future<void> cancelSmartNotifications() async {
-    for (var id = smartNotificationIdStart; id <= smartNotificationIdEnd; id++) {
+    for (var id = smartNotificationIdStart;
+        id <= smartNotificationIdEnd;
+        id++) {
       await _plugin.cancel(id);
     }
   }
@@ -140,7 +148,9 @@ class NotificationService {
   }) async {
     final androidDetails = AndroidNotificationDetails(
       channelId,
-      channelId == channelNewMusic ? 'V Shots New Music' : 'V Shots Recommendations',
+      channelId == channelNewMusic
+          ? 'V Shots New Music'
+          : 'V Shots Recommendations',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       playSound: true,
@@ -160,17 +170,24 @@ class NotificationService {
 
   Future<bool> requestNotificationPermission() async {
     var granted = true;
-    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) granted = (await android.requestNotificationsPermission()) ?? false;
-    final ios = _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (android != null) {
+      granted = (await android.requestNotificationsPermission()) ?? false;
+    }
+    final ios = _plugin.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin>();
     if (ios != null) {
-      granted = await ios.requestPermissions(alert: true, badge: true, sound: true) ?? granted;
+      granted =
+          await ios.requestPermissions(alert: true, badge: true, sound: true) ??
+              granted;
     }
     return granted;
   }
 
   Future<bool> hasNotificationPermission() async {
-    final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
     if (android != null) {
       return await android.areNotificationsEnabled() ?? false;
     }
@@ -199,7 +216,8 @@ class NotificationService {
   Future<void> saveUpdateDismissed(String version) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyUpdateDismissed, version);
-    await prefs.setString(keyUpdateReminderDate, DateTime.now().toIso8601String());
+    await prefs.setString(
+        keyUpdateReminderDate, DateTime.now().toIso8601String());
   }
 
   Future<bool> shouldShowUpdateReminder(String version) async {

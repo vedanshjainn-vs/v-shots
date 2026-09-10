@@ -64,10 +64,12 @@ class SmartNotificationService with WidgetsBindingObserver {
       await NotificationService.instance.cancelSmartNotifications();
       final prefs = await SharedPreferences.getInstance();
       final lastSentRaw = prefs.getString(keyLastNotificationTime);
-      final lastSent = lastSentRaw == null ? null : DateTime.tryParse(lastSentRaw);
+      final lastSent =
+          lastSentRaw == null ? null : DateTime.tryParse(lastSentRaw);
       var cursor = tz.TZDateTime.now(tz.local).add(const Duration(hours: 4));
       if (lastSent != null) {
-        final nextAllowed = lastSent.add(const Duration(hours: minHoursBetweenNotifications));
+        final nextAllowed =
+            lastSent.add(const Duration(hours: minHoursBetweenNotifications));
         final nextAllowedTz = tz.TZDateTime.from(nextAllowed, tz.local);
         if (nextAllowedTz.isAfter(cursor)) cursor = nextAllowedTz;
       }
@@ -104,23 +106,28 @@ class SmartNotificationService with WidgetsBindingObserver {
         );
         dayCount++;
         scheduled++;
-        final gap = minHoursBetweenNotifications + random.nextInt(
-          maxHoursBetweenNotifications - minHoursBetweenNotifications + 1,
-        );
+        final gap = minHoursBetweenNotifications +
+            random.nextInt(
+              maxHoursBetweenNotifications - minHoursBetweenNotifications + 1,
+            );
         cursor = cursor.add(Duration(hours: gap));
       }
-      await prefs.setString(keyScheduleVersion, DateTime.now().toIso8601String());
+      await prefs.setString(
+          keyScheduleVersion, DateTime.now().toIso8601String());
       debugPrint('[SmartNotif] Scheduled $scheduled notifications');
     } finally {
       _rebuilding = false;
     }
   }
 
-  _SmartNotification _generateSmartNotification(Random random, SharedPreferences prefs) {
+  _SmartNotification _generateSmartNotification(
+      Random random, SharedPreferences prefs) {
     final recent = LocalLibrary.instance.recentlyPlayed.value;
     final lastActiveRaw = prefs.getString('last_active_at');
-    final lastActive = lastActiveRaw == null ? null : DateTime.tryParse(lastActiveRaw);
-    if (lastActive != null && DateTime.now().difference(lastActive).inDays >= 2) {
+    final lastActive =
+        lastActiveRaw == null ? null : DateTime.tryParse(lastActiveRaw);
+    if (lastActive != null &&
+        DateTime.now().difference(lastActive).inDays >= 2) {
       return const _SmartNotification(
         title: 'Your music is waiting 🎧',
         body: 'Come back and discover something new on V Shots.',
@@ -131,7 +138,8 @@ class SmartNotificationService with WidgetsBindingObserver {
       final track = recent[random.nextInt(recent.length)];
       return _SmartNotification(
         title: 'Continue listening 🎵',
-        body: 'Pick up where you left off with ${(track['title'] ?? 'your music').toString()}.',
+        body:
+            'Pick up where you left off with ${(track['title'] ?? 'your music').toString()}.',
         payload: 'song:${(track['id'] ?? '').toString()}',
       );
     }
@@ -149,9 +157,11 @@ class SmartNotificationService with WidgetsBindingObserver {
     );
   }
 
-  String _calendarKey(tz.TZDateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  String _calendarKey(tz.TZDateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-  tz.TZDateTime _startOfNextDay(tz.TZDateTime d) => tz.TZDateTime(tz.local, d.year, d.month, d.day + 1);
+  tz.TZDateTime _startOfNextDay(tz.TZDateTime d) =>
+      tz.TZDateTime(tz.local, d.year, d.month, d.day + 1);
 
   Future<void> showTestNotification() async {
     await NotificationService.instance.showSmartNotification(
@@ -166,7 +176,8 @@ class SmartNotificationService with WidgetsBindingObserver {
 }
 
 class _SmartNotification {
-  const _SmartNotification({required this.title, required this.body, required this.payload});
+  const _SmartNotification(
+      {required this.title, required this.body, required this.payload});
   final String title;
   final String body;
   final String payload;
