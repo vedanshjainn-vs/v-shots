@@ -7,6 +7,7 @@ import '../../core/recommendation/music_region_profile.dart';
 import '../../core/recommendation/signal_store.dart';
 import '../../core/recommendation/smart_listening_service.dart';
 import '../../core/storage/local_library.dart';
+import '../../core/storage/personalization_store.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/app_image.dart';
 
@@ -37,6 +38,9 @@ class _SmartListeningSectionState extends State<SmartListeningSection> {
     _nextFuture = _buildNextFuture();
     SignalStore.instance.revision.addListener(_onRecommendationChanged);
     MusicRegionProfile.revision.addListener(_onRecommendationChanged);
+    // Stated preferences changed (onboarding/profile edit) → Smart Next
+    // must rebuild immediately — the queue is preference-driven now.
+    PersonalizationStore.instance.addListener(_onRecommendationChanged);
   }
 
   Future<List<Map<String, dynamic>>> _buildNextFuture() {
@@ -57,6 +61,7 @@ class _SmartListeningSectionState extends State<SmartListeningSection> {
   void dispose() {
     SignalStore.instance.revision.removeListener(_onRecommendationChanged);
     MusicRegionProfile.revision.removeListener(_onRecommendationChanged);
+    PersonalizationStore.instance.removeListener(_onRecommendationChanged);
     super.dispose();
   }
 
