@@ -22,6 +22,7 @@
 
 import 'package:flutter/foundation.dart';
 
+import '../content/blocked_channel_registry.dart';
 import '../innertube/discovery_relevance.dart';
 import 'music_canonicalizer.dart';
 import 'music_models.dart';
@@ -88,6 +89,21 @@ class MusicContentValidator {
     final isOfficial = track['isOfficial'] == true;
 
     final reasons = <String>[];
+
+    // HARD POLICY (authoritative, first): manually blocked channels can
+    // never appear anywhere — Home, For You, Discovery, Search, AI/artist
+    // recommendations, playlists, autoplay/queue, prefetch, caches. This
+    // runs before every other check so a blocked channel can never win a
+    // ranking score or slip through a lower-confidence path.
+    if (!BlockedChannelRegistry.isContentAllowed(track)) {
+      return const MusicValidationResult(
+        isMusic: false,
+        confidence: 0.0,
+        reasons: ['BLOCKED_CHANNEL'],
+        rejectionReason: 'BLOCKED_CHANNEL',
+        sourceTrustScore: 0.0,
+      );
+    }
 
     // HARD POLICY: unofficial AI uploads are not recommendation content.
     // Explicitly official/verified catalog items are allowed to continue.

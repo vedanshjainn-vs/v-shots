@@ -24,6 +24,7 @@ import '../core/ads/premium_mrec_ad_card.dart';
 import 'core/ads/native_ad_widget.dart';
 import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
+import 'core/content/blocked_channel_registry.dart';
 import 'core/navigation/app_navigator.dart';
 import 'core/config/app_version.dart';
 import 'core/notifications/app_update_service.dart';
@@ -953,8 +954,18 @@ class _SearchScreenState extends State<SearchScreen> {
             .map((e) => e['id'] as String? ?? '')
             .where((id) => id.isNotEmpty),
       );
+      // Blocked-channel enforcement on CACHE READ: entries cached before a
+      // channel was blocked must never display even if the cache is warm.
+      final allowedCached = BlockedChannelRegistry.filterBlocked(cached);
+      _seenIds
+        ..clear()
+        ..addAll(
+          allowedCached
+              .map((e) => e['id'] as String? ?? '')
+              .where((id) => id.isNotEmpty),
+        );
       setState(() {
-        _results = cached;
+        _results = allowedCached;
         _status = _SearchStatus.loaded;
         _lastQuery = query;
         _hasMore = cached.length >= _pageSize;
@@ -1071,7 +1082,10 @@ class _SearchScreenState extends State<SearchScreen> {
         return;
       }
       setState(() {
-        _results = [..._results, ...newItems];
+        _results = [
+          ..._results,
+          ...BlockedChannelRegistry.filterBlocked(newItems)
+        ];
         _hasMore = _nextPageToken != null || newItems.length >= _pageSize;
         _isLoadingMore = false;
       });

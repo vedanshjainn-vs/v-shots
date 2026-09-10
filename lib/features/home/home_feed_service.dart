@@ -40,6 +40,8 @@ import '../../core/remote_config/remote_feature_flags.dart';
 import '../../core/providers/jiosaavn_web_provider.dart';
 import '../../shared/utils/youtube_url.dart';
 
+import '../../core/content/blocked_channel_registry.dart';
+
 /// What kind of content a shelf is built from.
 enum HomeShelfKind {
   /// Instant, offline — the persisted recently-played list.
@@ -358,14 +360,15 @@ class HomeFeedService {
           )) {
             continue;
           }
-          tracks.add(
-            item.toTrackMap(
-              jiosaavnEnabled: jiosaavnEnabled,
-              // Section-level provider cascades only to items left on AUTO.
-              providerOverride: s.provider,
-              playbackProviderOverride: s.playbackProvider,
-            ),
+          final track = item.toTrackMap(
+            jiosaavnEnabled: jiosaavnEnabled,
+            // Section-level provider cascades only to items left on AUTO.
+            providerOverride: s.provider,
+            playbackProviderOverride: s.playbackProvider,
           );
+          // Blocked-channel enforcement applies to CMS-pinned items too —
+          // admin-pinned content from a blocked channel never renders.
+          if (BlockedChannelRegistry.isContentAllowed(track)) tracks.add(track);
         }
         shelves.add(
           HomeShelf(

@@ -31,6 +31,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../features/foryou/discovery_browser_controller.dart';
 
+import '../content/blocked_channel_registry.dart';
+
 enum PlaybackRepeat { off, one, all }
 
 class VShotsPlaybackManager extends ChangeNotifier {
@@ -83,7 +85,11 @@ class VShotsPlaybackManager extends ChangeNotifier {
       final existing = _queue.map((t) => t['id'] as String? ?? '').toSet();
       for (final track in additions) {
         final id = track['id'] as String? ?? '';
-        if (id.isNotEmpty && existing.add(id)) _queue.add(track);
+        if (id.isNotEmpty &&
+            existing.add(id) &&
+            BlockedChannelRegistry.isContentAllowed(track)) {
+          _queue.add(track);
+        }
       }
       _rebuildShuffle(keepCurrentAt: _index);
       if (autoAdvance && _queue.length > 1) {
@@ -115,6 +121,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
 
   /// Plays a single track in the global session (reusing the same WebView).
   void play(Map<String, dynamic> track, {bool expanded = false}) {
+    if (!BlockedChannelRegistry.isContentAllowed(track)) return;
     _queue
       ..clear()
       ..add(track);
@@ -134,10 +141,13 @@ class VShotsPlaybackManager extends ChangeNotifier {
     bool expanded = false,
   }) {
     if (tracks.isEmpty) return;
+    final (safeStart, safeTracks) =
+        BlockedChannelRegistry.sanitizeQueue(tracks, startIndex);
+    if (safeTracks.isEmpty) return;
     _queue
       ..clear()
-      ..addAll(tracks);
-    _index = startIndex.clamp(0, _queue.length - 1);
+      ..addAll(safeTracks);
+    _index = safeStart;
     _rebuildShuffle(keepCurrentAt: _index);
     browser.startExpanded = expanded;
     browser.open(_queue[_index]);
@@ -148,6 +158,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
   /// Jumps to a queue index (tap on the queue list).
   void jumpTo(int index) {
     if (index < 0 || index >= _queue.length) return;
+    if (!BlockedChannelRegistry.isContentAllowed(_queue[index])) return;
     _index = index;
     browser.open(_queue[_index]);
     notifyListeners();
