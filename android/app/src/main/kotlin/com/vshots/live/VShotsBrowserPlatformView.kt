@@ -147,6 +147,17 @@ private class VShotsBackgroundMediaWebView(
     private var notificationArtist = "Music playback"
     private var notificationArtwork = ""
 
+    /**
+     * Flutter keeps this platform view mounted at a constant size while the
+     * player is collapsed, but the view can still receive INVISIBLE/window
+     * pause callbacks while it is translated below the mini-player. Those
+     * callbacks are a view-lifecycle signal, not a playback command. Keep the
+     * WebView media lifecycle retained for the lifetime of this session; the
+     * explicit JS pause command remains the only way playback is paused by
+     * this class. The flag is cleared only during disposal.
+     */
+    private var retainMediaLifecycle = true
+
     // ── FORCEFUL Ad Blocker State ──────────────────────────────────────────
     // ALWAYS ON by default. Populated from Dart via "setContentBlocker".
     // Host-exact + suffix matching + URL pattern matching.
@@ -781,18 +792,32 @@ private class VShotsBackgroundMediaWebView(
         return result.orEmpty().trim().trim('"').lowercase(Locale.US)
     }
 
-    /** Keep active WebView media alive across Android visibility changes. */
+    /** Keep the WebView media lifecycle alive across Android visibility changes.
+     * A translated/collapsed platform view may be reported INVISIBLE before
+     * the first authoritative PLAYING poll arrives, so gating this on
+     * [mediaPlaying] would let Android pause a valid pending playback.
+     * Visibility is presentation state; explicit JS commands own playback. */
     override fun onWindowVisibilityChanged(visibility: Int) {
-        if (mediaPlaying) {
+        if (retainMediaLifecycle) {
             super.onWindowVisibilityChanged(View.VISIBLE)
         } else {
             super.onWindowVisibilityChanged(visibility)
         }
     }
 
-    /** Do not pause active Discovery media just because the Activity is hidden. */
+    /** Flutter's platform-view compositor can also report the translated
+     * surface as not visibility-aggregated even though this playback session
+     * is intentionally still mounted. Keep that signal aligned with the
+     * session lifetime for the same reason as window visibility above. */
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(retainMediaLifecycle || isVisible)
+    }
+
+    /** Do not pause the session merely because Flutter/Android hides the view.
+     * Explicit user/focus PAUSE still calls pauseMedia() and pauses the real
+     * HTML media element. */
     override fun onPause() {
-        if (mediaPlaying) return
+        if (retainMediaLifecycle) return
         super.onPause()
     }
 
@@ -802,6 +827,7 @@ private class VShotsBackgroundMediaWebView(
     }
 
     fun disposeMedia() {
+        retainMediaLifecycle = false
         loadGeneration++
         stopPlaybackPolling()
         stopPlaybackForegroundService()
