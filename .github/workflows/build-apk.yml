@@ -52,47 +52,10 @@ jobs:
           sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/g' android/app/src/main/AndroidManifest.xml
       - name: 5. Install Dependencies
         run: flutter pub get
-      - name: 5b. Apply Dynamic Home Recommendation Patch
-        run: |
-          python3 scripts/apply_dynamic_home_patch.py
-          dart format lib/features/home/home_feed_service.dart lib/features/home/home_screen.dart lib/features/home/dynamic_home_sections.dart lib/core/notifications/notification_service.dart lib/core/notifications/smart_notification_service.dart
-      - name: 5c. Apply Stability Audit Patch
-        run: |
-          python3 scripts/apply_stability_patch.py
-          dart format lib/features/home/home_feed_service.dart lib/features/foryou/for_you_feed_screen.dart lib/core/discover/discover_feed_engine.dart lib/core/notifications/notification_service.dart lib/main.dart
-      - name: 5d. Apply Regional + Content Policy Patch
-        run: |
-          python3 scripts/apply_content_policy_patch.py
-          dart format lib/core/music/music_validator.dart lib/core/discover/discover_feed_engine.dart lib/core/recommendation/music_recommendation_engine.dart lib/core/recommendation/music_region_profile.dart
-      - name: 5e. Apply Smart Listening V2 Patch
-        run: |
-          python3 scripts/apply_smart_listening_v2.py
-          python3 scripts/apply_smart_queue_autoadvance.py
-          dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
-          dart fix --apply
-          dart format lib/core/playback/vshots_playback_manager.dart lib/core/recommendation/music_recommendation_config.dart lib/core/recommendation/smart_listening_service.dart lib/features/home/smart_listening_section.dart lib/main.dart lib/features/home/home_screen.dart
-      - name: 5f. Apply Runtime Refresh + Notification Fix
-        run: |
-          python3 scripts/apply_runtime_refresh_notification_fix.py
-          dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
-          dart fix --apply
-          dart format lib/core/recommendation/music_region_profile.dart lib/core/recommendation/signal_store.dart lib/core/recommendation/smart_listening_service.dart lib/core/discover/discover_feed_engine.dart lib/features/home/home_screen.dart lib/features/home/smart_listening_section.dart lib/main.dart
-      - name: 5g. Apply Interactive Player Notification Patch
-        run: |
-          python3 scripts/apply_player_notification_patch.py
-          dart format lib/features/foryou/vshots_browser_session.dart lib/features/foryou/discovery_browser_sheet.dart
-      - name: 5h. Apply Browser Player Polish
-        run: |
-          python3 scripts/apply_browser_player_polish.py
-          dart format lib/features/foryou/discovery_browser_sheet.dart lib/features/foryou/vshots_browser_session.dart
-      - name: 5i. Apply Search + Browser UI Refinement
-        run: |
-          python3 scripts/apply_search_browser_ui_refinement.py
-          dart format lib/main.dart lib/features/foryou/discovery_browser_sheet.dart lib/features/foryou/vshots_browser_session.dart
-      - name: 5j. Apply Discovery Swipeable Native Ad Page
-        run: |
-          python3 scripts/apply_discovery_swipe_native_patch.py
-          dart format lib/features/foryou/for_you_feed_screen.dart lib/core/ads/discovery_swipe_native_ad_page.dart
+      # The production implementation is committed to this branch. Do not
+      # replay historical source-mutating patch scripts here: they were
+      # one-time migration tools and can fail when their old anchors are no
+      # longer present. CI validates the checked-in source directly.
       - name: 6. Run Formatting Check
         run: |
           set -e
