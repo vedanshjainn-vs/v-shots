@@ -224,6 +224,9 @@ private class VShotsBackgroundMediaWebView(
      *  (window for stuck-after-ad recovery). */
     private var adJustEndedAt = 0L
 
+    /** Explicit user pause guard. Recovery/autoplay must never fight the user. */
+    private var userPaused = false
+
     /** Master switch for the ad assist (mute + official-skip click +
      *  resume). Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
     private var adAssistEnabled = true
@@ -282,7 +285,7 @@ private class VShotsBackgroundMediaWebView(
                         // a pause is the USER's choice — never fight it.
                         val sinceAd = if (adJustEndedAt == 0L) Long.MAX_VALUE
                         else android.os.SystemClock.elapsedRealtime() - adJustEndedAt
-                        if (sinceAd in 0..6000) {
+                        if (sinceAd in 0..6000 && !userPaused) {
                             runResumeAfterAd()
                         } else {
                             setMediaPlaying(false)
@@ -620,6 +623,7 @@ private class VShotsBackgroundMediaWebView(
         nearEndReported = false
         adActive = false
         adJustEndedAt = 0L
+        userPaused = false
         loadUrl(url)
     }
 
@@ -647,6 +651,7 @@ private class VShotsBackgroundMediaWebView(
     }
 
     fun reloadCurrent() {
+        userPaused = false
         endedReported = false
         nearEndReported = false
         adActive = false
@@ -720,6 +725,7 @@ private class VShotsBackgroundMediaWebView(
     }
 
     fun pauseMedia() {
+        userPaused = true
         evaluateJavascript(
             """
             (function(){
@@ -751,8 +757,14 @@ private class VShotsBackgroundMediaWebView(
             """.trimIndent(),
         ) { result ->
             val state = cleanJsResult(result)
+            userPaused = !state.contains("playing")
             setMediaPlaying(state.contains("playing"))
         }
+    }
+
+    fun userPlay() {
+        userPaused = false
+        if (!mediaPlaying) togglePlayback()
     }
 
     /**
@@ -764,6 +776,7 @@ private class VShotsBackgroundMediaWebView(
      * blocks unmuted autoplay, the real YouTube control remains visible.
      */
     private fun attemptAutoplayWithAudio() {
+        if (userPaused) return
         // YouTube pages ONLY: the pass exists to unmute/autoplay the official
         // YouTube player. It must never run on JioSaavn pages — clicking
         // random controls or forcing play there would start the wrong song.
@@ -826,7 +839,7 @@ private class VShotsBackgroundMediaWebView(
 
     override fun onResume() {
         super.onResume()
-        if (mediaPlaying) attemptAutoplayWithAudio()
+        // Explicit user pause is authoritative; resume only via Play.
     }
 
     fun disposeMedia() {
@@ -869,6 +882,10 @@ private class VShotsBrowserPlatformView(
                     result.success(null)
                 }
                 "play" -> {
+                    webView.userPlay()
+                    result.success(null)
+                }
+                "play_legacy" -> {
                     webView.evaluateJavascript(
                         "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
                     ) { value ->

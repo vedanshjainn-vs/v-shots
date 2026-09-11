@@ -281,6 +281,18 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     // adaptive buckets (personal/trending/fresh/exploration) → Discover
     // Score ranking → fatigue/diversity guards → dynamic re-rank per swipe.
     if (source.query == null) {
+      // Fast first batch: use the lightweight provider before the heavier
+      // recommendation chain so first paint is not blocked.
+      try {
+        final fast = await forYouFeedService.fetchNextBatch(
+          excludeIds: _seenIds,
+          count: 8,
+        );
+        if (fast.isNotEmpty) return _refineForMode(source, fast);
+      } catch (e) {
+        debugPrint('[ForYouFeed] fast first batch failed: $e');
+      }
+
       final primaryMood =
           _applied.moods.isNotEmpty ? _applied.moods.first : null;
       forYouFeedService.setMood(primaryMood?.label, primaryMood?.query ?? '');
@@ -592,8 +604,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
               scrollDirection: Axis.vertical,
               // Default PageView paging is lighter than BouncingScrollPhysics
               // for Android and avoids extra overscroll work during fast swipes.
-              physics: const PageScrollPhysics(),
-              allowImplicitScrolling: false,
+              physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
+              allowImplicitScrolling: true,
+              pageSnapping: true,
               itemCount: _pageCount,
               onPageChanged: _onPageChanged,
               itemBuilder: (context, page) {
