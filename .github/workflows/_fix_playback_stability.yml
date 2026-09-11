@@ -1,0 +1,155 @@
+name: V Shots Playback Stability Fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/production-upgrade]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-upgrade
+          fetch-depth: 0
+      - name: Apply playback fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit(f'{path}: pattern not found: {old[:100]!r}')
+              p.write_text(s.replace(old, new, 1))
+
+          native = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt'
+          session = 'lib/features/foryou/vshots_browser_session.dart'
+          service = 'android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlaybackService.kt'
+
+          # Do not let page-load/resume lifecycle or a repeated autoplay pass fight the user.
+          replace(native,
+              '                startPlaybackPolling()\n                attemptAutoplayWithAudio()',
+              '                startPlaybackPolling()')
+          replace(native,
+              '    override fun onResume() {\n        super.onResume()\n        if (mediaPlaying) attemptAutoplayWithAudio()\n    }',
+              '    override fun onResume() {\n        super.onResume()\n        // Resume is lifecycle-only. Never synthesize a Play command here.\n    }')
+
+          # Explicit commands own the pause/play guard.
+          replace(native,
+              '    fun pauseMedia() {\n        evaluateJavascript(',
+              '    fun pauseMedia() {\n        userPaused = true\n        evaluateJavascript(')
+          replace(native,
+              '    fun togglePlayback() {\n        evaluateJavascript(',
+              '    fun togglePlayback() {\n        evaluateJavascript(')
+          replace(native,
+              '            val state = cleanJsResult(result)\n            setMediaPlaying(state.contains("playing"))',
+              '            val state = cleanJsResult(result)\n            userPaused = !state.contains("playing")\n            setMediaPlaying(state.contains("playing"))')
+          replace(native,
+              '                "play" -> {\n                    webView.evaluateJavascript(',
+              '                "play" -> {\n                    webView.userPlay()\n                    result.success(null)\n                }\n                "play_legacy" -> {\n                    webView.evaluateJavascript(')
+          replace(native,
+              '    /**\n     * Best-effort autoplay + unmute pass.',
+              '''    /** Explicit user Play / notification Play. */
+    fun userPlay() {
+        userPaused = false
+        evaluateJavascript(
+            "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();if(p&&p.catch){p.catch(function(){});}return 'playing';})()",
+        ) { value ->
+            setMediaPlaying(cleanJsResult(value) == "playing")
+        }
+    }
+
+    /**
+     * Best-effort autoplay + unmute pass.''')
+
+          # Only one initial autoplay attempt; the old 250/900/1800ms triple-play loop
+          # could race with YouTube's own state and repeatedly fight pause/play.
+          replace(session,
+              "      case 'pageFinished':\n        onPageFinished();\n        unawaited(_autoplayPass());\n        break;",
+              "      case 'pageFinished':\n        onPageFinished();\n        // Native pageFinished no longer auto-plays repeatedly. The caller's\n        // explicit Discovery open triggers a single play after load.\n        break;")
+          replace(session,
+              "  Future<void> _autoplayPass() async {\n    for (final delay in const [\n      Duration(milliseconds: 250),\n      Duration(milliseconds: 900),\n      Duration(milliseconds: 1800),\n    ]) {\n      if (_disposed) return;\n      await Future<void>.delayed(delay);\n      if (_disposed) return;\n      await play();\n    }\n  }\n\n",
+              '')
+
+          # Make explicit Play clear the native pause guard; pause remains authoritative.
+          # Also prevent the service from re-requesting audio focus on every progress probe.
+          replace(service,
+              '                playing = intent.getBooleanExtra("playing", playing)\n                val newPositionMs',
+              '                val wasPlaying = playing\n                playing = intent.getBooleanExtra("playing", playing)\n                val newPositionMs')
+          replace(service,
+              '                if (playing) requestAudioFocus()',
+              '                if (playing && !wasPlaying) requestAudioFocus()')
+
+          print('Playback stability patch applied.')
+          PY
+      - name: Configure environment
+        run: |
+          cat > .env <<EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_ANDROID_CLIENT_ID=${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID || secrets.GOOGLE_ANDROID_CLIENT_ID }}
+          YOUTUBE_DATA_API_KEY=${{ secrets.YOUTUBE_DATA_API_KEY }}
+          LEVELPLAY_APP_KEY=${{ secrets.LEVELPLAY_APP_KEY }}
+          LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01=${{ secrets.LEVELPLAY_UNIT_INTERSTITIAL_SESSION_BREAK_01 }}
+          LEVELPLAY_UNIT_REWARDED_FEATURE_01=${{ secrets.LEVELPLAY_UNIT_REWARDED_FEATURE_01 }}
+          LEVELPLAY_UNIT_BANNER_HOME_01=${{ secrets.LEVELPLAY_UNIT_BANNER_HOME_01 }}
+          LEVELPLAY_DEBUG_USE_PRODUCTION=true
+          EOF
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build release APK + AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+          else
+            PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$PASS" -alias ci-build -keypass "$PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+            export ANDROID_KEYSTORE_PASSWORD="$PASS"
+            export ANDROID_KEY_ALIAS=ci-build
+            export ANDROID_KEY_PASSWORD="$PASS"
+          fi
+          flutter build apk --release
+          flutter build appbundle --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vshots-playback-fix-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vshots-playback-fix-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 30
+      - name: Commit fix and remove one-time workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlaybackService.kt lib/features/foryou/vshots_browser_session.dart
+          git diff --cached --quiet && { echo 'No source changes'; exit 1; }
+          git commit -m 'fix(playback): stabilize browser playback and notification controls'
+          git push origin feat/production-upgrade
+          git rm .github/workflows/_fix_playback_stability.yml
+          git commit -m 'chore(ci): remove one-time playback fix workflow'
+          git push origin feat/production-upgrade
