@@ -1,7 +1,8 @@
 name: One-time V Shots playback hotfix
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [feat/production-upgrade]
 
 permissions:
   contents: write
