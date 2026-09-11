@@ -4,9 +4,8 @@
 //
 // A single, app-wide sleep timer — not per-screen — so starting it from
 // the Player screen and starting it from the "For You" feed's more-
-// options sheet both control the SAME timer (there is only one
-// `audioPlayer` in this app; a second, competing timer implementation
-// would be a real bug, not a feature).
+// options sheet both control the SAME timer. It requests PAUSE from the
+// single native browser session; it never owns an audio player.
 //
 // Exposed as a ValueNotifier<Duration?> (null = no timer running) so
 // any widget can show a live countdown via ValueListenableBuilder
@@ -17,7 +16,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../main.dart' show audioPlayer;
 import '../playback/vshots_playback_manager.dart';
 
 class SleepTimer {
@@ -64,7 +62,6 @@ class SleepTimer {
 
   void _fire() {
     VShotsPlaybackManager.instance.pause();
-    audioPlayer.pause();
     cancel();
   }
 }

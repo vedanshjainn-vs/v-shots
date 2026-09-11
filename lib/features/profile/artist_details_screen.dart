@@ -5,17 +5,12 @@
 import 'package:flutter/material.dart';
 
 import '../../core/motion/motion.dart';
+import '../../core/playback/vshots_playback_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/animated_equalizer.dart';
 import '../../shared/widgets/app_button.dart';
 import '../../shared/widgets/app_image.dart';
-import '../../main.dart'
-    show
-        musicRepository,
-        playTrack,
-        currentTrackNotifier,
-        audioPlayer,
-        sharedYtApiClient;
+import '../../main.dart' show musicRepository, playTrack, sharedYtApiClient;
 
 class ArtistDetailsScreen extends StatefulWidget {
   const ArtistDetailsScreen({
@@ -294,11 +289,13 @@ class _ArtistDetailsScreenState extends State<ArtistDetailsScreen> {
                         fontSize: 12,
                       ),
                     ),
-                    trailing: ValueListenableBuilder<Map<String, dynamic>?>(
-                      valueListenable: currentTrackNotifier,
-                      builder: (context, current, _) {
-                        final isThisPlaying = current?['id'] == track['id'] &&
-                            audioPlayer.playing;
+                    trailing: AnimatedBuilder(
+                      animation: VShotsPlaybackManager.instance.browser,
+                      builder: (context, _) {
+                        final browser = VShotsPlaybackManager.instance.browser;
+                        final isThisPlaying =
+                            browser.track?['id'] == track['id'] &&
+                                browser.pagePlaying == true;
                         if (isThisPlaying) {
                           return const AnimatedEqualizer(
                             size: 20,

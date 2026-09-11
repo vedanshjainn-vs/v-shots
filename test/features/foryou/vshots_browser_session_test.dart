@@ -32,23 +32,80 @@ void main() {
       session.dispose();
     });
 
-    test('videoEnded event (early auto-advance path) forwards the id',
-        () async {
-      String? endedId;
-      final session = VShotsBrowserSession(
-        onPageStarted: () {},
-        onPageFinished: () {},
-        onError: (_) {},
-        onVideoEnded: (id) => endedId = id,
-      );
-      // The session extracts the id from the LAST LOADED url — set one via
-      // the load path would need a platform channel, so simulate by sending
-      // the event without a loaded url: id resolves to '' and the callback
-      // still fires (the SHEET falls back to the current track id).
-      await session.debugHandleNativeEvent(const MethodCall('videoEnded'));
-      expect(endedId, '');
-      session.dispose();
-    });
+    test(
+      'videoEnded event (early auto-advance path) forwards the id',
+      () async {
+        String? endedId;
+        final session = VShotsBrowserSession(
+          onPageStarted: () {},
+          onPageFinished: () {},
+          onError: (_) {},
+          onVideoEnded: (id) => endedId = id,
+        );
+        // The session extracts the id from the LAST LOADED url — set one via
+        // the load path would need a platform channel, so simulate by sending
+        // the event without a loaded url: id resolves to '' and the callback
+        // still fires (the SHEET falls back to the current track id).
+        await session.debugHandleNativeEvent(const MethodCall('videoEnded'));
+        expect(endedId, '');
+        session.dispose();
+      },
+    );
+
+    test(
+      'stale playback events from an older generation are ignored',
+      () async {
+        final states = <bool>[];
+        final session = VShotsBrowserSession(
+          onPageStarted: () {},
+          onPageFinished: () {},
+          onError: (_) {},
+          onPlaybackState: states.add,
+        );
+        await session.load('https://www.youtube.com/watch?v=old-track');
+        final oldGeneration = session.generation;
+        await session.load('https://www.youtube.com/watch?v=new-track');
+        final currentGeneration = session.generation;
+
+        await session.debugHandleNativeEvent(
+          MethodCall('playbackState', {
+            'playing': true,
+            'generation': oldGeneration,
+          }),
+        );
+        expect(states, isEmpty);
+
+        await session.debugHandleNativeEvent(
+          MethodCall('playbackState', {
+            'playing': true,
+            'generation': currentGeneration,
+          }),
+        );
+        expect(states, [true]);
+        session.dispose();
+      },
+    );
+
+    test(
+      'native page-finished does not cancel an explicit user pause',
+      () async {
+        final states = <bool>[];
+        final session = VShotsBrowserSession(
+          onPageStarted: () {},
+          onPageFinished: () {},
+          onError: (_) {},
+          onPlaybackState: states.add,
+        );
+        await session.load('https://www.youtube.com/watch?v=paused-track');
+        await session.pause();
+        await session.debugHandleNativeEvent(const MethodCall('pageFinished'));
+        // No native channel is attached in this pure test, so page-finished may
+        // not issue a platform command; importantly it must not claim PLAYING.
+        expect(session.pagePlaying, isFalse);
+        expect(states, isEmpty);
+        session.dispose();
+      },
+    );
   });
 
   group('isAllowedBrowserHost', () {

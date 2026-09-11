@@ -2,15 +2,16 @@
 // V Shots — Native Discovery YouTube browser session
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Discovery uses a native Android WebView platform view rather than the
-// generic webview_flutter widget. The native view is deliberately kept alive
-// while its media session is playing so minimizing the browser does not resize
-// or recreate the playback surface. The Android implementation also keeps the
-// WebView media lifecycle alive across Activity visibility changes.
+// Discovery uses one native Android WebView platform view for official
+// YouTube/JioSaavn playback. This class is the Flutter command/state boundary:
 //
-// The session remains UI-agnostic: it owns the native channel and exposes a
-// Widget for the sheet. This keeps the existing Discovery sheet/drag UX intact
-// while replacing only the playback engine underneath it.
+//   user/system command → explicit MethodChannel command
+//   native WebView      → authoritative playback-state event
+//   Flutter UI          ← state event
+//
+// Page loading is not playback. A load may request one system autoplay command
+// after the matching page finishes, but there is no retry loop and no lifecycle
+// callback that can continuously force PLAY. User pause cancels that request.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
@@ -22,6 +23,7 @@ import 'package:flutter/services.dart';
 import '../../core/browser/vshots_content_blocker.dart';
 import '../../core/remote_config/remote_feature_flags.dart';
 import '../../shared/utils/youtube_url.dart';
+import 'vshots_playback_state.dart';
 
 /// Pure host policy — YouTube/Google + official JioSaavn webpage hosts.
 bool isAllowedBrowserHost(String host) {
@@ -62,6 +64,8 @@ class VShotsBrowserSession {
     required this.onError,
     this.onVideoEnded,
     this.onAdState,
+    this.onPlaybackState,
+    this.onPlaybackStateChanged,
     this.onNotificationAction,
     VShotsContentBlocker? contentBlocker,
   }) : contentBlocker = contentBlocker ?? VShotsContentBlocker();
@@ -70,18 +74,19 @@ class VShotsBrowserSession {
   final void Function() onPageFinished;
   final void Function(String message) onError;
 
-  /// Fired by the native WebView when the current video's media reaches its
-  /// natural end OR enters its last ~1.5 s (early auto-advance — the native
-  /// layer fires the same event slightly early so the next queued track
-  /// starts before the current one finishes; owner spec). Carries the ended
-  /// video's id (extracted from the loaded URL) so the manager can
-  /// de-duplicate completion events idempotently.
+  /// Fired by the native WebView when the current media reaches its natural
+  /// end or the validated near-end auto-advance point.
   final void Function(String videoId)? onVideoEnded;
 
-  /// Fired when the YouTube page starts/ends an in-stream ad (true=ad
-  /// playing). Used for the UI badge + logging; the mute/skip/resume
-  /// handling itself lives in the native WebView.
+  /// Fired when the official player enters/leaves an in-stream ad.
   final void Function(bool adActive)? onAdState;
+
+  /// Compatibility boolean snapshot for lightweight consumers.
+  final void Function(bool playing)? onPlaybackState;
+
+  /// Full native state-machine snapshot consumed by the browser controller.
+  final void Function(VShotsPlaybackState state, bool playing)?
+      onPlaybackStateChanged;
 
   final Future<void> Function(String action)? onNotificationAction;
 
@@ -92,72 +97,106 @@ class VShotsBrowserSession {
   MethodChannel? _channel;
   String? _lastUrl;
   String? _pendingUrl;
+  bool _pendingAutoplay = true;
+  int _generation = 0;
   bool _disposed = false;
   bool _pagePlaying = false;
+  VShotsPlaybackState _playbackState = VShotsPlaybackState.idle;
+  bool _userPaused = false;
+  bool _autoplayPending = false;
+  Map<String, Object?>? _notificationPayload;
 
   bool get hasLoaded => _channel != null;
   bool get pagePlaying => _pagePlaying;
+  VShotsPlaybackState get playbackState => _playbackState;
+  int get generation => _generation;
 
-  Future<void> load(String url) async {
+  /// Loads a new track. [autoplay] is a single system request, not a promise
+  /// to keep forcing playback if the player buffers or the user pauses.
+  Future<void> load(String url, {bool autoplay = true}) async {
     if (_disposed) return;
+    _generation++;
     _lastUrl = url;
     _pendingUrl = url;
+    _pendingAutoplay = autoplay;
+    _autoplayPending = autoplay;
+    _userPaused = false;
+    _setPlaybackState(VShotsPlaybackState.loading, false);
+
     final channel = _channel;
     if (channel == null) return;
+    await _sendLoad(channel, url, _generation, autoplay);
+  }
+
+  Future<void> _sendLoad(
+    MethodChannel channel,
+    String url,
+    int generation,
+    bool autoplay,
+  ) async {
     try {
-      await channel.invokeMethod<void>('load', url);
+      await channel.invokeMethod<void>('load', <String, Object?>{
+        'url': url,
+        'generation': generation,
+        'autoplay': autoplay,
+      });
     } catch (_) {
-      onError('Could not open this video');
+      if (!_disposed && generation == _generation) {
+        onError('Could not open this video');
+      }
     }
   }
 
+  /// Retry is an explicit user action and starts one fresh load. It does not
+  /// use a native reload/autoplay loop.
   Future<void> retry() async {
     final url = _lastUrl;
     if (url == null) return;
+    await load(url, autoplay: true);
+  }
+
+  /// The UI may expose one toggle, but it is translated into an explicit
+  /// PLAY or PAUSE command before crossing the platform boundary.
+  Future<bool?> togglePagePlayback() async {
+    if (_channel == null) return null;
+    if (_pagePlaying) {
+      await pause();
+      return false;
+    }
+    await play();
+    return true;
+  }
+
+  /// Explicit user/system PAUSE. User pause is recorded before the platform
+  /// command so late page-finished, ad, or lifecycle callbacks cannot restart.
+  Future<void> pause({bool userInitiated = true}) async {
+    if (userInitiated) _userPaused = true;
+    _autoplayPending = false;
     final channel = _channel;
     if (channel == null) {
-      _pendingUrl = url;
+      _setPlaybackState(VShotsPlaybackState.paused, false);
       return;
     }
     try {
-      await channel.invokeMethod<void>('reload');
-    } catch (_) {
-      onError('Playback failed — please retry');
-    }
-  }
-
-  Future<bool?> togglePagePlayback() async {
-    final channel = _channel;
-    if (channel == null) return null;
-    try {
-      await channel.invokeMethod<void>('toggle');
-      return _pagePlaying;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> pause() async {
-    final channel = _channel;
-    if (channel == null) return;
-    try {
-      await channel.invokeMethod<void>('pause');
-      _pagePlaying = false;
+      await channel.invokeMethod<void>(userInitiated ? 'pause' : 'focusPause');
     } catch (_) {}
+    _setPlaybackState(VShotsPlaybackState.paused, false);
   }
 
-  Future<void> play() async {
+  /// Explicit PLAY. It is never implemented as a toggle.
+  Future<void> play({bool userInitiated = true}) async {
+    if (userInitiated) {
+      _userPaused = false;
+    }
+    _autoplayPending = false;
     final channel = _channel;
     if (channel == null) return;
     try {
       await channel.invokeMethod<void>('play');
-    } catch (_) {
-      // The page may still be loading or YouTube may reject unmuted autoplay.
-    }
+    } catch (_) {}
   }
 
   /// Audio-focus ducking: set the real media element's volume (0..1).
-  /// Volume > 0 also unmutes, so ducked playback stays audible.
   Future<void> setVolume(double volume) async {
     final channel = _channel;
     if (channel == null) return;
@@ -195,9 +234,6 @@ class VShotsBrowserSession {
     );
   }
 
-  /// Pushes the compiled blocker configuration to the native WebView once
-  /// (cheap sets; no per-request regex, no WebView recreation). Toggling
-  /// on/off only affects SUBSEQUENT requests.
   Future<void> _pushContentBlocker(MethodChannel channel) async {
     await contentBlocker.initialize();
     try {
@@ -212,8 +248,6 @@ class VShotsBrowserSession {
     }
   }
 
-  /// Applies a blocker toggle to the LIVE session (next requests) without
-  /// recreating the WebView or interrupting playback.
   Future<void> applyContentBlocker() async {
     final channel = _channel;
     if (channel == null) return;
@@ -229,11 +263,11 @@ class VShotsBrowserSession {
     unawaited(_pushAdAssist(channel));
     final pending = _pendingUrl;
     if (pending != null) {
-      unawaited(load(pending));
+      unawaited(_sendLoad(channel, pending, _generation, _pendingAutoplay));
     }
+    unawaited(_sendNotificationUpdate(channel));
   }
 
-  /// Pushes the YouTube ad-assist switch (remote flag) to the native WebView.
   Future<void> _pushAdAssist(MethodChannel channel) async {
     try {
       await channel.invokeMethod<void>(
@@ -245,27 +279,61 @@ class VShotsBrowserSession {
     }
   }
 
-  /// Applies the ad-assist flag to the LIVE session (next poll ticks)
-  /// without recreating the WebView or interrupting playback.
   Future<void> applyAdAssist() async {
     final channel = _channel;
     if (channel == null) return;
     await _pushAdAssist(channel);
   }
 
+  int? _eventGeneration(Object? arguments) {
+    if (arguments is Map) {
+      final value = arguments['generation'];
+      if (value is num) return value.toInt();
+    }
+    // Test hooks and older platform views had no generation payload. Treat
+    // those events as belonging to the active session.
+    return null;
+  }
+
+  bool _isCurrentEvent(Object? arguments) {
+    final eventGeneration = _eventGeneration(arguments);
+    return eventGeneration == null || eventGeneration == _generation;
+  }
+
   Future<void> _handleNativeEvent(MethodCall call) async {
+    if (_disposed) return;
     switch (call.method) {
       case 'pageStarted':
-        onPageStarted();
+        if (_isCurrentEvent(call.arguments)) {
+          _setPlaybackState(VShotsPlaybackState.loading, false);
+          onPageStarted();
+        }
         break;
       case 'pageFinished':
+        if (!_isCurrentEvent(call.arguments)) break;
         onPageFinished();
-        unawaited(_autoplayPass());
+        // Exactly one controlled SYSTEM_AUTOPLAY request. Page load and
+        // lifecycle callbacks never call play by themselves.
+        if (_autoplayPending && !_userPaused) {
+          _autoplayPending = false;
+          unawaited(play(userInitiated: false));
+        }
         break;
       case 'playbackState':
-        _pagePlaying = call.arguments == true;
+        if (!_isCurrentEvent(call.arguments)) break;
+        final arguments = call.arguments;
+        final playing =
+            arguments is Map ? arguments['playing'] == true : arguments == true;
+        final nativeState = arguments is Map ? arguments['state'] : null;
+        final state = nativeState == null
+            ? (playing
+                ? VShotsPlaybackState.playing
+                : VShotsPlaybackState.paused)
+            : playbackStateFromNative(nativeState);
+        _setPlaybackState(state, playing);
         break;
       case 'videoEnded':
+        if (!_isCurrentEvent(call.arguments)) break;
         final endedId = extractYoutubeVideoId(_lastUrl ?? '') ?? '';
         onVideoEnded?.call(endedId);
         break;
@@ -274,57 +342,75 @@ class VShotsBrowserSession {
         break;
       case 'notificationAction':
         final action = call.arguments?.toString() ?? '';
-        if (action.isNotEmpty) {
-          await onNotificationAction?.call(action);
-        }
+        if (action.isNotEmpty) await onNotificationAction?.call(action);
         break;
       case 'blocked':
         contentBlocker.recordBlocked(call.arguments?.toString() ?? '');
         break;
       case 'error':
-        onError(call.arguments?.toString() ?? 'Playback failed — please retry');
+        if (_isCurrentEvent(call.arguments)) {
+          final arguments = call.arguments;
+          final message = arguments is Map
+              ? arguments['message']?.toString()
+              : arguments?.toString();
+          _setPlaybackState(VShotsPlaybackState.error, false);
+          onError(
+            message == null || message.isEmpty
+                ? 'Playback failed — please retry'
+                : message,
+          );
+        }
         break;
     }
   }
 
+  void _setPlaybackState(VShotsPlaybackState state, bool playing) {
+    final stateChanged = _playbackState != state;
+    final playingChanged = _pagePlaying != playing;
+    if (!stateChanged && !playingChanged) return;
+    _playbackState = state;
+    _pagePlaying = playing;
+    if (playingChanged) onPlaybackState?.call(playing);
+    onPlaybackStateChanged?.call(state, playing);
+  }
+
+  /// Updates track metadata only. The native player remains the authority for
+  /// whether playback is active; the supplied flag is a snapshot for legacy
+  /// callers and is not allowed to start playback or request audio focus.
   Future<void> updateNotification({
     required String title,
     required String artist,
     required String artwork,
     required bool playing,
   }) async {
-    final channel = _channel;
-    if (channel == null) return;
-    try {
-      await channel.invokeMethod<void>('updateNotification', {
-        'title': title,
-        'artist': artist,
-        'artwork': artwork,
-        'playing': playing,
-      });
-    } catch (_) {}
+    _notificationPayload = <String, Object?>{
+      'title': title,
+      'artist': artist,
+      'artwork': artwork,
+      'playing': playing,
+      'generation': _generation,
+    };
+    await _sendNotificationUpdate(_channel);
   }
 
-  Future<void> _autoplayPass() async {
-    for (final delay in const [
-      Duration(milliseconds: 250),
-      Duration(milliseconds: 900),
-      Duration(milliseconds: 1800),
-    ]) {
-      if (_disposed) return;
-      await Future<void>.delayed(delay);
-      if (_disposed) return;
-      await play();
-    }
+  Future<void> _sendNotificationUpdate(MethodChannel? channel) async {
+    final payload = _notificationPayload;
+    if (channel == null || payload == null || _disposed) return;
+    try {
+      await channel.invokeMethod<void>('updateNotification', payload);
+    } catch (_) {}
   }
 
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _generation++;
     final channel = _channel;
     _channel = null;
     _pendingUrl = null;
     _lastUrl = null;
+    _autoplayPending = false;
+    _userPaused = true;
     _pagePlaying = false;
     if (channel != null) {
       unawaited(channel.invokeMethod<void>('dispose'));

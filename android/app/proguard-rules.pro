@@ -6,13 +6,7 @@
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 
-# AudioService & Media Session
--keep class com.ryanheise.audioservice.** { *; }
--dontwarn com.ryanheise.audioservice.**
-
-# JustAudio & ExoPlayer / Media3
--keep class com.ryanheise.just_audio.** { *; }
--dontwarn com.ryanheise.just_audio.**
+# Native MediaSession / ExoPlayer / Media3
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 -keep class com.google.android.exoplayer2.** { *; }

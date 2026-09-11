@@ -73,12 +73,17 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     widget.controller.extentCommand.addListener(_onExtentCommand);
     widget.controller.replayRequest.addListener(_onReplayRequest);
     widget.controller.pauseRequest.addListener(_onPauseRequest);
+    widget.controller.togglePlaybackRequest.addListener(
+      _onTogglePlaybackRequest,
+    );
     // The single browser session: owns the native WebView + lifecycle; the
     // sheet is only the UI/interaction layer. Minimizing never destroys the
     // session.
     _session = VShotsBrowserSession(
       onPageStarted: () => widget.controller.setLoading(true),
       onPageFinished: () => widget.controller.setLoading(false),
+      onPlaybackState: widget.controller.setPagePlaying,
+      onPlaybackStateChanged: widget.controller.setPlaybackState,
       onError: _onPrimaryPageError,
       // Real media completion (native `video.ended`) → auto-advance the queue
       // through the single global manager (screen on AND screen off).
@@ -94,9 +99,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       onAdState: (on) => widget.controller.setAdActive(on),
       onNotificationAction: (action) async {
         switch (action) {
-          case 'toggle':
-            await _togglePagePlayback();
-            break;
           case 'play':
             // Precise commands (media session + audio focus) — never a
             // blind toggle: a focus GAIN must not double-toggle.
@@ -104,6 +106,12 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
             break;
           case 'pause':
             await _session.pause();
+            break;
+          case 'focusPause':
+            await _session.pause(userInitiated: false);
+            break;
+          case 'focusPlay':
+            await _session.play(userInitiated: false);
             break;
           case 'duckOn':
             // A transient sound (navigation prompt, notification) is
@@ -160,6 +168,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   @override
   void dispose() {
     widget.controller.pauseRequest.removeListener(_onPauseRequest);
+    widget.controller.togglePlaybackRequest.removeListener(
+      _onTogglePlaybackRequest,
+    );
     widget.controller.replayRequest.removeListener(_onReplayRequest);
     widget.controller.extentCommand.removeListener(_onExtentCommand);
     widget.controller.removeListener(_onControllerChanged);
@@ -183,17 +194,17 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   /// layer resets its per-load ended flag, so the next completion fires
   /// again). No new WebView.
   void _onPauseRequest() {
-    _session.pause();
-    widget.controller.setPagePlaying(false);
+    unawaited(_session.pause());
+  }
+
+  void _onTogglePlaybackRequest() {
+    unawaited(_togglePagePlayback());
   }
 
   void _onReplayRequest() {
-    final url = widget.controller.url;
-    if (url == null) return;
-    _lastLoadedUrl = url;
+    unawaited(_session.retry());
     widget.controller.setLoading(true);
     widget.controller.setError(null);
-    _session.load(url);
   }
 
   void _onExtentTick() {
@@ -307,6 +318,12 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
+    widget.controller.setPagePlaying(null);
+
+    // Native load first clears the previous media state. Metadata is then
+    // published as metadata only; it can never turn an unknown/loading page
+    // into PLAYING or request audio focus.
+    await _session.load(url);
     final notificationTrackId = widget.controller.track?['id']?.toString();
     if (_lastNotificationTrackId != notificationTrackId) {
       _lastNotificationTrackId = notificationTrackId;
@@ -315,17 +332,24 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
           title: widget.controller.title ?? 'V Shots',
           artist: widget.controller.artist ?? 'Music playback',
           artwork: widget.controller.artwork ?? '',
-          playing: widget.controller.pagePlaying != false,
+          playing: false,
         ),
       );
     }
-    await _session.load(url);
   }
 
   Future<void> _togglePagePlayback() async {
+    // Translate the UI gesture into an explicit platform command. The native
+    // state event will update the controller; the optimistic assignment is
+    // only a fallback for old platform views without state events.
+    final before = widget.controller.pagePlaying;
     final result = await _session.togglePagePlayback();
     if (result == null) {
-      await _loadForCurrent();
+      if (before == true) {
+        await _session.pause();
+      } else {
+        await _session.play();
+      }
       return;
     }
     widget.controller.setPagePlaying(result);
@@ -339,7 +363,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       curve: Curves.easeIn,
     )
         .then((_) {
-      if (mounted) widget.controller.close();
+      if (mounted) VShotsPlaybackManager.instance.close();
     });
   }
 
@@ -553,7 +577,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                 // Live equalizer overlay — 3-bar animation on the artwork
                 // when the track is actively playing. Instantly communicates
                 // "now playing" without reading the text.
-                if (widget.controller.pagePlaying != false)
+                if (widget.controller.pagePlaying == true)
                   Positioned(
                     left: 6,
                     bottom: 6,
@@ -619,14 +643,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
             ),
             IconButton(
               icon: Icon(
-                widget.controller.pagePlaying == false
-                    ? Icons.play_arrow_rounded
-                    : Icons.pause_rounded,
+                widget.controller.pagePlaying == true
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
                 color: AppColors.accent,
                 size: 28,
               ),
-              tooltip:
-                  widget.controller.pagePlaying == false ? 'Play' : 'Pause',
+              tooltip: widget.controller.pagePlaying == true ? 'Pause' : 'Play',
               onPressed: _togglePagePlayback,
             ),
             IconButton(
@@ -703,7 +726,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     final trackId = (track['id'] as String?) ?? '';
     final isLiked =
         trackId.isNotEmpty && LocalLibrary.instance.isLiked(trackId);
-    final playing = widget.controller.pagePlaying != false;
+    final playing = widget.controller.pagePlaying == true;
 
     return Container(
       color: const Color(0xFF0A0D16),

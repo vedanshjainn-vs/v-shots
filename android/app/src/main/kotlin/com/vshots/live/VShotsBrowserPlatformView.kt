@@ -30,9 +30,9 @@ private const val TAG = "VShotsPlayback"
 /**
  * App-wide YouTube playback assist (owner spec, Phase 17.10):
  *
- *  • EARLY AUTO-ADVANCE — the next queued track starts ~1.5 s BEFORE the
- *    current one finishes. Consistent across Home / Discover / playlists /
- *    the queue because every surface plays through this ONE WebView.
+ *  • COMPLETION OBSERVATION — the real media element reports a validated
+ *    near-end/end event. The Flutter queue owner decides whether to advance;
+ *    this WebView never starts another track from its polling callback.
  *
  *  • AD ASSIST — while the OFFICIAL YouTube player runs an in-stream ad:
  *      - the ad is muted (only the player's own video element state);
@@ -40,9 +40,8 @@ private const val TAG = "VShotsPlayback"
  *        action a user would take; unskippable ads play muted in full);
  *      - nothing is blocked, hidden, resized or sped up; no ad-network
  *        interception, no unofficial APIs, no stream access.
- *    When the ad ends the main track is unmuted and playback resumed
- *    automatically (bounded recovery window so a deliberate user pause is
- *    never overridden).
+ *    Ad completion is observed only; an explicit/system Play command owns
+ *    any subsequent content transition.
  *
  * Only official, user-equivalent player controls are used. The assist is
  * gated by the remote flag `enable_youtube_ad_assist` (default ON) and is
@@ -54,7 +53,7 @@ private const val TAG = "VShotsPlayback"
  *   'ad'      — an in-stream ad is playing (player's own ad UI markers)
  *   'ended'   — media reached its natural end
  *   'nearend' — <=1.5 s left AND still playing (never while paused)
- *   'paused' / 'playing' / 'none' / 'unknown'
+ *   'paused' / 'playing' / 'buffering' / 'none' / 'unknown'
  */
 private const val YT_POLL_JS = """
 (function(){
@@ -68,6 +67,7 @@ private const val YT_POLL_JS = """
     if(!v){ return adOn ? 'ad' : 'none'; }
     if(adOn){ return 'ad'; }
     if(v.ended){ return 'ended'; }
+    if(v.seeking || (!v.paused && v.readyState < 3)){ return 'buffering'; }
     var d = v.duration;
     if(d && isFinite(d) && !v.paused && v.currentTime >= d - 1.5){ return 'nearend'; }
     return v.paused ? 'paused' : 'playing';
@@ -119,34 +119,6 @@ private const val YT_AD_ASSIST_JS = """
 """
 
 /**
- * Post-ad resume pass: unmute the main track, press play when paused, and
- * click YouTube's own mute/play controls only when they advertise the state
- * we need. The main music track is ALWAYS unmuted.
- */
-private const val YT_RESUME_JS = """
-(function(){
-  try{
-    var v = document.querySelector('video');
-    if(v){
-      v.muted = false; v.volume = 1;
-      if(v.paused){
-        var p = v.play();
-        if(p && p.catch){ p.catch(function(){}); }
-      }
-    }
-    var mb = document.querySelector('.ytp-mute-button');
-    if(mb){
-      var lab = ((mb.getAttribute('aria-label')||'') + ' ' + (mb.getAttribute('title')||'')).toLowerCase();
-      if(lab.indexOf('unmute') >= 0){ try{ mb.click(); }catch(e){} }
-    }
-    var pb = document.querySelector('button.ytp-play-button');
-    if(v && v.paused && pb && pb.offsetParent !== null){ try{ pb.click(); }catch(e){} }
-    return 'ok';
-  }catch(e){ return 'err'; }
-})()
-"""
-
-/**
  * Discovery-only native browser view with FORCEFUL ad blocking.
  *
  * Third-party ad blocking for non-YouTube pages. YouTube watch-page
@@ -166,6 +138,15 @@ private class VShotsBackgroundMediaWebView(
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
 
+    /** Monotonic load generation. Every async JS callback captures it so a
+     * stale page cannot mutate the next track's state. */
+    private var loadGeneration = 0L
+    private var currentLoadUrl = ""
+    private var playbackState = "idle"
+    private var notificationTitle = "V Shots"
+    private var notificationArtist = "Music playback"
+    private var notificationArtwork = ""
+
     // ── FORCEFUL Ad Blocker State ──────────────────────────────────────────
     // ALWAYS ON by default. Populated from Dart via "setContentBlocker".
     // Host-exact + suffix matching + URL pattern matching.
@@ -181,16 +162,25 @@ private class VShotsBackgroundMediaWebView(
     private val playbackPoll = object : Runnable {
         private var tick = 0
 
+        fun reset() {
+            tick = 0
+        }
+
         override fun run() {
             if (!isAttachedToWindow && !mediaPlaying) return
+            val generation = loadGeneration
             evaluateJavascript(YT_POLL_JS) { result ->
-                handlePollResult(cleanJsResult(result))
+                if (generation == loadGeneration) {
+                    handlePollResult(cleanJsResult(result), generation)
+                }
             }
-            // Every ~5s while playing: report real position/duration so the
-            // media session drives an accurate notification progress bar.
+            // Every ~5s while playing: report real position/duration. Position
+            // is read-only and does not request focus or change play state.
             if (mediaPlaying && tick % 5 == 0) {
                 evaluateJavascript(YT_POSITION_JS) { result ->
-                    handlePositionResult(cleanJsResult(result))
+                    if (generation == loadGeneration) {
+                        handlePositionResult(cleanJsResult(result), generation)
+                    }
                 }
             }
             tick++
@@ -198,13 +188,17 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    private fun handlePositionResult(result: String) {
-        if (result == "none" || !result.contains("|")) return
+    private fun handlePositionResult(result: String, generation: Long) {
+        if (generation != loadGeneration || result == "none" || !result.contains("|")) return
         val parts = result.split("|")
         val positionMs = parts[0].toLongOrNull() ?: return
         val durationMs = parts.getOrNull(1)?.toLongOrNull() ?: -1L
         if (positionMs >= 0) {
-            startPlaybackForegroundService(positionMs = positionMs, durationMs = durationMs)
+            VShotsBrowserPlaybackService.updatePositionFromBrowser(
+                positionMs = positionMs,
+                durationMs = durationMs,
+                generation = generation,
+            )
         }
     }
 
@@ -220,21 +214,18 @@ private class VShotsBackgroundMediaWebView(
     /** True while the YouTube page is playing an in-stream ad. */
     private var adActive = false
 
-    /** ElapsedRealtime stamp of the most recent ad→content transition
-     *  (window for stuck-after-ad recovery). */
-    private var adJustEndedAt = 0L
-
-    /** Explicit user pause guard. Recovery/autoplay must never fight the user. */
+    /** Explicit user pause guard. Polling must never fight the user. */
     private var userPaused = false
 
-    /** Master switch for the ad assist (mute + official-skip click +
-     *  resume). Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
+    /** Master switch for the ad assist (mute + official-skip click).
+     *  Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
     private var adAssistEnabled = true
 
     var mediaPlaying: Boolean = false
         private set
 
-    private fun handlePollResult(state: String) {
+    private fun handlePollResult(state: String, generation: Long) {
+        if (generation != loadGeneration) return
         val currentUrl = url ?: ""
         val lower = currentUrl.lowercase(Locale.US)
         val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
@@ -242,55 +233,42 @@ private class VShotsBackgroundMediaWebView(
         when (state) {
             "ad" -> {
                 setAdActive(true)
-                setMediaPlaying(true)
+                // An ad is a page state, not a new playback command. Keep the
+                // active-media bit for the notification action, but never call
+                // play or request focus from this poll callback.
+                setPlaybackState("ad", mediaPlaying)
                 if (adAssistEnabled) runAdAssist()
             }
             else -> {
-                if (adActive) {
-                    // Ad → content transition: unmute + resume the main
-                    // track, and open the stuck-recovery window.
-                    adJustEndedAt = android.os.SystemClock.elapsedRealtime()
-                    setAdActive(false)
-                    runResumeAfterAd()
-                }
+                if (adActive) setAdActive(false)
                 when (state) {
                     "nearend" -> {
-                        // Early auto-advance: YouTube pages ONLY, and the
-                        // JS only reports near-end while actually playing
-                        // (never while the user paused).
+                        // Completion is emitted once, only while the real
+                        // element is playing. The manager decides whether to
+                        // advance; this layer never starts the next track.
                         if (isYouTube && !nearEndReported) {
                             nearEndReported = true
-                            Log.d(TAG, "near-end auto-advance fired")
-                            events.invokeMethod("videoEnded", null)
+                            Log.d(TAG, "near-end completion reported")
+                            events.invokeMethod("videoEnded", mapOf("generation" to loadGeneration))
                         }
-                        setMediaPlaying(true)
+                        setPlaybackState("playing", true)
                     }
                     "ended" -> {
-                        // Real end (fallback for videos with unknown
-                        // duration). Never fired while an in-stream ad is
-                        // showing — the ad's own video-end is not a track
-                        // end (it would wrongly skip the queue).
-                        if (isYouTube && !adActive && !endedReported) {
+                        if (isYouTube && !endedReported) {
                             endedReported = true
-                            Log.d(TAG, "video.ended fired")
-                            events.invokeMethod("videoEnded", null)
+                            Log.d(TAG, "video.ended reported")
+                            events.invokeMethod("videoEnded", mapOf("generation" to loadGeneration))
                         }
-                        setMediaPlaying(false)
+                        setPlaybackState("ended", false)
                     }
-                    "playing" -> setMediaPlaying(true)
-                    "paused" -> {
-                        // Stuck-after-ad recovery: within a short window
-                        // after an ad ends, resume the main content instead
-                        // of leaving the player paused. Outside the window
-                        // a pause is the USER's choice — never fight it.
-                        val sinceAd = if (adJustEndedAt == 0L) Long.MAX_VALUE
-                        else android.os.SystemClock.elapsedRealtime() - adJustEndedAt
-                        if (sinceAd in 0..6000 && !userPaused) {
-                            runResumeAfterAd()
-                        } else {
-                            setMediaPlaying(false)
-                        }
+                    "playing" -> {
+                        // A poll is read-only. It reports the element's
+                        // observed state; it never turns a pause into play.
+                        if (!userPaused) setPlaybackState("playing", true)
+                        else setPlaybackState("paused", false)
                     }
+                    "buffering" -> setPlaybackState("buffering", mediaPlaying)
+                    "paused" -> setPlaybackState("paused", false)
                     else -> Unit // 'none' / 'unknown' — keep current state
                 }
             }
@@ -324,17 +302,6 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    /**
-     * After an ad ends: unmute the main track, press play if the player is
-     * paused (and click YouTube's own mute/play controls only when they
-     * advertise the state we need). The main music track is ALWAYS unmuted.
-     */
-    private fun runResumeAfterAd() {
-        evaluateJavascript(YT_RESUME_JS) { result ->
-            Log.d(TAG, "post-ad resume: ${cleanJsResult(result)}")
-        }
-    }
-
     init {
         VShotsBrowserPlaybackService.eventChannel = events
         setBackgroundColor(Color.BLACK)
@@ -363,13 +330,14 @@ private class VShotsBackgroundMediaWebView(
 
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                events.invokeMethod("pageStarted", null)
+                if (!isCurrentPage(url)) return
+                events.invokeMethod("pageStarted", mapOf("generation" to loadGeneration))
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                events.invokeMethod("pageFinished", null)
+                if (!isCurrentPage(url)) return
+                events.invokeMethod("pageFinished", mapOf("generation" to loadGeneration))
                 startPlaybackPolling()
-                attemptAutoplayWithAudio()
             }
 
             override fun onReceivedError(
@@ -377,8 +345,14 @@ private class VShotsBackgroundMediaWebView(
                 request: WebResourceRequest?,
                 error: WebResourceError?,
             ) {
-                if (request?.isForMainFrame != false) {
-                    events.invokeMethod("error", "Playback failed — please retry")
+                if (request?.isForMainFrame != false && isCurrentPage(request?.url?.toString())) {
+                    events.invokeMethod(
+                        "error",
+                        mapOf(
+                            "message" to "Playback failed — please retry",
+                            "generation" to loadGeneration,
+                        ),
+                    )
                 }
             }
 
@@ -615,15 +589,37 @@ private class VShotsBackgroundMediaWebView(
         )
     }
 
-    fun load(url: String) {
+    private fun isCurrentPage(callbackUrl: String?): Boolean {
+        if (callbackUrl.isNullOrEmpty() || currentLoadUrl.isEmpty()) return true
+        if (callbackUrl == currentLoadUrl) return true
+        val expected = Uri.parse(currentLoadUrl)
+        val actual = Uri.parse(callbackUrl)
+        val expectedVideo = expected.getQueryParameter("v")
+        return if (!expectedVideo.isNullOrEmpty()) {
+            callbackUrl.contains("v=$expectedVideo") ||
+                callbackUrl.contains("/embed/$expectedVideo")
+        } else {
+            actual.host == expected.host
+        }
+    }
+
+    fun load(url: String, requestedGeneration: Long? = null, autoplay: Boolean = true) {
         if (!url.startsWith("https://")) return
         val host = Uri.parse(url).host?.lowercase(Locale.US) ?: return
         if (isDeniedJioHost(host)) return
+        loadGeneration = requestedGeneration ?: (loadGeneration + 1L)
+        currentLoadUrl = url
         endedReported = false
         nearEndReported = false
         adActive = false
-        adJustEndedAt = 0L
-        userPaused = false
+        userPaused = !autoplay
+        mediaPlaying = false
+        setPlaybackState("loading", false)
+        playbackPoll.reset()
+        // Cancel the previous document before starting a new generation. This
+        // prevents late callbacks from the old navigation from becoming the
+        // new track's page-finished/autoplay signal.
+        stopLoading()
         loadUrl(url)
     }
 
@@ -650,27 +646,35 @@ private class VShotsBackgroundMediaWebView(
         adUrlPatterns.addAll(patterns)
     }
 
-    fun reloadCurrent() {
-        userPaused = false
-        endedReported = false
-        nearEndReported = false
-        adActive = false
-        adJustEndedAt = 0L
-        reload()
-    }
-
-    fun setMediaPlaying(value: Boolean) {
-        if (mediaPlaying == value) {
-            updatePlaybackNotification(value)
-            return
-        }
-        mediaPlaying = value
-        startPlaybackForegroundService(playing = value)
-        events.invokeMethod("playbackState", value)
+    private fun setPlaybackState(state: String, playing: Boolean) {
+        val changed = playbackState != state || mediaPlaying != playing
+        playbackState = state
+        mediaPlaying = playing
+        if (!changed) return
+        startPlaybackForegroundService(playing = playing, state = state)
+        events.invokeMethod(
+            "playbackState",
+            mapOf(
+                "playing" to playing,
+                "state" to state,
+                "generation" to loadGeneration,
+            ),
+        )
     }
 
     fun updateNotification(title: String, artist: String, artwork: String, playing: Boolean) {
-        startPlaybackForegroundService(title = title, artist = artist, artwork = artwork, playing = playing)
+        notificationTitle = title
+        notificationArtist = artist
+        notificationArtwork = artwork
+        // Metadata updates use the authoritative native state. The Dart flag
+        // is intentionally not allowed to request play or audio focus.
+        startPlaybackForegroundService(
+            title = notificationTitle,
+            artist = notificationArtist,
+            artwork = notificationArtwork,
+            playing = mediaPlaying,
+            state = playbackState,
+        )
     }
 
     private fun startPlaybackPolling() {
@@ -689,13 +693,18 @@ private class VShotsBackgroundMediaWebView(
         playing: Boolean = mediaPlaying,
         positionMs: Long = -1L,
         durationMs: Long = -1L,
+        state: String = playbackState,
+        userCommand: String? = null,
     ) {
         val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java).apply {
             action = VShotsBrowserPlaybackService.ACTION_UPDATE
-            putExtra("title", title ?: "V Shots")
-            putExtra("artist", artist ?: "Music playback")
-            putExtra("artwork", artwork ?: "")
+            putExtra("title", title ?: notificationTitle)
+            putExtra("artist", artist ?: notificationArtist)
+            putExtra("artwork", artwork ?: notificationArtwork)
             putExtra("playing", playing)
+            putExtra("state", state)
+            putExtra("generation", loadGeneration)
+            if (userCommand != null) putExtra("userCommand", userCommand)
             putExtra("positionMs", positionMs)
             putExtra("durationMs", durationMs)
         }
@@ -710,10 +719,6 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    private fun updatePlaybackNotification(playing: Boolean) {
-        startPlaybackForegroundService(playing = playing)
-    }
-
     private fun stopPlaybackForegroundService() {
         try {
             appContext.stopService(
@@ -724,8 +729,8 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    fun pauseMedia() {
-        userPaused = true
+    fun pauseMedia(userInitiated: Boolean = true) {
+        if (userInitiated) userPaused = true
         evaluateJavascript(
             """
             (function(){
@@ -735,86 +740,40 @@ private class VShotsBackgroundMediaWebView(
               return 'paused';
             })()
             """.trimIndent(),
-        ) { result ->
-            setMediaPlaying(false)
+        ) { _ ->
+            setPlaybackState("paused", false)
         }
-    }
-
-    fun togglePlayback() {
-        evaluateJavascript(
-            """
-            (function(){
-              var v=document.querySelector('video');
-              if(!v){return 'none';}
-              if(v.paused){
-                v.muted=false; v.volume=1;
-                var p=v.play();
-                return p ? 'playing' : 'playing';
-              }
-              v.pause();
-              return 'paused';
-            })()
-            """.trimIndent(),
-        ) { result ->
-            val state = cleanJsResult(result)
-            userPaused = !state.contains("playing")
-            setMediaPlaying(state.contains("playing"))
+        setPlaybackState("paused", false)
+        if (userInitiated) {
+            startPlaybackForegroundService(
+                playing = false,
+                state = "paused",
+                userCommand = "pause",
+            )
         }
     }
 
     fun userPlay() {
         userPaused = false
-        if (!mediaPlaying) togglePlayback()
-    }
-
-    /**
-     * Best-effort autoplay + unmute pass. The WebView setting removes the
-     * native gesture requirement; this JS pass additionally clicks YouTube's
-     * own unmute controls when the mobile page exposes them.
-     *
-     * We never hide a muted player pretending it is audible: if YouTube still
-     * blocks unmuted autoplay, the real YouTube control remains visible.
-     */
-    private fun attemptAutoplayWithAudio() {
-        if (userPaused) return
-        // YouTube pages ONLY: the pass exists to unmute/autoplay the official
-        // YouTube player. It must never run on JioSaavn pages — clicking
-        // random controls or forcing play there would start the wrong song.
-        // (This class extends WebView, so the page URL is `url` — not an
-        // outer `webView` reference.)
-        val currentUrl = url ?: return
-        val currentHost = currentUrl.lowercase(Locale.US)
-        if (!currentHost.contains("youtube.com") &&
-            !currentHost.contains("youtu.be")
-        ) return
+        startPlaybackForegroundService(
+            playing = mediaPlaying,
+            state = playbackState,
+            userCommand = "play",
+        )
         evaluateJavascript(
             """
             (function(){
-              try {
-                var v=document.querySelector('video,audio');
-                var buttons=document.querySelectorAll('button,[role="button"]');
-                for(var i=0;i<buttons.length;i++){
-                  var b=buttons[i];
-                  var label=((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')).toLowerCase();
-                  if(label.indexOf('unmute')>=0 || label.indexOf('tap to unmute')>=0){
-                    try{ b.click(); }catch(e){}
-                  }
-                }
-                if(v){
-                  v.muted=false;
-                  v.volume=1;
-                  var p=v.play();
-                  if(p && p.catch){p.catch(function(){});}
-                  return (!v.paused ? 'playing' : 'blocked');
-                }
-              }catch(e){}
-              return 'no-video';
+              var v=document.querySelector('video,audio');
+              if(!v){return 'none';}
+              v.muted=false; v.volume=1;
+              var p=v.play();
+              if(p && p.catch){p.catch(function(){});}
+              return 'requested';
             })()
             """.trimIndent(),
-        ) { result ->
-            if (cleanJsResult(result) == "playing") {
-                setMediaPlaying(true)
-            }
+        ) { _ ->
+            // The following poll/state callback is authoritative. This
+            // command does not optimistically grant focus or mark PLAYING.
         }
     }
 
@@ -843,11 +802,13 @@ private class VShotsBackgroundMediaWebView(
     }
 
     fun disposeMedia() {
+        loadGeneration++
         stopPlaybackPolling()
         stopPlaybackForegroundService()
         if (VShotsBrowserPlaybackService.eventChannel === events) {
             VShotsBrowserPlaybackService.eventChannel = null
         }
+        playbackState = "idle"
         mediaPlaying = false
         stopLoading()
         loadUrl("about:blank")
@@ -866,31 +827,25 @@ private class VShotsBrowserPlatformView(
         channel.setMethodCallHandler { call: MethodCall, result: MethodChannel.Result ->
             when (call.method) {
                 "load" -> {
-                    webView.load(call.arguments as? String ?: "")
-                    result.success(null)
-                }
-                "reload" -> {
-                    webView.reloadCurrent()
-                    result.success(null)
-                }
-                "toggle" -> {
-                    webView.togglePlayback()
+                    val args = call.arguments as? Map<*, *>
+                    val url = args?.get("url")?.toString()
+                        ?: (call.arguments as? String)
+                        ?: ""
+                    val generation = (args?.get("generation") as? Number)?.toLong()
+                    val autoplay = args?.get("autoplay") as? Boolean ?: true
+                    webView.load(url, generation, autoplay)
                     result.success(null)
                 }
                 "pause" -> {
-                    webView.pauseMedia()
+                    webView.pauseMedia(userInitiated = true)
+                    result.success(null)
+                }
+                "focusPause" -> {
+                    webView.pauseMedia(userInitiated = false)
                     result.success(null)
                 }
                 "play" -> {
                     webView.userPlay()
-                    result.success(null)
-                }
-                "play_legacy" -> {
-                    webView.evaluateJavascript(
-                        "(function(){var v=document.querySelector('video,audio');if(!v){return 'none';}v.muted=false;v.volume=1;var p=v.play();return 'playing';})()",
-                    ) { value ->
-                        webView.setMediaPlaying(clean(value) == "playing")
-                    }
                     result.success(null)
                 }
                 "setContentBlocker" -> {
@@ -916,7 +871,7 @@ private class VShotsBrowserPlatformView(
                     val title = args?.get("title")?.toString() ?: "V Shots"
                     val artist = args?.get("artist")?.toString() ?: "Music playback"
                     val artwork = args?.get("artwork")?.toString() ?: ""
-                    val playing = args?.get("playing") as? Boolean ?: true
+                    val playing = args?.get("playing") as? Boolean ?: false
                     webView.updateNotification(title, artist, artwork, playing)
                     result.success(null)
                 }
@@ -968,7 +923,6 @@ private class VShotsBrowserPlatformView(
         }
     }
 
-    private fun clean(value: String?): String = value.orEmpty().trim().trim('"').lowercase(Locale.US)
 
     override fun getView(): View = webView
 

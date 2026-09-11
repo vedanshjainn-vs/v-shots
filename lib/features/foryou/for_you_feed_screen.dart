@@ -14,6 +14,7 @@ import '../../core/ads/discovery_swipe_native_ad_page.dart';
 import '../../core/ads/player_sponsored_card.dart';
 import '../../core/config/discovery_filters.dart';
 import '../../core/config/discovery_remote.dart';
+import '../../core/content/blocked_channel_registry.dart';
 import '../../core/playback/playback_router.dart';
 import '../../core/remote_config/remote_config_service.dart';
 import '../../core/remote_config/remote_feature_flags.dart';
@@ -257,9 +258,27 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
     if (mounted) setState(() {});
   }
 
-  void _onPlayTap() {
-    final track = _items.isNotEmpty ? _items[_currentIndex] : null;
-    if (track == null) return;
+  void _onPlayPauseTap(int index) {
+    if (index < 0 || index >= _items.length) return;
+    if (index != _currentIndex) {
+      // A card that is not current is selected first; the page-change path is
+      // the single owner of track transitions and system autoplay.
+      _pageController.animateToPage(
+        _pageForSongIndex(index),
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+
+    final track = _items[index];
+    final browserTrackId = _browser.track?['id'];
+    if (_browser.isOpen && browserTrackId == track['id']) {
+      // Explicit PLAY or PAUSE is chosen by the session from the last native
+      // state; no platform toggle command is sent.
+      _browser.requestTogglePlayback();
+      return;
+    }
     debugPrint('[DiscoveryPlay] id=${track['id']} url=${track['url']}');
     unawaited(_playCurrent(expanded: true));
   }
@@ -286,7 +305,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
       try {
         final fast = await forYouFeedService.fetchNextBatch(
           excludeIds: _seenIds,
-          count: 8,
+          // Keep first paint small; more cards are fetched only as the user
+          // approaches the end of the current window.
+          count: 5,
         );
         if (fast.isNotEmpty) return _refineForMode(source, fast);
       } catch (e) {
@@ -395,6 +416,9 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
   ) {
     var refined =
         const MusicCatalogService().ingest(tracks, label: '.discover').items;
+    // Defense in depth: recommendations, swipe autoplay, queue, and smart
+    // prefetch must all apply the same authoritative channel blocklist.
+    refined = BlockedChannelRegistry.filterBlocked(refined);
     const ranker = MusicRanker();
     refined = switch (source.id) {
       'trending' => ranker.rankTrending(refined),
@@ -602,10 +626,13 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
             child: PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.vertical,
-              // Default PageView paging is lighter than BouncingScrollPhysics
-              // for Android and avoids extra overscroll work during fast swipes.
-              physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
-              allowImplicitScrolling: true,
+              // Keep the feed gesture owned by PageView. The browser layer
+              // is IgnorePointer while collapsed, and PageScrollPhysics avoids
+              // the overscroll/gesture competition that caused missed swipes.
+              physics: const PageScrollPhysics(),
+              // Cards contain artwork/ad chrome only; do not implicitly build
+              // a wide neighboring window during a vertical swipe.
+              allowImplicitScrolling: false,
               pageSnapping: true,
               itemCount: _pageCount,
               onPageChanged: _onPageChanged,
@@ -632,8 +659,8 @@ class _ForYouFeedScreenState extends State<ForYouFeedScreen> {
                   child: _ForYouCard(
                     track: track,
                     isActive: isCurrent,
-                    isPlaying: false,
-                    onPlayPauseToggle: _onPlayTap,
+                    isPlaying: isCurrent && _browser.pagePlaying == true,
+                    onPlayPauseToggle: () => _onPlayPauseTap(index),
                     onNotInterested: () => _handleNotInterested(index),
                     onDoubleTapLike: () => _handleDoubleTapLike(track),
                     onSkipPrevious: page > 0

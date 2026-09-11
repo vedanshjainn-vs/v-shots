@@ -248,6 +248,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
   }
 
   void addToEnd(Map<String, dynamic> track) {
+    if (!BlockedChannelRegistry.isContentAllowed(track)) return;
     if (_queue.isEmpty) {
       play(track);
       return;
@@ -259,6 +260,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
 
   /// Inserts [track] right after the current one (Play Next).
   void playNext(Map<String, dynamic> track) {
+    if (!BlockedChannelRegistry.isContentAllowed(track)) return;
     if (_queue.isEmpty) {
       play(track);
       return;

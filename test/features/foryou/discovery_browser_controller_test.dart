@@ -4,6 +4,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/features/foryou/discovery_browser_controller.dart';
+import 'package:v_shots/features/foryou/vshots_playback_state.dart';
 
 Map<String, dynamic> _track(String id) => {
       'id': id,
@@ -96,6 +97,28 @@ void main() {
       c.open({'title': 'No id', 'artist': 'X'});
       expect(c.isOpen, isTrue);
       expect(c.url, isNull);
+    });
+
+    test('toggle playback requests are observable without owning playback', () {
+      final c = DiscoveryBrowserController();
+      var requests = 0;
+      void listener() => requests++;
+      c.togglePlaybackRequest.addListener(listener);
+      c.requestTogglePlayback();
+      c.requestTogglePlayback();
+      expect(requests, 2);
+      expect(c.pagePlaying, isNull);
+      c.togglePlaybackRequest.removeListener(listener);
+    });
+
+    test('full playback state keeps loading distinct from playing', () {
+      final c = DiscoveryBrowserController();
+      c.setPlaybackState(VShotsPlaybackState.loading, false);
+      expect(c.playbackState, VShotsPlaybackState.loading);
+      expect(c.pagePlaying, isFalse);
+      c.setPlaybackState(VShotsPlaybackState.playing, true);
+      expect(c.playbackState, VShotsPlaybackState.playing);
+      expect(c.pagePlaying, isTrue);
     });
   });
 

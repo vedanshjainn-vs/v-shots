@@ -3,7 +3,7 @@
 // ════════════════════════════════════════════════
 //
 // This is the ONE place that translates the app's REAL, existing
-// playback events (just_audio's position/processing streams) into
+// playback events from the native browser session into
 // `SignalEvent`s the recommendation engine consumes. Previously (pre-
 // Phase-7) the only signal captured anywhere was
 // `LocalLibrary.recordRecentlyPlayed()` on track START — there was no

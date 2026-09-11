@@ -1,8 +1,7 @@
 name: V Shots Production Upgrade CI
 
-# Production validation/build pipeline.
-# A temporary 2026-09-11 hotfix runner applies a source patch in the working tree,
-# validates/builds it, then commits the resulting source and removes the runner.
+# Production validation/build pipeline. Source changes are reviewed and
+# committed normally; CI only validates the checked-out revision.
 
 on:
   push:
@@ -12,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -50,9 +49,6 @@ jobs:
           EOF
       - name: Install dependencies
         run: flutter pub get
-      - name: Apply one-time playback/discovery hotfix
-        if: hashFiles('scripts/apply_hotfix_20260911.py') != ''
-        run: python3 scripts/apply_hotfix_20260911.py
       - name: Format check
         run: dart format --output=none --set-exit-if-changed lib test
       - name: Analyze (strict)
@@ -96,13 +92,3 @@ jobs:
           name: vshots-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
           retention-days: 30
-      - name: Commit validated hotfix source and remove one-time runner
-        if: hashFiles('scripts/apply_hotfix_20260911.py') != ''
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm scripts/apply_hotfix_20260911.py .github/workflows/_hotfix_20260911.yml
-          git add android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt lib/features/foryou/for_you_feed_screen.dart .github/workflows/production-upgrade.yml
-          git diff --cached --check
-          git commit -m 'fix(player): stabilize playback, discovery swipes and notification lifecycle'
-          git push origin HEAD:feat/production-upgrade

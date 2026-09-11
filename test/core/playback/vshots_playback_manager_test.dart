@@ -77,4 +77,19 @@ void main() {
     m.previous();
     expect(m.isOpen, isFalse);
   });
+
+  test('blocked tracks cannot enter the queue or Play Next', () {
+    final m = VShotsPlaybackManager.instance;
+    m.play(_track('allowed'));
+    final blocked = {
+      ..._track('blocked'),
+      'artist': 'Prakash Jojawar',
+    };
+
+    m.addToEnd(blocked);
+    m.playNext(blocked);
+
+    expect(m.queue.map((track) => track['id']), ['allowed']);
+    m.close();
+  });
 }

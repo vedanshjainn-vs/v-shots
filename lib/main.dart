@@ -5,10 +5,8 @@
 
 import 'dart:async';
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart' hide PlayerState;
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -22,7 +20,6 @@ import 'core/ads/levelplay_service.dart';
 import '../core/ads/mrec_ad_manager.dart';
 import '../core/ads/premium_mrec_ad_card.dart';
 import 'core/ads/native_ad_widget.dart';
-import 'core/audio/vshots_audio_handler.dart';
 import 'core/backend/auth_service.dart';
 import 'core/content/blocked_channel_registry.dart';
 import 'core/navigation/app_navigator.dart';
@@ -136,10 +133,6 @@ void main() async {
       () => VShotsLevelPlay.instance.syncConsent();
   unawaited(VShotsLevelPlay.instance.initialize());
 
-  // Media-session bridge is metadata-only now (the native browser media
-  // service owns the foreground notification), so it never blocks boot.
-  unawaited(_initAudioService());
-
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
   );
@@ -151,38 +144,6 @@ void main() async {
 
   // Check for app updates (non-blocking, fire-and-forget)
   unawaited(AppUpdateService.instance.checkForUpdate());
-}
-
-/// Lazily starts the audio_service bridge and wires lock-screen/headset
-/// skips to the global playback manager. Runs off the boot critical path;
-/// until it completes, audioHandler is null and every consumer is
-/// null-safe (the native browser service already owns the notification).
-Future<void> _initAudioService() async {
-  audioHandler = await AudioService.init(
-    builder: () => VShotsAudioHandler(audioPlayer),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.vshots.live.channel.audio',
-      androidNotificationChannelName: 'V Shots playback',
-      androidNotificationChannelDescription:
-          'Media playback controls for V Shots',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
-      androidShowNotificationBadge: true,
-      androidNotificationClickStartsActivity: true,
-      androidResumeOnClick: true,
-      preloadArtwork: true,
-      artDownscaleWidth: 512,
-      artDownscaleHeight: 512,
-      fastForwardInterval: Duration(seconds: 10),
-      rewindInterval: Duration(seconds: 10),
-    ),
-  );
-  // Lock-screen / headset skip buttons route through the single global
-  // playback manager (same engine as the in-app player).
-  audioHandler?.onSkipNext = VShotsPlaybackManager.instance.next;
-  audioHandler?.onSkipPrevious = VShotsPlaybackManager.instance.previous;
-  audioHandler?.onTrackCompleted = VShotsPlaybackManager.instance.next;
 }
 
 // ═══════════════════════════════════════════════
@@ -211,8 +172,6 @@ class VShotsApp extends StatelessWidget {
 // GLOBAL STATE & PERSISTENT AUDIO ENGINE
 // ═══════════════════════════════════════════════
 
-final AudioPlayer audioPlayer = AudioPlayer();
-VShotsAudioHandler? audioHandler;
 List<Map<String, dynamic>> currentQueue = [];
 int currentQueueIndex = 0;
 Map<String, dynamic>? currentTrack;
@@ -235,7 +194,6 @@ final ValueNotifier<int> homeScrollToTopSignal = ValueNotifier<int>(0);
 /// so the full player's "Up Next" list rebuilds against the new queue.
 final ValueNotifier<int> queueVersionNotifier = ValueNotifier<int>(0);
 
-bool isCurrentlyPlaying = false;
 RepeatMode repeatMode = RepeatMode.off;
 bool isShuffleOn = false;
 List<int> shuffleOrder = [];
@@ -444,12 +402,6 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     currentTabIndexNotifier.value = 0;
-    audioPlayer.playerStateStream.listen((state) {
-      isCurrentlyPlaying = state.playing;
-    });
-
-    // Lock-screen / headset skip wiring lives in _initAudioService() —
-    // it runs as soon as the deferred audio bridge is ready.
     VShotsPlaybackManager.instance.browser.addListener(_syncPlayerExpanded);
     // Ads: no startup work at all. The interstitial preloads on-demand at
     // the first policy-eligible tab switch (see onTap below) — keeps first
@@ -813,37 +765,13 @@ Future<void> playTrack(
     unawaited(_populateMoreLikeThis(resolvedTrack));
   }
 
-  // Update the OS media notification with track metadata
-  final artworkUrl = (resolvedTrack['artwork'] as String?) ?? '';
-  final trackTitle = (resolvedTrack['title'] as String?) ?? 'Unknown';
-  final trackArtist = (resolvedTrack['artist'] as String?) ?? 'Unknown Artist';
-  final trackId = (resolvedTrack['id'] as String?) ?? '';
-  final trackDuration = resolvedTrack['duration'] as int?;
-
+  // Notification/media-session metadata is published by the native browser
+  // session after its load state is reset. There is intentionally no second
+  // audio controller in this path.
   debugPrint(
-    '[VShots] Updating media notification: $trackTitle by $trackArtist',
+    '[VShots] Browser metadata queued: ${resolvedTrack['title']} by '
+    '${resolvedTrack['artist']}',
   );
-  debugPrint('[VShots] Artwork URL: $artworkUrl');
-
-  audioHandler?.updateNowPlaying(
-    MediaItem(
-      id: trackId,
-      title: trackTitle,
-      artist: trackArtist,
-      displayTitle: trackTitle,
-      displaySubtitle: trackArtist,
-      artUri: artworkUrl.isNotEmpty ? Uri.tryParse(artworkUrl) : null,
-      duration: trackDuration != null ? Duration(seconds: trackDuration) : null,
-      album: trackArtist,
-    ),
-  );
-
-  // NOTE (notification ownership): the REAL playback engine is the native
-  // browser media service, which owns the single foreground notification +
-  // media session (now with audio focus, seek and progress). The empty
-  // just_audio player must NEVER be marked "playing" — that spawned a
-  // phantom second notification with dead controls. audio_service stays
-  // wired for metadata only.
 
   currentTrack = resolvedTrack;
   currentTrackNotifier.value = resolvedTrack;

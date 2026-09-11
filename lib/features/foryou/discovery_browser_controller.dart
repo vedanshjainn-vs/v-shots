@@ -16,6 +16,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../shared/utils/youtube_url.dart';
+import 'vshots_playback_state.dart';
 
 /// Explicit browser lifecycle states. One source of truth for what the
 /// Discovery browser is doing — prevents "browser visible but player disposed"
@@ -29,6 +30,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool? _pagePlaying;
+  VShotsPlaybackState _playbackState = VShotsPlaybackState.idle;
   bool _adActive = false;
 
   /// When true, the sheet mounts already expanded (explicit taps from Home /
@@ -54,11 +56,13 @@ class DiscoveryBrowserController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// Last-known page playback state. Null = unknown (YouTube does not expose
-  /// playback state to the embedder; this is set only from our own
-  /// play/pause commands to the page). Callers treat it as a hint, not a
-  /// guaranteed status.
+  /// Last playback state reported by the native WebView. Null means that the
+  /// current track has not reported a boolean snapshot yet; callers must not
+  /// interpret it as PLAYING.
   bool? get pagePlaying => _pagePlaying;
+
+  /// Full state-machine state shared with the native WebView/service.
+  VShotsPlaybackState get playbackState => _playbackState;
 
   String? get videoId => _track?['id'] as String?;
   String? get title => _track?['title'] as String?;
@@ -85,6 +89,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _isLoading = true;
     _error = null;
     _pagePlaying = null;
+    _playbackState = VShotsPlaybackState.loading;
     _adActive = false;
     debugPrint('[DiscoveryBrowser] OPEN videoId=${track['id']} url=$url');
     notifyListeners();
@@ -98,6 +103,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _isLoading = false;
     _error = null;
     _pagePlaying = null;
+    _playbackState = VShotsPlaybackState.stopped;
     _adActive = false;
     _track = null;
     notifyListeners();
@@ -138,9 +144,23 @@ class DiscoveryBrowserController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setPagePlaying(bool value) {
-    if (_pagePlaying == value) return;
+  void setPagePlaying(bool? value) {
+    final nextState = value == null
+        ? _playbackState
+        : value
+            ? VShotsPlaybackState.playing
+            : VShotsPlaybackState.paused;
+    if (_pagePlaying == value && _playbackState == nextState) return;
     _pagePlaying = value;
+    _playbackState = nextState;
+    notifyListeners();
+  }
+
+  /// Applies one authoritative native state snapshot to the controller.
+  void setPlaybackState(VShotsPlaybackState state, bool playing) {
+    if (_playbackState == state && _pagePlaying == playing) return;
+    _playbackState = state;
+    _pagePlaying = playing;
     notifyListeners();
   }
 
@@ -172,4 +192,10 @@ class DiscoveryBrowserController extends ChangeNotifier {
   final ValueNotifier<int> pauseRequest = ValueNotifier<int>(0);
 
   void requestPause() => pauseRequest.value++;
+
+  /// Requests an explicit Play or Pause based on the last native state. The
+  /// sheet translates this into a non-toggle platform command.
+  final ValueNotifier<int> togglePlaybackRequest = ValueNotifier<int>(0);
+
+  void requestTogglePlayback() => togglePlaybackRequest.value++;
 }
