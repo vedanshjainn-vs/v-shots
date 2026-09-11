@@ -48,7 +48,9 @@ jobs:
           if [ -n "${{ secrets.ADMOB_APP_ID }}" ]; then
             sed -i "s|c\\/a-pub-3940256099942544~3347511713|${{ secrets.ADMOB_APP_ID }}|g" android/app/src/main/AndroidManifest.xml
           fi
-          sed -i 's/name="flutterEmbedding"/android:name="flutterEmbedding"/g' android/app/src/main/AndroidManifest.xml
+          # The checked-in manifest already uses Flutter Android embedding v2.
+          # Do not rewrite its android:name attribute; a broad substitution
+          # would produce the invalid android:android:name form.
           sed -i 's/android:name="io.flutter.app.FlutterApplication"/android:name="${applicationName}"/g' android/app/src/main/AndroidManifest.xml
       - name: 5. Install Dependencies
         run: flutter pub get
