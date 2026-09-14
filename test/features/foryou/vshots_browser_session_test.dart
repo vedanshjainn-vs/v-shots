@@ -135,8 +135,7 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
 
-        final playCalls =
-            calls.where((call) => call.method == 'play').toList();
+        final playCalls = calls.where((call) => call.method == 'play').toList();
         expect(playCalls, hasLength(1));
         expect(playCalls.single.arguments, {'generation': generation});
 
