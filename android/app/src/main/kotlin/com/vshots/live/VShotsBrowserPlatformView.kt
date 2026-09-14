@@ -9,6 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.MotionEvent
+import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -17,6 +19,8 @@ import android.webkit.WebResourceResponse
 import java.io.ByteArrayInputStream
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
@@ -216,7 +220,8 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
       var unmuteRect = unmute.getBoundingClientRect();
       if(unmuteStyle.display !== 'none' && unmuteStyle.visibility !== 'hidden' &&
          unmuteStyle.opacity !== '0' && unmuteRect.width > 0 && unmuteRect.height > 0){
-        try{ unmute.click(); }catch(e){}
+        return 'unmute-target|' + String(unmuteRect.left + unmuteRect.width / 2) + '|' +
+          String(unmuteRect.top + unmuteRect.height / 2);
       }
     }
     v.muted = false;
@@ -391,6 +396,37 @@ private class VShotsBackgroundMediaWebView(
         if (audioState == next) return
         Log.d(TAG, "audio state: $audioState -> $next")
         audioState = next
+    }
+
+    /** Keep the entire WebView unmuted at the native WebView layer. */
+    private fun setNativeWebViewAudioMuted(muted: Boolean) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) return
+        try {
+            WebViewCompat.setAudioMuted(this, muted)
+        } catch (_: Throwable) {
+            // Older System WebView providers may not expose this feature.
+        }
+    }
+
+    /**
+     * YouTube can expose a real "Tap to unmute" overlay even when the HTML
+     * media element is already playing. A JavaScript .click() is not a trusted
+     * browser gesture, so it can be ignored by Chromium/YouTube. When the
+     * official unmute target is visibly present, deliver one native touch to
+     * that exact target. This is equivalent to the user's tap and avoids
+     * tapping the video body (which would pause it).
+     */
+    private fun performTrustedUnmuteTap(x: Float, y: Float) {
+        val now = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(now, now + 16L, MotionEvent.ACTION_UP, x, y, 0)
+        try {
+            dispatchTouchEvent(down)
+            dispatchTouchEvent(up)
+        } finally {
+            down.recycle()
+            up.recycle()
+        }
     }
 
     private fun updateContentAudioState(snapshot: PollSnapshot) {
@@ -575,12 +611,51 @@ private class VShotsBackgroundMediaWebView(
                     updateContentAudioState(validated)
                     Log.d(TAG, "content audio validated: $clean")
                 }
+                clean.startsWith("unmute-target|") -> {
+                    val parts = clean.split('|')
+                    val x = parts.getOrNull(1)?.toFloatOrNull()
+                    val y = parts.getOrNull(2)?.toFloatOrNull()
+                    if (x != null && y != null &&
+                        x >= 0f && y >= 0f && x <= width.toFloat() && y <= height.toFloat()) {
+                        Log.d(TAG, "trusted YouTube unmute tap: $x,$y")
+                        performTrustedUnmuteTap(x, y)
+                        handler.postDelayed({
+                            if (generation != loadGeneration || userPaused || adActive) return@postDelayed
+                            setNativeWebViewAudioMuted(false)
+                            evaluateJavascript(
+                                generationGuardedJs(
+                                    """(function(){
+                                      try{
+                                        var v=document.querySelector('video,audio');
+                                        if(!v){return 'none';}
+                                        v.muted=false;
+                                        if(!v.volume || v.volume <= 0) v.volume=1;
+                                        return 'sync|' + (v.muted ? '1' : '0') + '|' + String(v.volume);
+                                      }catch(e){return 'err';}
+                                    })()""",
+                                    generation,
+                                ),
+                            ) { syncResult ->
+                                if (generation != loadGeneration) return@evaluateJavascript
+                                val sync = cleanJsResult(syncResult)
+                                if (sync.startsWith("sync|0|")) {
+                                    contentAudioValidated = true
+                                    updateContentAudioState(parsePollSnapshot("playing|${sync.removePrefix("sync|")}"))
+                                }
+                                contentAudioValidationRequested = false
+                            }
+                        }, 80L)
+                    } else {
+                        contentAudioValidationRequested = false
+                    }
+                }
                 clean == "ad" || clean == "ad-pending" -> {
-                    // The poll will own the ad transition. Permit the one
-                    // content validation again after that ad completes.
                     contentAudioValidationRequested = false
                 }
-                else -> Log.d(TAG, "content audio validation: $clean")
+                else -> {
+                    contentAudioValidationRequested = false
+                    Log.d(TAG, "content audio validation: $clean")
+                }
             }
         }
     }
@@ -592,6 +667,8 @@ private class VShotsBackgroundMediaWebView(
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
+        // Clear any application-level WebView mute before the first page.
+        setNativeWebViewAudioMuted(false)
         settings.loadsImagesAutomatically = true
         settings.javaScriptCanOpenWindowsAutomatically = false
         settings.setSupportMultipleWindows(false) // Block popup windows
@@ -912,6 +989,7 @@ private class VShotsBackgroundMediaWebView(
         adAudioRestoreInFlight = false
         userPaused = !autoplay
         mediaPlaying = false
+        setNativeWebViewAudioMuted(false)
         setPlaybackState("loading", false)
         playbackPoll.reset()
         // Cancel the previous document before starting a new generation. This
@@ -1113,6 +1191,9 @@ private class VShotsBackgroundMediaWebView(
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
         userPaused = false
+        // Acquire audio focus and clear native WebView mute BEFORE play.
+        VShotsBrowserPlaybackService.prepareForPlayback()
+        setNativeWebViewAudioMuted(false)
         startPlaybackForegroundService(
             playing = mediaPlaying,
             state = playbackState,

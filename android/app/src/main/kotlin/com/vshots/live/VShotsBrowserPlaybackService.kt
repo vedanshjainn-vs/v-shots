@@ -60,6 +60,11 @@ class VShotsBrowserPlaybackService : Service() {
         ) {
             activeService?.acceptPosition(positionMs, durationMs, generation)
         }
+
+        /** Prepare audio focus before a user/system PLAY reaches the WebView. */
+        fun prepareForPlayback() {
+            activeService?.requestAudioFocus()
+        }
     }
 
     private var title = "V Shots"

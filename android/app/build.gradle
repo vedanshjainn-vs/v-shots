@@ -34,8 +34,8 @@ android {
         applicationId "com.vshots.live"
         minSdk 24
         targetSdk 36
-        versionCode 51
-        versionName "5.9.7"
+        versionCode 52
+        versionName "5.9.8"
         multiDexEnabled true
     }
 
@@ -77,6 +77,7 @@ flutter {
 
 // Unity LevelPlay mediation — current Android network adapters.
 dependencies {
+    implementation 'androidx.webkit:webkit:1.17.0'
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation 'com.google.android.gms:play-services-appset:16.0.2'
     implementation 'com.google.android.gms:play-services-ads-identifier:18.0.1'
