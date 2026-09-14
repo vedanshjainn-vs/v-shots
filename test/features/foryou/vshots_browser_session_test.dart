@@ -111,7 +111,7 @@ void main() {
       'autoplay sends one explicit Play command for the current generation',
       () async {
         final calls = <MethodCall>[];
-        final channel = MethodChannel('vshots/browser/101');
+        final channel = const MethodChannel('vshots/browser/101');
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, (call) async {
           calls.add(call);
@@ -149,7 +149,7 @@ void main() {
       'user pause cancels pending autoplay and never restores it',
       () async {
         final calls = <MethodCall>[];
-        final channel = MethodChannel('vshots/browser/102');
+        final channel = const MethodChannel('vshots/browser/102');
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, (call) async {
           calls.add(call);
