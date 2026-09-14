@@ -178,7 +178,10 @@ class VShotsBrowserSession {
       return;
     }
     try {
-      await channel.invokeMethod<void>(userInitiated ? 'pause' : 'focusPause');
+      await channel.invokeMethod<void>(
+        userInitiated ? 'pause' : 'focusPause',
+        <String, Object?>{'generation': _generation},
+      );
     } catch (_) {}
     _setPlaybackState(VShotsPlaybackState.paused, false);
   }
@@ -192,7 +195,10 @@ class VShotsBrowserSession {
     final channel = _channel;
     if (channel == null) return;
     try {
-      await channel.invokeMethod<void>('play');
+      await channel.invokeMethod<void>(
+        'play',
+        <String, Object?>{'generation': _generation},
+      );
     } catch (_) {}
   }
 
@@ -201,7 +207,10 @@ class VShotsBrowserSession {
     final channel = _channel;
     if (channel == null) return;
     try {
-      await channel.invokeMethod<void>('setVolume', volume);
+      await channel.invokeMethod<void>('setVolume', <String, Object?>{
+        'volume': volume,
+        'generation': _generation,
+      });
     } catch (_) {}
   }
 
@@ -210,7 +219,10 @@ class VShotsBrowserSession {
     final channel = _channel;
     if (channel == null) return;
     try {
-      await channel.invokeMethod<void>('seekBy', seconds);
+      await channel.invokeMethod<void>('seekBy', <String, Object?>{
+        'seconds': seconds,
+        'generation': _generation,
+      });
     } catch (_) {}
   }
 
@@ -417,6 +429,11 @@ class VShotsBrowserSession {
       channel.setMethodCallHandler(null);
     }
   }
+
+  /// Test hook: attach a deterministic MethodChannel without a real Android
+  /// platform view. Production uses [AndroidView.onPlatformViewCreated].
+  @visibleForTesting
+  void debugAttachPlatformView(int viewId) => _attachPlatformView(viewId);
 
   /// Test hook: dispatch a native event without a real platform channel.
   @visibleForTesting

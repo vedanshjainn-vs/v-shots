@@ -106,6 +106,80 @@ void main() {
         session.dispose();
       },
     );
+
+    test(
+      'autoplay sends one explicit Play command for the current generation',
+      () async {
+        final calls = <MethodCall>[];
+        final channel = MethodChannel('vshots/browser/101');
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return null;
+        });
+        final session = VShotsBrowserSession(
+          onPageStarted: () {},
+          onPageFinished: () {},
+          onError: (_) {},
+        );
+        session.debugAttachPlatformView(101);
+        await session.load('https://www.youtube.com/watch?v=autoplay-track');
+        final generation = session.generation;
+
+        await session.debugHandleNativeEvent(
+          MethodCall('pageFinished', {'generation': generation}),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await session.debugHandleNativeEvent(
+          MethodCall('pageFinished', {'generation': generation}),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final playCalls =
+            calls.where((call) => call.method == 'play').toList();
+        expect(playCalls, hasLength(1));
+        expect(playCalls.single.arguments, {'generation': generation});
+
+        session.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      },
+    );
+
+    test(
+      'user pause cancels pending autoplay and never restores it',
+      () async {
+        final calls = <MethodCall>[];
+        final channel = MethodChannel('vshots/browser/102');
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          return null;
+        });
+        final session = VShotsBrowserSession(
+          onPageStarted: () {},
+          onPageFinished: () {},
+          onError: (_) {},
+        );
+        session.debugAttachPlatformView(102);
+        await session.load(
+          'https://www.youtube.com/watch?v=paused-before-ready',
+        );
+        await session.pause();
+        await session.debugHandleNativeEvent(
+          MethodCall('pageFinished', {'generation': session.generation}),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(calls.where((call) => call.method == 'play'), isEmpty);
+        expect(calls.where((call) => call.method == 'pause'), hasLength(1));
+        expect(session.pagePlaying, isFalse);
+
+        session.dispose();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      },
+    );
   });
 
   group('isAllowedBrowserHost', () {
