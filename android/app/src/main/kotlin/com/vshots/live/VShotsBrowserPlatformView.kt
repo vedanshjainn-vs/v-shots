@@ -65,8 +65,20 @@ private const val YT_POLL_JS = """
     }
     var adOn = !!document.querySelector('.ad-showing');
     if(!adOn){
-      var ui = document.querySelector('.videoAdUi, .ytp-ad-player-overlay');
-      if(ui && ui.offsetParent !== null){ adOn = true; }
+      // Do not treat the player overlay container itself as an ad: YouTube
+      // keeps that node mounted on ordinary content pages. Require visible
+      // ad-specific evidence instead.
+      var adEvidence = document.querySelector(
+        '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
+        ' .ytp-ad-preview-container, .ytp-ad-text,' +
+        ' .ytp-ad-duration-remaining'
+      );
+      if(adEvidence){
+        var style = window.getComputedStyle(adEvidence);
+        var rect = adEvidence.getBoundingClientRect();
+        if(style.display !== 'none' && style.visibility !== 'hidden' &&
+           rect.width > 0 && rect.height > 0){ adOn = true; }
+      }
     }
     var v = document.querySelector('video,audio');
     if(!v){ return snapshot(adOn ? 'ad' : 'none', null); }
@@ -169,8 +181,17 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
   try{
     var adOn = !!document.querySelector('.ad-showing');
     if(!adOn){
-      var ui = document.querySelector('.videoAdUi, .ytp-ad-player-overlay');
-      if(ui && ui.offsetParent !== null){ adOn = true; }
+      var adEvidence = document.querySelector(
+        '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
+        ' .ytp-ad-preview-container, .ytp-ad-text,' +
+        ' .ytp-ad-duration-remaining'
+      );
+      if(adEvidence){
+        var style = window.getComputedStyle(adEvidence);
+        var rect = adEvidence.getBoundingClientRect();
+        if(style.display !== 'none' && style.visibility !== 'hidden' &&
+           rect.width > 0 && rect.height > 0){ adOn = true; }
+      }
     }
     if(adOn){ return 'ad'; }
     var v = document.querySelector('video,audio');
@@ -1086,8 +1107,17 @@ private class VShotsBackgroundMediaWebView(
                 (function(){
                   var adOn = !!document.querySelector('.ad-showing');
                   if(!adOn){
-                    var ui = document.querySelector('.videoAdUi, .ytp-ad-player-overlay');
-                    if(ui && ui.offsetParent !== null){ adOn = true; }
+                    var adEvidence = document.querySelector(
+                      '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
+                      ' .ytp-ad-preview-container, .ytp-ad-text,' +
+                      ' .ytp-ad-duration-remaining'
+                    );
+                    if(adEvidence){
+                      var style = window.getComputedStyle(adEvidence);
+                      var rect = adEvidence.getBoundingClientRect();
+                      if(style.display !== 'none' && style.visibility !== 'hidden' &&
+                         rect.width > 0 && rect.height > 0){ adOn = true; }
+                    }
                   }
                   if(adOn){ return 'ad'; }
                   var v=document.querySelector('video,audio');
@@ -1102,13 +1132,11 @@ private class VShotsBackgroundMediaWebView(
             ),
         ) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
-            if (cleanJsResult(result) == "requested") {
-                // Explicit Play is itself a valid audio initialization. The
-                // authoritative poll still owns PLAYING/focus/notification.
-                contentAudioValidated = true
-                contentAudioValidationRequested = true
-                setAudioState(BrowserAudioState.PLAYING_WITH_AUDIO)
-            }
+            // "requested" only means that HTMLMediaElement.play() was
+            // invoked. Its Promise may still be rejected by WebView policy,
+            // so the first authoritative CONTENT poll must perform the one
+            // audio validation instead of treating this request as success.
+            Log.d(TAG, "explicit play: ${cleanJsResult(result)}")
         }
     }
 
