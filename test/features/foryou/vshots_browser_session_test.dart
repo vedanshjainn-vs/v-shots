@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/features/foryou/vshots_browser_session.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('VShotsBrowserSession native events', () {
     test('adState(true/false) reaches the onAdState callback', () async {
       final adEvents = <bool>[];
