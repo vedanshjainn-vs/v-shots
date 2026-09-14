@@ -35,6 +35,10 @@ jobs:
           from pathlib import Path
           import re
 
+          # CI needs the declared asset to exist for analyzer/build, but this
+          # temporary file is never committed.
+          Path('.env').touch()
+
           gradle = Path('android/app/build.gradle')
           s = gradle.read_text()
           if "androidx.webkit:webkit:1.17.0" not in s:
@@ -61,10 +65,16 @@ jobs:
                   'import android.webkit.WebViewClient\nimport androidx.webkit.WebViewCompat\nimport androidx.webkit.WebViewFeature\n',
                   1,
               )
+          if 'import android.view.MotionEvent' not in s:
+              s = s.replace(
+                  'import android.view.View\n',
+                  'import android.view.View\nimport android.view.MotionEvent\nimport android.os.SystemClock\n',
+                  1,
+              )
 
           marker = '''    private fun setAudioState(next: BrowserAudioState) {\n        if (audioState == next) return\n        Log.d(TAG, "audio state: $audioState -> $next")\n        audioState = next\n    }\n'''
-          helper = marker + '''\n    /** Keep the entire WebView unmuted at the native WebView layer. */\n    private fun setNativeWebViewAudioMuted(muted: Boolean) {\n        if (!WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) return\n        try {\n            WebViewCompat.setAudioMuted(this, muted)\n        } catch (_: Throwable) {\n            // Older System WebView providers may not expose this feature.\n        }\n    }\n'''
-          if 'private fun setNativeWebViewAudioMuted' not in s:
+          helper = marker + '''\n    /** Keep the entire WebView unmuted at the native WebView layer. */\n    private fun setNativeWebViewAudioMuted(muted: Boolean) {\n        if (!WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) return\n        try {\n            WebViewCompat.setAudioMuted(this, muted)\n        } catch (_: Throwable) {\n            // Older System WebView providers may not expose this feature.\n        }\n    }\n\n    /**\n     * YouTube can expose a real "Tap to unmute" overlay even when the HTML\n     * media element is already playing. A JavaScript .click() is not a trusted\n     * browser gesture, so it can be ignored by Chromium/YouTube. When the\n     * official unmute target is visibly present, deliver one native touch to\n     * that exact target. This is equivalent to the user's tap and avoids\n     * tapping the video body (which would pause it).\n     */\n    private fun performTrustedUnmuteTap(x: Float, y: Float) {\n        val now = SystemClock.uptimeMillis()\n        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)\n        val up = MotionEvent.obtain(now, now + 16L, MotionEvent.ACTION_UP, x, y, 0)\n        try {\n            dispatchTouchEvent(down)\n            dispatchTouchEvent(up)\n        } finally {\n            down.recycle()\n            up.recycle()\n        }\n    }\n'''
+          if 'private fun performTrustedUnmuteTap' not in s:
               if marker not in s:
                   raise SystemExit('audio state marker not found')
               s = s.replace(marker, helper, 1)
@@ -85,6 +95,22 @@ jobs:
           if play_marker not in s:
               raise SystemExit('userPlay marker not found')
           s = s.replace(play_marker, play_repl, 1)
+
+          # Replace the old untrusted-only content-audio initializer with a
+          # native trusted-gesture bridge for YouTube's visible Tap-to-Unmute.
+          old_validate = '''    private fun ensureContentAudio(generation: Long) {\n        if (generation != loadGeneration ||\n            userPaused ||\n            adActive ||\n            contentAudioValidated ||\n            contentAudioValidationRequested\n        ) return\n        contentAudioValidationRequested = true\n        evaluateJavascript(generationGuardedJs(YT_VALIDATE_CONTENT_AUDIO_JS, generation)) { result ->\n            if (generation != loadGeneration) return@evaluateJavascript\n            val clean = cleanJsResult(result)\n            when {\n                clean.startsWith("validated|") -> {\n                    contentAudioValidated = true\n                    val validated = parsePollSnapshot("playing|${clean.removePrefix("validated|")}")\n                    updateContentAudioState(validated)\n                    Log.d(TAG, "content audio validated: $clean")\n                }\n                clean == "ad" || clean == "ad-pending" -> {\n                    // The poll will own the ad transition. Permit the one\n                    // content validation again after that ad completes.\n                    contentAudioValidationRequested = false\n                }\n                else -> Log.d(TAG, "content audio validation: $clean")\n            }\n        }\n    }\n'''
+          new_validate = '''    private fun ensureContentAudio(generation: Long) {\n        if (generation != loadGeneration ||\n            userPaused ||\n            adActive ||\n            contentAudioValidated ||\n            contentAudioValidationRequested\n        ) return\n        contentAudioValidationRequested = true\n        evaluateJavascript(generationGuardedJs(YT_VALIDATE_CONTENT_AUDIO_JS, generation)) { result ->\n            if (generation != loadGeneration) return@evaluateJavascript\n            val clean = cleanJsResult(result)\n            when {\n                clean.startsWith("validated|") -> {\n                    contentAudioValidated = true\n                    val validated = parsePollSnapshot("playing|${clean.removePrefix("validated|")}")\n                    updateContentAudioState(validated)\n                    Log.d(TAG, "content audio validated: $clean")\n                }\n                clean.startsWith("unmute-target|") -> {\n                    val parts = clean.split('|')\n                    val x = parts.getOrNull(1)?.toFloatOrNull()\n                    val y = parts.getOrNull(2)?.toFloatOrNull()\n                    if (x != null && y != null &&\n                        x >= 0f && y >= 0f && x <= width.toFloat() && y <= height.toFloat()) {\n                        Log.d(TAG, "trusted YouTube unmute tap: $x,$y")\n                        performTrustedUnmuteTap(x, y)\n                        // Give Chromium one turn to apply the trusted gesture,\n                        // then synchronize the media element and native mute.\n                        handler.postDelayed({\n                            if (generation != loadGeneration || userPaused || adActive) return@postDelayed\n                            setNativeWebViewAudioMuted(false)\n                            evaluateJavascript(\n                                generationGuardedJs(\n                                    """(function(){\n                                      try{\n                                        var v=document.querySelector('video,audio');\n                                        if(!v){return 'none';}\n                                        v.muted=false;\n                                        if(!v.volume || v.volume <= 0) v.volume=1;\n                                        return 'sync|' + (v.muted ? '1' : '0') + '|' + String(v.volume);\n                                      }catch(e){return 'err';}\n                                    })()""",\n                                    generation,\n                                ),\n                            ) { syncResult ->\n                                if (generation != loadGeneration) return@evaluateJavascript\n                                val sync = cleanJsResult(syncResult)\n                                if (sync.startsWith("sync|0|")) {\n                                    contentAudioValidated = true\n                                    updateContentAudioState(parsePollSnapshot("playing|${sync.removePrefix("sync|")}"))\n                                }\n                                contentAudioValidationRequested = false\n                            }\n                        }, 80L)\n                    } else {\n                        contentAudioValidationRequested = false\n                    }\n                }\n                clean == "ad" || clean == "ad-pending" -> {\n                    // The poll will own the ad transition. Permit the one\n                    // content validation again after that ad completes.\n                    contentAudioValidationRequested = false\n                }\n                else -> {\n                    // Do not spin a validation loop; the next observed playing\n                    // state may request one clean retry for this generation.\n                    contentAudioValidationRequested = false\n                    Log.d(TAG, "content audio validation: $clean")\n                }\n            }\n        }\n    }\n'''
+          if old_validate not in s:
+              raise SystemExit('ensureContentAudio block not found')
+          s = s.replace(old_validate, new_validate, 1)
+
+          # Make the page-level validator return the exact visible official
+          # unmute target instead of relying only on an untrusted JS click.
+          old_js = '''    var unmute = document.querySelector('.ytp-unmute');\n    if(unmute){\n      var unmuteStyle = window.getComputedStyle(unmute);\n      var unmuteRect = unmute.getBoundingClientRect();\n      if(unmuteStyle.display !== 'none' && unmuteStyle.visibility !== 'hidden' &&\n         unmuteStyle.opacity !== '0' && unmuteRect.width > 0 && unmuteRect.height > 0){\n        try{ unmute.click(); }catch(e){}\n      }\n    }\n    v.muted = false;\n    v.volume = 1.0;\n    return 'validated|' + (v.muted ? '1' : '0') + '|' + String(v.volume);\n'''
+          new_js = '''    var unmute = document.querySelector('.ytp-unmute');\n    if(unmute){\n      var unmuteStyle = window.getComputedStyle(unmute);\n      var unmuteRect = unmute.getBoundingClientRect();\n      if(unmuteStyle.display !== 'none' && unmuteStyle.visibility !== 'hidden' &&\n         unmuteStyle.opacity !== '0' && unmuteRect.width > 0 && unmuteRect.height > 0){\n        return 'unmute-target|' + String(unmuteRect.left + unmuteRect.width / 2) + '|' +\n          String(unmuteRect.top + unmuteRect.height / 2);\n      }\n    }\n    v.muted = false;\n    v.volume = 1.0;\n    return 'validated|' + (v.muted ? '1' : '0') + '|' + String(v.volume);\n'''
+          if old_js not in s:
+              raise SystemExit('validator JS block not found')
+          s = s.replace(old_js, new_js, 1)
 
           native.write_text(s)
 
@@ -131,8 +157,9 @@ jobs:
         shell: bash
         run: |
           rm -f .github/workflows/_urgent_playback_smoothness_fix.yml
+          rm -f .env
           git config user.name "V Shots Agent"
           git config user.email "agent@arena.ai"
           git add android/app/build.gradle pubspec.yaml android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlaybackService.kt .github/workflows/_urgent_playback_smoothness_fix.yml
-          git commit -m "fix(playback): unmute WebView before autoplay and pre-acquire audio focus" || exit 0
+          git commit -m "fix(playback): trusted YouTube unmute gesture and audio focus ordering" || exit 0
           git push origin HEAD:feat/production-upgrade
