@@ -34,6 +34,56 @@ void main() {
       session.dispose();
     });
 
+    test('audio and position events reach the current session only', () async {
+      VShotsAudioState? audioState;
+      bool? audioPlaying;
+      int? position;
+      int? duration;
+      final session = VShotsBrowserSession(
+        onPageStarted: () {},
+        onPageFinished: () {},
+        onError: (_) {},
+        onAudioState: (state, playing) {
+          audioState = state;
+          audioPlaying = playing;
+        },
+        onPosition: (value, total) {
+          position = value;
+          duration = total;
+        },
+      );
+      await session.load('https://www.youtube.com/watch?v=audio-track');
+      final generation = session.generation;
+      await session.debugHandleNativeEvent(
+        MethodCall('audioState', {
+          'state': 'playing_muted_content',
+          'playing': true,
+          'generation': generation,
+        }),
+      );
+      await session.debugHandleNativeEvent(
+        MethodCall('position', {
+          'positionMs': 1200,
+          'durationMs': 9000,
+          'generation': generation,
+        }),
+      );
+      expect(audioState, VShotsAudioState.playingMutedContent);
+      expect(audioPlaying, isTrue);
+      expect(position, 1200);
+      expect(duration, 9000);
+
+      await session.debugHandleNativeEvent(
+        MethodCall('audioState', {
+          'state': 'playing_with_audio',
+          'playing': true,
+          'generation': generation - 1,
+        }),
+      );
+      expect(audioState, VShotsAudioState.playingMutedContent);
+      session.dispose();
+    });
+
     test(
       'videoEnded event (early auto-advance path) forwards the id',
       () async {

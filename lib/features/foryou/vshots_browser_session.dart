@@ -64,6 +64,8 @@ class VShotsBrowserSession {
     required this.onError,
     this.onVideoEnded,
     this.onAdState,
+    this.onAudioState,
+    this.onPosition,
     this.onPlaybackState,
     this.onPlaybackStateChanged,
     this.onNotificationAction,
@@ -80,6 +82,13 @@ class VShotsBrowserSession {
 
   /// Fired when the official player enters/leaves an in-stream ad.
   final void Function(bool adActive)? onAdState;
+
+  /// Native audio truth. This is separate from the transport state because a
+  /// YouTube video can be playing while its audio is muted.
+  final void Function(VShotsAudioState state, bool playing)? onAudioState;
+
+  /// Position/duration snapshots from the real HTML media element.
+  final void Function(int positionMs, int durationMs)? onPosition;
 
   /// Compatibility boolean snapshot for lightweight consumers.
   final void Function(bool playing)? onPlaybackState;
@@ -226,6 +235,19 @@ class VShotsBrowserSession {
     } catch (_) {}
   }
 
+  /// Absolute seek used by the premium progress control. It is an explicit
+  /// command; it never starts, pauses, or toggles playback.
+  Future<void> seekTo(Duration position) async {
+    final channel = _channel;
+    if (channel == null) return;
+    try {
+      await channel.invokeMethod<void>('seekTo', <String, Object?>{
+        'positionMs': position.inMilliseconds,
+        'generation': _generation,
+      });
+    } catch (_) {}
+  }
+
   Widget buildWidget() {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       return const ColoredBox(
@@ -350,7 +372,33 @@ class VShotsBrowserSession {
         onVideoEnded?.call(endedId);
         break;
       case 'adState':
-        onAdState?.call(call.arguments == true);
+        if (_isCurrentEvent(call.arguments)) {
+          onAdState?.call(call.arguments == true);
+        }
+        break;
+      case 'audioState':
+        if (!_isCurrentEvent(call.arguments)) break;
+        final audioArguments = call.arguments;
+        final audioState = audioStateFromNative(
+          audioArguments is Map ? audioArguments['state'] : audioArguments,
+        );
+        final audioPlaying = audioArguments is Map
+            ? audioArguments['playing'] == true
+            : audioState == VShotsAudioState.playingWithAudio ||
+                audioState == VShotsAudioState.playingMutedContent ||
+                audioState == VShotsAudioState.playingMutedAd;
+        onAudioState?.call(audioState, audioPlaying);
+        break;
+      case 'position':
+        if (!_isCurrentEvent(call.arguments)) break;
+        final positionArguments = call.arguments;
+        if (positionArguments is Map) {
+          final position = (positionArguments['positionMs'] as num?)?.toInt();
+          final duration = (positionArguments['durationMs'] as num?)?.toInt();
+          if (position != null && duration != null) {
+            onPosition?.call(position, duration);
+          }
+        }
         break;
       case 'notificationAction':
         final action = call.arguments?.toString() ?? '';

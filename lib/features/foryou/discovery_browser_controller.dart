@@ -31,6 +31,9 @@ class DiscoveryBrowserController extends ChangeNotifier {
   String? _error;
   bool? _pagePlaying;
   VShotsPlaybackState _playbackState = VShotsPlaybackState.idle;
+  VShotsAudioState _audioState = VShotsAudioState.idle;
+  int _positionMs = 0;
+  int _durationMs = 0;
   bool _adActive = false;
 
   /// When true, the sheet mounts already expanded (explicit taps from Home /
@@ -61,8 +64,18 @@ class DiscoveryBrowserController extends ChangeNotifier {
   /// interpret it as PLAYING.
   bool? get pagePlaying => _pagePlaying;
 
-  /// Full state-machine state shared with the native WebView/service.
+  /// Full transport state shared with the native WebView/service.
   VShotsPlaybackState get playbackState => _playbackState;
+
+  /// Audio truth is separate from transport truth. In particular, PLAYING
+  /// does not imply that YouTube audio is audible.
+  VShotsAudioState get audioState => _audioState;
+  int get positionMs => _positionMs;
+  int get durationMs => _durationMs;
+  double get progress {
+    if (_durationMs <= 0) return 0;
+    return (_positionMs / _durationMs).clamp(0.0, 1.0).toDouble();
+  }
 
   String? get videoId => _track?['id'] as String?;
   String? get title => _track?['title'] as String?;
@@ -90,6 +103,9 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _error = null;
     _pagePlaying = null;
     _playbackState = VShotsPlaybackState.loading;
+    _audioState = VShotsAudioState.buffering;
+    _positionMs = 0;
+    _durationMs = 0;
     _adActive = false;
     debugPrint('[DiscoveryBrowser] OPEN videoId=${track['id']} url=$url');
     notifyListeners();
@@ -104,6 +120,9 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _error = null;
     _pagePlaying = null;
     _playbackState = VShotsPlaybackState.stopped;
+    _audioState = VShotsAudioState.idle;
+    _positionMs = 0;
+    _durationMs = 0;
     _adActive = false;
     _track = null;
     notifyListeners();
@@ -161,6 +180,34 @@ class DiscoveryBrowserController extends ChangeNotifier {
     if (_playbackState == state && _pagePlaying == playing) return;
     _playbackState = state;
     _pagePlaying = playing;
+    notifyListeners();
+  }
+
+  /// Applies the native audio truth without inferring it from page visibility.
+  void setAudioState(VShotsAudioState state, bool playing) {
+    final nextPlayback = switch (state) {
+      VShotsAudioState.buffering => VShotsPlaybackState.buffering,
+      VShotsAudioState.playingMutedAd => VShotsPlaybackState.ad,
+      VShotsAudioState.playingWithAudio => VShotsPlaybackState.playing,
+      VShotsAudioState.playingMutedContent => VShotsPlaybackState.playing,
+      VShotsAudioState.paused => VShotsPlaybackState.paused,
+      VShotsAudioState.ended => VShotsPlaybackState.ended,
+      VShotsAudioState.error => VShotsPlaybackState.error,
+      VShotsAudioState.idle => _playbackState,
+    };
+    if (_audioState == state && _playbackState == nextPlayback) return;
+    _audioState = state;
+    _playbackState = nextPlayback;
+    _pagePlaying = playing;
+    notifyListeners();
+  }
+
+  void setPosition(int positionMs, int durationMs) {
+    final safeDuration = durationMs < 0 ? 0 : durationMs;
+    final safePosition = positionMs.clamp(0, safeDuration).toInt();
+    if (_positionMs == safePosition && _durationMs == safeDuration) return;
+    _positionMs = safePosition;
+    _durationMs = safeDuration;
     notifyListeners();
   }
 

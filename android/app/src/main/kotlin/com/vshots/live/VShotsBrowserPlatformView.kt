@@ -341,6 +341,14 @@ private class VShotsBackgroundMediaWebView(
                 durationMs = durationMs,
                 generation = generation,
             )
+            events.invokeMethod(
+                "position",
+                mapOf(
+                    "positionMs" to positionMs,
+                    "durationMs" to durationMs,
+                    "generation" to generation,
+                ),
+            )
         }
     }
 
@@ -400,6 +408,21 @@ private class VShotsBackgroundMediaWebView(
         if (audioState == next) return
         Log.d(TAG, "audio state: $audioState -> $next")
         audioState = next
+        val playing = when (next) {
+            BrowserAudioState.PLAYING_WITH_AUDIO,
+            BrowserAudioState.PLAYING_MUTED_AD,
+            BrowserAudioState.PLAYING_MUTED_CONTENT,
+            -> true
+            else -> false
+        }
+        events.invokeMethod(
+            "audioState",
+            mapOf(
+                "state" to next.name.lowercase(Locale.US),
+                "playing" to playing,
+                "generation" to loadGeneration,
+            ),
+        )
     }
 
     /** Keep the entire WebView unmuted at the native WebView layer. */
@@ -1145,6 +1168,33 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
+    fun seekTo(positionMs: Long, requestedGeneration: Long? = null) {
+        val generation = requestedGeneration ?: loadGeneration
+        if (generation != loadGeneration || positionMs < 0L) return
+        evaluateJavascript(
+            generationGuardedJs(
+                """(function(){
+                  try{
+                    var v=document.querySelector('video,audio');
+                    if(!v){return 'none';}
+                    var target=$positionMs/1000;
+                    if(v.duration && isFinite(v.duration)){
+                      target=Math.max(0,Math.min(v.duration,target));
+                    }else{
+                      target=Math.max(0,target);
+                    }
+                    v.currentTime=target;
+                    return 'ok|' + String(Math.round(target*1000));
+                  }catch(e){return 'err';}
+                })()""",
+                generation,
+            ),
+        ) { result ->
+            if (generation != loadGeneration) return@evaluateJavascript
+            Log.d(TAG, "seekTo: ${cleanJsResult(result)}")
+        }
+    }
+
     fun setVolume(volume: Double, requestedGeneration: Long? = null) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
@@ -1381,6 +1431,15 @@ private class VShotsBrowserPlatformView(
                     val generation = requestedGeneration(call.arguments)
                     if (generation == null || generation == webView.currentGeneration()) {
                         webView.seekBy(seconds, generation)
+                    }
+                    result.success(null)
+                }
+                "seekTo" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val positionMs = (args?.get("positionMs") as? Number)?.toLong() ?: 0L
+                    val generation = requestedGeneration(call.arguments)
+                    if (generation == null || generation == webView.currentGeneration()) {
+                        webView.seekTo(positionMs, generation)
                     }
                     result.success(null)
                 }

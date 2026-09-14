@@ -111,6 +111,29 @@ void main() {
       c.togglePlaybackRequest.removeListener(listener);
     });
 
+    test('audio state keeps muted playing distinct from audible playing', () {
+      final c = DiscoveryBrowserController();
+      c.setAudioState(VShotsAudioState.playingMutedContent, true);
+      expect(c.playbackState, VShotsPlaybackState.playing);
+      expect(c.pagePlaying, isTrue);
+      expect(c.audioState, VShotsAudioState.playingMutedContent);
+
+      c.setAudioState(VShotsAudioState.playingWithAudio, true);
+      expect(c.playbackState, VShotsPlaybackState.playing);
+      expect(c.audioState, VShotsAudioState.playingWithAudio);
+    });
+
+    test('position state is clamped and exposes a stable progress value', () {
+      final c = DiscoveryBrowserController();
+      c.setPosition(2500, 10000);
+      expect(c.positionMs, 2500);
+      expect(c.durationMs, 10000);
+      expect(c.progress, 0.25);
+      c.setPosition(20000, 10000);
+      expect(c.positionMs, 10000);
+      expect(c.progress, 1.0);
+    });
+
     test('full playback state keeps loading distinct from playing', () {
       final c = DiscoveryBrowserController();
       c.setPlaybackState(VShotsPlaybackState.loading, false);
