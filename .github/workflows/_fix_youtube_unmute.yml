@@ -32,6 +32,7 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          Path('.env').touch()
           native = Path('android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt')
           s = native.read_text()
           if 'import android.view.InputDevice' not in s:
@@ -55,10 +56,6 @@ jobs:
           t = t.replace("expect(source.split('contentAudioValidated = true').length - 1, 1);", "expect(source.split('contentAudioValidated = true').length - 1, 2);", 1)
           t = t.replace("expect(source, contains('generationGuardedJs'));", "expect(source, contains('generationGuardedJs'));\n    expect(source, contains('SOURCE_TOUCHSCREEN'));\n    expect(source, contains('window.innerWidth'));", 1)
           test.write_text(t)
-
-          workflow = Path('.github/workflows/_fix_youtube_unmute.yml')
-          workflow_text = workflow.read_text()
-          workflow.write_text(workflow_text)
       - name: Format
         run: dart format --output=none --set-exit-if-changed lib test
       - name: Analyze
@@ -89,7 +86,7 @@ jobs:
       - name: Commit validated fix and remove runner
         shell: bash
         run: |
-          rm -f .github/workflows/_fix_youtube_unmute.yml
+          rm -f .github/workflows/_fix_youtube_unmute.yml .env
           git config user.name "V Shots Agent"
           git config user.email "agent@arena.ai"
           git add android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt test/features/foryou/vshots_browser_audio_contract_test.dart .github/workflows/_fix_youtube_unmute.yml
