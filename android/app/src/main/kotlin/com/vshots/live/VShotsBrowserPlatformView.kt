@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.MotionEvent
+import android.view.InputDevice
 import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -220,8 +221,11 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
       var unmuteRect = unmute.getBoundingClientRect();
       if(unmuteStyle.display !== 'none' && unmuteStyle.visibility !== 'hidden' &&
          unmuteStyle.opacity !== '0' && unmuteRect.width > 0 && unmuteRect.height > 0){
-        return 'unmute-target|' + String(unmuteRect.left + unmuteRect.width / 2) + '|' +
-          String(unmuteRect.top + unmuteRect.height / 2);
+        var viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth);
+        var viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight);
+        var targetX = (unmuteRect.left + unmuteRect.width / 2) / viewportWidth;
+        var targetY = (unmuteRect.top + unmuteRect.height / 2) / viewportHeight;
+        return 'unmute-target|' + String(targetX) + '|' + String(targetY);
       }
     }
     v.muted = false;
@@ -418,8 +422,12 @@ private class VShotsBackgroundMediaWebView(
      */
     private fun performTrustedUnmuteTap(x: Float, y: Float) {
         val now = SystemClock.uptimeMillis()
-        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
-        val up = MotionEvent.obtain(now, now + 16L, MotionEvent.ACTION_UP, x, y, 0)
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0).apply {
+            source = InputDevice.SOURCE_TOUCHSCREEN
+        }
+        val up = MotionEvent.obtain(now, now + 16L, MotionEvent.ACTION_UP, x, y, 0).apply {
+            source = InputDevice.SOURCE_TOUCHSCREEN
+        }
         try {
             dispatchTouchEvent(down)
             dispatchTouchEvent(up)
@@ -613,11 +621,14 @@ private class VShotsBackgroundMediaWebView(
                 }
                 clean.startsWith("unmute-target|") -> {
                     val parts = clean.split('|')
-                    val x = parts.getOrNull(1)?.toFloatOrNull()
-                    val y = parts.getOrNull(2)?.toFloatOrNull()
-                    if (x != null && y != null &&
+                    val nx = parts.getOrNull(1)?.toFloatOrNull()
+                    val ny = parts.getOrNull(2)?.toFloatOrNull()
+                    val x = nx?.let { it * width.toFloat() }
+                    val y = ny?.let { it * height.toFloat() }
+                    if (nx != null && ny != null && x != null && y != null &&
+                        nx in 0f..1f && ny in 0f..1f &&
                         x >= 0f && y >= 0f && x <= width.toFloat() && y <= height.toFloat()) {
-                        Log.d(TAG, "trusted YouTube unmute tap: $x,$y")
+                        Log.d(TAG, "trusted YouTube unmute tap: normalized=$nx,$ny px=$x,$y")
                         performTrustedUnmuteTap(x, y)
                         handler.postDelayed({
                             if (generation != loadGeneration || userPaused || adActive) return@postDelayed
