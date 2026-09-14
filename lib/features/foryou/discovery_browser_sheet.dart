@@ -605,12 +605,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
-  String _displayUrl() {
-    final url = widget.controller.url ?? '';
-    if (url.isEmpty) return '';
-    return url.replaceFirst(RegExp(r'^https://'), '');
-  }
-
   // ── Collapsed mini player ────────────────────────────────────────────────
 
   Widget _buildMiniPlayer() {
@@ -1799,38 +1793,6 @@ class _AdBadge extends StatelessWidget {
           fontWeight: FontWeight.w800,
           letterSpacing: 0.5,
         ),
-      ),
-    );
-  }
-}
-
-class _SourceBadge extends StatelessWidget {
-  const _SourceBadge({required this.source});
-
-  final String source;
-
-  @override
-  Widget build(BuildContext context) {
-    final isJio = source.toLowerCase().contains('jiosaavn');
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-      decoration: BoxDecoration(
-        color: isJio ? const Color(0xE61DB954) : const Color(0xE6FF0000),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.play_arrow_rounded, size: 8, color: Colors.white),
-          Text(
-            isJio ? 'JioSaavn' : 'YouTube',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 7,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
       ),
     );
   }
