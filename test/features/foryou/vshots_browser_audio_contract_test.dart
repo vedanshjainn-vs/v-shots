@@ -17,6 +17,10 @@ void main() {
     expect(source, contains('YT_VALIDATE_CONTENT_AUDIO_JS'));
     expect(source, contains('v.muted = !!snapshot.muted'));
     expect(source, contains('contentAudioValidationRequested'));
+    expect(source, contains("document.querySelector('.ytp-unmute')"));
+    expect(source, contains('explicit play:'));
+    expect(source.split('contentAudioValidated = true').length - 1, 1);
+    expect(source, isNot(contains('.videoAdUi, .ytp-ad-player-overlay')));
     expect(source, contains('generationGuardedJs'));
 
     // Guard against reintroducing the production regression: muting an ad

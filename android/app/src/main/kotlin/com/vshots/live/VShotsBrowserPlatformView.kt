@@ -65,9 +65,9 @@ private const val YT_POLL_JS = """
     }
     var adOn = !!document.querySelector('.ad-showing');
     if(!adOn){
-      // Do not treat the player overlay container itself as an ad: YouTube
-      // keeps that node mounted on ordinary content pages. Require visible
-      // ad-specific evidence instead.
+      // The overlay container remains mounted on ordinary YouTube content.
+      // Require a visible ad-specific control/label before classifying this
+      // media element as an official in-stream advertisement.
       var adEvidence = document.querySelector(
         '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
         ' .ytp-ad-preview-container, .ytp-ad-text,' +
@@ -77,7 +77,9 @@ private const val YT_POLL_JS = """
         var style = window.getComputedStyle(adEvidence);
         var rect = adEvidence.getBoundingClientRect();
         if(style.display !== 'none' && style.visibility !== 'hidden' &&
-           rect.width > 0 && rect.height > 0){ adOn = true; }
+           style.opacity !== '0' && rect.width > 0 && rect.height > 0){
+          adOn = true;
+        }
       }
     }
     var v = document.querySelector('video,audio');
@@ -181,6 +183,9 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
   try{
     var adOn = !!document.querySelector('.ad-showing');
     if(!adOn){
+      // The overlay container remains mounted on ordinary YouTube content.
+      // Require a visible ad-specific control/label before classifying this
+      // media element as an official in-stream advertisement.
       var adEvidence = document.querySelector(
         '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
         ' .ytp-ad-preview-container, .ytp-ad-text,' +
@@ -190,7 +195,9 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
         var style = window.getComputedStyle(adEvidence);
         var rect = adEvidence.getBoundingClientRect();
         if(style.display !== 'none' && style.visibility !== 'hidden' &&
-           rect.width > 0 && rect.height > 0){ adOn = true; }
+           style.opacity !== '0' && rect.width > 0 && rect.height > 0){
+          adOn = true;
+        }
       }
     }
     if(adOn){ return 'ad'; }
@@ -200,10 +207,20 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
 
     // Fresh user-selected content is allowed one audio initialization. This
     // repairs WebView/YouTube muted autoplay without becoming a polling loop.
-    if(v.muted || v.volume === 0){
-      v.muted = false;
-      v.volume = 1.0;
+    // YouTube keeps its own player-volume state in addition to the HTML media
+    // element. If its official visible Unmute control is present, invoke that
+    // explicit control once before synchronizing the element properties.
+    var unmute = document.querySelector('.ytp-unmute');
+    if(unmute){
+      var unmuteStyle = window.getComputedStyle(unmute);
+      var unmuteRect = unmute.getBoundingClientRect();
+      if(unmuteStyle.display !== 'none' && unmuteStyle.visibility !== 'hidden' &&
+         unmuteStyle.opacity !== '0' && unmuteRect.width > 0 && unmuteRect.height > 0){
+        try{ unmute.click(); }catch(e){}
+      }
     }
+    v.muted = false;
+    v.volume = 1.0;
     return 'validated|' + (v.muted ? '1' : '0') + '|' + String(v.volume);
   }catch(e){ return 'err'; }
 })()
@@ -1116,7 +1133,9 @@ private class VShotsBackgroundMediaWebView(
                       var style = window.getComputedStyle(adEvidence);
                       var rect = adEvidence.getBoundingClientRect();
                       if(style.display !== 'none' && style.visibility !== 'hidden' &&
-                         rect.width > 0 && rect.height > 0){ adOn = true; }
+                         style.opacity !== '0' && rect.width > 0 && rect.height > 0){
+                        adOn = true;
+                      }
                     }
                   }
                   if(adOn){ return 'ad'; }
@@ -1132,10 +1151,10 @@ private class VShotsBackgroundMediaWebView(
             ),
         ) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
-            // "requested" only means that HTMLMediaElement.play() was
-            // invoked. Its Promise may still be rejected by WebView policy,
-            // so the first authoritative CONTENT poll must perform the one
-            // audio validation instead of treating this request as success.
+            // "requested" only means HTMLMediaElement.play() was invoked.
+            // Its Promise can still be rejected by WebView autoplay policy,
+            // so observed CONTENT+PLAYING polling must perform the one audio
+            // validation instead of treating this request as success.
             Log.d(TAG, "explicit play: ${cleanJsResult(result)}")
         }
     }
