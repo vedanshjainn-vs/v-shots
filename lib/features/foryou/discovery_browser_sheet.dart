@@ -39,6 +39,7 @@ import '../../main.dart'
     show LyricsScreen, playbackSignalTracker, showAddToPlaylistSheet;
 import 'discovery_browser_controller.dart';
 import 'vshots_browser_session.dart';
+import 'vshots_playback_state.dart';
 
 class DiscoveryBrowserSheet extends StatefulWidget {
   const DiscoveryBrowserSheet({super.key, required this.controller});

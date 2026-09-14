@@ -5,6 +5,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:v_shots/features/foryou/vshots_browser_session.dart';
+import 'package:v_shots/features/foryou/vshots_playback_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
