@@ -584,7 +584,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                     color: AppColors.textSecondary,
                   ),
                   tooltip: 'More options',
-                  onPressed: track == null ? null : () => _openPlayerActions(track),
+                  onPressed:
+                      track == null ? null : () => _openPlayerActions(track),
                 ),
                 IconButton(
                   icon: const Icon(
@@ -854,8 +855,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                   ),
                 ),
               ),
-              if (widget.controller.isLoading)
-                const _PremiumLoadingOverlay(),
+              if (widget.controller.isLoading) const _PremiumLoadingOverlay(),
               if (audioMuted && !widget.controller.adActive)
                 Positioned.fill(
                   child: Center(
@@ -1103,7 +1103,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                             ? null
                             : [
                                 BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.35),
+                                  color:
+                                      AppColors.primary.withValues(alpha: 0.35),
                                   blurRadius: 22,
                                   spreadRadius: 2,
                                 ),
@@ -1535,7 +1536,8 @@ class _SoundPrompt extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.volume_off_rounded, color: AppColors.warning, size: 28),
+            const Icon(Icons.volume_off_rounded,
+                color: AppColors.warning, size: 28),
             const SizedBox(height: 8),
             const Text(
               'Sound is off',
@@ -1748,18 +1750,23 @@ class _PremiumActionSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.playlist_add_rounded, color: AppColors.accent),
-              title: const Text('Add to playlist', style: TextStyle(color: AppColors.textMain)),
+              leading: const Icon(Icons.playlist_add_rounded,
+                  color: AppColors.accent),
+              title: const Text('Add to playlist',
+                  style: TextStyle(color: AppColors.textMain)),
               onTap: onPlaylist,
             ),
             ListTile(
-              leading: const Icon(Icons.lyrics_outlined, color: AppColors.accent),
-              title: const Text('View lyrics', style: TextStyle(color: AppColors.textMain)),
+              leading:
+                  const Icon(Icons.lyrics_outlined, color: AppColors.accent),
+              title: const Text('View lyrics',
+                  style: TextStyle(color: AppColors.textMain)),
               onTap: onLyrics,
             ),
             ListTile(
               leading: const Icon(Icons.share_rounded, color: AppColors.accent),
-              title: const Text('Share track', style: TextStyle(color: AppColors.textMain)),
+              title: const Text('Share track',
+                  style: TextStyle(color: AppColors.textMain)),
               onTap: onShare,
             ),
           ],
