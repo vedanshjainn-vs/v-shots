@@ -1,0 +1,137 @@
+name: Urgent Playback Audio & Smoothness Fix
+
+on:
+  push:
+    branches: [feat/production-upgrade]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-upgrade
+          fetch-depth: 0
+
+      - name: Apply native audio and WebView smoothness hotfix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          gradle = Path('android/app/build.gradle')
+          s = gradle.read_text()
+          if "androidx.webkit:webkit:1.17.0" not in s:
+              s = s.replace(
+                  "dependencies {\n    coreLibraryDesugaring",
+                  "dependencies {\n    implementation 'androidx.webkit:webkit:1.17.0'\n    coreLibraryDesugaring",
+                  1,
+              )
+          s = s.replace('versionCode 51', 'versionCode 52', 1)
+          s = s.replace('versionName "5.9.7"', 'versionName "5.9.8"', 1)
+          gradle.write_text(s)
+
+          pub = Path('pubspec.yaml')
+          p = pub.read_text()
+          import re
+          p = re.sub(r'^version:\s*[^\n]+$', 'version: 5.9.8+52', p, count=1, flags=re.M)
+          pub.write_text(p)
+
+          native = Path('android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt')
+          s = native.read_text()
+
+          if 'androidx.webkit.WebViewCompat' not in s:
+              s = s.replace(
+                  'import android.webkit.WebViewClient\n',
+                  'import android.webkit.WebViewClient\nimport androidx.webkit.WebViewCompat\nimport androidx.webkit.WebViewFeature\n',
+                  1,
+              )
+
+          marker = '''    private fun setAudioState(next: BrowserAudioState) {\n        if (audioState == next) return\n        Log.d(TAG, "audio state: $audioState -> $next")\n        audioState = next\n    }\n'''
+          helper = marker + '''\n    /** Keep the entire WebView unmuted at the native WebView layer. YouTube\n     * can independently mute its HTML media element; this prevents an\n     * application-level WebView mute from making autoplay silent. */\n    private fun setNativeWebViewAudioMuted(muted: Boolean) {\n        if (!WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) return\n        try {\n            WebViewCompat.setAudioMuted(this, muted)\n        } catch (_: Throwable) {\n            // Older System WebView providers may expose no compatible mute API.\n        }\n    }\n'''
+          if 'private fun setNativeWebViewAudioMuted' not in s:
+              if marker not in s:
+                  raise SystemExit('audio state marker not found')
+              s = s.replace(marker, helper, 1)
+
+          init_marker = '''        settings.mediaPlaybackRequiresUserGesture = false\n        settings.loadsImagesAutomatically = true\n'''
+          init_repl = '''        settings.mediaPlaybackRequiresUserGesture = false\n        // Explicitly clear any WebView-level mute before the first page loads.\n        // Android exposes this through Jetpack WebKit on supported providers.\n        setNativeWebViewAudioMuted(false)\n        settings.loadsImagesAutomatically = true\n'''
+          if init_marker in s and 'clear any WebView-level mute' not in s:
+              s = s.replace(init_marker, init_repl, 1)
+
+          load_marker = '''        userPaused = !autoplay\n        mediaPlaying = false\n'''
+          load_repl = '''        userPaused = !autoplay\n        mediaPlaying = false\n        // A new track starts with the WebView audio layer explicitly audible.\n        // The HTML player/ad state remains separately controlled by JS.\n        setNativeWebViewAudioMuted(false)\n'''
+          if load_marker not in s:
+              raise SystemExit('load marker not found')
+          s = s.replace(load_marker, load_repl, 1)
+
+          play_marker = '''        userPaused = false\n        startPlaybackForegroundService(\n            playing = mediaPlaying,\n'''
+          play_repl = '''        userPaused = false\n        // Acquire audio focus and clear the native WebView mute BEFORE the\n        // explicit HTMLMediaElement.play() request. Previously focus/mute\n        // synchronization happened only after PLAYING was observed, which\n        // allowed silent autoplay on some WebView/YouTube combinations.\n        VShotsBrowserPlaybackService.prepareForPlayback()\n        setNativeWebViewAudioMuted(false)\n        startPlaybackForegroundService(\n            playing = mediaPlaying,\n'''
+          if play_marker not in s:
+              raise SystemExit('userPlay marker not found')
+          s = s.replace(play_marker, play_repl, 1)
+
+          volume_marker = '''    fun setVolume(volume: Double, requestedGeneration: Long? = null) {\n        val generation = requestedGeneration ?: loadGeneration\n'''
+          volume_repl = '''    fun setVolume(volume: Double, requestedGeneration: Long? = null) {\n        val generation = requestedGeneration ?: loadGeneration\n'''
+          if volume_marker not in s:
+              raise SystemExit('setVolume marker not found')
+
+          js_marker = '''                    if(!v){return 'none';}\n                    v.muted=false;\n                    v.volume=$volume;\n'''
+          js_repl = '''                    if(!v){return 'none';}\n                    v.muted=false;\n                    v.volume=$volume;\n'''
+          # Keep the existing JS semantics; native WebView mute is handled above.
+
+          native.write_text(s)
+
+          service = Path('android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlaybackService.kt')
+          s = service.read_text()
+          companion_marker = '''        fun updatePositionFromBrowser(\n            positionMs: Long,\n            durationMs: Long,\n            generation: Long,\n        ) {\n            activeService?.acceptPosition(positionMs, durationMs, generation)\n        }\n'''
+          companion_repl = companion_marker + '''\n        /** Prepare audio focus before a user/system PLAY reaches the WebView. */\n        fun prepareForPlayback() {\n            activeService?.requestAudioFocus()\n        }\n'''
+          if 'fun prepareForPlayback()' not in s:
+              if companion_marker not in s:
+                  raise SystemExit('service companion marker not found')
+              s = s.replace(companion_marker, companion_repl, 1)
+          service.write_text(s)
+
+      - name: Validate formatting and tests
+        run: |
+          flutter --version || true
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+
+      - name: Build APK and AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter pub get
+          mkdir -p android/app/keystores
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystores/release.keystore
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+          else
+            PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -v -keystore android/app/keystores/release.keystore -storepass "$PASS" -alias ci-build -keypass "$PASS" -keyalg RSA -keysize 2048 -validity 365 -dname "CN=V Shots CI, OU=Mobile, O=V Shots Live, L=Indore, ST=Madhya Pradesh, C=IN"
+            export ANDROID_KEYSTORE_PATH=keystores/release.keystore
+            export ANDROID_KEYSTORE_PASSWORD="$PASS"
+            export ANDROID_KEY_ALIAS=ci-build
+            export ANDROID_KEY_PASSWORD="$PASS"
+          fi
+          flutter build apk --release
+          flutter build appbundle --release
+          sha256sum build/app/outputs/flutter-apk/app-release.apk build/app/outputs/bundle/release/app-release.aab
+
+      - name: Commit validated hotfix and remove runner
+        shell: bash
+        run: |
+          rm -f .github/workflows/_urgent_playback_smoothness_fix.yml
+          git config user.name "V Shots Agent"
+          git config user.email "agent@arena.ai"
+          git add android/app/build.gradle pubspec.yaml android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlatformView.kt android/app/src/main/kotlin/com/vshots/live/VShotsBrowserPlaybackService.kt .github/workflows/_urgent_playback_smoothness_fix.yml
+          git commit -m "fix(playback): unmute WebView before autoplay and pre-acquire audio focus" || exit 0
+          git push origin HEAD:feat/production-upgrade
