@@ -151,6 +151,33 @@ private fun bootstrapScript(token: String, generation: Long): String = """
     } catch (e) { return false; }
   }
 
+  function nearEndOf(v){
+    try {
+      var d = v.duration;
+      // Guard on a sane duration so a very short clip cannot report
+      // "nearly finished" the moment it starts.
+      return !v.paused && !v.ended && d && isFinite(d) && d > 3 &&
+             v.currentTime >= d - 1.5;
+    } catch (e) { return false; }
+  }
+
+  // Ad assist, official control only: click YouTube's OWN skip button when it
+  // appears — exactly the action a user performs. Unskippable ads are never
+  // interfered with. Gated on the remote flag pushed from Dart.
+  function clickOfficialSkip(){
+    if (window.__vshotsAdAssistEnabled === false) return;
+    var selectors = ['button.ytp-ad-skip-button', 'button.ytp-skip-ad-button',
+                     '.ytp-ad-skip-button-modern button',
+                     'button.ytp-ad-skip-button-modern'];
+    for (var i = 0; i < selectors.length; i++) {
+      var b = document.querySelector(selectors[i]);
+      if (b && b.offsetParent !== null && !b.disabled) {
+        try { b.click(); } catch (e) {}
+        return;
+      }
+    }
+  }
+
   function describe(v){
     if (!v) return { state: 'loading', hasAudio: false };
     if (v.ended) return { state: 'ended', hasAudio: false };
@@ -173,8 +200,11 @@ private fun bootstrapScript(token: String, generation: Long): String = """
       var v = document.querySelector('video,audio');
       var body = describe(v);
       body.ad = adActive();
+      // Near-end is part of the signature, so crossing the auto-advance
+      // threshold produces exactly one report (not a per-tick stream).
+      body.nearEnd = nearEndOf(v);
       var signature = body.state + '|' + (body.hasAudio ? '1' : '0') +
-        '|' + (body.ad ? '1' : '0');
+        '|' + (body.ad ? '1' : '0') + '|' + (body.nearEnd ? '1' : '0');
       if (signature === lastSignature) return;
       lastSignature = signature;
       post('transport', body);
@@ -187,9 +217,11 @@ private fun bootstrapScript(token: String, generation: Long): String = """
       if (!v) return false;
       if (v.__vshotsListenersAttached) { publish(); return true; }
       v.__vshotsListenersAttached = true;
+      // `timeupdate` is what lets the near-end threshold be observed without
+      // any Java-side polling.
       var events = ['play','pause','playing','waiting','seeking','seeked',
                     'volumechange','ended','loadedmetadata','durationchange',
-                    'ratechange'];
+                    'ratechange','timeupdate'];
       for (var i = 0; i < events.length; i++) {
         v.addEventListener(events[i], publish, true);
       }
@@ -226,6 +258,10 @@ private fun bootstrapScript(token: String, generation: Long): String = """
   var adTimer = setInterval(function(){
     var now = adActive();
     if (now !== lastAd) { lastAd = now; publish(); }
+    // Only while an ad is on screen: use the official skip control. This
+    // touches no playback state, never mutes, and stops being useful the
+    // moment the ad ends.
+    if (now) { clickOfficialSkip(); }
   }, 1000);
 
   // Position/scroll is published on a slow, read-only cadence so the media
@@ -466,6 +502,10 @@ private class VShotsBackgroundMediaWebView(
     /** True while the YouTube page is playing an in-stream ad. */
     private var adActive = false
 
+    /** Completion is reported at most once per load. The manager decides
+     *  whether a completion means "advance". */
+    private var videoEndedReported = false
+
     /** Explicit audio state. A muted advertisement is never represented as a
      *  muted content boolean, so content restoration has a single owner. */
     private var audioState = BrowserAudioState.PAUSED
@@ -530,11 +570,18 @@ private class VShotsBackgroundMediaWebView(
             "ready" -> Unit
             "transport" -> {
                 setAdActive(json.optBoolean("ad", adActive))
+                val observed = json.optString("state", "idle")
                 applyObservedState(
-                    json.optString("state", "idle"),
+                    observed,
                     json.optBoolean("hasAudio", false),
                     generation = loadGeneration,
                 )
+                // Seamless auto-advance: the validated near-end point fires the
+                // completion once, exactly like a natural end. The Flutter
+                // manager owns what happens next.
+                if (observed == "ended" || json.optBoolean("nearEnd", false)) {
+                    reportVideoEnded()
+                }
             }
             "position" -> {
                 val positionMs = json.optLong("positionMs", -1L)
@@ -626,6 +673,13 @@ private class VShotsBackgroundMediaWebView(
         "focus" -> BrowserPlaybackState.PAUSED_BY_AUDIO_FOCUS
         "lifecycle" -> BrowserPlaybackState.PAUSED_BY_LIFECYCLE
         else -> BrowserPlaybackState.PAUSED_BY_BROWSER
+    }
+
+    private fun reportVideoEnded() {
+        if (videoEndedReported) return
+        videoEndedReported = true
+        Log.d(TAG, "media completion reported")
+        events.invokeMethod("videoEnded", mapOf("generation" to loadGeneration))
     }
 
     private fun setAdActive(value: Boolean) {
@@ -1018,6 +1072,7 @@ private class VShotsBackgroundMediaWebView(
         currentLoadUrl = playbackUrl
         adActive = false
         adMuted = false
+        videoEndedReported = false
         lastPauseOrigin = if (autoplay) "browser" else "user"
         mediaPlaying = false
         setAudioState(
@@ -1051,6 +1106,16 @@ private class VShotsBackgroundMediaWebView(
     fun setAdAssist(enabled: Boolean) {
         adAssistEnabled = enabled
         if (!enabled) releaseAdMute()
+        // The page-local ad watcher reads this so the official skip click can
+        // be disabled without another JS injection.
+        try {
+            evaluateJavascript(
+                "window.__vshotsAdAssistEnabled = $enabled;",
+                null,
+            )
+        } catch (_: Throwable) {
+            // Flag propagation is best effort.
+        }
         Log.d(TAG, "ad assist ${if (enabled) "enabled" else "disabled"}")
     }
 

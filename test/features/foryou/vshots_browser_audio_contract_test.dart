@@ -135,6 +135,20 @@ void main() {
       expect(source, contains('"hasAudio" to'));
     });
 
+    test('still owns completion and the official skip assist', () {
+      final String source = _read(_platformViewPath);
+
+      // Seamless auto-advance: the validated near-end point reports completion
+      // once per load, and the Flutter manager decides what happens next.
+      expect(source, contains('reportVideoEnded'));
+      expect(source, contains('"videoEnded"'));
+      expect(source, contains('nearEndOf'));
+      expect(source, contains("'ratechange','timeupdate'"));
+      // Ad assist uses YouTube's OWN skip control and is gated by the flag.
+      expect(source, contains('clickOfficialSkip'));
+      expect(source, contains('__vshotsAdAssistEnabled'));
+    });
+
     test('survives a dead WebView renderer without crashing the app', () {
       final String source = _read(_platformViewPath);
 
