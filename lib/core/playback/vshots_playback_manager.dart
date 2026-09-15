@@ -25,6 +25,7 @@
 // because the foreground media service keeps the engine + JS poll alive.
 // ═════════════════════════════════════════════════════════════════════════════
 
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -32,12 +33,59 @@ import 'package:flutter/foundation.dart';
 import '../../features/foryou/discovery_browser_controller.dart';
 
 import '../content/blocked_channel_registry.dart';
+import 'playback_router.dart';
 
 enum PlaybackRepeat { off, one, all }
 
 class VShotsPlaybackManager extends ChangeNotifier {
-  VShotsPlaybackManager._();
+  VShotsPlaybackManager._() {
+    // Next-item prewarm is driven by the browser's authoritative state, so it
+    // only ever runs while a track is really playing.
+    browser.addListener(_onBrowserChanged);
+  }
   static final VShotsPlaybackManager instance = VShotsPlaybackManager._();
+
+  /// Track ids whose playback URL has already been resolved for prewarm. Bounded
+  /// by the queue length, cleared when the session closes.
+  final Set<String> _prewarmedTrackIds = <String>{};
+
+  void _onBrowserChanged() {
+    if (browser.isTransportRunning) _prewarmNext();
+  }
+
+  /// Resolves the NEXT queue item's playback URL while the current track plays.
+  ///
+  /// This is URL/metadata resolution only: it never creates a second WebView,
+  /// never starts playback, and never touches audio focus. The point is that
+  /// swiping or pressing Next becomes playable immediately instead of waiting
+  /// on provider resolution — one item deep, exactly once per track id.
+  void _prewarmNext() {
+    if (_queue.length < 2) return;
+    final Map<String, dynamic> next = _queue[_nextIndex(1)];
+    final String id = next['id'] as String? ?? '';
+    if (id.isEmpty || _prewarmedTrackIds.contains(id)) return;
+    final String? existing = next['url'] as String?;
+    if (existing != null && existing.isNotEmpty) {
+      _prewarmedTrackIds.add(id);
+      return;
+    }
+    _prewarmedTrackIds.add(id);
+    unawaited(_resolveInPlace(next));
+  }
+
+  Future<void> _resolveInPlace(Map<String, dynamic> track) async {
+    try {
+      final Map<String, dynamic> resolved =
+          await PlaybackRouter.instance.attachResolvedPlayback(track);
+      final int index = _queue
+          .indexWhere((Map<String, dynamic> t) => t['id'] == resolved['id']);
+      if (index < 0) return;
+      if (resolved['playbackUnavailable'] == true) return;
+      _queue[index] = resolved;
+    } catch (e) {
+      debugPrint('[PlaybackManager] next-item prewarm failed: $e');
+    }
+  }
 
   /// The global browser state (open/closed/collapsed/expanded + current
   /// track). The single source of truth every surface reads.
@@ -292,6 +340,7 @@ class VShotsPlaybackManager extends ChangeNotifier {
     _shuffleOrder.clear();
     _lastEndedId = null;
     _lastEndedAt = null;
+    _prewarmedTrackIds.clear();
     notifyListeners();
   }
 

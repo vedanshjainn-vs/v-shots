@@ -1,7 +1,7 @@
 name: v_shots
 description: V Shots - Music Streaming App
 # Reconciled with android/app/build.gradle's shipped release version.
-version: 5.9.8+52
+version: 5.9.9+53
 publish_to: "none"
 
 environment:

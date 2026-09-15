@@ -9,15 +9,14 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
-import android.view.MotionEvent
-import android.view.InputDevice
-import android.os.SystemClock
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
-import java.io.ByteArrayInputStream
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewCompat
@@ -27,226 +26,299 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
+import java.io.ByteArrayInputStream
+import java.security.SecureRandom
 import java.util.Locale
 
 private const val VIEW_TYPE = "vshots/native_browser"
 private const val TAG = "VShotsPlayback"
 
 /**
- * App-wide YouTube playback assist (owner spec, Phase 17.10):
+ * V Shots native playback browser — OBSERVER + COMMAND EXECUTOR ONLY.
  *
- *  • COMPLETION OBSERVATION — the real media element reports a validated
- *    near-end/end event. The Flutter queue owner decides whether to advance;
- *    this WebView never starts another track from its polling callback.
+ * This class deliberately makes NO playback policy decisions. It reports what
+ * the real media element is doing, executes the explicit commands Flutter
+ * sends, and publishes audio truth. Every "should it play / should it resume /
+ * was that the user?" decision lives in exactly one place:
+ * `lib/features/foryou/vshots_browser_session.dart`.
  *
- *  • AD ASSIST — while the OFFICIAL YouTube player runs an in-stream ad:
- *      - the ad is muted (only the player's own video element state);
- *      - YouTube's own "Skip" button is clicked when it appears (the exact
- *        action a user would take; unskippable ads play muted in full);
- *      - nothing is blocked, hidden, resized or sped up; no ad-network
- *        interception, no unofficial APIs, no stream access.
- *    Ad completion restores the exact pre-ad content audio state; an
- *    explicit/system Play command still owns any playback transition.
+ * WHAT CHANGED FROM THE PREVIOUS DESIGN (and why)
+ * -----------------------------------------------
+ *  • EVENT-DRIVEN MEDIA STATE. The old build ran a 1 Hz `evaluateJavascript`
+ *    that scraped the whole document with `querySelector`, and a second
+ *    position probe. That is gone. A one-shot bootstrap injected after page
+ *    finish attaches real HTMLMediaElement listeners (`play`, `pause`,
+ *    `playing`, `waiting`, `seeking`, `volumechange`, `timeupdate`, `ended`)
+ *    and reports CHANGES through a token-guarded JS bridge. Java never polls
+ *    the DOM for state.
  *
- * Only official, user-equivalent player controls are used. The assist is
- * gated by the remote flag `enable_youtube_ad_assist` (default ON) and is
- * YouTube-page-only — JioSaavn pages are never touched.
+ *  • NO SYNTHETIC TOUCHES. The old "trusted unmute tap" fabricated
+ *    down/up MotionEvents at computed coordinates and pushed them through
+ *    `dispatchTouchEvent`. That is not a user gesture, it targeted a DOM node
+ *    that YouTube can move, and it could land on the video body — which
+ *    YouTube interprets as play/pause. Removed entirely.
+ *
+ *  • NO BLANKET TOUCH SWALLOWING. `dispatchTouchEvent` used to consume EVERY
+ *    touch reaching the WebView, which fought Flutter's gesture arena and made
+ *    the Discovery feed swipe unreliable. Removed. The video surface is now
+ *    made inert INSIDE the page with a `pointer-events` shield, so Chromium
+ *    hit-testing is correct, Flutter keeps its gestures, a tap on the video
+ *    body cannot toggle playback, and YouTube's own unmute / ad-skip controls
+ *    stay reachable because they are explicitly re-enabled.
+ *
+ *  • NO PAUSE-RECOVERY RETRY LOOP. The old `recoverUnexpectedPause()` called
+ *    `play()` up to three times with debounce windows, fighting legitimate
+ *    pauses. Removed; divergence is now reported honestly and corrected at
+ *    most twice per load, by the Dart session.
+ *
+ *  • NO CONTENT MUTE LEAK. The old ad assist wrote `v.muted = true;
+ *    v.volume = 0` and relied on a snapshot restore that could be skipped when
+ *    playback was paused — which is how a SONG ended up silent with YouTube
+ *    showing "tap to unmute". Ad muting is now an explicit, always-released
+ *    flag owned by this class, cleared on ad end, on page finish and on load.
  */
 
 /**
- * One-per-second playback poll. Returns:
- *   'ad'      — an in-stream ad is playing (player's own ad UI markers)
- *   'ended'   — media reached its natural end
- *   'nearend' — <=1.5 s left AND still playing (never while paused)
- *   'paused' / 'playing' / 'buffering' / 'none' / 'unknown'
+ * One-shot bootstrap. Installs the gesture shield and the media-event bridge.
+ * Versions of this script are compiled HERE, never assembled from remote input.
  */
-private const val YT_POLL_JS = """
+private fun bootstrapScript(token: String, generation: Long): String = """
 (function(){
-  try{
-    function snapshot(state, v){
-      var muted = v ? (v.muted ? '1' : '0') : '-1';
-      var volume = v && isFinite(v.volume) ? String(v.volume) : '-1';
-      return state + '|' + muted + '|' + volume;
-    }
-    var adOn = !!document.querySelector('.ad-showing');
-    if(!adOn){
-      // The overlay container remains mounted on ordinary YouTube content.
-      // Require a visible ad-specific control/label before classifying this
-      // media element as an official in-stream advertisement.
-      var adEvidence = document.querySelector(
+  var TOKEN = '$token';
+  var GEN = $generation;
+  function post(kind, payload){
+    try {
+      var body = { kind: kind, generation: GEN };
+      if (payload) {
+        for (var key in payload) {
+          if (Object.prototype.hasOwnProperty.call(payload, key)) {
+            body[key] = payload[key];
+          }
+        }
+      }
+      if (window.VShotsNative && window.VShotsNative.report) {
+        window.VShotsNative.report(TOKEN, JSON.stringify(body));
+      }
+    } catch (e) {}
+  }
+  if (window.__vshotsBridgeGeneration === GEN) { post('ready', null); return 'installed'; }
+  window.__vshotsBridgeGeneration = GEN;
+
+  // ── Gesture routing shield ──────────────────────────────────────────────
+  // The embedded player is a VIDEO SURFACE. Transport is owned by V Shots, so
+  // a tap on the video body must not toggle playback. We express that as page
+  // hit-testing (Chromium native behaviour) instead of intercepting touch at
+  // the Android view layer, so Flutter's gesture arena is untouched and
+  // vertical/horizontal swipes keep working.
+  //
+  // YouTube's own unmute control and skip-ad control stay interactive: they
+  // are the only two controls the app deliberately delegates to YouTube.
+  function installShield(){
+    try {
+      if (document.getElementById('vshots-gesture-shield')) return;
+      var head = document.head || document.documentElement;
+      if (!head) return;
+      var style = document.createElement('style');
+      style.id = 'vshots-gesture-shield';
+      style.textContent = [
+        '.html5-video-player, .html5-video-player * { pointer-events: none !important; }',
+        '.ytp-unmute, .ytp-unmute *, .ytp-unmute-button, .ytp-unmute-button *',
+        ' { pointer-events: auto !important; }',
+        '.ytp-ad-skip-button, .ytp-ad-skip-button *',
+        ' { pointer-events: auto !important; }',
+        '.ytp-skip-ad-button, .ytp-skip-ad-button *',
+        ' { pointer-events: auto !important; }',
+        '.ytp-ad-skip-button-modern, .ytp-ad-skip-button-modern *',
+        ' { pointer-events: auto !important; }'
+      ].join('\n');
+      head.appendChild(style);
+    } catch (e) {}
+  }
+
+  function adActive(){
+    try {
+      if (document.querySelector('.ad-showing')) return true;
+      var evidence = document.querySelector(
         '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
         ' .ytp-ad-preview-container, .ytp-ad-text,' +
         ' .ytp-ad-duration-remaining'
       );
-      if(adEvidence){
-        var style = window.getComputedStyle(adEvidence);
-        var rect = adEvidence.getBoundingClientRect();
-        if(style.display !== 'none' && style.visibility !== 'hidden' &&
-           style.opacity !== '0' && rect.width > 0 && rect.height > 0){
-          adOn = true;
-        }
+      if (!evidence) return false;
+      var style = window.getComputedStyle(evidence);
+      var rect = evidence.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' &&
+             style.opacity !== '0' && rect.width > 0 && rect.height > 0;
+    } catch (e) { return false; }
+  }
+
+  function describe(v){
+    if (!v) return { state: 'loading', hasAudio: false };
+    if (v.ended) return { state: 'ended', hasAudio: false };
+    if (v.seeking || (!v.paused && v.readyState < 3)) {
+      return { state: 'buffering', hasAudio: false };
+    }
+    if (v.paused) return { state: 'paused', hasAudio: false };
+    var audible = !v.muted && (isFinite(v.volume) ? v.volume > 0 : true);
+    // Audio truth is reported separately from transport truth: a running but
+    // muted media element is NEVER advertised as audible playback.
+    return {
+      state: audible ? 'playing_with_audio' : 'playing_muted',
+      hasAudio: audible
+    };
+  }
+
+  var lastSignature = '';
+  function publish(){
+    try {
+      var v = document.querySelector('video,audio');
+      var body = describe(v);
+      body.ad = adActive();
+      var signature = body.state + '|' + (body.hasAudio ? '1' : '0') +
+        '|' + (body.ad ? '1' : '0');
+      if (signature === lastSignature) return;
+      lastSignature = signature;
+      post('transport', body);
+    } catch (e) {}
+  }
+
+  function attach(){
+    try {
+      var v = document.querySelector('video,audio');
+      if (!v) return false;
+      if (v.__vshotsListenersAttached) { publish(); return true; }
+      v.__vshotsListenersAttached = true;
+      var events = ['play','pause','playing','waiting','seeking','seeked',
+                    'volumechange','ended','loadedmetadata','durationchange',
+                    'ratechange'];
+      for (var i = 0; i < events.length; i++) {
+        v.addEventListener(events[i], publish, true);
       }
-    }
-    var v = document.querySelector('video,audio');
-    if(!v){ return snapshot(adOn ? 'ad' : 'none', null); }
-    if(adOn){ return snapshot('ad', v); }
-    if(v.ended){ return snapshot('ended', v); }
-    if(v.seeking || (!v.paused && v.readyState < 3)){ return snapshot('buffering', v); }
-    var d = v.duration;
-    if(d && isFinite(d) && !v.paused && v.currentTime >= d - 1.5){
-      return snapshot('nearend', v);
-    }
-    return snapshot(v.paused ? 'paused' : 'playing', v);
-  }catch(e){ return 'unknown|-1|-1'; }
+      publish();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function position(){
+    try {
+      var v = document.querySelector('video,audio');
+      if (!v) return;
+      var duration = (v.duration && isFinite(v.duration))
+        ? Math.round(v.duration * 1000) : -1;
+      post('position', {
+        positionMs: Math.round(v.currentTime * 1000),
+        durationMs: duration
+      });
+    } catch (e) {}
+  }
+
+  installShield();
+  attach();
+  var attachAttempts = 0;
+  var attachTimer = setInterval(function(){
+    installShield();
+    attachAttempts++;
+    if (attach() || attachAttempts > 40) { clearInterval(attachTimer); }
+  }, 250);
+
+  // Page-local ad transition watcher. This runs inside the page (no Java round
+  // trip) and reports CHANGE ONLY; it is not a state poll.
+  var lastAd = adActive();
+  var adTimer = setInterval(function(){
+    var now = adActive();
+    if (now !== lastAd) { lastAd = now; publish(); }
+  }, 1000);
+
+  // Position/scroll is published on a slow, read-only cadence so the media
+  // session can render progress. One message per 5 s replaces the old
+  // per-tick evaluateJavascript position probe.
+  var positionTimer = setInterval(position, 5000);
+  position();
+
+  window.__vshotsDispose = function(){
+    try { clearInterval(attachTimer); } catch (e) {}
+    try { clearInterval(adTimer); } catch (e) {}
+    try { clearInterval(positionTimer); } catch (e) {}
+  };
+  return 'bootstrapped';
 })()
-"""
+""".trimIndent()
 
 /**
- * Position probe (every few poll ticks while playing): returns
- * "<positionMs>|<durationMs>" from the REAL media element so the media
- * session can render an accurate lock-screen/notification progress bar.
- * Returns "none" when no media element exists.
+ * Reconciliation query — the ONLY remaining periodic evaluation.
+ *
+ * It is read-only, returns one short string, and cannot call play(), cannot
+ * navigate, and cannot mutate the page. It exists purely so that a missed
+ * media event cannot leave the app showing a stale state. A 5 s safety net is
+ * not a state poll (the old design ran a full-document scrape every second
+ * plus a separate position probe).
  */
-private const val YT_POSITION_JS = """
+private const val YT_RECONCILE_JS = """
 (function(){
   try{
-    var v=document.querySelector('video,audio');
+    var v = document.querySelector('video,audio');
     if(!v){ return 'none'; }
-    var d=(v.duration&&isFinite(v.duration))?Math.round(v.duration*1000):-1;
-    return Math.round(v.currentTime*1000)+'|'+d;
+    var muted = v.muted ? '1' : '0';
+    var volume = (v.volume !== undefined && isFinite(v.volume))
+      ? String(v.volume) : '-1';
+    var state;
+    if(v.ended){ state = 'ended'; }
+    else if(v.seeking || (!v.paused && v.readyState < 3)){ state = 'buffering'; }
+    else if(v.paused){ state = 'paused'; }
+    else {
+      var audible = !v.muted && (isFinite(v.volume) ? v.volume > 0 : true);
+      state = audible ? 'playing_with_audio' : 'playing_muted';
+    }
+    return state + '|' + muted + '|' + volume;
   }catch(e){ return 'none'; }
 })()
-"""
+""".trimIndent()
 
-/**
- * Ad assist pass (runs each poll tick while an ad is active): mute the ad
- * audio, and click YouTube's OWN visible Skip button when it is shown.
- * Returns 'skipped' when a skip was clicked, 'muted' when only muted,
- * and captures the prior content audio state exactly once per ad.
- */
-private const val YT_AD_ASSIST_JS = """
-(function(){
-  try{
-    var skipped = false;
-    var v = document.querySelector('video');
-    if(!v){ return 'none'; }
-
-    // Capture the CONTENT audio state exactly once per ad. This is separate
-    // from the ad mute itself, so a muted ad can never become a permanently
-    // muted song. The snapshot is page-local and is removed on restoration.
-    if(!window.__vshotsAdAudioSnapshot){
-      var previousVolume = (typeof v.volume === 'number' && isFinite(v.volume))
-        ? v.volume : 1;
-      window.__vshotsAdAudioSnapshot = {
-        muted: !!v.muted,
-        volume: previousVolume
-      };
-    }
-    v.muted = true;
-    v.volume = 0;
-
-    var sels = ['button.ytp-ad-skip-button','button.ytp-skip-ad-button',
-                '.ytp-ad-skip-button-modern button','button.ytp-ad-skip-button-modern'];
-    for(var i=0;i<sels.length;i++){
-      var b = document.querySelector(sels[i]);
-      if(b && b.offsetParent !== null && !b.disabled){
-        try{ b.click(); skipped = true; }catch(e){}
-        break;
-      }
-    }
-    return skipped ? 'skipped' : 'muted';
-  }catch(e){ return 'err'; }
-})()
-"""
-
-/** Restore the exact pre-ad content audio state; never hardcode volume. */
-private const val YT_RESTORE_AD_AUDIO_JS = """
+/** Mutes / unmutes ONLY the media element, for an in-stream ad. */
+private fun adMuteScript(muted: Boolean, generation: Long): String {
+    val value = if (muted) "true" else "false"
+    return guardedScript(
+        """
 (function(){
   try{
     var v = document.querySelector('video,audio');
-    var snapshot = window.__vshotsAdAudioSnapshot;
-    if(!v || !snapshot){ return 'none'; }
-    v.muted = !!snapshot.muted;
-    if(typeof snapshot.volume === 'number' && isFinite(snapshot.volume)){
-      v.volume = snapshot.volume;
-    }
-    var result = 'restored|' + (v.muted ? '1' : '0') + '|' + String(v.volume);
-    try{ delete window.__vshotsAdAudioSnapshot; }catch(e){
-      window.__vshotsAdAudioSnapshot = null;
-    }
-    return result;
+    if(!v){ return 'none'; }
+    v.muted = $value;
+    return 'ok';
   }catch(e){ return 'err'; }
 })()
-"""
+""".trimIndent(),
+        generation,
+    )
+}
 
 /**
- * One-shot content initialization. It is called only for a valid CONTENT
- * generation after the ad state has been ruled out. It never calls play().
+ * Runs a mutating script only in the page generation that issued it. The
+ * marker is installed after the matching page finishes, so a stale callback
+ * can never alter a newly selected track.
  */
-private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
+private fun guardedScript(script: String, generation: Long): String = """
+(function(){
+  if(window.__vshotsBridgeGeneration !== $generation){ return 'stale'; }
+  return $script;
+})()
+""".trimIndent()
+
+/** Explicit play/pause/seek/volume commands — the complete mutation surface. */
+private fun transportScript(value: String, generation: Long): String =
+    guardedScript(
+        """
 (function(){
   try{
-    var adOn = !!document.querySelector('.ad-showing');
-    if(!adOn){
-      // The overlay container remains mounted on ordinary YouTube content.
-      // Require a visible ad-specific control/label before classifying this
-      // media element as an official in-stream advertisement.
-      var adEvidence = document.querySelector(
-        '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
-        ' .ytp-ad-preview-container, .ytp-ad-text,' +
-        ' .ytp-ad-duration-remaining'
-      );
-      if(adEvidence){
-        var style = window.getComputedStyle(adEvidence);
-        var rect = adEvidence.getBoundingClientRect();
-        if(style.display !== 'none' && style.visibility !== 'hidden' &&
-           style.opacity !== '0' && rect.width > 0 && rect.height > 0){
-          adOn = true;
-        }
-      }
-    }
-    if(adOn){ return 'ad'; }
     var v = document.querySelector('video,audio');
     if(!v){ return 'none'; }
-    if(window.__vshotsAdAudioSnapshot){ return 'ad-pending'; }
-
-    // Fresh user-selected content is allowed one audio initialization. This
-    // repairs WebView/YouTube muted autoplay without becoming a polling loop.
-    // YouTube keeps its own player-volume state in addition to the HTML media
-    // element. If its official visible Unmute control is present, invoke that
-    // explicit control once before synchronizing the element properties.
-    var unmute = document.querySelector('.ytp-unmute');
-    if(unmute){
-      var unmuteStyle = window.getComputedStyle(unmute);
-      var unmuteRect = unmute.getBoundingClientRect();
-      if(unmuteStyle.display !== 'none' && unmuteStyle.visibility !== 'hidden' &&
-         unmuteStyle.opacity !== '0' && unmuteRect.width > 0 && unmuteRect.height > 0){
-        var viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth);
-        var viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight);
-        var targetX = (unmuteRect.left + unmuteRect.width / 2) / viewportWidth;
-        var targetY = (unmuteRect.top + unmuteRect.height / 2) / viewportHeight;
-        return 'unmute-target|' + String(targetX) + '|' + String(targetY);
-      }
-    }
-    v.muted = false;
-    v.volume = 1.0;
-    return 'validated|' + (v.muted ? '1' : '0') + '|' + String(v.volume);
+    $value
+    return 'ok';
   }catch(e){ return 'err'; }
 })()
-"""
+""".trimIndent(),
+        generation,
+    )
 
-/**
- * Discovery-only native browser view with FORCEFUL ad blocking.
- *
- * Third-party ad blocking for non-YouTube pages. Official YouTube embedded-player
- * resources (including YouTube ads) are never intercepted or hidden.
- *
- * Unlike the generic webview_flutter platform view, this WebView deliberately
- * keeps its media lifecycle alive when Android makes the Flutter activity
- * invisible. This is the critical part for long-form audio/video continuity
- * while the Discovery browser is minimized, backgrounded, or the screen is
- * locked.
- */
 /** Explicit audio state: content audio and muted ads are never one boolean. */
 private enum class BrowserAudioState {
     PLAYING_WITH_AUDIO,
@@ -255,6 +327,21 @@ private enum class BrowserAudioState {
     PAUSED,
     BUFFERING,
     ENDED,
+}
+
+/** The wire vocabulary shared with `lib/features/foryou/vshots_playback_state.dart`. */
+private enum class BrowserPlaybackState(val wire: String) {
+    IDLE("idle"),
+    LOADING("loading"),
+    BUFFERING("buffering"),
+    PLAYING_MUTED("playing_muted"),
+    PLAYING_WITH_AUDIO("playing_with_audio"),
+    PAUSED_BY_USER("paused_by_user"),
+    PAUSED_BY_AUDIO_FOCUS("paused_by_audio_focus"),
+    PAUSED_BY_LIFECYCLE("paused_by_lifecycle"),
+    PAUSED_BY_BROWSER("paused_by_browser"),
+    ENDED("ended"),
+    ERROR("error"),
 }
 
 private fun requestedGeneration(arguments: Any?): Long? {
@@ -304,6 +391,18 @@ private fun youtubePlayerSurfaceUrl(url: String, autoplay: Boolean): String {
         "&disablekb=1"
 }
 
+/**
+ * Discovery-only native browser view.
+ *
+ * Third-party ad blocking for non-YouTube pages. Official YouTube embedded-player
+ * resources (including YouTube ads) are never intercepted or hidden.
+ *
+ * Unlike the generic webview_flutter platform view, this WebView deliberately
+ * keeps its media lifecycle alive when Android makes the Flutter activity
+ * invisible. This is the critical part for long-form audio/video continuity
+ * while the Discovery browser is minimized, backgrounded, or the screen is
+ * locked.
+ */
 private class VShotsBackgroundMediaWebView(
     context: Context,
     private val events: MethodChannel,
@@ -312,11 +411,30 @@ private class VShotsBackgroundMediaWebView(
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
 
-    /** Monotonic load generation. Every async JS callback captures it so a
-     * stale page cannot mutate the next track's state. */
+    /** Bridges page-side media events back to Java without polling the DOM. */
+    private inner class MediaBridge {
+        @JavascriptInterface
+        fun report(token: String, payload: String) {
+            if (token != bridgeToken) {
+                Log.w(TAG, "rejected bridge report with an unknown token")
+                return
+            }
+            handler.post { handleBridgePayload(payload) }
+        }
+    }
+
+    /** Per-WebView secret embedded only inside our injected closure. */
+    private val bridgeToken: String = run {
+        val bytes = ByteArray(16)
+        SecureRandom().nextBytes(bytes)
+        bytes.joinToString("") { String.format(Locale.US, "%02x", it) }
+    }
+
+    /** Monotonic load generation. Every async callback captures it so a stale
+     *  page cannot mutate the next track's state. */
     private var loadGeneration = 0L
     private var currentLoadUrl = ""
-    private var playbackState = "idle"
+    private var playbackState = BrowserPlaybackState.IDLE
     private var notificationTitle = "V Shots"
     private var notificationArtist = "Music playback"
     private var notificationArtwork = ""
@@ -332,15 +450,6 @@ private class VShotsBackgroundMediaWebView(
      */
     private var retainMediaLifecycle = true
 
-    /**
-     * Real touches on the embedded media surface are intentionally consumed by
-     * the V Shots shell. This prevents an arbitrary video tap from becoming a
-     * YouTube play/pause gesture. The only touch allowed through this WebView
-     * is the generation-checked native touch delivered to YouTube's exact
-     * unmute target by the already-validated audio path.
-     */
-    private var trustedTouchInFlight = false
-
     // ── FORCEFUL Ad Blocker State ──────────────────────────────────────────
     // ALWAYS ON by default. Populated from Dart via "setContentBlocker".
     // Host-exact + suffix matching + URL pattern matching.
@@ -350,135 +459,51 @@ private class VShotsBackgroundMediaWebView(
     private val essentialHosts = mutableSetOf<String>()
     private val adUrlPatterns = mutableListOf<String>()
 
-    // Popup blocking state
     private var popupBlockedCount = 0
 
-    private val playbackPoll = object : Runnable {
-        private var tick = 0
-
-        fun reset() {
-            tick = 0
-        }
-
-        override fun run() {
-            if (!isAttachedToWindow && !mediaPlaying) return
-            val generation = loadGeneration
-            evaluateJavascript(YT_POLL_JS) { result ->
-                if (generation == loadGeneration) {
-                    handlePollResult(cleanJsResult(result), generation)
-                }
-            }
-            // Every ~5s while playing: report real position/duration. Position
-            // is read-only and does not request focus or change play state.
-            if (mediaPlaying && tick % 5 == 0) {
-                evaluateJavascript(YT_POSITION_JS) { result ->
-                    if (generation == loadGeneration) {
-                        handlePositionResult(cleanJsResult(result), generation)
-                    }
-                }
-            }
-            tick++
-            handler.postDelayed(this, 1000L)
-        }
-    }
-
-    private fun handlePositionResult(result: String, generation: Long) {
-        if (generation != loadGeneration || result == "none" || !result.contains("|")) return
-        val parts = result.split("|")
-        val positionMs = parts[0].toLongOrNull() ?: return
-        val durationMs = parts.getOrNull(1)?.toLongOrNull() ?: -1L
-        if (positionMs >= 0) {
-            VShotsBrowserPlaybackService.updatePositionFromBrowser(
-                positionMs = positionMs,
-                durationMs = durationMs,
-                generation = generation,
-            )
-            events.invokeMethod(
-                "position",
-                mapOf(
-                    "positionMs" to positionMs,
-                    "durationMs" to durationMs,
-                    "generation" to generation,
-                ),
-            )
-        }
-    }
-
-    /** True once the CURRENT load's media has reached its natural end.
-     *  Reset on every new load so each video reports end exactly once. */
-    private var endedReported = false
-
-    /** True once the CURRENT load's media entered its last 1.5 s — the
-     *  app-wide auto-advance trigger (owner spec: next track starts just
-     *  BEFORE the song fully ends). Reset on every new load. */
-    private var nearEndReported = false
+    // ── Playback observation state ─────────────────────────────────────────
 
     /** True while the YouTube page is playing an in-stream ad. */
     private var adActive = false
 
     /** Explicit audio state. A muted advertisement is never represented as a
-     * muted content boolean, so content restoration has a single owner. */
+     *  muted content boolean, so content restoration has a single owner. */
     private var audioState = BrowserAudioState.PAUSED
-    private var contentAudioValidationRequested = false
-    private var contentAudioValidated = false
-    private var adAudioAssistTouched = false
-    private var adAssistInFlight = false
-    private var adAudioRestoreInFlight = false
 
-    /** Explicit user pause guard. Polling must never fight the user. */
-    private var userPaused = false
-    private var unexpectedPauseSinceMs = 0L
-    private var pauseRecoveryAttempts = 0
-    private var pauseRecoveryInFlight = false
-    private val maxPauseRecoveryAttempts = 3
+    /** The ONE reason this class may pause: an explicit command from Flutter. */
+    private var lastPauseOrigin = "browser"
 
-    /** Master switch for the ad assist (mute + official-skip click).
-     *  Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
+    /** True while WE muted the media element for an advertisement. */
+    private var adMuted = false
+
+    /** Master switch for the ad assist. Pushed from Dart
+     *  (`enable_youtube_ad_assist` remote flag). */
     private var adAssistEnabled = true
 
     var mediaPlaying: Boolean = false
         private set
 
-    private data class PollSnapshot(
-        val state: String,
-        val muted: Boolean?,
-        val volume: Double?,
-    )
-
-    private fun parsePollSnapshot(result: String): PollSnapshot {
-        val parts = result.split('|')
-        val muted = when (parts.getOrNull(1)) {
-            "1" -> true
-            "0" -> false
-            else -> null
+    /**
+     * Low-frequency, read-only reconciliation. Catches a missed page event;
+     * never mutates, never navigates, never calls play().
+     */
+    private val reconcilePoll = object : Runnable {
+        override fun run() {
+            if (!isAttachedToWindow && !mediaPlaying) return
+            val generation = loadGeneration
+            evaluateJavascript(YT_RECONCILE_JS) { result ->
+                if (generation == loadGeneration) {
+                    handleReconcile(cleanJsResult(result), generation)
+                }
+            }
+            handler.postDelayed(this, 5000L)
         }
-        val volume = parts.getOrNull(2)?.toDoubleOrNull()?.takeIf { it >= 0.0 }
-        return PollSnapshot(
-            state = parts.firstOrNull().orEmpty(),
-            muted = muted,
-            volume = volume,
-        )
     }
 
     private fun setAudioState(next: BrowserAudioState) {
         if (audioState == next) return
         Log.d(TAG, "audio state: $audioState -> $next")
         audioState = next
-        val playing = when (next) {
-            BrowserAudioState.PLAYING_WITH_AUDIO,
-            BrowserAudioState.PLAYING_MUTED_AD,
-            BrowserAudioState.PLAYING_MUTED_CONTENT,
-            -> true
-            else -> false
-        }
-        events.invokeMethod(
-            "audioState",
-            mapOf(
-                "state" to next.name.lowercase(Locale.US),
-                "playing" to playing,
-                "generation" to loadGeneration,
-            ),
-        )
     }
 
     /** Keep the entire WebView unmuted at the native WebView layer. */
@@ -491,162 +516,116 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    /**
-     * YouTube can expose a real "Tap to unmute" overlay even when the HTML
-     * media element is already playing. A JavaScript .click() is not a trusted
-     * browser gesture, so it can be ignored by Chromium/YouTube. When the
-     * official unmute target is visibly present, deliver one native touch to
-     * that exact target. This is equivalent to the user's tap and avoids
-     * tapping the video body (which would pause it).
-     */
-    private fun performTrustedUnmuteTap(x: Float, y: Float) {
-        val now = SystemClock.uptimeMillis()
-        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0).apply {
-            source = InputDevice.SOURCE_TOUCHSCREEN
+    // ── Bridge ingestion ───────────────────────────────────────────────────
+
+    private fun handleBridgePayload(payload: String) {
+        val json = try {
+            org.json.JSONObject(payload)
+        } catch (_: Throwable) {
+            return
         }
-        val up = MotionEvent.obtain(now, now + 16L, MotionEvent.ACTION_UP, x, y, 0).apply {
-            source = InputDevice.SOURCE_TOUCHSCREEN
-        }
-        trustedTouchInFlight = true
-        try {
-            dispatchTouchEvent(down)
-            dispatchTouchEvent(up)
-        } finally {
-            trustedTouchInFlight = false
-            down.recycle()
-            up.recycle()
+        val generation = json.optLong("generation", -1L)
+        if (generation >= 0 && generation != loadGeneration) return
+        when (json.optString("kind")) {
+            "ready" -> Unit
+            "transport" -> {
+                setAdActive(json.optBoolean("ad", adActive))
+                applyObservedState(
+                    json.optString("state", "idle"),
+                    json.optBoolean("hasAudio", false),
+                    generation = loadGeneration,
+                )
+            }
+            "position" -> {
+                val positionMs = json.optLong("positionMs", -1L)
+                val durationMs = json.optLong("durationMs", -1L)
+                if (positionMs >= 0) {
+                    VShotsBrowserPlaybackService.updatePositionFromBrowser(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        generation = loadGeneration,
+                    )
+                    events.invokeMethod(
+                        "position",
+                        mapOf(
+                            "positionMs" to positionMs,
+                            "durationMs" to durationMs,
+                            "generation" to loadGeneration,
+                        ),
+                    )
+                }
+            }
         }
     }
 
-    /**
-     * The embedded YouTube surface is video-only. Transport is owned by the V
-     * Shots controls, so a generic touch cannot pause or resume the media.
-     * Intercept at dispatch level so Chromium's internal child views cannot
-     * receive an ordinary tap. Trusted unmute input temporarily passes through
-     * the flag above.
-     */
-    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        if (!trustedTouchInFlight) return true
-        return super.dispatchTouchEvent(event)
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (trustedTouchInFlight) return super.onTouchEvent(event)
-        return true
-    }
-
-    private fun updateContentAudioState(snapshot: PollSnapshot) {
-        val audible = snapshot.muted == false && (snapshot.volume == null || snapshot.volume > 0.0)
-        setAudioState(
-            if (audible) BrowserAudioState.PLAYING_WITH_AUDIO
-            else BrowserAudioState.PLAYING_MUTED_CONTENT,
+    private fun handleReconcile(result: String, generation: Long) {
+        if (generation != loadGeneration || result == "none") return
+        val parts = result.split("|")
+        val state = parts.firstOrNull().orEmpty()
+        if (state.isEmpty()) return
+        val muted = parts.getOrNull(1) == "1"
+        val volume = parts.getOrNull(2)?.toDoubleOrNull() ?: 1.0
+        applyObservedState(
+            state,
+            hasAudio = !muted && volume > 0.0,
+            generation = generation,
         )
     }
 
-    private fun recoverUnexpectedPause(generation: Long) {
-        if (generation != loadGeneration || userPaused || adActive || pauseRecoveryInFlight) return
-        if (pauseRecoveryAttempts >= maxPauseRecoveryAttempts) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (unexpectedPauseSinceMs == 0L) unexpectedPauseSinceMs = now
-        if (now - unexpectedPauseSinceMs < 300L) return
-        pauseRecoveryAttempts += 1
-        pauseRecoveryInFlight = true
-        Log.d(TAG, "recovering unexpected pause attempt=$pauseRecoveryAttempts")
-        VShotsBrowserPlaybackService.prepareForPlayback()
-        setNativeWebViewAudioMuted(false)
-        evaluateJavascript(
-            generationGuardedJs(
-                """(function(){try{var v=document.querySelector('video,audio');if(!v||v.ended)return 'none';v.muted=false;if(!v.volume||v.volume<=0)v.volume=1;var p=v.play();if(p&&p.catch)p.catch(function(){});return 'recovery-requested';}catch(e){return 'err';}})()""",
-                generation,
-            ),
-        ) { result ->
-            if (generation == loadGeneration) pauseRecoveryInFlight = false
+    /**
+     * Converts one observed media state into the shared vocabulary and
+     * publishes it. The pause ORIGIN is reported, never invented: the Dart
+     * session is the only layer that decides what a pause means.
+     */
+    private fun applyObservedState(
+        observed: String,
+        hasAudio: Boolean,
+        generation: Long,
+    ) {
+        if (generation != loadGeneration) return
+        when (observed) {
+            "playing_with_audio" -> {
+                setAdActive(false)
+                setAudioState(
+                    if (hasAudio) BrowserAudioState.PLAYING_WITH_AUDIO
+                    else BrowserAudioState.PLAYING_MUTED_CONTENT,
+                )
+                setPlaybackState(
+                    if (hasAudio) BrowserPlaybackState.PLAYING_WITH_AUDIO
+                    else BrowserPlaybackState.PLAYING_MUTED,
+                    playing = true,
+                )
+            }
+            "playing_muted" -> {
+                setAudioState(
+                    if (adActive) BrowserAudioState.PLAYING_MUTED_AD
+                    else BrowserAudioState.PLAYING_MUTED_CONTENT,
+                )
+                setPlaybackState(BrowserPlaybackState.PLAYING_MUTED, playing = true)
+            }
+            "buffering" -> {
+                setAudioState(BrowserAudioState.BUFFERING)
+                setPlaybackState(BrowserPlaybackState.BUFFERING, playing = mediaPlaying)
+            }
+            "paused" -> {
+                setAudioState(BrowserAudioState.PAUSED)
+                setPlaybackState(pauseStateForOrigin(), playing = false)
+            }
+            "ended" -> {
+                setAudioState(BrowserAudioState.ENDED)
+                setPlaybackState(BrowserPlaybackState.ENDED, playing = false)
+            }
+            "loading" -> setPlaybackState(BrowserPlaybackState.LOADING, playing = false)
+            else -> Unit
         }
     }
 
-    private fun handlePollResult(result: String, generation: Long) {
-        if (generation != loadGeneration) return
-        val snapshot = parsePollSnapshot(result)
-        val currentUrl = url ?: ""
-        val lower = currentUrl.lowercase(Locale.US)
-        val isYouTube = lower.contains("youtube.com") || lower.contains("youtu.be")
-
-        when (snapshot.state) {
-            "ad" -> {
-                setAdActive(true)
-                setAudioState(BrowserAudioState.PLAYING_MUTED_AD)
-                // An ad is a page state, not a new playback command. Keep the
-                // active-media bit for the notification action, but never call
-                // play or request focus from this poll callback.
-                setPlaybackState("ad", mediaPlaying)
-                if (adAssistEnabled) runAdAssist(generation)
-            }
-            else -> {
-                if (adActive) {
-                    setAdActive(false)
-                    restoreAdAudioOrValidate(generation)
-                }
-                when (snapshot.state) {
-                    "nearend" -> {
-                        // Completion is emitted once, only while the real
-                        // element is playing. The manager decides whether to
-                        // advance; this layer never starts the next track.
-                        if (isYouTube && !nearEndReported) {
-                            nearEndReported = true
-                            Log.d(TAG, "near-end completion reported")
-                            events.invokeMethod("videoEnded", mapOf("generation" to generation))
-                        }
-                        if (!userPaused) {
-                            updateContentAudioState(snapshot)
-                            ensureContentAudio(generation)
-                            setPlaybackState("playing", true)
-                        } else {
-                            setAudioState(BrowserAudioState.PAUSED)
-                            setPlaybackState("paused", false)
-                        }
-                    }
-                    "ended" -> {
-                        if (isYouTube && !endedReported) {
-                            endedReported = true
-                            Log.d(TAG, "video.ended reported")
-                            events.invokeMethod("videoEnded", mapOf("generation" to generation))
-                        }
-                        setAudioState(BrowserAudioState.ENDED)
-                        setPlaybackState("ended", false)
-                    }
-                    "playing" -> {
-                        unexpectedPauseSinceMs = 0L
-                        pauseRecoveryInFlight = false
-                        if (!userPaused) {
-                            updateContentAudioState(snapshot)
-                            ensureContentAudio(generation)
-                            setPlaybackState("playing", true)
-                        } else {
-                            setAudioState(BrowserAudioState.PAUSED)
-                            setPlaybackState("paused", false)
-                        }
-                    }
-                    "buffering" -> {
-                        setAudioState(BrowserAudioState.BUFFERING)
-                        setPlaybackState("buffering", mediaPlaying)
-                    }
-                    "paused" -> {
-                        if (userPaused) {
-                            unexpectedPauseSinceMs = 0L
-                            pauseRecoveryInFlight = false
-                            setAudioState(BrowserAudioState.PAUSED)
-                            setPlaybackState("paused", false)
-                        } else {
-                            if (unexpectedPauseSinceMs == 0L) {
-                                unexpectedPauseSinceMs = android.os.SystemClock.elapsedRealtime()
-                            }
-                            recoverUnexpectedPause(generation)
-                        }
-                    }
-                    else -> Unit // 'none' / 'unknown' — keep current state
-                }
-            }
-        }
+    /** The pause state that matches the last command Flutter issued. */
+    private fun pauseStateForOrigin(): BrowserPlaybackState = when (lastPauseOrigin) {
+        "user" -> BrowserPlaybackState.PAUSED_BY_USER
+        "focus" -> BrowserPlaybackState.PAUSED_BY_AUDIO_FOCUS
+        "lifecycle" -> BrowserPlaybackState.PAUSED_BY_LIFECYCLE
+        else -> BrowserPlaybackState.PAUSED_BY_BROWSER
     }
 
     private fun setAdActive(value: Boolean) {
@@ -654,148 +633,45 @@ private class VShotsBackgroundMediaWebView(
         adActive = value
         Log.d(TAG, if (value) "in-stream ad started" else "in-stream ad ended")
         events.invokeMethod("adState", value)
+        if (value) {
+            if (adAssistEnabled) muteAdForAssist()
+        } else {
+            // Releasing our ad mute is unconditional: a song must never be left
+            // silent because an ad ended while a command was in flight.
+            releaseAdMute()
+        }
     }
 
     /**
-     * YouTube AD ASSIST (owner spec) — uses ONLY the controls the official
-     * YouTube player itself exposes:
+     * YouTube AD ASSIST — uses ONLY the official player's own state:
      *
-     *   1. While an in-stream ad plays, the ad is muted (the app's music
-     *      must not blast ad audio between songs).
-     *   2. When YouTube shows its own "Skip" button, it is clicked — the
-     *      same action a user performs. Unskippable ads are NEVER
+     *   1. While an in-stream ad plays, the ad is muted (the app's music must
+     *      not blast ad audio between songs).
+     *   2. When YouTube shows its own Skip button, it is clickable — the
+     *      gesture shield explicitly re-enables it. Unskippable ads are never
      *      interfered with: they play (muted) in full.
      *   3. Nothing is blocked, hidden, resized or sped up. No ad-network
      *      interception, no unofficial APIs, no stream access.
      *
      * Gated by `enable_youtube_ad_assist` (remote flag, default ON).
      */
-    /**
-     * Executes a mutating JS command only in the page generation that issued
-     * it. The marker is installed after the matching page finishes, so an old
-     * callback cannot alter a newly selected track.
-     */
-    private fun generationGuardedJs(script: String, generation: Long): String {
-        return """
-            (function(){
-              if(window.__vshotsNativeGeneration !== $generation){ return 'stale'; }
-              return $script;
-            })()
-        """.trimIndent()
-    }
-
-    private fun runAdAssist(generation: Long) {
-        if (generation != loadGeneration || adAssistInFlight) return
-        adAssistInFlight = true
-        evaluateJavascript(generationGuardedJs(YT_AD_ASSIST_JS, generation)) { result ->
+    private fun muteAdForAssist() {
+        if (adMuted) return
+        val generation = loadGeneration
+        adMuted = true
+        evaluateJavascript(adMuteScript(true, generation)) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
-            adAssistInFlight = false
-            val clean = cleanJsResult(result)
-            if (clean == "muted" || clean == "skipped") {
-                adAudioAssistTouched = true
-                // The ad may have ended while this JS command was in flight.
-                // Finish restoration now rather than leaving content muted.
-                if (!adActive) restoreAdAudioOrValidate(generation)
-            }
-            Log.d(TAG, "ad assist: $clean")
+            Log.d(TAG, "ad muted: ${cleanJsResult(result)}")
         }
     }
 
-    /** Restore the exact content state captured by the ad assist. If the first
-     * page state was a pre-roll, perform the one fresh-content validation only
-     * after the ad snapshot has been removed. */
-    private fun restoreAdAudioOrValidate(generation: Long) {
-        if (generation != loadGeneration ||
-            adAudioRestoreInFlight ||
-            adAssistInFlight
-        ) return
-        if (!adAudioAssistTouched) {
-            ensureContentAudio(generation)
-            return
-        }
-        adAudioRestoreInFlight = true
-        evaluateJavascript(generationGuardedJs(YT_RESTORE_AD_AUDIO_JS, generation)) { result ->
+    private fun releaseAdMute() {
+        if (!adMuted) return
+        adMuted = false
+        val generation = loadGeneration
+        evaluateJavascript(adMuteScript(false, generation)) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
-            adAudioRestoreInFlight = false
-            adAudioAssistTouched = false
-            val clean = cleanJsResult(result)
-            if (clean.startsWith("restored|")) {
-                val restored = parsePollSnapshot("playing|${clean.removePrefix("restored|")}")
-                updateContentAudioState(restored)
-            }
-            if (!userPaused) ensureContentAudio(generation)
-            Log.d(TAG, "ad audio restore: $clean")
-        }
-    }
-
-    /** One explicit content-audio validation per valid generation. */
-    private fun ensureContentAudio(generation: Long) {
-        if (generation != loadGeneration ||
-            userPaused ||
-            adActive ||
-            contentAudioValidated ||
-            contentAudioValidationRequested
-        ) return
-        contentAudioValidationRequested = true
-        evaluateJavascript(generationGuardedJs(YT_VALIDATE_CONTENT_AUDIO_JS, generation)) { result ->
-            if (generation != loadGeneration) return@evaluateJavascript
-            val clean = cleanJsResult(result)
-            when {
-                clean.startsWith("validated|") -> {
-                    contentAudioValidated = true
-                    val validated = parsePollSnapshot("playing|${clean.removePrefix("validated|")}")
-                    updateContentAudioState(validated)
-                    Log.d(TAG, "content audio validated: $clean")
-                }
-                clean.startsWith("unmute-target|") -> {
-                    val parts = clean.split('|')
-                    val nx = parts.getOrNull(1)?.toFloatOrNull()
-                    val ny = parts.getOrNull(2)?.toFloatOrNull()
-                    val x = nx?.let { it * width.toFloat() }
-                    val y = ny?.let { it * height.toFloat() }
-                    if (nx != null && ny != null && x != null && y != null &&
-                        nx in 0f..1f && ny in 0f..1f &&
-                        x >= 0f && y >= 0f && x <= width.toFloat() && y <= height.toFloat()) {
-                        Log.d(TAG, "trusted YouTube unmute tap: normalized=$nx,$ny px=$x,$y")
-                        performTrustedUnmuteTap(x, y)
-                        handler.postDelayed({
-                            if (generation != loadGeneration || userPaused || adActive) return@postDelayed
-                            setNativeWebViewAudioMuted(false)
-                            evaluateJavascript(
-                                generationGuardedJs(
-                                    """(function(){
-                                      try{
-                                        var v=document.querySelector('video,audio');
-                                        if(!v){return 'none';}
-                                        v.muted=false;
-                                        if(!v.volume || v.volume <= 0) v.volume=1;
-                                        return 'sync|' + (v.muted ? '1' : '0') + '|' + String(v.volume);
-                                      }catch(e){return 'err';}
-                                    })()""",
-                                    generation,
-                                ),
-                            ) { syncResult ->
-                                if (generation != loadGeneration) return@evaluateJavascript
-                                val sync = cleanJsResult(syncResult)
-                                if (sync.startsWith("sync|0|")) {
-                                    contentAudioValidated = true
-                                    updateContentAudioState(parsePollSnapshot("playing|${sync.removePrefix("sync|")}"))
-                                }
-                                contentAudioValidationRequested = false
-                            }
-                        }, 80L)
-                    } else {
-                        contentAudioValidationRequested = false
-                    }
-                }
-                clean == "ad" || clean == "ad-pending" -> {
-                    contentAudioValidationRequested = false
-                }
-                else -> {
-                    contentAudioValidationRequested = false
-                    Log.d(TAG, "content audio validation: $clean")
-                }
-            }
+            Log.d(TAG, "ad mute released: ${cleanJsResult(result)}")
         }
     }
 
@@ -805,13 +681,23 @@ private class VShotsBackgroundMediaWebView(
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.databaseEnabled = true
+        // Chromium autoplay policy: the app drives playback from an explicit
+        // command path, so the WebView must not require a synthetic gesture.
         settings.mediaPlaybackRequiresUserGesture = false
+        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.setSupportZoom(false)
+        settings.builtInZoomControls = false
+        settings.displayZoomControls = false
         // Clear any application-level WebView mute before the first page.
         setNativeWebViewAudioMuted(false)
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+        setLayerType(View.LAYER_TYPE_HARDWARE, null)
         settings.loadsImagesAutomatically = true
         settings.javaScriptCanOpenWindowsAutomatically = false
         settings.setSupportMultipleWindows(false) // Block popup windows
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+        addJavascriptInterface(MediaBridge(), "VShotsNative")
+
         webChromeClient = object : WebChromeClient() {
             // Override to block popup windows completely
             override fun onCreateWindow(
@@ -820,7 +706,6 @@ private class VShotsBackgroundMediaWebView(
                 isUserGesture: Boolean,
                 resultMsg: android.os.Message?
             ): Boolean {
-                // Block ALL popup windows
                 popupBlockedCount++
                 events.invokeMethod("blocked", "popup-window")
                 return false
@@ -830,21 +715,22 @@ private class VShotsBackgroundMediaWebView(
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 if (!isCurrentPage(url)) return
+                lastPauseOrigin = "browser"
                 events.invokeMethod("pageStarted", mapOf("generation" to loadGeneration))
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 if (!isCurrentPage(url)) return
                 val generation = loadGeneration
-                // Complete the page-generation handshake before Flutter is
-                // allowed to issue the single autoplay command.
-                evaluateJavascript(
-                    "window.__vshotsNativeGeneration = $generation;",
-                ) { _ ->
+                // The bridge must exist before the media element does. If it
+                // does not install, the page simply reports nothing and the
+                // reconciliation poll keeps the app consistent.
+                evaluateJavascript(bootstrapScript(bridgeToken, generation)) { result ->
                     if (generation != loadGeneration) return@evaluateJavascript
-                    events.invokeMethod("pageFinished", mapOf("generation" to generation))
-                    startPlaybackPolling()
+                    Log.d(TAG, "bootstrap: ${cleanJsResult(result)}")
                 }
+                events.invokeMethod("pageFinished", mapOf("generation" to generation))
+                startReconcilePolling()
             }
 
             override fun onReceivedError(
@@ -864,13 +750,35 @@ private class VShotsBackgroundMediaWebView(
             }
 
             /**
+             * A dead renderer process must not take the app down (the default
+             * is to crash the whole process). Returning true means "we handled
+             * it": the session tears the platform view down and remounts a
+             * fresh one exactly once for this load.
+             */
+            override fun onRenderProcessGone(
+                view: WebView?,
+                detail: RenderProcessGoneDetail?,
+            ): Boolean {
+                Log.w(TAG, "WebView renderer gone (crashed=${detail?.didCrash()})")
+                stopReconcilePolling()
+                retainMediaLifecycle = false
+                mediaPlaying = false
+                playbackState = BrowserPlaybackState.ERROR
+                events.invokeMethod(
+                    "error",
+                    mapOf(
+                        "message" to "Playback was interrupted — please retry",
+                        "reason" to "renderer-gone",
+                        "generation" to loadGeneration,
+                    ),
+                )
+                return true
+            }
+
+            /**
              * NETWORK-LEVEL AD BLOCKING — Primary defense.
              * Intercepts ALL resource requests and blocks ads before they load.
              * Runs on BACKGROUND thread — never touch MethodChannel directly.
-             *
-             * IMPORTANT: YouTube ad blocking works by checking URL patterns
-             * even on essential hosts (youtube.com, googlevideo.com, etc.)
-             * because YouTube serves ads from the same domains as content.
              */
             override fun shouldInterceptRequest(
                 view: WebView?,
@@ -952,8 +860,6 @@ private class VShotsBackgroundMediaWebView(
             /**
              * URL NAVIGATION BLOCKING — Blocks ad redirects/popups.
              * Intercepts navigation attempts before they happen.
-             *
-             * Includes YouTube-specific ad redirect blocking.
              */
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
@@ -989,7 +895,6 @@ private class VShotsBackgroundMediaWebView(
                     if (scheme == "intent" || scheme == "market" || scheme == "tel" || scheme == "mailto") {
                         return false // Allow legitimate deep links
                     }
-                    // Block suspicious schemes
                     reportBlock("suspicious-scheme:$scheme")
                     return true
                 }
@@ -999,13 +904,6 @@ private class VShotsBackgroundMediaWebView(
         }
     }
 
-    /**
-     * Cosmetic ad blocking — hides residual ad containers via CSS.
-     * Runs once per page load. Never touches video/audio/nav/content elements.
-     * This is a SECONDARY defense after network-level blocking.
-     *
-     * Includes YOUTUBE-SPECIFIC ad selectors for YouTube pages.
-     */
     /** Host == rule or endsWith ".rule" (e.g. "doubleclick.net" also matches
      *  "ad.doubleclick.net"). Conservative: no substring matching. */
     private fun matchesAnyHost(host: String, rules: Set<String>): Boolean {
@@ -1037,7 +935,8 @@ private class VShotsBackgroundMediaWebView(
             lowerPath.contains("/vpaid") ||
             lowerQuery.contains("vast") ||
             lowerQuery.contains("vmap") ||
-            lowerQuery.contains("vpaid")) {
+            lowerQuery.contains("vpaid")
+        ) {
             // Don't block YouTube's internal VAST handling
             if (!lowerUrl.contains("youtube.com") && !lowerUrl.contains("youtu.be")) {
                 return true
@@ -1083,7 +982,6 @@ private class VShotsBackgroundMediaWebView(
     }
 
     private fun reportBlock(host: String) {
-        // Report to Dart on MAIN thread (stats only)
         val hostCopy = host
         handler.post { events.invokeMethod("blocked", hostCopy) }
     }
@@ -1118,27 +1016,20 @@ private class VShotsBackgroundMediaWebView(
         val playbackUrl = youtubePlayerSurfaceUrl(url, autoplay)
         loadGeneration = requestedGeneration ?: (loadGeneration + 1L)
         currentLoadUrl = playbackUrl
-        endedReported = false
-        nearEndReported = false
         adActive = false
-        setAudioState(if (autoplay) BrowserAudioState.BUFFERING else BrowserAudioState.PAUSED)
-        contentAudioValidationRequested = false
-        contentAudioValidated = false
-        adAudioAssistTouched = false
-        adAssistInFlight = false
-        adAudioRestoreInFlight = false
-        userPaused = !autoplay
-        unexpectedPauseSinceMs = 0L
-        pauseRecoveryAttempts = 0
-        pauseRecoveryInFlight = false
+        adMuted = false
+        lastPauseOrigin = if (autoplay) "browser" else "user"
         mediaPlaying = false
+        setAudioState(
+            if (autoplay) BrowserAudioState.BUFFERING else BrowserAudioState.PAUSED
+        )
         setNativeWebViewAudioMuted(false)
-        setPlaybackState("loading", false)
-        playbackPoll.reset()
+        setPlaybackState(BrowserPlaybackState.LOADING, playing = false)
         // Cancel the previous document before starting a new generation. This
         // prevents late callbacks from the old navigation from becoming the
         // new track's page-finished/autoplay signal.
         stopLoading()
+        stopReconcilePolling()
 
         // YouTube requires embedded-player clients in a WebView to identify
         // themselves with an HTTP Referer. Android WebView sends no Referer
@@ -1159,6 +1050,7 @@ private class VShotsBackgroundMediaWebView(
     /** Toggles the YouTube ad assist (remote flag from Dart). */
     fun setAdAssist(enabled: Boolean) {
         adAssistEnabled = enabled
+        if (!enabled) releaseAdMute()
         Log.d(TAG, "ad assist ${if (enabled) "enabled" else "disabled"}")
     }
 
@@ -1179,17 +1071,18 @@ private class VShotsBackgroundMediaWebView(
         adUrlPatterns.addAll(patterns)
     }
 
-    private fun setPlaybackState(state: String, playing: Boolean) {
+    private fun setPlaybackState(state: BrowserPlaybackState, playing: Boolean) {
         val changed = playbackState != state || mediaPlaying != playing
         playbackState = state
         mediaPlaying = playing
         if (!changed) return
-        startPlaybackForegroundService(playing = playing, state = state)
+        startPlaybackForegroundService(playing = playing, state = state.wire)
         events.invokeMethod(
             "playbackState",
             mapOf(
                 "playing" to playing,
-                "state" to state,
+                "state" to state.wire,
+                "hasAudio" to (state == BrowserPlaybackState.PLAYING_WITH_AUDIO),
                 "generation" to loadGeneration,
             ),
         )
@@ -1206,17 +1099,17 @@ private class VShotsBackgroundMediaWebView(
             artist = notificationArtist,
             artwork = notificationArtwork,
             playing = mediaPlaying,
-            state = playbackState,
+            state = playbackState.wire,
         )
     }
 
-    private fun startPlaybackPolling() {
-        handler.removeCallbacks(playbackPoll)
-        handler.post(playbackPoll)
+    private fun startReconcilePolling() {
+        handler.removeCallbacks(reconcilePoll)
+        handler.post(reconcilePoll)
     }
 
-    private fun stopPlaybackPolling() {
-        handler.removeCallbacks(playbackPoll)
+    private fun stopReconcilePolling() {
+        handler.removeCallbacks(reconcilePoll)
     }
 
     private fun startPlaybackForegroundService(
@@ -1226,7 +1119,7 @@ private class VShotsBackgroundMediaWebView(
         playing: Boolean = mediaPlaying,
         positionMs: Long = -1L,
         durationMs: Long = -1L,
-        state: String = playbackState,
+        state: String = playbackState.wire,
         userCommand: String? = null,
     ) {
         val intent = Intent(appContext, VShotsBrowserPlaybackService::class.java).apply {
@@ -1264,29 +1157,25 @@ private class VShotsBackgroundMediaWebView(
 
     fun currentGeneration(): Long = loadGeneration
 
+    private fun runPauseCommand(generation: Long) {
+        val body = "v.pause();"
+        evaluateJavascript(transportScript(body, generation)) { result ->
+            if (generation != loadGeneration) return@evaluateJavascript
+            Log.d(TAG, "command: ${cleanJsResult(result)}")
+        }
+    }
+
     fun seekBy(seconds: Int, requestedGeneration: Long? = null) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
-        evaluateJavascript(
-            generationGuardedJs(
-                """(function(){
-                  try{
-                    var v=document.querySelector('video,audio');
-                    if(!v){return 'none';}
-                    var d=(v.duration&&isFinite(v.duration))?v.duration:null;
-                    var t=v.currentTime+($seconds);
-                    if(d!=null){t=Math.max(0,Math.min(d,t));}
-                    else{t=Math.max(0,t);}
-                    v.currentTime=t;
-                    return 'ok';
-                  }catch(e){return 'err';}
-                })()""",
-                generation,
-            ),
-        ) { result ->
+        val body = """
+          var d=(v.duration&&isFinite(v.duration))?v.duration:null;
+          var t=v.currentTime+($seconds);
+          if(d!=null){t=Math.max(0,Math.min(d,t));}else{t=Math.max(0,t);}
+          v.currentTime=t;
+        """.trimIndent()
+        evaluateJavascript(transportScript(body, generation)) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
-            // Seeking is a read/write transport command, not a playback state
-            // transition. The next read-only poll remains authoritative.
             Log.d(TAG, "seek: ${cleanJsResult(result)}")
         }
     }
@@ -1294,132 +1183,81 @@ private class VShotsBackgroundMediaWebView(
     fun seekTo(positionMs: Long, requestedGeneration: Long? = null) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration || positionMs < 0L) return
-        evaluateJavascript(
-            generationGuardedJs(
-                """(function(){
-                  try{
-                    var v=document.querySelector('video,audio');
-                    if(!v){return 'none';}
-                    var target=$positionMs/1000;
-                    if(v.duration && isFinite(v.duration)){
-                      target=Math.max(0,Math.min(v.duration,target));
-                    }else{
-                      target=Math.max(0,target);
-                    }
-                    v.currentTime=target;
-                    return 'ok|' + String(Math.round(target*1000));
-                  }catch(e){return 'err';}
-                })()""",
-                generation,
-            ),
-        ) { result ->
+        val body = """
+          var target=$positionMs/1000;
+          if(v.duration && isFinite(v.duration)){
+            target=Math.max(0,Math.min(v.duration,target));
+          }else{
+            target=Math.max(0,target);
+          }
+          v.currentTime=target;
+        """.trimIndent()
+        evaluateJavascript(transportScript(body, generation)) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
             Log.d(TAG, "seekTo: ${cleanJsResult(result)}")
         }
     }
 
+    /** Audio-focus ducking only. It never changes the transport. */
     fun setVolume(volume: Double, requestedGeneration: Long? = null) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
-        evaluateJavascript(
-            generationGuardedJs(
-                """(function(){
-                  try{
-                    var v=document.querySelector('video,audio');
-                    if(!v){return 'none';}
-                    v.muted=false;
-                    v.volume=$volume;
-                    return 'ok';
-                  }catch(e){return 'err';}
-                })()""",
-                generation,
-            ),
-        ) { result ->
+        val body = """
+          v.volume=$volume;
+        """.trimIndent()
+        evaluateJavascript(transportScript(body, generation)) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
             Log.d(TAG, "volume: ${cleanJsResult(result)}")
         }
     }
 
-    fun pauseMedia(userInitiated: Boolean = true, requestedGeneration: Long? = null) {
+    /**
+     * Explicit PAUSE. [origin] is one of `user`, `focus`, `lifecycle` and is
+     * reported back with the resulting pause so the Dart session can classify
+     * it correctly instead of guessing.
+     */
+    fun pauseMedia(
+        origin: String,
+        requestedGeneration: Long? = null,
+        userInitiated: Boolean = true,
+    ) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
-        userPaused = true
+        lastPauseOrigin = origin
         setAudioState(BrowserAudioState.PAUSED)
-        evaluateJavascript(
-            generationGuardedJs(
-                """
-                (function(){
-                  var v=document.querySelector('video,audio');
-                  if(!v){return 'none';}
-                  if(!v.paused){ v.pause(); }
-                  return 'paused';
-                })()
-                """.trimIndent(),
-                generation,
-            ),
-        ) { _ ->
-            if (generation != loadGeneration) return@evaluateJavascript
-            setPlaybackState("paused", false)
-        }
-        setPlaybackState("paused", false)
+        runPauseCommand(generation)
+        setPlaybackState(pauseStateForOrigin(), playing = false)
         if (userInitiated) {
             startPlaybackForegroundService(
                 playing = false,
-                state = "paused",
+                state = pauseStateForOrigin().wire,
                 userCommand = "pause",
             )
         }
     }
 
+    /** Explicit PLAY. Acquires audio focus and clears native mute first. */
     fun userPlay(requestedGeneration: Long? = null) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
-        userPaused = false
+        lastPauseOrigin = "browser"
         // Acquire audio focus and clear native WebView mute BEFORE play.
         VShotsBrowserPlaybackService.prepareForPlayback()
         setNativeWebViewAudioMuted(false)
         startPlaybackForegroundService(
             playing = mediaPlaying,
-            state = playbackState,
+            state = playbackState.wire,
             userCommand = "play",
         )
-        evaluateJavascript(
-            generationGuardedJs(
-                """
-                (function(){
-                  var adOn = !!document.querySelector('.ad-showing');
-                  if(!adOn){
-                    var adEvidence = document.querySelector(
-                      '.ytp-ad-skip-button, .ytp-skip-ad-button,' +
-                      ' .ytp-ad-preview-container, .ytp-ad-text,' +
-                      ' .ytp-ad-duration-remaining'
-                    );
-                    if(adEvidence){
-                      var style = window.getComputedStyle(adEvidence);
-                      var rect = adEvidence.getBoundingClientRect();
-                      if(style.display !== 'none' && style.visibility !== 'hidden' &&
-                         style.opacity !== '0' && rect.width > 0 && rect.height > 0){
-                        adOn = true;
-                      }
-                    }
-                  }
-                  if(adOn){ return 'ad'; }
-                  var v=document.querySelector('video,audio');
-                  if(!v){return 'none';}
-                  v.muted=false; v.volume=1;
-                  var p=v.play();
-                  if(p && p.catch){p.catch(function(){});}
-                  return 'requested';
-                })()
-                """.trimIndent(),
-                generation,
-            ),
-        ) { result ->
+        val body = """
+          v.play();
+        """.trimIndent()
+        evaluateJavascript(transportScript(body, generation)) { result ->
             if (generation != loadGeneration) return@evaluateJavascript
-            // "requested" only means HTMLMediaElement.play() was invoked.
-            // Its Promise can still be rejected by WebView autoplay policy,
-            // so observed CONTENT+PLAYING polling must perform the one audio
-            // validation instead of treating this request as success.
+            // "ok" only means HTMLMediaElement.play() was invoked. Its Promise
+            // can still be rejected, so the OBSERVED media events remain the
+            // single source of playback truth. Nothing is reported as playing
+            // from here.
             Log.d(TAG, "explicit play: ${cleanJsResult(result)}")
         }
     }
@@ -1430,7 +1268,7 @@ private class VShotsBackgroundMediaWebView(
 
     /** Keep the WebView media lifecycle alive across Android visibility changes.
      * A translated/collapsed platform view may be reported INVISIBLE before
-     * the first authoritative PLAYING poll arrives, so gating this on
+     * the first authoritative PLAYING observation arrives, so gating this on
      * [mediaPlaying] would let Android pause a valid pending playback.
      * Visibility is presentation state; explicit JS commands own playback. */
     override fun onWindowVisibilityChanged(visibility: Int) {
@@ -1450,8 +1288,7 @@ private class VShotsBackgroundMediaWebView(
     }
 
     /** Do not pause the session merely because Flutter/Android hides the view.
-     * Explicit user/focus PAUSE still calls pauseMedia() and pauses the real
-     * HTML media element. */
+     * Explicit user/focus PAUSE still pauses the real HTML media element. */
     override fun onPause() {
         if (retainMediaLifecycle) return
         super.onPause()
@@ -1465,13 +1302,19 @@ private class VShotsBackgroundMediaWebView(
     fun disposeMedia() {
         retainMediaLifecycle = false
         loadGeneration++
-        stopPlaybackPolling()
+        stopReconcilePolling()
         stopPlaybackForegroundService()
+        try {
+            evaluateJavascript("window.__vshotsDispose && window.__vshotsDispose();", null)
+        } catch (_: Throwable) {
+            // Best effort page-side timer cleanup.
+        }
         if (VShotsBrowserPlaybackService.eventChannel === events) {
             VShotsBrowserPlaybackService.eventChannel = null
         }
-        playbackState = "idle"
+        playbackState = BrowserPlaybackState.IDLE
         mediaPlaying = false
+        adMuted = false
         stopLoading()
         loadUrl("about:blank")
     }
@@ -1500,15 +1343,17 @@ private class VShotsBrowserPlatformView(
                 }
                 "pause" -> {
                     webView.pauseMedia(
-                        userInitiated = true,
+                        origin = "user",
                         requestedGeneration = requestedGeneration(call.arguments),
+                        userInitiated = true,
                     )
                     result.success(null)
                 }
                 "focusPause" -> {
                     webView.pauseMedia(
-                        userInitiated = false,
+                        origin = "focus",
                         requestedGeneration = requestedGeneration(call.arguments),
+                        userInitiated = false,
                     )
                     result.success(null)
                 }
@@ -1568,7 +1413,6 @@ private class VShotsBrowserPlatformView(
                 }
                 "setVolume" -> {
                     // Audio-focus ducking: 0..1 on the real media element.
-                    // Volume 0 also unmutes so ducked playback is audible.
                     val args = call.arguments as? Map<*, *>
                     val raw = (args?.get("volume") as? Number)?.toDouble()
                         ?: (call.arguments as? Number)?.toDouble()
@@ -1588,7 +1432,6 @@ private class VShotsBrowserPlatformView(
             }
         }
     }
-
 
     override fun getView(): View = webView
 

@@ -51,9 +51,18 @@ class DiscoveryBrowserSheet extends StatefulWidget {
 }
 
 class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _extent;
   late final VShotsBrowserSession _session;
+
+  /// Cached platform-view widget. It is rebuilt only when the session asks for
+  /// a new platform view (a dead WebView renderer), never on an extent
+  /// animation frame or a state notification. Rebuilding the `AndroidView`
+  /// config on every animation frame was a direct contributor to a slow player
+  /// open and to needless WebView work.
+  Widget? _browserViewCache;
+  int _browserViewEpoch = -1;
+
   String? _lastLoadedUrl;
   String? _lastNotificationTrackId;
   bool _isSeeking = false;
@@ -89,7 +98,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _session = VShotsBrowserSession(
       onPageStarted: () => widget.controller.setLoading(true),
       onPageFinished: () => widget.controller.setLoading(false),
-      onPlaybackState: widget.controller.setPagePlaying,
+      // ONE authoritative state, published by the session and stored verbatim
+      // by the controller. There is no separate playback flag and no separate
+      // audio channel that could contradict it.
       onPlaybackStateChanged: widget.controller.setPlaybackState,
       onError: _onPrimaryPageError,
       // Real media completion (native `video.ended`) → auto-advance the queue
@@ -104,31 +115,30 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       // In-stream ad start/end from the native WebView → "Ad" badge in the
       // player UI (mute/skip/resume is handled natively).
       onAdState: (on) => widget.controller.setAdActive(on),
-      onAudioState: widget.controller.setAudioState,
       onPosition: widget.controller.setPosition,
+      // Notification / media-session actions are USER intent. Interruption
+      // reasons (audio focus, lifecycle) never travel this path: they arrive as
+      // `audioFocus` events so that the session — not the widget — owns the
+      // decision and the auto-resume latch.
       onNotificationAction: (action) async {
         switch (action) {
           case 'play':
-            // Precise commands (media session + audio focus) — never a
-            // blind toggle: a focus GAIN must not double-toggle.
             await _session.play();
             break;
           case 'pause':
             await _session.pause();
             break;
           case 'focusPause':
-            await _session.pause(userInitiated: false);
+            await _session.handleAudioFocus('loss_transient');
             break;
           case 'focusPlay':
-            await _session.play(userInitiated: false);
+            await _session.handleAudioFocus('gain');
             break;
           case 'duckOn':
-            // A transient sound (navigation prompt, notification) is
-            // speaking — duck to 15% instead of stopping the music.
-            await _session.setVolume(0.15);
+            await _session.handleAudioFocus('duck_on');
             break;
           case 'duckOff':
-            await _session.setVolume(1.0);
+            await _session.handleAudioFocus('duck_off');
             break;
           case 'next':
             VShotsPlaybackManager.instance.next();
@@ -167,6 +177,11 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
       ),
     );
     _loadForCurrent();
+    // Playback continuity across background/lock is a product feature, so the
+    // lifecycle observer RECORDS the reason instead of pausing. The session
+    // uses it to classify a platform-caused pause honestly (pausedByLifecycle)
+    // and to recover exactly once on return while the intent is still PLAY.
+    WidgetsBinding.instance.addObserver(this);
     // Sync the controller's expanded flag with the initial extent AFTER the
     // first frame (setState can't run during initState).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -175,7 +190,13 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _session.setBackgrounded(state != AppLifecycleState.resumed);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.pauseRequest.removeListener(_onPauseRequest);
     widget.controller.togglePlaybackRequest.removeListener(
       _onTogglePlaybackRequest,
@@ -327,7 +348,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     _lastLoadedUrl = url;
     widget.controller.setLoading(true);
     widget.controller.setError(null);
-    widget.controller.setPagePlaying(null);
+    widget.controller.setPlaybackState(VShotsPlaybackState.loading, false);
 
     // Native load first clears the previous media state. Metadata is then
     // published as metadata only; it can never turn an unknown/loading page
@@ -348,20 +369,12 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   }
 
   Future<void> _togglePagePlayback() async {
-    // Translate the UI gesture into an explicit platform command. The native
-    // state event will update the controller; the optimistic assignment is
-    // only a fallback for old platform views without state events.
-    final before = widget.controller.pagePlaying;
-    final result = await _session.togglePagePlayback();
-    if (result == null) {
-      if (before == true) {
-        await _session.pause();
-      } else {
-        await _session.play();
-      }
-      return;
-    }
-    widget.controller.setPagePlaying(result);
+    // Translate the UI gesture into an explicit platform command. The session
+    // picks PLAY or PAUSE from the authoritative TRANSPORT state and publishes
+    // the resulting state; the UI never optimistically overwrites it. An
+    // optimistic write here is what used to let the button and the real player
+    // disagree.
+    await _session.togglePagePlayback();
   }
 
   void _close() {
@@ -376,14 +389,17 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     });
   }
 
+  /// Explicit, user-initiated request for audible playback.
+  ///
+  /// This is the "clean, explicit user interaction path" for Chromium/YouTube
+  /// autoplay policy: the user taps a real Flutter button, which becomes an
+  /// explicit PLAY command carrying a real trusted gesture. There are NO
+  /// synthetic MotionEvents, no coordinate math and no delayed follow-up JS.
   Future<void> _enableAudio() async {
     if (_audioCommandInFlight) return;
     _audioCommandInFlight = true;
     await HapticFeedback.lightImpact();
     try {
-      // This is an explicit user command. It is not a toggle: native playback
-      // owns the generation guard and performs the already-validated trusted
-      // YouTube unmute path before synchronizing the media element.
       await _session.play();
     } finally {
       if (mounted) setState(() => _audioCommandInFlight = false);
@@ -418,18 +434,9 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
-  String _audioLabel() {
-    return switch (widget.controller.audioState) {
-      VShotsAudioState.playingWithAudio => 'Audio on',
-      VShotsAudioState.playingMutedContent => 'Sound is off',
-      VShotsAudioState.playingMutedAd => 'Ad muted',
-      VShotsAudioState.buffering => 'Buffering',
-      VShotsAudioState.paused => 'Paused',
-      VShotsAudioState.ended => 'Ended',
-      VShotsAudioState.error => 'Playback error',
-      VShotsAudioState.idle => 'Ready',
-    };
-  }
+  /// Human label for the ONE authoritative state. `playing_muted` is surfaced
+  /// as "Sound is off" and never as "Playing".
+  String _audioLabel() => widget.controller.playbackState.label;
 
   // ── Build ────────────────────────────────────────────────────────────────
   //
@@ -750,8 +757,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                           Text(
                             _audioLabel(),
                             style: TextStyle(
-                              color: widget.controller.audioState ==
-                                      VShotsAudioState.playingMutedContent
+                              color: widget.controller.isPlayingMuted
                                   ? AppColors.warning
                                   : AppColors.textSubtle,
                               fontSize: 10,
@@ -797,11 +803,24 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   // ── Expanded body (native browser / loading / error) ────────────────────
 
+  /// Returns the SAME widget instance unless the session replaced the platform
+  /// view. Identical config + identical key ⇒ Flutter updates the element in
+  /// place instead of re-creating the native WebView.
+  Widget _browserView() {
+    final int epoch = _session.viewEpoch;
+    if (_browserViewCache == null || _browserViewEpoch != epoch) {
+      _browserViewEpoch = epoch;
+      _browserViewCache = _session.buildWidget();
+    }
+    return _browserViewCache!;
+  }
+
   Widget _buildBrowserBody() {
     if (widget.controller.error != null) return _buildError();
-    final artwork = widget.controller.artwork;
-    final audioMuted =
-        widget.controller.audioState == VShotsAudioState.playingMutedContent;
+    final String? artwork = widget.controller.artwork;
+    // Muted-but-running playback: offer the explicit sound action. This is
+    // driven by the authoritative state, never by a DOM probe.
+    final bool audioMuted = widget.controller.isPlayingMuted;
     return Column(
       children: [
         Expanded(
@@ -845,16 +864,34 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                     // the embedded player can never grow into a webpage-sized
                     // portrait viewport.
                     aspectRatio: _videoAspectRatio,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(28),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.1),
+                    // DRAG-ONLY gesture routing over the native video surface.
+                    //
+                    // The platform view no longer swallows every touch (that is
+                    // what used to make Discovery swipes unreliable), and the
+                    // page-level shield stops the video BODY from being a
+                    // play/pause toggle. This detector accepts vertical drags
+                    // only — never taps — so:
+                    //   • dragging on the video still moves the player with the
+                    //     finger,
+                    //   • a tap is not consumed here and still reaches the
+                    //     explicit "turn sound on" control and YouTube's own
+                    //     unmute/ad-skip controls.
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.deferToChild,
+                      onVerticalDragStart: _onDragStart,
+                      onVerticalDragUpdate: _onDragUpdate,
+                      onVerticalDragEnd: _onDragEnd,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(28),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.1),
+                            ),
+                            borderRadius: BorderRadius.circular(28),
                           ),
-                          borderRadius: BorderRadius.circular(28),
+                          child: _browserView(),
                         ),
-                        child: _session.buildWidget(),
                       ),
                     ),
                   ),
@@ -922,8 +959,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     final isLiked =
         trackId.isNotEmpty && LocalLibrary.instance.isLiked(trackId);
     final playing = widget.controller.pagePlaying == true;
-    final muted =
-        widget.controller.audioState == VShotsAudioState.playingMutedContent;
+    final muted = widget.controller.isPlayingMuted;
     final loading = widget.controller.isLoading ||
         widget.controller.playbackState == VShotsPlaybackState.buffering ||
         widget.controller.playbackState == VShotsPlaybackState.loading;

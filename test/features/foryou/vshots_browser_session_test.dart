@@ -35,19 +35,13 @@ void main() {
       session.dispose();
     });
 
-    test('audio and position events reach the current session only', () async {
-      VShotsAudioState? audioState;
-      bool? audioPlaying;
+    test('position events reach the current session only', () async {
       int? position;
       int? duration;
       final session = VShotsBrowserSession(
         onPageStarted: () {},
         onPageFinished: () {},
         onError: (_) {},
-        onAudioState: (state, playing) {
-          audioState = state;
-          audioPlaying = playing;
-        },
         onPosition: (value, total) {
           position = value;
           duration = total;
@@ -56,32 +50,41 @@ void main() {
       await session.load('https://www.youtube.com/watch?v=audio-track');
       final generation = session.generation;
       await session.debugHandleNativeEvent(
-        MethodCall('audioState', {
-          'state': 'playing_muted_content',
-          'playing': true,
-          'generation': generation,
-        }),
-      );
-      await session.debugHandleNativeEvent(
         MethodCall('position', {
           'positionMs': 1200,
           'durationMs': 9000,
           'generation': generation,
         }),
       );
-      expect(audioState, VShotsAudioState.playingMutedContent);
-      expect(audioPlaying, isTrue);
       expect(position, 1200);
       expect(duration, 9000);
 
       await session.debugHandleNativeEvent(
-        MethodCall('audioState', {
-          'state': 'playing_with_audio',
-          'playing': true,
+        MethodCall('position', {
+          'positionMs': 5000,
+          'durationMs': 9000,
           'generation': generation - 1,
         }),
       );
-      expect(audioState, VShotsAudioState.playingMutedContent);
+      expect(position, 1200, reason: 'stale position must be ignored');
+      session.dispose();
+    });
+
+    test('the audio focus reason event reaches the state machine', () async {
+      final session = VShotsBrowserSession(
+        onPageStarted: () {},
+        onPageFinished: () {},
+        onError: (_) {},
+      );
+      await session.load('https://www.youtube.com/watch?v=focus-track');
+      session.applyObservedTransport(
+        wireState: 'playing_with_audio',
+        hasAudio: true,
+      );
+      await session.debugHandleNativeEvent(
+        const MethodCall('audioFocus', 'loss_transient'),
+      );
+      expect(session.playbackState, VShotsPlaybackState.pausedByAudioFocus);
       session.dispose();
     });
 
@@ -122,6 +125,7 @@ void main() {
 
         await session.debugHandleNativeEvent(
           MethodCall('playbackState', {
+            'state': 'playing_muted',
             'playing': true,
             'generation': oldGeneration,
           }),
@@ -130,6 +134,7 @@ void main() {
 
         await session.debugHandleNativeEvent(
           MethodCall('playbackState', {
+            'state': 'playing_muted',
             'playing': true,
             'generation': currentGeneration,
           }),

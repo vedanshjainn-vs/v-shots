@@ -78,18 +78,19 @@ void main() {
       expect(c.isExpanded, isFalse);
     });
 
-    test('loading/error/pagePlaying transitions notify', () {
+    test('loading/error/playback transitions notify', () {
       final c = DiscoveryBrowserController();
       var notified = 0;
       c.addListener(() => notified++);
 
       c.setLoading(true);
       c.setError('boom');
-      c.setPagePlaying(true);
+      c.setPlaybackState(VShotsPlaybackState.playingWithAudio, true);
       expect(notified, 3);
       expect(c.isLoading, isTrue);
       expect(c.error, 'boom');
       expect(c.pagePlaying, isTrue);
+      expect(c.hasAudio, isTrue);
     });
 
     test('track without an id has no url', () {
@@ -111,16 +112,29 @@ void main() {
       c.togglePlaybackRequest.removeListener(listener);
     });
 
-    test('audio state keeps muted playing distinct from audible playing', () {
+    test('muted playback stays distinct from audible playback', () {
       final c = DiscoveryBrowserController();
-      c.setAudioState(VShotsAudioState.playingMutedContent, true);
-      expect(c.playbackState, VShotsPlaybackState.playing);
-      expect(c.pagePlaying, isTrue);
-      expect(c.audioState, VShotsAudioState.playingMutedContent);
+      c.setPlaybackState(VShotsPlaybackState.playingMuted, true);
+      expect(c.pagePlaying, isTrue, reason: 'the transport IS running');
+      expect(c.hasAudio, isFalse, reason: 'but the user hears nothing');
+      expect(c.isPlayingMuted, isTrue);
 
-      c.setAudioState(VShotsAudioState.playingWithAudio, true);
-      expect(c.playbackState, VShotsPlaybackState.playing);
-      expect(c.audioState, VShotsAudioState.playingWithAudio);
+      c.setPlaybackState(VShotsPlaybackState.playingWithAudio, true);
+      expect(c.pagePlaying, isTrue);
+      expect(c.hasAudio, isTrue);
+      expect(c.isPlayingMuted, isFalse);
+    });
+
+    test('user, focus and lifecycle pauses are distinguishable', () {
+      final c = DiscoveryBrowserController();
+      c.setPlaybackState(VShotsPlaybackState.pausedByUser, false);
+      expect(c.isInterrupted, isFalse);
+      c.setPlaybackState(VShotsPlaybackState.pausedByAudioFocus, false);
+      expect(c.isInterrupted, isTrue);
+      c.setPlaybackState(VShotsPlaybackState.pausedByLifecycle, false);
+      expect(c.isInterrupted, isTrue);
+      c.setPlaybackState(VShotsPlaybackState.pausedByBrowser, false);
+      expect(c.isInterrupted, isTrue);
     });
 
     test('position state is clamped and exposes a stable progress value', () {
@@ -139,8 +153,8 @@ void main() {
       c.setPlaybackState(VShotsPlaybackState.loading, false);
       expect(c.playbackState, VShotsPlaybackState.loading);
       expect(c.pagePlaying, isFalse);
-      c.setPlaybackState(VShotsPlaybackState.playing, true);
-      expect(c.playbackState, VShotsPlaybackState.playing);
+      c.setPlaybackState(VShotsPlaybackState.playingWithAudio, true);
+      expect(c.playbackState, VShotsPlaybackState.playingWithAudio);
       expect(c.pagePlaying, isTrue);
     });
   });

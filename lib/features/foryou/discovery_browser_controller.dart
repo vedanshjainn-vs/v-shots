@@ -9,8 +9,10 @@
 // controller lives in the sheet widget, so this class stays fully unit-
 // testable without any platform channel.
 //
-// Follows the app's existing lightweight-state conventions (ValueNotifier/
-// ChangeNotifier style) — no new state-management dependency.
+// The controller does NOT invent playback state. It stores the one
+// authoritative [VShotsPlaybackState] published by the native browser session
+// and exposes derived convenience views (`pagePlaying`, `progress`, ...) for
+// the widgets and screens that consume it.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/foundation.dart';
@@ -31,7 +33,6 @@ class DiscoveryBrowserController extends ChangeNotifier {
   String? _error;
   bool? _pagePlaying;
   VShotsPlaybackState _playbackState = VShotsPlaybackState.idle;
-  VShotsAudioState _audioState = VShotsAudioState.idle;
   int _positionMs = 0;
   int _durationMs = 0;
   bool _adActive = false;
@@ -59,17 +60,28 @@ class DiscoveryBrowserController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// Last playback state reported by the native WebView. Null means that the
-  /// current track has not reported a boolean snapshot yet; callers must not
-  /// interpret it as PLAYING.
+  /// Last transport snapshot. Null means the current track has not reported
+  /// anything yet: callers must not interpret it as PLAYING.
   bool? get pagePlaying => _pagePlaying;
 
-  /// Full transport state shared with the native WebView/service.
+  /// The ONE authoritative playback state.
   VShotsPlaybackState get playbackState => _playbackState;
 
-  /// Audio truth is separate from transport truth. In particular, PLAYING
-  /// does not imply that YouTube audio is audible.
-  VShotsAudioState get audioState => _audioState;
+  /// The transport is running (may still be muted).
+  bool get isTransportRunning => _playbackState.isTransportRunning;
+
+  /// The user can hear audio — the only condition that may be presented as
+  /// "playing" in the notification or a Now-Playing surface.
+  bool get hasAudio => _playbackState.hasAudio;
+
+  /// True while the content is playing but silent (muted autoplay / muted ad).
+  /// The UI must offer an explicit "turn sound on" action in this state.
+  bool get isPlayingMuted => _playbackState == VShotsPlaybackState.playingMuted;
+
+  /// True while playback is paused because of an interruption or because the
+  /// browser stopped on its own — never because the user asked.
+  bool get isInterrupted => _playbackState.isInterruptionPause;
+
   int get positionMs => _positionMs;
   int get durationMs => _durationMs;
   double get progress {
@@ -83,12 +95,14 @@ class DiscoveryBrowserController extends ChangeNotifier {
   String? get artwork => _track?['artwork'] as String?;
   String? get playbackSource => _track?['playbackSource'] as String?;
 
-  /// URL for the current track. Uses pre-resolved URL from PlaybackRouter
-  /// if available, otherwise falls back to YouTube watch URL.
+  /// URL for the current track. Uses the pre-resolved URL from PlaybackRouter
+  /// when available, otherwise falls back to the YouTube watch URL. The native
+  /// layer converts a YouTube watch URL into the official embedded-player
+  /// surface (never the full watch page).
   String? get url {
-    final resolvedUrl = _track?['url'] as String?;
+    final String? resolvedUrl = _track?['url'] as String?;
     if (resolvedUrl != null && resolvedUrl.isNotEmpty) return resolvedUrl;
-    final id = videoId;
+    final String? id = videoId;
     if (id == null || id.isEmpty) return null;
     return youtubeWatchUrl(id);
   }
@@ -103,7 +117,6 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _error = null;
     _pagePlaying = null;
     _playbackState = VShotsPlaybackState.loading;
-    _audioState = VShotsAudioState.buffering;
     _positionMs = 0;
     _durationMs = 0;
     _adActive = false;
@@ -119,8 +132,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
     _isLoading = false;
     _error = null;
     _pagePlaying = null;
-    _playbackState = VShotsPlaybackState.stopped;
-    _audioState = VShotsAudioState.idle;
+    _playbackState = VShotsPlaybackState.idle;
     _positionMs = 0;
     _durationMs = 0;
     _adActive = false;
@@ -163,19 +175,8 @@ class DiscoveryBrowserController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setPagePlaying(bool? value) {
-    final nextState = value == null
-        ? _playbackState
-        : value
-            ? VShotsPlaybackState.playing
-            : VShotsPlaybackState.paused;
-    if (_pagePlaying == value && _playbackState == nextState) return;
-    _pagePlaying = value;
-    _playbackState = nextState;
-    notifyListeners();
-  }
-
-  /// Applies one authoritative native state snapshot to the controller.
+  /// Applies one authoritative state snapshot published by the browser
+  /// session. This is the ONLY playback-state entry point.
   void setPlaybackState(VShotsPlaybackState state, bool playing) {
     if (_playbackState == state && _pagePlaying == playing) return;
     _playbackState = state;
@@ -183,28 +184,9 @@ class DiscoveryBrowserController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Applies the native audio truth without inferring it from page visibility.
-  void setAudioState(VShotsAudioState state, bool playing) {
-    final nextPlayback = switch (state) {
-      VShotsAudioState.buffering => VShotsPlaybackState.buffering,
-      VShotsAudioState.playingMutedAd => VShotsPlaybackState.ad,
-      VShotsAudioState.playingWithAudio => VShotsPlaybackState.playing,
-      VShotsAudioState.playingMutedContent => VShotsPlaybackState.playing,
-      VShotsAudioState.paused => VShotsPlaybackState.paused,
-      VShotsAudioState.ended => VShotsPlaybackState.ended,
-      VShotsAudioState.error => VShotsPlaybackState.error,
-      VShotsAudioState.idle => _playbackState,
-    };
-    if (_audioState == state && _playbackState == nextPlayback) return;
-    _audioState = state;
-    _playbackState = nextPlayback;
-    _pagePlaying = playing;
-    notifyListeners();
-  }
-
   void setPosition(int positionMs, int durationMs) {
-    final safeDuration = durationMs < 0 ? 0 : durationMs;
-    final safePosition = positionMs.clamp(0, safeDuration).toInt();
+    final int safeDuration = durationMs < 0 ? 0 : durationMs;
+    final int safePosition = positionMs.clamp(0, safeDuration).toInt();
     if (_positionMs == safePosition && _durationMs == safeDuration) return;
     _positionMs = safePosition;
     _durationMs = safeDuration;
@@ -213,8 +195,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
 
   /// True while the official YouTube player is running an in-stream ad.
   /// Set from the native WebView's `adState` event; drives the small "Ad"
-  /// badge in the player UI. The mute/skip/resume handling itself lives in
-  /// the native layer.
+  /// badge in the player UI.
   bool get adActive => _adActive;
 
   void setAdActive(bool value) {
@@ -240,7 +221,7 @@ class DiscoveryBrowserController extends ChangeNotifier {
 
   void requestPause() => pauseRequest.value++;
 
-  /// Requests an explicit Play or Pause based on the last native state. The
+  /// Requests an explicit Play or Pause based on the authoritative state. The
   /// sheet translates this into a non-toggle platform command.
   final ValueNotifier<int> togglePlaybackRequest = ValueNotifier<int>(0);
 

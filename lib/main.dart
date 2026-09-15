@@ -91,23 +91,28 @@ void main() async {
   // Initialize Firebase first (required for FCM)
   debugPrint('[Boot] Firebase initialized');
 
+  // ── CRITICAL BEFORE FIRST FRAME ─────────────────────────────────────────
+  // Only work that a FIRST-FRAME widget actually reads stays on the blocking
+  // path. Everything else moved to [_finishStartup], which runs after the
+  // first frame has been scheduled. This was previously an 8-way blocking
+  // Future.wait, so first paint waited on notifications, remote config, ad
+  // policy and version metadata that no first-frame widget needs.
   await Future.wait([
+    // Auth/session restore + the feed's backend client.
     SupabaseService.initialize(),
+    // Read by every card/row to render liked/queued state.
     LocalLibrary.instance.initialize(),
-    SignalStore.instance.initialize(),
     PersonalizationStore.instance.initialize(),
-    RemoteConfigService.instance.init(),
-    AdFreeManager.instance.init(),
-    AppVersion.load(),
-    NotificationService.instance.initialize(),
+    // Recommendation signal store used by the first feed request.
+    SignalStore.instance.initialize(),
   ]);
-  // NotificationService MUST be ready before SmartNotificationService: the
-  // scheduler calls into it during initialization. Running both in the same
-  // Future.wait caused the first schedule build to race the plugin init and
-  // silently schedule zero notifications. The await above guarantees
-  // NotificationService is done, so this can now run OFF the critical path —
-  // notification scheduling never delays first paint.
-  unawaited(SmartNotificationService.instance.initialize());
+
+  // ── NON-CRITICAL: prepared after the first frame ────────────────────────
+  // None of these may delay first paint. Each is default-safe before it has
+  // finished: remote flags fall back to compiled defaults, the ad policy
+  // treats "not initialized" as non-blocking, and notification scheduling
+  // simply has nothing to do yet.
+  unawaited(_finishStartup());
   debugPrint('[Boot] core init done in ${bootTimer.elapsedMilliseconds}ms');
 
   // Auth (Google sign-in) is only needed by user-triggered flows
@@ -141,8 +146,24 @@ void main() async {
   unawaited(MusicRegionProfile.initialize());
   debugPrint('[Boot] runApp at ${bootTimer.elapsedMilliseconds}ms');
   runApp(const VShotsApp());
+}
 
-  // Check for app updates (non-blocking, fire-and-forget)
+/// Everything that is NOT required to paint the first frame.
+///
+/// ORDERING CONTRACT: NotificationService MUST be ready before
+/// SmartNotificationService — the scheduler calls into the plugin during its
+/// own initialization, and running them in parallel previously made the first
+/// schedule build race the plugin init and silently schedule zero
+/// notifications. They are therefore chained here, sequentially, but OFF the
+/// blocking boot path.
+Future<void> _finishStartup() async {
+  await NotificationService.instance.initialize();
+  unawaited(SmartNotificationService.instance.initialize());
+
+  await RemoteConfigService.instance.init();
+  await AdFreeManager.instance.init();
+  // AppVersion must be loaded before the update check reads it.
+  await AppVersion.load();
   unawaited(AppUpdateService.instance.checkForUpdate());
 }
 

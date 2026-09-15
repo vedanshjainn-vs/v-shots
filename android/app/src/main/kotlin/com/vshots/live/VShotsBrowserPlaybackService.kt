@@ -65,6 +65,24 @@ class VShotsBrowserPlaybackService : Service() {
         fun prepareForPlayback() {
             activeService?.requestAudioFocus()
         }
+
+        /**
+         * Publishes an audio-focus TRANSITION to Flutter.
+         *
+         * This is deliberately a reason, not a command. The playback state
+         * machine in Dart owns every decision — including "may this focus gain
+         * resume the track, or did the user pause meanwhile?". Keeping the
+         * decision out of this service is what stops the
+         * request → transient-loss → pause → resume cycle that used to pause
+         * songs a few seconds after they started.
+         */
+        fun emitAudioFocus(change: String) {
+            try {
+                eventChannel?.invokeMethod("audioFocus", change)
+            } catch (_: Throwable) {
+                // A focus transition must never crash playback.
+            }
+        }
     }
 
     private var title = "V Shots"
@@ -89,15 +107,61 @@ class VShotsBrowserPlaybackService : Service() {
     private var lastArtworkUrl = ""
     @Volatile private var artworkGeneration = 0L
 
-    /** Only a transient focus loss may resume automatically. */
-    @Volatile private var pausedByFocusLoss = false
+    /**
+     * Headset / Bluetooth route loss.
+     *
+     * Android broadcasts ACTION_AUDIO_BECOMING_NOISY when the current audio
+     * route disappears. The expected behaviour is to stop; the app must never
+     * keep blasting music out of the phone speaker. It is reported as a reason
+     * and Dart turns it into a deliberate pause, so nothing resumes by itself
+     * when the route comes back.
+     */
+    private val noisyReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                emitAudioFocus("becoming_noisy")
+            }
+        }
+    }
 
-    /** Volume currently ducked by a transient sound. */
-    @Volatile private var ducked = false
+    private var noisyReceiverRegistered = false
+
+    private fun registerNoisyReceiver() {
+        if (noisyReceiverRegistered) return
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(
+                    noisyReceiver,
+                    android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                    Context.RECEIVER_NOT_EXPORTED,
+                )
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(
+                    noisyReceiver,
+                    android.content.IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+                )
+            }
+            noisyReceiverRegistered = true
+        } catch (_: Throwable) {
+            // Route monitoring is an enhancement; never crash playback.
+        }
+    }
+
+    private fun unregisterNoisyReceiver() {
+        if (!noisyReceiverRegistered) return
+        noisyReceiverRegistered = false
+        try {
+            unregisterReceiver(noisyReceiver)
+        } catch (_: Throwable) {
+            // Best effort only.
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         activeService = this
+        registerNoisyReceiver()
         createNotificationChannel()
         createMediaSession()
         // startForeground is deliberately done by the first ACTION_UPDATE so
@@ -107,20 +171,13 @@ class VShotsBrowserPlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_UPDATE -> handleUpdate(intent)
-            ACTION_PLAY -> {
-                pausedByFocusLoss = false
-                dispatch("play")
-            }
-            ACTION_PAUSE -> {
-                pausedByFocusLoss = false
-                dispatch("pause")
-            }
+            ACTION_PLAY -> dispatch("play")
+            ACTION_PAUSE -> dispatch("pause")
             ACTION_NEXT -> dispatch("next")
             ACTION_PREVIOUS -> dispatch("previous")
             ACTION_REWIND -> dispatch("rewind")
             ACTION_FORWARD -> dispatch("fastForward")
             ACTION_STOP -> {
-                pausedByFocusLoss = false
                 dispatch("stop")
                 abandonAudioFocus()
                 stopForegroundCompat(remove = true)
@@ -164,12 +221,12 @@ class VShotsBrowserPlaybackService : Service() {
         artist = intent.getStringExtra("artist")?.takeIf { it.isNotBlank() } ?: artist
         artworkUrl = intent.getStringExtra("artwork")?.takeIf { it.isNotBlank() } ?: artworkUrl
         playbackState = intent.getStringExtra("state")?.takeIf { it.isNotBlank() }
-            ?: if (intent.getBooleanExtra("playing", playing)) "playing" else "paused"
+            ?: if (intent.getBooleanExtra("playing", playing)) {
+                "playing_with_audio"
+            } else {
+                "paused_by_browser"
+            }
         playing = intent.getBooleanExtra("playing", playing)
-
-        when (intent.getStringExtra("userCommand")) {
-            "pause", "play" -> pausedByFocusLoss = false
-        }
 
         val newPositionMs = intent.getLongExtra("positionMs", -1L)
         if (newPositionMs >= 0) {
@@ -192,14 +249,6 @@ class VShotsBrowserPlaybackService : Service() {
         } else if (!newActive && oldActive) {
             abandonAudioFocus()
         }
-        if (!newActive && !oldActive && !oldPlaying) {
-            // An explicit user PAUSE is authoritative. In particular it clears
-            // the transient-loss resume latch before a later focus gain.
-            if (intent.getStringExtra("userCommand") == "pause") {
-                pausedByFocusLoss = false
-            }
-        }
-
         updateMediaSession()
 
         val metadataChanged = title != oldTitle || artist != oldArtist || artworkUrl != oldArtwork
@@ -220,8 +269,12 @@ class VShotsBrowserPlaybackService : Service() {
      * already-held focus while the media element was playing, but a fresh
      * loading/buffering state with playing=false never requests focus. */
     private fun isActivePlayback(): Boolean =
-        playbackState == "playing" ||
-            (playing && (playbackState == "buffering" || playbackState == "ad"))
+        wireIsPlaying(playbackState) ||
+            (playing && playbackState == "buffering")
+
+    /** The shared wire vocabulary — see `vshots_playback_state.dart`. */
+    private fun wireIsPlaying(state: String): Boolean =
+        state == "playing_with_audio" || state == "playing_muted"
 
     // ── Audio focus ─────────────────────────────────────────────────────────
 
@@ -231,37 +284,36 @@ class VShotsBrowserPlaybackService : Service() {
         focusListener = AudioManager.OnAudioFocusChangeListener { change ->
             when (change) {
                 AudioManager.AUDIOFOCUS_LOSS -> {
-                    pausedByFocusLoss = false
-                    ducked = false
+                    // Permanent loss: release focus and report the reason. The
+                    // session decides whether playback stops.
                     abandonAudioFocus()
-                    dispatch("pause")
+                    emitAudioFocus("loss")
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    if (isActivePlayback()) pausedByFocusLoss = true
-                    ducked = false
-                    dispatch("focusPause")
+                    // Phone call / another app taking audio temporarily. The
+                    // session pauses and remembers that it may resume — once.
+                    emitAudioFocus("loss_transient")
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                    if (isActivePlayback()) {
-                        ducked = true
-                        dispatch("duckOn")
-                    }
+                    emitAudioFocus("duck_on")
                 }
                 AudioManager.AUDIOFOCUS_GAIN -> {
-                    if (ducked) {
-                        ducked = false
-                        dispatch("duckOff")
-                    }
-                    if (pausedByFocusLoss) {
-                        pausedByFocusLoss = false
-                        dispatch("focusPlay")
-                    }
+                    // One truthful reason. Dart owns both consequences: it
+                    // restores a ducked volume and, only if the matching
+                    // transient loss is still outstanding and the user has not
+                    // paused since, resumes.
+                    emitAudioFocus("gain")
                 }
             }
         }
     }
 
     private fun requestAudioFocus() {
+        // Re-requesting AUDIOFOCUS_GAIN while focus is already held is the
+        // documented way to receive a spurious transient loss (and therefore a
+        // spurious pause) from the platform. Focus is requested on the
+        // inactive → active edge only, and this guard makes a repeat a no-op.
+        if (focusHeld) return
         ensureFocusListener()
         val am = audioManager ?: return
         val listener = focusListener ?: return
@@ -296,7 +348,6 @@ class VShotsBrowserPlaybackService : Service() {
         }
         if (!focusHeld) return
         focusHeld = false
-        ducked = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             focusRequest?.let { am.abandonAudioFocusRequest(it) }
         } else {
@@ -311,15 +362,9 @@ class VShotsBrowserPlaybackService : Service() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return
         mediaSession = MediaSession(this, "VShotsBrowser").apply {
             setCallback(object : MediaSession.Callback() {
-                override fun onPlay() {
-                    pausedByFocusLoss = false
-                    dispatch("play")
-                }
+                override fun onPlay() = dispatch("play")
 
-                override fun onPause() {
-                    pausedByFocusLoss = false
-                    dispatch("pause")
-                }
+                override fun onPause() = dispatch("pause")
 
                 override fun onSkipToNext() = dispatch("next")
                 override fun onSkipToPrevious() = dispatch("previous")
@@ -341,10 +386,19 @@ class VShotsBrowserPlaybackService : Service() {
             PlaybackState.ACTION_FAST_FORWARD or
             PlaybackState.ACTION_REWIND or
             PlaybackState.ACTION_STOP
+        // The lock screen / notification may only claim PLAYING when the
+        // content is genuinely audible. A running-but-muted media element is
+        // reported as paused so the system never promises sound the user
+        // cannot hear.
         val state = when (playbackState) {
-            "playing" -> PlaybackState.STATE_PLAYING
-            "buffering", "loading", "ad" -> PlaybackState.STATE_BUFFERING
-            "paused" -> PlaybackState.STATE_PAUSED
+            "playing_with_audio" -> PlaybackState.STATE_PLAYING
+            "playing_muted" -> PlaybackState.STATE_PAUSED
+            "buffering", "loading" -> PlaybackState.STATE_BUFFERING
+            "paused_by_user",
+            "paused_by_audio_focus",
+            "paused_by_lifecycle",
+            "paused_by_browser",
+            -> PlaybackState.STATE_PAUSED
             "ended" -> PlaybackState.STATE_STOPPED
             "error" -> PlaybackState.STATE_ERROR
             else -> PlaybackState.STATE_NONE
@@ -575,6 +629,7 @@ class VShotsBrowserPlaybackService : Service() {
 
     override fun onDestroy() {
         if (activeService === this) activeService = null
+        unregisterNoisyReceiver()
         abandonAudioFocus()
         mediaSession?.isActive = false
         mediaSession?.release()
