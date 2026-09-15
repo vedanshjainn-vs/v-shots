@@ -427,6 +427,10 @@ private class VShotsBackgroundMediaWebView(
 
     /** Explicit user pause guard. Polling must never fight the user. */
     private var userPaused = false
+    private var unexpectedPauseSinceMs = 0L
+    private var pauseRecoveryAttempts = 0
+    private var pauseRecoveryInFlight = false
+    private val maxPauseRecoveryAttempts = 3
 
     /** Master switch for the ad assist (mute + official-skip click).
      *  Pushed from Dart (`enable_youtube_ad_assist` remote flag). */
@@ -539,6 +543,27 @@ private class VShotsBackgroundMediaWebView(
         )
     }
 
+    private fun recoverUnexpectedPause(generation: Long) {
+        if (generation != loadGeneration || userPaused || adActive || pauseRecoveryInFlight) return
+        if (pauseRecoveryAttempts >= maxPauseRecoveryAttempts) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (unexpectedPauseSinceMs == 0L) unexpectedPauseSinceMs = now
+        if (now - unexpectedPauseSinceMs < 300L) return
+        pauseRecoveryAttempts += 1
+        pauseRecoveryInFlight = true
+        Log.d(TAG, "recovering unexpected pause attempt=$pauseRecoveryAttempts")
+        VShotsBrowserPlaybackService.prepareForPlayback()
+        setNativeWebViewAudioMuted(false)
+        evaluateJavascript(
+            generationGuardedJs(
+                """(function(){try{var v=document.querySelector('video,audio');if(!v||v.ended)return 'none';v.muted=false;if(!v.volume||v.volume<=0)v.volume=1;var p=v.play();if(p&&p.catch)p.catch(function(){});return 'recovery-requested';}catch(e){return 'err';}})()""",
+                generation,
+            ),
+        ) { result ->
+            if (generation == loadGeneration) pauseRecoveryInFlight = false
+        }
+    }
+
     private fun handlePollResult(result: String, generation: Long) {
         if (generation != loadGeneration) return
         val snapshot = parsePollSnapshot(result)
@@ -590,8 +615,8 @@ private class VShotsBackgroundMediaWebView(
                         setPlaybackState("ended", false)
                     }
                     "playing" -> {
-                        // A poll is read-only. It reports the element's
-                        // observed state; it never turns a pause into play.
+                        unexpectedPauseSinceMs = 0L
+                        pauseRecoveryInFlight = false
                         if (!userPaused) {
                             updateContentAudioState(snapshot)
                             ensureContentAudio(generation)
@@ -606,8 +631,17 @@ private class VShotsBackgroundMediaWebView(
                         setPlaybackState("buffering", mediaPlaying)
                     }
                     "paused" -> {
-                        setAudioState(BrowserAudioState.PAUSED)
-                        setPlaybackState("paused", false)
+                        if (userPaused) {
+                            unexpectedPauseSinceMs = 0L
+                            pauseRecoveryInFlight = false
+                            setAudioState(BrowserAudioState.PAUSED)
+                            setPlaybackState("paused", false)
+                        } else {
+                            if (unexpectedPauseSinceMs == 0L) {
+                                unexpectedPauseSinceMs = android.os.SystemClock.elapsedRealtime()
+                            }
+                            recoverUnexpectedPause(generation)
+                        }
                     }
                     else -> Unit // 'none' / 'unknown' — keep current state
                 }
@@ -1094,6 +1128,9 @@ private class VShotsBackgroundMediaWebView(
         adAssistInFlight = false
         adAudioRestoreInFlight = false
         userPaused = !autoplay
+        unexpectedPauseSinceMs = 0L
+        pauseRecoveryAttempts = 0
+        pauseRecoveryInFlight = false
         mediaPlaying = false
         setNativeWebViewAudioMuted(false)
         setPlaybackState("loading", false)
@@ -1306,7 +1343,7 @@ private class VShotsBackgroundMediaWebView(
     fun pauseMedia(userInitiated: Boolean = true, requestedGeneration: Long? = null) {
         val generation = requestedGeneration ?: loadGeneration
         if (generation != loadGeneration) return
-        if (userInitiated) userPaused = true
+        userPaused = true
         setAudioState(BrowserAudioState.PAUSED)
         evaluateJavascript(
             generationGuardedJs(
