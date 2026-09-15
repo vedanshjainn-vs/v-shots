@@ -1102,7 +1102,21 @@ private class VShotsBackgroundMediaWebView(
         // prevents late callbacks from the old navigation from becoming the
         // new track's page-finished/autoplay signal.
         stopLoading()
-        loadUrl(playbackUrl)
+
+        // YouTube requires embedded-player clients in a WebView to identify
+        // themselves with an HTTP Referer. Android WebView sends no Referer
+        // for a direct load by default, which produces player Error 153. Use
+        // the installed Android application ID as the stable app identity,
+        // exactly as YouTube's embedded-player requirements specify. JioSaavn
+        // loads remain unchanged and receive no YouTube header.
+        val additionalHeaders: Map<String, String> = if (youtubeVideoId(url) != null) {
+            mapOf(
+                "Referer" to "https://${appContext.packageName.lowercase(Locale.US)}",
+            )
+        } else {
+            emptyMap()
+        }
+        loadUrl(playbackUrl, additionalHeaders)
     }
 
     /** Toggles the YouTube ad assist (remote flag from Dart). */

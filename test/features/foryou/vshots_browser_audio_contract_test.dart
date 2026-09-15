@@ -32,7 +32,10 @@ void main() {
     expect(source, contains('controls=0'));
     expect(source, contains('rel=0'));
     expect(source, contains('disablekb=1'));
-    expect(source, contains('loadUrl(playbackUrl)'));
+    expect(source, contains('loadUrl(playbackUrl, additionalHeaders)'));
+    expect(source, contains('"Referer"'));
+    expect(source, contains('appContext.packageName'));
+    expect(source, contains('Error 153'));
     expect(source, isNot(contains('loadUrl(url)')));
 
     // Generic video touches are consumed; only the exact trusted unmute
