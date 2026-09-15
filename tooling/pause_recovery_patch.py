@@ -95,5 +95,14 @@ new = '''                    "playing" -> {
 assert old in s
 s = s.replace(old, new, 1)
 
+old = '''        if (userInitiated) userPaused = true
+        setAudioState(BrowserAudioState.PAUSED)
+'''
+new = '''        userPaused = true
+        setAudioState(BrowserAudioState.PAUSED)
+'''
+assert old in s
+s = s.replace(old, new, 1)
+
 p.write_text(s)
 print('pause recovery patch applied')
