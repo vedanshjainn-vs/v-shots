@@ -1402,9 +1402,8 @@ class _ActionPill extends StatelessWidget {
                 Icon(
                   icon,
                   size: 16,
-                  color: enabled
-                      ? AppColors.textSecondary
-                      : AppColors.textSubtle,
+                  color:
+                      enabled ? AppColors.textSecondary : AppColors.textSubtle,
                 ),
                 const SizedBox(width: 6),
                 Text(
