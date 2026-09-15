@@ -288,7 +288,7 @@ private fun bootstrapScript(token: String, generation: Long): String = """
  * not a state poll (the old design ran a full-document scrape every second
  * plus a separate position probe).
  */
-private const val YT_RECONCILE_JS = """
+private val YT_RECONCILE_JS = """
 (function(){
   try{
     var v = document.querySelector('video,audio');
