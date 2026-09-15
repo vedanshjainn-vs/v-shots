@@ -43,7 +43,7 @@ jobs:
         run: python3 tooling/premium_player_patch.py
 
       - name: Format
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format lib test
 
       - name: Analyze
         run: flutter analyze
