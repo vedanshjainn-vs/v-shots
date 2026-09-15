@@ -1370,13 +1370,11 @@ class _ActionPill extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
-    this.highlighted = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback? onPressed;
-  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
@@ -1392,14 +1390,10 @@ class _ActionPill extends StatelessWidget {
             duration: AppMotion.micro,
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
             decoration: BoxDecoration(
-              color: highlighted
-                  ? AppColors.accent.withValues(alpha: 0.16)
-                  : Colors.white.withValues(alpha: enabled ? 0.07 : 0.04),
+              color: Colors.white.withValues(alpha: enabled ? 0.07 : 0.04),
               borderRadius: BorderRadius.circular(99),
               border: Border.all(
-                color: highlighted
-                    ? AppColors.accent.withValues(alpha: 0.55)
-                    : Colors.white.withValues(alpha: 0.08),
+                color: Colors.white.withValues(alpha: 0.08),
               ),
             ),
             child: Row(
@@ -1408,21 +1402,17 @@ class _ActionPill extends StatelessWidget {
                 Icon(
                   icon,
                   size: 16,
-                  color: highlighted
-                      ? AppColors.accentLight
-                      : enabled
-                          ? AppColors.textSecondary
-                          : AppColors.textSubtle,
+                  color: enabled
+                      ? AppColors.textSecondary
+                      : AppColors.textSubtle,
                 ),
                 const SizedBox(width: 6),
                 Text(
                   label,
                   style: TextStyle(
-                    color: highlighted
-                        ? AppColors.textMain
-                        : enabled
-                            ? AppColors.textSecondary
-                            : AppColors.textSubtle,
+                    color: enabled
+                        ? AppColors.textSecondary
+                        : AppColors.textSubtle,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
