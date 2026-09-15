@@ -238,7 +238,7 @@ private const val YT_VALIDATE_CONTENT_AUDIO_JS = """
 /**
  * Discovery-only native browser view with FORCEFUL ad blocking.
  *
- * Third-party ad blocking for non-YouTube pages. YouTube watch-page
+ * Third-party ad blocking for non-YouTube pages. Official YouTube embedded-player
  * resources (including YouTube ads) are never intercepted or hidden.
  *
  * Unlike the generic webview_flutter platform view, this WebView deliberately
@@ -259,6 +259,49 @@ private enum class BrowserAudioState {
 
 private fun requestedGeneration(arguments: Any?): Long? {
     return ((arguments as? Map<*, *>)?.get("generation") as? Number)?.toLong()
+}
+
+/**
+ * Convert a supported YouTube watch/share URL to the official embedded-player
+ * surface. The WebView must never render the watch page around the media: V
+ * Shots owns the header, metadata, controls, queue, and gestures. The embed
+ * is still the official YouTube player and keeps the media element/MediaSession
+ * path used by the existing playback engine.
+ */
+private fun youtubeVideoId(url: String): String? {
+    return try {
+        val uri = Uri.parse(url)
+        val host = uri.host?.lowercase(Locale.US) ?: return null
+        val candidate = when {
+            host == "youtu.be" || host.endsWith(".youtu.be") ->
+                uri.pathSegments.firstOrNull()
+            host == "youtube.com" || host.endsWith(".youtube.com") -> {
+                uri.getQueryParameter("v") ?: run {
+                    val segments = uri.pathSegments
+                    if (segments.size >= 2 &&
+                        segments[0] in setOf("embed", "shorts", "live")
+                    ) {
+                        segments[1]
+                    } else {
+                        null
+                    }
+                }
+            }
+            else -> null
+        }
+        candidate?.takeIf { Regex("^[A-Za-z0-9_-]{6,20}$").matches(it) }
+    } catch (_: Throwable) {
+        null
+    }
+}
+
+private fun youtubePlayerSurfaceUrl(url: String, autoplay: Boolean): String {
+    val id = youtubeVideoId(url) ?: return url
+    val autoplayValue = if (autoplay) 1 else 0
+    return "https://www.youtube.com/embed/$id" +
+        "?autoplay=$autoplayValue&playsinline=1&controls=0&rel=0" +
+        "&modestbranding=1&iv_load_policy=3&enablejsapi=1&fs=0" +
+        "&disablekb=1"
 }
 
 private class VShotsBackgroundMediaWebView(
@@ -288,6 +331,15 @@ private class VShotsBackgroundMediaWebView(
      * this class. The flag is cleared only during disposal.
      */
     private var retainMediaLifecycle = true
+
+    /**
+     * Real touches on the embedded media surface are intentionally consumed by
+     * the V Shots shell. This prevents an arbitrary video tap from becoming a
+     * YouTube play/pause gesture. The only touch allowed through this WebView
+     * is the generation-checked native touch delivered to YouTube's exact
+     * unmute target by the already-validated audio path.
+     */
+    private var trustedTouchInFlight = false
 
     // ── FORCEFUL Ad Blocker State ──────────────────────────────────────────
     // ALWAYS ON by default. Populated from Dart via "setContentBlocker".
@@ -451,13 +503,32 @@ private class VShotsBackgroundMediaWebView(
         val up = MotionEvent.obtain(now, now + 16L, MotionEvent.ACTION_UP, x, y, 0).apply {
             source = InputDevice.SOURCE_TOUCHSCREEN
         }
+        trustedTouchInFlight = true
         try {
             dispatchTouchEvent(down)
             dispatchTouchEvent(up)
         } finally {
+            trustedTouchInFlight = false
             down.recycle()
             up.recycle()
         }
+    }
+
+    /**
+     * The embedded YouTube surface is video-only. Transport is owned by the V
+     * Shots controls, so a generic touch cannot pause or resume the media.
+     * Intercept at dispatch level so Chromium's internal child views cannot
+     * receive an ordinary tap. Trusted unmute input temporarily passes through
+     * the flag above.
+     */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (!trustedTouchInFlight) return true
+        return super.dispatchTouchEvent(event)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (trustedTouchInFlight) return super.onTouchEvent(event)
+        return true
     }
 
     private fun updateContentAudioState(snapshot: PollSnapshot) {
@@ -782,7 +853,7 @@ private class VShotsBackgroundMediaWebView(
                     val path = url.path?.lowercase(Locale.US) ?: ""
                     val query = url.query?.lowercase(Locale.US) ?: ""
 
-                    // YouTube (and Google ad CDNs used by the YouTube watch page)
+                    // YouTube (and Google ad CDNs used by the official embedded player)
                     // must never be intercepted — no ad-resource blocking.
                     if (isYouTubeDomain(host) || isYouTubeAdNetwork(host)) return null
 
@@ -831,7 +902,7 @@ private class VShotsBackgroundMediaWebView(
                 return youtubeDomains.any { host == it || host.endsWith(".$it") }
             }
 
-            /** Google ad CDNs used by the YouTube watch page — never blocked. */
+            /** Google ad CDNs used by the official embedded player — never blocked. */
             private fun isYouTubeAdNetwork(host: String): Boolean {
                 val networks = listOf(
                     "doubleclick.net",
@@ -1007,11 +1078,12 @@ private class VShotsBackgroundMediaWebView(
 
     fun load(url: String, requestedGeneration: Long? = null, autoplay: Boolean = true) {
         if (!url.startsWith("https://")) return
-        val host = Uri.parse(url).host?.lowercase(Locale.US) ?: return
-        if (isDeniedJioHost(host)) return
+        val requestedHost = Uri.parse(url).host?.lowercase(Locale.US) ?: return
+        if (isDeniedJioHost(requestedHost)) return
         if (requestedGeneration != null && requestedGeneration < loadGeneration) return
+        val playbackUrl = youtubePlayerSurfaceUrl(url, autoplay)
         loadGeneration = requestedGeneration ?: (loadGeneration + 1L)
-        currentLoadUrl = url
+        currentLoadUrl = playbackUrl
         endedReported = false
         nearEndReported = false
         adActive = false
@@ -1030,7 +1102,7 @@ private class VShotsBackgroundMediaWebView(
         // prevents late callbacks from the old navigation from becoming the
         // new track's page-finished/autoplay signal.
         stopLoading()
-        loadUrl(url)
+        loadUrl(playbackUrl)
     }
 
     /** Toggles the YouTube ad assist (remote flag from Dart). */

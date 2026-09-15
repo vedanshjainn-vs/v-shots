@@ -4,7 +4,7 @@
 //
 // The SINGLE app-level owner of in-app YouTube playback, built on the PROVEN
 // native engine that powers Discovery (VShotsBrowserSession → native Android
-// WebView → official YouTube watch page + foreground media service).
+// WebView → official YouTube embedded player + foreground media service).
 //
 //   Home / Search / Library / Discovery / Artist / Playlist
 //        └──► VShotsPlaybackManager.play / playQueue / next / previous
@@ -19,7 +19,7 @@
 // Owns the global QUEUE with shuffle + repeat (pure Dart, unit-tested).
 //
 // AUTO-ADVANCE: the native WebView emits a real `video.ended` event (JS poll
-// of the official YouTube page's <video> element), surfaced through
+// of the official embedded player's <video> element), surfaced through
 // VShotsBrowserSession → this manager's onVideoEnded(). Idempotent (once per
 // completed video) and respects repeat/shuffle. Works screen-on and screen-off
 // because the foreground media service keeps the engine + JS poll alive.

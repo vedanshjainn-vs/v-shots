@@ -25,11 +25,49 @@ void main() {
     expect(source, contains('SOURCE_TOUCHSCREEN'));
     expect(source, contains('window.innerWidth'));
 
+    // YouTube must be rendered through the official video-only embed surface,
+    // never as a watch webpage with its own transport/header chrome.
+    expect(source, contains('youtubePlayerSurfaceUrl'));
+    expect(source, contains('https://www.youtube.com/embed/\$id'));
+    expect(source, contains('controls=0'));
+    expect(source, contains('rel=0'));
+    expect(source, contains('disablekb=1'));
+    expect(source, contains('loadUrl(playbackUrl)'));
+    expect(source, isNot(contains('loadUrl(url)')));
+
+    // Generic video touches are consumed; only the exact trusted unmute
+    // gesture is allowed to reach YouTube.
+    expect(
+      source,
+      contains('override fun dispatchTouchEvent(event: MotionEvent)'),
+    );
+    expect(
+      source,
+      contains('override fun onTouchEvent(event: MotionEvent)'),
+    );
+    expect(source, contains('trustedTouchInFlight'));
+    expect(source, contains('return true'));
+
     // Guard against reintroducing the production regression: muting an ad
     // without capturing/restoring the content state.
     expect(
       source,
       isNot(contains('if(v && !v.muted){ v.muted = true; v.volume = 0; }')),
     );
+  });
+
+  test('premium shell constrains the embed and owns the sound action', () {
+    final source = File(
+      'lib/features/foryou/discovery_browser_sheet.dart',
+    ).readAsStringSync();
+
+    expect(source, contains('AspectRatio('));
+    expect(source, contains('_videoAspectRatio = 16 / 9'));
+    expect(source, contains('YouTube controls are disabled'));
+    expect(
+      source,
+      contains("label: Text(busy ? 'Enabling…' : 'Enable Sound')"),
+    );
+    expect(source, contains("'Enable Sound'"));
   });
 }

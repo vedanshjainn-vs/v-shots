@@ -5,22 +5,22 @@ import 'dart:ui' as ui;
 // V Shots — Discovery in-app YouTube browser (mini player + expandable sheet)
 // ═════════════════════════════════════════════════════════════════════════════
 //
-// Discovery-scoped browser that opens the OFFICIAL YouTube watch page
-// (https://www.youtube.com/watch?v=<id>) inside the app — the real YouTube
-// web content, never a fake player. States:
+// Discovery-scoped premium player backed by the OFFICIAL YouTube embedded
+// player surface — never the YouTube watch webpage. V Shots owns the player
+// chrome, metadata, controls, queue, and transport. States:
 //   collapsed  → a compact glass mini player above the bottom navigation
-//   expanded   → browser bar (minimize / lock+URL / close) over the live page
+//   expanded   → V Shots player chrome over the constrained video viewport
 //
 // Extent is driven by a single AnimationController (0=collapsed .. 1=expanded)
 // so the collapse/expand gesture is finger-connected and deterministic — no
-// DraggableScrollableSheet quirks. Drag on the mini player or the browser bar
+// DraggableScrollableSheet quirks. Drag on the mini player or player chrome
 // updates the extent; release snaps to collapsed/expanded (with a midpoint
 // snap).
 //
 // The native Android browser view is created ONCE per session and stays
-// mounted, at a CONSTANT size, while collapsed — collapse/expand only
-// TRANSLATE the browser layer, never resizing or detaching the playback view.
-// Closing disposes the session.
+// mounted at a CONSTANT aspect-ratio viewport size while collapsed —
+// collapse/expand only TRANSLATE the browser layer, never resizing or
+// detaching the playback view. Closing disposes the session.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -66,6 +66,7 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
   static const double _miniHeight = 84;
   static const double _maxFraction = 0.92;
   static const double _halfFraction = 0.55;
+  static const double _videoAspectRatio = 16 / 9;
 
   @override
   void initState() {
@@ -432,10 +433,10 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
 
   // ── Build ────────────────────────────────────────────────────────────────
   //
-  // CRITICAL LIFECYCLE GUARANTEE: the native browser view is laid out at a
-  // CONSTANT full height (maxH) at all times and is only TRANSLATED when
-  // collapsed. It is never resized, clipped-to-tiny, or detached — the mini
-  // player is pure chrome ON TOP of the still-alive browser.
+  // CRITICAL LIFECYCLE GUARANTEE: the native browser view is laid out once at
+  // its fixed 16:9 video viewport and is only TRANSLATED when collapsed. It
+  // is never resized, clipped-to-tiny, or detached — the mini player is pure
+  // chrome ON TOP of the still-alive browser.
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
@@ -835,18 +836,27 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
-                      ),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+                  child: AspectRatio(
+                    // The platform view itself is physically 16:9. The
+                    // artwork/gradient remain outside it as cinematic chrome;
+                    // the embedded player can never grow into a webpage-sized
+                    // portrait viewport.
+                    aspectRatio: _videoAspectRatio,
+                    child: ClipRRect(
                       borderRadius: BorderRadius.circular(28),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        child: _session.buildWidget(),
+                      ),
                     ),
-                    child: _session.buildWidget(),
                   ),
                 ),
               ),
@@ -900,8 +910,8 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
     );
   }
 
-  /// The app-level full-player controls over the WebView engine. The real
-  /// YouTube page provides its own seek bar; V Shots adds queue control
+  /// The app-level full-player controls over the embedded WebView engine.
+  /// YouTube controls are disabled; V Shots owns transport, seek, queue
   /// (prev/next/shuffle/repeat), like, playlist, lyrics and share.
   Widget _buildExpandedControls() {
     final manager = VShotsPlaybackManager.instance;
@@ -1160,14 +1170,6 @@ class _DiscoveryBrowserSheetState extends State<DiscoveryBrowserSheet>
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _ActionPill(
-                    icon: muted
-                        ? Icons.volume_up_rounded
-                        : Icons.graphic_eq_rounded,
-                    label: muted ? 'Enable sound' : _audioLabel(),
-                    highlighted: muted,
-                    onPressed: muted ? _enableAudio : null,
-                  ),
                   _ActionPill(
                     icon: Icons.queue_music_rounded,
                     label: 'Queue',
@@ -1561,7 +1563,7 @@ class _SoundPrompt extends StatelessWidget {
                       ),
                     )
                   : const Icon(Icons.volume_up_rounded, size: 18),
-              label: Text(busy ? 'Enabling…' : 'Enable sound'),
+              label: Text(busy ? 'Enabling…' : 'Enable Sound'),
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.accentDark,
                 foregroundColor: Colors.white,
